@@ -10,7 +10,7 @@ describe('master data extraction routes', () => {
   async function setupApp() {
     const { fetchImpl } = createMasterDataMockFetch({ pingOk: true });
     const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
-    await startTestServices(context);
+    await startTestServices(context, { selectCompanyId: 'estimation' });
     return createTestApp(context);
   }
 
@@ -71,10 +71,21 @@ describe('master data extraction routes', () => {
     expect(ledgerDiag.totalExtractions).toBeGreaterThan(0);
   });
 
-  it('returns 404 for unknown company', async () => {
+  it('returns 403 when requested company does not match session selection', async () => {
     const app = await setupApp();
     const response = await request(app).get('/companies/unknown-co/ledgers');
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(403);
+    expect(response.body.details.sessionStatus).toBe('COMPANY_NOT_ACCESSIBLE');
+  });
+
+  it('returns 400 when no company is selected', async () => {
+    const { fetchImpl } = createMasterDataMockFetch({ pingOk: true });
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
+    await startTestServices(context);
+    const app = createTestApp(context);
+    const response = await request(app).get(`/companies/${companyId}/ledgers`);
+    expect(response.status).toBe(400);
+    expect(response.body.details.sessionStatus).toBe('NO_COMPANY_SELECTED');
   });
 
   it('returns 503 when master data service not started', async () => {

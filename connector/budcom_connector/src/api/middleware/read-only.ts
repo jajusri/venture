@@ -1,6 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
 
-const ALLOWED_WRITE_ROUTES = new Set(['POST /device/pair']);
+const ALLOWED_WRITE_ROUTES = new Set([
+  'POST /device/pair',
+  'POST /session/company',
+  'DELETE /session/company',
+  'POST /session/validate',
+]);
 
 /**
  * Rejects any mutating HTTP method except explicit pairing.

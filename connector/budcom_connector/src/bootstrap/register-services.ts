@@ -26,9 +26,11 @@ import { TallyDiagnosticsServiceImpl } from '../services/tally/tally-diagnostics
 import { OfflineXmlIngestionService } from '../ingestion/offline-xml-ingestion.service.js';
 import { CompanyResolver } from '../services/extraction/company-resolver.js';
 import { MasterDataServiceImpl } from '../services/extraction/master-data.service.js';
+import { ConnectorSessionServiceImpl } from '../services/session/connector-session.service.js';
 import { createTallyModule } from '../tally/tally-module.js';
 import { TallyXmlResponseParser } from '../tally/xml/response-parser.js';
 import type { MasterDataService } from '../services/extraction/master-data.service.js';
+import type { ConnectorSessionService } from '../services/interfaces/connector-session.js';
 
 export interface ApplicationContext {
   readonly container: ServiceContainer;
@@ -85,12 +87,24 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
     return new CompanyResolver(discovery);
   });
   container.registerFactory(
+    ServiceTokens.ConnectorSession,
+    () =>
+      new ConnectorSessionServiceImpl(
+        config,
+        container.resolve<CompanyResolver>(ServiceTokens.CompanyResolver),
+        container.resolve<TallyConnectionService>(ServiceTokens.TallyConnection),
+        tallyModule.readPort,
+        logger.child({ service: 'ConnectorSession' }),
+      ),
+  );
+  container.registerFactory(
     ServiceTokens.MasterData,
     () =>
       new MasterDataServiceImpl(
         config,
         tallyModule.readPort,
         container.resolve<CompanyResolver>(ServiceTokens.CompanyResolver),
+        container.resolve<ConnectorSessionService>(ServiceTokens.ConnectorSession),
         logger.child({ service: 'MasterData' }),
       ),
   );
@@ -113,6 +127,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         syncEngine: container.resolve<SyncEngineService>(ServiceTokens.SyncEngine),
         xmlImport: container.resolve<XmlImportService>(ServiceTokens.XmlImport),
         companyDiscovery: container.resolve<CompanyDiscoveryService>(ServiceTokens.CompanyDiscovery),
+        connectorSession: container.resolve<ConnectorSessionService>(ServiceTokens.ConnectorSession),
         masterData: container.resolve<MasterDataService>(ServiceTokens.MasterData),
         localDatabase: container.resolve<LocalDatabaseService>(ServiceTokens.LocalDatabase),
         apiServer: container.resolve<ApiServerService>(ServiceTokens.ApiServer),
@@ -127,6 +142,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
       new ApiServerStub(config, logger, () => ({
         healthService: container.resolve<HealthService>(ServiceTokens.HealthService),
         companyDiscovery: container.resolve<CompanyDiscoveryService>(ServiceTokens.CompanyDiscovery),
+        connectorSession: container.resolve<ConnectorSessionService>(ServiceTokens.ConnectorSession),
         masterData: container.resolve<MasterDataService>(ServiceTokens.MasterData),
         tallyDiagnostics: container.resolve<TallyDiagnosticsService>(ServiceTokens.TallyDiagnostics),
       })),
@@ -140,6 +156,7 @@ const STARTUP_ORDER: ServiceToken[] = [
   ServiceTokens.TallyConnection,
   ServiceTokens.XmlImport,
   ServiceTokens.CompanyDiscovery,
+  ServiceTokens.ConnectorSession,
   ServiceTokens.MasterData,
   ServiceTokens.SyncEngine,
   ServiceTokens.Licensing,
@@ -152,6 +169,7 @@ const SHUTDOWN_ORDER: ServiceToken[] = [
   ServiceTokens.Scheduler,
   ServiceTokens.SyncEngine,
   ServiceTokens.MasterData,
+  ServiceTokens.ConnectorSession,
   ServiceTokens.CompanyDiscovery,
   ServiceTokens.XmlImport,
   ServiceTokens.TallyConnection,

@@ -7,6 +7,7 @@ export const ServiceTokens = {
   XmlImport: 'XmlImport',
   CompanyDiscovery: 'CompanyDiscovery',
   CompanyResolver: 'CompanyResolver',
+  ConnectorSession: 'ConnectorSession',
   MasterData: 'MasterData',
   TallyDiagnostics: 'TallyDiagnostics',
   LocalDatabase: 'LocalDatabase',

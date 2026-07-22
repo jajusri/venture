@@ -28,6 +28,8 @@ import { paginateItems } from '../../extraction/core/pagination.js';
 import { deriveUnitsFromStockItems } from '../../extraction/units/units-derivation.js';
 import { assessDerivedUnits } from '../../tally/contracts/response-contract.js';
 import type { CompanyResolver } from './company-resolver.js';
+import type { ConnectorSessionService } from '../interfaces/connector-session.js';
+import { assertSessionValidation } from '../session/session-error-mapper.js';
 
 export interface MasterDataService {
   start(): Promise<void>;
@@ -100,6 +102,7 @@ export class MasterDataServiceImpl implements MasterDataService {
     private readonly config: ConnectorConfig,
     private readonly readPort: ErpReadPort,
     private readonly companyResolver: CompanyResolver,
+    private readonly connectorSession: ConnectorSessionService,
     private readonly logger: Logger,
   ) {}
 
@@ -129,6 +132,7 @@ export class MasterDataServiceImpl implements MasterDataService {
 
   async getCompanyInfo(companyId: string): Promise<NormalizedCompanyInfo> {
     this.assertRunning();
+    await this.assertSessionForCompany(companyId);
     const companyName = await this.companyResolver.resolveName(companyId);
 
     try {
@@ -150,6 +154,7 @@ export class MasterDataServiceImpl implements MasterDataService {
 
   async getLedgerGroups(companyId: string, pagination: PaginationParams) {
     this.assertRunning();
+    await this.assertSessionForCompany(companyId);
     const companyName = await this.companyResolver.resolveName(companyId);
     const groupsResult = await this.readPort.getGroups(companyName);
 
@@ -209,6 +214,7 @@ export class MasterDataServiceImpl implements MasterDataService {
 
   async getStockItems(companyId: string, pagination: PaginationParams) {
     this.assertRunning();
+    await this.assertSessionForCompany(companyId);
     const companyName = await this.companyResolver.resolveName(companyId);
     const result = await this.loadStockItems(companyId, companyName);
     const paged = paginateItems([...result.items], pagination);
@@ -226,6 +232,7 @@ export class MasterDataServiceImpl implements MasterDataService {
     this.unitsDiagnostics.totalExtractions += 1;
 
     try {
+      await this.assertSessionForCompany(companyId);
       const companyName = await this.companyResolver.resolveName(companyId);
       const stockItems = await this.loadStockItems(companyId, companyName);
       const units = deriveUnitsFromStockItems(stockItems.items);
@@ -316,6 +323,7 @@ export class MasterDataServiceImpl implements MasterDataService {
     extract: (companyName: string) => Promise<{ items: readonly T[] }>,
   ): Promise<PaginatedEnvelope<T>> {
     this.assertRunning();
+    await this.assertSessionForCompany(companyId);
     const companyName = await this.companyResolver.resolveName(companyId);
     const result = await extract(companyName);
     const paged = paginateItems([...result.items], pagination);
@@ -335,6 +343,11 @@ export class MasterDataServiceImpl implements MasterDataService {
         503,
       );
     }
+  }
+
+  private async assertSessionForCompany(companyId: string): Promise<void> {
+    const validation = await this.connectorSession.validateForOperation(companyId);
+    assertSessionValidation(validation);
   }
 
   private async loadStockItems(

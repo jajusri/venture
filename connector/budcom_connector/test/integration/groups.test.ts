@@ -23,7 +23,7 @@ describe('groups extraction integration', () => {
     }) as typeof fetch;
 
     const context = createTestContext({ fetchImpl: wrappedFetch, tallyRetryMaxAttempts: 1 });
-    await startTestServices(context);
+    await startTestServices(context, { selectCompanyId: companyId });
 
     const response = await request(createTestApp(context)).get(
       `/companies/${companyId}/ledger-groups?page=1&pageSize=50`,
@@ -50,7 +50,7 @@ describe('groups extraction integration', () => {
     }) as typeof fetch;
 
     const context = createTestContext({ fetchImpl: wrappedFetch, tallyRetryMaxAttempts: 1 });
-    await startTestServices(context);
+    await startTestServices(context, { selectCompanyId: companyId });
 
     const response = await request(createTestApp(context)).get(
       `/companies/${companyId}/ledger-groups`,
@@ -61,7 +61,12 @@ describe('groups extraction integration', () => {
   });
 
   it('returns 503 when Tally is unavailable', async () => {
-    const fetchImpl: typeof fetch = async () => {
+    const { fetchImpl: baseFetch } = createMasterDataMockFetch({ pingOk: true });
+    const fetchImpl: typeof fetch = async (url, init) => {
+      const body = typeof init?.body === 'string' ? init.body : '';
+      if (body.includes('List of Companies') || body.includes('License Info')) {
+        return baseFetch(url, init);
+      }
       throw new TypeError('fetch failed');
     };
     const context = createTestContext({
@@ -69,7 +74,7 @@ describe('groups extraction integration', () => {
       tallyRetryMaxAttempts: 1,
       tallyCircuitBreakerFailureThreshold: 99,
     });
-    await startTestServices(context);
+    await startTestServices(context, { selectCompanyId: companyId });
 
     const response = await request(createTestApp(context)).get(
       `/companies/${companyId}/ledger-groups`,

@@ -21,6 +21,7 @@ import {
   GROUP_ONE_ROOT,
   GROUP_UNEXPECTED_ENVELOPE,
 } from '../../helpers/groups-fixtures.js';
+import { createPermissiveSessionMock } from '../../helpers/session-mock.js';
 import { SAMPLE_LICENSE_INFO_RESPONSE } from '../../helpers/mock-fetch.js';
 
 async function makeAdapter(handler: (body: string) => { status?: number; body: string }) {
@@ -232,6 +233,7 @@ describe('MasterDataService groups boundary', () => {
       {
         resolveName: async (id: string) => id,
       } as never,
+      createPermissiveSessionMock(),
       createLogger({ service: 'test', level: 'error' }),
     );
     await service.start();
@@ -258,6 +260,7 @@ describe('MasterDataService groups boundary', () => {
         }),
       } as unknown as ErpReadPort,
       { resolveName: async () => 'ESTIMATION' } as never,
+      createPermissiveSessionMock(),
       createLogger({ service: 'test', level: 'error' }),
     );
     await service.start();

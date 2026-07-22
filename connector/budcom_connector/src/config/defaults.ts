@@ -29,6 +29,8 @@ export interface ConnectorConfig {
   readonly gracefulShutdownMs: number;
   readonly connectorVersion: string;
   readonly schemaVersion: string;
+  /** Maximum age of a connector session selection before SESSION_EXPIRED. */
+  readonly sessionTtlMs: number;
 }
 
 export const defaultConfig: ConnectorConfig = {
@@ -59,4 +61,5 @@ export const defaultConfig: ConnectorConfig = {
   gracefulShutdownMs: 10_000,
   connectorVersion: CONNECTOR_VERSION,
   schemaVersion: SCHEMA_VERSION,
+  sessionTtlMs: 8 * 60 * 60 * 1000,
 };

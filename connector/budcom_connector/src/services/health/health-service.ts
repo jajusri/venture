@@ -3,6 +3,7 @@ import type { HealthReport } from '../../core/types.js';
 import type { TallyConnectionService } from '../interfaces/tally-connection.js';
 import type { SyncEngineService } from '../interfaces/sync-engine.js';
 import type { XmlImportService } from '../interfaces/xml-import.js';
+import type { ConnectorSessionService } from '../interfaces/connector-session.js';
 import type { MasterDataService } from '../extraction/master-data.service.js';
 import type { CompanyDiscoveryService } from '../interfaces/company-discovery.js';
 import type { LocalDatabaseService } from '../interfaces/local-database.js';
@@ -16,6 +17,7 @@ export interface HealthServiceDeps {
   readonly syncEngine: SyncEngineService;
   readonly xmlImport: XmlImportService;
   readonly companyDiscovery: CompanyDiscoveryService;
+  readonly connectorSession: ConnectorSessionService;
   readonly masterData: MasterDataService;
   readonly localDatabase: LocalDatabaseService;
   readonly apiServer: ApiServerService;
@@ -34,6 +36,7 @@ export class HealthService {
       this.deps.syncEngine.getStatus(),
       this.deps.xmlImport.getStatus(),
       this.deps.companyDiscovery.getStatus(),
+      this.deps.connectorSession.getStatus(),
       this.deps.masterData.getStatus(),
       this.deps.localDatabase.getStatus(),
       this.deps.apiServer.getStatus(),

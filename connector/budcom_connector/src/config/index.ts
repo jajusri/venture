@@ -132,6 +132,10 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
     ),
     connectorVersion: defaultConfig.connectorVersion,
     schemaVersion: defaultConfig.schemaVersion,
+    sessionTtlMs: parsePositiveInt(
+      process.env.BUDCOM_SESSION_TTL_MS,
+      defaultConfig.sessionTtlMs,
+    ),
     ...overrides,
   };
 
