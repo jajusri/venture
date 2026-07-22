@@ -13,6 +13,7 @@ const baseHealth: HealthResponse = {
   tallyReachable: true,
   readOnly: true,
   services: [
+    { name: 'ApiServer', running: true, ready: true, message: 'Running' },
     { name: 'TallyConnection', running: true, ready: true, message: 'State: connected' },
   ],
 };
@@ -23,8 +24,9 @@ describe('connection-status-mapper', () => {
     expect(getConnectionLabel('connected')).toBe('Connected');
   });
 
-  it('maps unreachable connector to unknown', () => {
-    expect(mapConnectionIndicator(false, null)).toBe('unknown');
+  it('maps unreachable connector to disconnected', () => {
+    expect(mapConnectionIndicator(false, null)).toBe('disconnected');
+    expect(getConnectionLabel('disconnected')).toBe('Disconnected');
   });
 
   it('maps unavailable tally to disconnected', () => {
@@ -35,5 +37,29 @@ describe('connection-status-mapper', () => {
 
   it('maps degraded health to waiting', () => {
     expect(mapConnectionIndicator(true, { ...baseHealth, status: 'degraded' })).toBe('waiting');
+    expect(getConnectionLabel('waiting')).toBe('Waiting');
+  });
+
+  it('maps connecting tally state to starting', () => {
+    expect(
+      mapConnectionIndicator(true, {
+        ...baseHealth,
+        services: [
+          { name: 'ApiServer', running: true, ready: true },
+          { name: 'TallyConnection', running: true, ready: false, message: 'State: connecting' },
+        ],
+      }),
+    ).toBe('starting');
+    expect(getConnectionLabel('starting')).toBe('Starting');
+  });
+
+  it('maps unavailable api server to starting or error', () => {
+    expect(
+      mapConnectionIndicator(true, {
+        ...baseHealth,
+        status: 'unavailable',
+        services: [{ name: 'ApiServer', running: false, ready: false, message: 'Stopped' }],
+      }),
+    ).toBe('starting');
   });
 });

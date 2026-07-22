@@ -1,0 +1,87 @@
+{
+  "milestone": "4B",
+  "validatedAt": "2026-07-23T00:16:00+05:30",
+  "connectorVersion": "0.3.1",
+  "desktopVersion": "0.4.1",
+  "connectorPath": "D:\\Projects\\Budcom\\connector\\budcom_connector",
+  "desktopPath": "D:\\Projects\\Budcom\\apps\\budcom_desktop",
+  "connectorUrl": "http://localhost:8080",
+  "liveCompany": {
+    "id": "estimation",
+    "name": "ESTIMATION"
+  },
+  "additionalCompanies": [
+    { "id": "learn", "name": "Learn" }
+  ],
+  "staleDeploymentBlocker": "RESOLVED — pre-3D connector on :8080 stopped; latest source rebuilt and started",
+  "scenarioResults": [
+    {
+      "id": "S1",
+      "name": "Connector Health",
+      "status": "PASS",
+      "evidence": "GET /health status=ok tallyReachable=true; DashboardService connectionLabel=Connected"
+    },
+    {
+      "id": "S2",
+      "name": "Company Discovery",
+      "status": "PASS",
+      "evidence": "GET /companies status=SUCCESS count=2; ESTIMATION (estimation), Learn (learn)"
+    },
+    {
+      "id": "S3",
+      "name": "Company Selection",
+      "status": "PASS",
+      "evidence": "POST /session/company SUCCESS/DUPLICATE_SELECTION; company card ACTIVE, id=estimation, lastRefresh updated"
+    },
+    {
+      "id": "S4",
+      "name": "Session Validation",
+      "status": "PASS",
+      "evidence": "GET /session selectedCompany=ESTIMATION; POST /session/validate status=SUCCESS; desktop reads authoritative session only"
+    },
+    {
+      "id": "S5",
+      "name": "Clear Selection",
+      "status": "PASS",
+      "evidence": "DELETE /session/company SUCCESS; session NO_COMPANY_SELECTED; company card —"
+    },
+    {
+      "id": "S6",
+      "name": "Reselect Company",
+      "status": "PASS",
+      "evidence": "POST /session/company SUCCESS; session ACTIVE; dashboard refresh without restart"
+    },
+    {
+      "id": "S7",
+      "name": "Desktop Restart",
+      "status": "PASS",
+      "evidence": "New DashboardService instance reads persisted connector in-memory session: ESTIMATION ACTIVE (same connector process)"
+    },
+    {
+      "id": "S8",
+      "name": "Connector Loss and Recovery",
+      "status": "PASS",
+      "evidence": "Stop connector: reachable=false label=Disconnected userMessage set; restart connector: reachable=true health=ok companies=2; session resets to NO_COMPANY_SELECTED per connector in-memory design"
+    }
+  ],
+  "apiAvailability": {
+    "GET /health": "PASS",
+    "GET /companies": "PASS",
+    "GET /session": "PASS",
+    "POST /session/validate": "PASS",
+    "POST /session/company": "PASS",
+    "DELETE /session/company": "PASS"
+  },
+  "tests": {
+    "connector": "244/244",
+    "desktop": "33/33"
+  },
+  "evidenceFiles": [
+    "docs/diagnostics/m4b-live-validation-desktop-layer.txt",
+    "docs/diagnostics/m4b-live-validation-results.json",
+    "apps/budcom_desktop/screenshots/dashboard-live.png",
+    "apps/budcom_desktop/screenshots/settings.png"
+  ],
+  "defectsFound": [],
+  "readinessLevel": "L4 — Live Validated"
+}

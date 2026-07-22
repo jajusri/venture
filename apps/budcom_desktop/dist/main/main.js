@@ -7,9 +7,15 @@ exports.createMainWindow = createMainWindow;
 exports.bootstrapApp = bootstrapApp;
 const electron_1 = require("electron");
 const node_path_1 = __importDefault(require("node:path"));
+const company_service_js_1 = require("../application/company-service.js");
+const connector_lifecycle_config_js_1 = require("../application/connector-lifecycle-config.js");
+const connector_lifecycle_service_js_1 = require("../application/connector-lifecycle-service.js");
 const dashboard_service_js_1 = require("../application/dashboard-service.js");
-const CONNECTOR_BASE_URL = process.env.BUDCOM_CONNECTOR_URL ?? 'http://localhost:8080';
-const POLL_INTERVAL_MS = 5_000;
+const log_service_js_1 = require("../application/log-service.js");
+const node_process_spawner_js_1 = require("../application/node-process-spawner.js");
+const lifecycleConfig = (0, connector_lifecycle_config_js_1.resolveConnectorLifecycleConfig)();
+const CONNECTOR_BASE_URL = lifecycleConfig.connectorBaseUrl;
+const POLL_INTERVAL_MS = lifecycleConfig.healthPollIntervalMs;
 let mainWindow = null;
 let pollTimer = null;
 function startupLog(stage, detail) {
@@ -24,9 +30,29 @@ process.on('unhandledRejection', (reason) => {
     const detail = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
     startupLog('unhandledRejection', detail);
 });
+const logService = new log_service_js_1.LogService();
 const dashboardService = new dashboard_service_js_1.DashboardService({
     connectorBaseUrl: CONNECTOR_BASE_URL,
+    logService,
 });
+const companyService = new company_service_js_1.CompanyService({
+    connectorBaseUrl: CONNECTOR_BASE_URL,
+    logService,
+});
+const lifecycleService = new connector_lifecycle_service_js_1.ConnectorLifecycleService({
+    config: lifecycleConfig,
+    processSpawner: new node_process_spawner_js_1.NodeProcessSpawner(),
+    healthChecker: new connector_lifecycle_service_js_1.HttpHealthChecker(CONNECTOR_BASE_URL),
+    logService,
+});
+lifecycleService.setStatusListener(() => {
+    notifyRenderer();
+});
+function notifyRenderer() {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('desktop:status-updated');
+    }
+}
 function createMainWindow() {
     startupLog('BrowserWindow creation started');
     const preloadPath = node_path_1.default.join(__dirname, '../preload/preload.js');
@@ -76,16 +102,34 @@ function createMainWindow() {
 function registerIpcHandlers() {
     electron_1.ipcMain.handle('desktop:get-dashboard', async () => dashboardService.getDashboardState());
     electron_1.ipcMain.handle('desktop:get-logs', async () => dashboardService.getLogService().getEntries());
-    electron_1.ipcMain.handle('desktop:get-connector-url', async () => CONNECTOR_BASE_URL);
+    electron_1.ipcMain.handle('desktop:get-settings', async () => ({
+        ...dashboardService.getSettingsState(),
+        connectorExecutable: lifecycleConfig.connectorExecutable,
+        connectorPort: lifecycleConfig.connectorPort,
+        autoStartConnector: lifecycleConfig.autoStart,
+    }));
+    electron_1.ipcMain.handle('desktop:get-lifecycle-status', async () => lifecycleService.getStatus());
+    electron_1.ipcMain.handle('desktop:start-connector', async () => lifecycleService.ensureConnectorRunning());
+    electron_1.ipcMain.handle('desktop:stop-connector', async () => lifecycleService.stopConnector());
+    electron_1.ipcMain.handle('desktop:restart-connector', async () => lifecycleService.restartConnector());
+    electron_1.ipcMain.handle('desktop:get-companies', async () => companyService.discoverCompanies());
+    electron_1.ipcMain.handle('desktop:select-company', async (_event, companyId) => {
+        const outcome = await companyService.selectCompany(companyId);
+        notifyRenderer();
+        return outcome;
+    });
+    electron_1.ipcMain.handle('desktop:clear-company', async () => {
+        const session = await companyService.clearSelection();
+        notifyRenderer();
+        return session;
+    });
 }
 function startPolling() {
     if (pollTimer) {
         clearInterval(pollTimer);
     }
     pollTimer = setInterval(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('desktop:status-updated');
-        }
+        notifyRenderer();
     }, POLL_INTERVAL_MS);
 }
 function bootstrapApp() {
@@ -95,6 +139,7 @@ function bootstrapApp() {
         startupLog('app ready');
         mainWindow = createMainWindow();
         startPolling();
+        void lifecycleService.initialize();
         electron_1.app.on('activate', () => {
             if (electron_1.BrowserWindow.getAllWindows().length === 0) {
                 mainWindow = createMainWindow();
@@ -113,6 +158,7 @@ function bootstrapApp() {
         if (pollTimer) {
             clearInterval(pollTimer);
         }
+        void lifecycleService.shutdown();
     });
 }
 bootstrapApp();

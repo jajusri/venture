@@ -65,8 +65,123 @@ body {
 
 .indicator-connected { background: var(--green); }
 .indicator-waiting { background: var(--yellow); }
+.indicator-starting { background: var(--yellow); }
 .indicator-disconnected { background: var(--red); }
+.indicator-error { background: var(--red); }
 .indicator-unknown { background: var(--grey); }
+
+.banner {
+  margin: 0 1.25rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+}
+
+.banner.hidden { display: none; }
+.banner-error { background: rgba(239, 68, 68, 0.15); color: #fecaca; }
+.banner-warning { background: rgba(234, 179, 8, 0.15); color: #fde68a; }
+.banner-information { background: rgba(56, 189, 248, 0.15); color: #bae6fd; }
+
+.loading-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 1.25rem;
+  padding: 0.5rem 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.loading-bar.hidden { display: none; }
+
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.panel-header h2 { margin: 0; }
+
+.panel-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.action-btn {
+  background: var(--accent);
+  color: #082f49;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.action-btn.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.company-panel { margin-top: 1rem; }
+.panel-meta { color: var(--muted); margin: 0 0 0.75rem; }
+
+.company-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.company-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: #111827;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+
+.company-item:hover,
+.company-item.selected {
+  border-color: var(--accent);
+}
+
+.company-id {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.empty-state {
+  color: var(--muted);
+  margin: 0;
+}
+
+.log-time { color: var(--muted); }
+.log-level { font-weight: 600; margin-right: 0.35rem; }
 
 .top-nav {
   display: flex;

@@ -33,8 +33,9 @@ Engineering-tracked compromises, defects, and deferred work.
 | **Priority** | P2 |
 | **Estimated fix** | 4 hours |
 | **Target milestone** | 4B |
-| **Status** | Open |
+| **Status** | **Resolved** (2026-07-23) |
 | **Introduced** | Milestone 4A (2026-07-22) |
+| **Resolution** | Milestone 4B — `CompanyService`, company picker UI, IPC `desktop:select-company` |
 
 ---
 
@@ -48,8 +49,21 @@ Engineering-tracked compromises, defects, and deferred work.
 | **Priority** | P2 |
 | **Estimated fix** | 6 hours |
 | **Target milestone** | 4C |
-| **Status** | Open |
+| **Status** | **Resolved** (2026-07-23) |
 | **Introduced** | Milestone 4A (2026-07-22) |
+| **Resolution** | Milestone 4C — `ConnectorLifecycleService`, auto-start, health polling, crash recovery, lifecycle UI, IPC handlers |
+| **Evidence** | `docs/diagnostics/m4c-live-lifecycle-validation.json` (7/7 PASS); 48/48 desktop tests |
+
+---
+
+## M4B-001 — Stale pre-3D connector deployment (RESOLVED)
+
+| Field | Value |
+|-------|-------|
+| **ID** | M4B-001 |
+| **Description** | Connector on :8080 was pre-3D build; session APIs returned 404 |
+| **Status** | **Resolved** (2026-07-23T00:16+05:30) |
+| **Resolution** | Stopped stale process; rebuilt and restarted latest connector; 8/8 live scenarios PASS |
 
 ---
 
@@ -58,5 +72,5 @@ Engineering-tracked compromises, defects, and deferred work.
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
 | TD-001 | Parent encoding normalization (`&#4; Primary`) | P2 | Open | 5A |
-| TD-002 | Desktop company selection UI | P2 | Open | 4B |
-| TD-003 | Connector process supervision | P2 | Open | 4C |
+| TD-002 | Desktop company selection UI | P2 | **Resolved** | 4B |
+| TD-003 | Connector process supervision | P2 | **Resolved** | 4C |

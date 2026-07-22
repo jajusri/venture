@@ -51,5 +51,8 @@ describe('application startup', () => {
     bootstrapApp();
     expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:get-dashboard', expect.any(Function));
     expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:get-logs', expect.any(Function));
+    expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:get-lifecycle-status', expect.any(Function));
+    expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:start-connector', expect.any(Function));
+    expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:select-company', expect.any(Function));
   });
 });

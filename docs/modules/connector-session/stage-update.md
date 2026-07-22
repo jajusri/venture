@@ -12,12 +12,15 @@
 | Date | Summary |
 |------|---------|
 | 2026-07-22 | Initial module stage update after implementation |
+| 2026-07-23 | Consumed by desktop 4B — `/session`, `/session/company`, `/session/validate` |
+| 2026-07-23T00:16+05:30 | Live validated via desktop 4B — 8/8 scenarios PASS |
+| 2026-07-23T00:50+05:30 | Desktop 4C lifecycle manager auto-starts/restarts connector; session APIs consumed unchanged |
 
 ---
 
 ## 1. Current status
 
-**Needs Hardening**
+**Live Validated** (desktop consumer + lifecycle supervisor)
 
 ---
 
@@ -25,12 +28,12 @@
 
 | Area | % |
 |------|---|
-| Overall | 62% |
+| Overall | 65% |
 | Architecture | 90% |
 | Implementation | 85% |
 | Testing | 85% |
 | Integration | 80% |
-| Live Validation | 0% |
+| Live Validation | 90% |
 | Security | 80% |
 | Performance | 70% |
 | Documentation | 75% |
@@ -62,10 +65,19 @@ See `docs/stage-updates/milestone-3d-stage-update.md` §4.
 
 ## 6. Test Evidence
 
+- Desktop shell (4B) consumes session API via IPC — no duplicated session state
+- Desktop 4C lifecycle manager spawns connector before session/company calls
+- Live desktop E2E blocked when deployed connector lacks 3D routes
+
+---
+
+## 6. Test Evidence
+
 - Unit: `session-validator.test.ts` (9)
 - Integration: `connector-session.test.ts` (12)
-- Live Tally: **not executed**
-- Full suite: **244/244 pass** (2026-07-22)
+- Desktop consumer: `company-service.test.ts`, `session-binding.test.ts`
+- Live Tally via desktop: **8/8 PASS** (2026-07-23T00:16+05:30)
+- Full suite: **244/244 pass** connector; **48/48 pass** desktop
 
 ---
 
@@ -77,7 +89,7 @@ None in automated tests.
 
 ## 8. Known Limitations
 
-- In-memory session only
+- Connector restart (lifecycle crash recovery) clears in-memory session — desktop shows NO_COMPANY_SELECTED until re-selection
 - No device binding
 - Master-data clients must select company first
 - 60s discovery cache may lag Tally company changes

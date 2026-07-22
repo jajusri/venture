@@ -27,6 +27,12 @@
         </div>
       </header>
 
+      <div id="global-banner" class="banner hidden" role="alert"></div>
+      <div id="global-loading" class="loading-bar hidden" aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span id="loading-message">Loading…</span>
+      </div>
+
       <nav class="top-nav" aria-label="Primary">
         <button class="nav-btn active" data-view="dashboard">Dashboard</button>
         <button class="nav-btn" data-view="connection">Connection</button>
@@ -49,6 +55,8 @@
               <p class="card-meta">ID: <span id="dashboard-company-id">—</span></p>
               <p class="card-meta">Selected: <span id="dashboard-selection-time">—</span></p>
               <p class="card-meta">Session: <span id="dashboard-session-status">—</span></p>
+              <p class="card-meta">ERP: <span id="dashboard-erp-name">—</span></p>
+              <p class="card-meta">Last Refresh: <span id="dashboard-last-refresh">—</span></p>
             </article>
             <article class="card" id="card-sync">
               <h2>Sync</h2>
@@ -58,12 +66,41 @@
             <article class="card" id="card-version">
               <h2>Version</h2>
               <p class="card-value" id="dashboard-version">—</p>
-              <p class="card-meta">ERP: <span id="dashboard-erp">tally</span></p>
+              <p class="card-meta">Desktop: <span id="dashboard-desktop-version">—</span></p>
             </article>
           </div>
+
+          <article class="panel company-panel">
+            <div class="panel-header">
+              <h2>Company Selection</h2>
+              <div class="panel-actions">
+                <button id="btn-refresh-companies" class="action-btn" type="button">Refresh Companies</button>
+                <button id="btn-clear-company" class="action-btn secondary" type="button">Clear Selection</button>
+              </div>
+            </div>
+            <p id="company-list-status" class="panel-meta">Load companies from the connector to begin.</p>
+            <div id="company-list" class="company-list" role="listbox" aria-label="Available companies"></div>
+          </article>
         </section>
 
         <section id="view-connection" class="view">
+          <article class="panel">
+            <h2>Connector Lifecycle</h2>
+            <dl class="detail-list">
+              <dt>Lifecycle State</dt><dd id="lifecycle-state">—</dd>
+              <dt>Managed By Desktop</dt><dd id="lifecycle-managed">—</dd>
+              <dt>External Process</dt><dd id="lifecycle-external">—</dd>
+              <dt>Last Health Check</dt><dd id="lifecycle-last-health">—</dd>
+              <dt>Restart Attempts</dt><dd id="lifecycle-restart-attempts">—</dd>
+              <dt>Process Exit Code</dt><dd id="lifecycle-exit-code">—</dd>
+              <dt>Connector Port</dt><dd id="lifecycle-port">—</dd>
+            </dl>
+            <div class="panel-actions">
+              <button id="btn-start-connector" class="action-btn" type="button">Start Connector</button>
+              <button id="btn-stop-connector" class="action-btn secondary" type="button">Stop Connector</button>
+              <button id="btn-restart-connector" class="action-btn secondary" type="button">Restart Connector</button>
+            </div>
+          </article>
           <article class="panel">
             <h2>Connection Details</h2>
             <dl class="detail-list">
@@ -71,13 +108,14 @@
               <dt>Label</dt><dd id="connection-detail-label">—</dd>
               <dt>Connector Reachable</dt><dd id="connection-detail-reachable">—</dd>
               <dt>Health Status</dt><dd id="connection-detail-health">—</dd>
+              <dt>Session Status</dt><dd id="connection-detail-session">—</dd>
             </dl>
           </article>
         </section>
 
         <section id="view-logs" class="view">
           <article class="panel log-panel">
-            <h2>Application Logs</h2>
+            <h2>Connector Events</h2>
             <div id="log-list" class="log-list" role="log" aria-live="polite"></div>
           </article>
         </section>
@@ -87,7 +125,13 @@
             <h2>Settings</h2>
             <dl class="detail-list">
               <dt>Connector URL</dt><dd id="settings-connector-url">—</dd>
-              <dt>Poll Interval</dt><dd>5 seconds</dd>
+              <dt>API Version</dt><dd id="settings-api-version">—</dd>
+              <dt>Desktop Version</dt><dd id="settings-desktop-version">—</dd>
+              <dt>ERP</dt><dd id="settings-erp">—</dd>
+              <dt>Poll Interval</dt><dd id="settings-poll-interval">—</dd>
+              <dt>Connector Executable</dt><dd id="settings-connector-executable">—</dd>
+              <dt>Connector Port</dt><dd id="settings-connector-port">—</dd>
+              <dt>Auto Start Connector</dt><dd id="settings-auto-start">—</dd>
             </dl>
           </article>
         </section>

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  mapSessionDisplayStatus,
   resolveCompanyId,
   resolveCompanyName,
-  resolveSessionStatus,
+  resolveErpName,
 } from '../../src/application/session-display-mapper.js';
 import type { SessionSnapshotResponse } from '../../src/application/types.js';
 
@@ -25,18 +26,32 @@ describe('session binding display', () => {
   it('reads company from authoritative session snapshot', () => {
     expect(resolveCompanyName(session)).toBe('ESTIMATION');
     expect(resolveCompanyId(session)).toBe('estimation');
+    expect(resolveErpName(session)).toBe('Tally');
   });
 
-  it('uses validation status when available', () => {
+  it('maps successful validation to ACTIVE', () => {
     expect(
-      resolveSessionStatus(session, {
+      mapSessionDisplayStatus(true, session, {
         status: 'SUCCESS',
         session: session.session,
       }),
-    ).toBe('SUCCESS');
+    ).toBe('ACTIVE');
   });
 
   it('reports no company selected when session is empty', () => {
-    expect(resolveSessionStatus(null, null)).toBe('NO_COMPANY_SELECTED');
+    expect(mapSessionDisplayStatus(true, null, null)).toBe('NO_COMPANY_SELECTED');
+  });
+
+  it('reports disconnected when connector is unreachable', () => {
+    expect(mapSessionDisplayStatus(false, session, null)).toBe('DISCONNECTED');
+  });
+
+  it('maps invalid validation to INVALID', () => {
+    expect(
+      mapSessionDisplayStatus(true, session, {
+        status: 'SESSION_EXPIRED',
+        session: session.session,
+      }),
+    ).toBe('INVALID');
   });
 });

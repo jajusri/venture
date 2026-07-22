@@ -10,6 +10,7 @@ const health: HealthResponse = {
   tallyReachable: true,
   readOnly: true,
   services: [
+    { name: 'ApiServer', running: true, ready: true },
     { name: 'TallyConnection', running: true, ready: true, message: 'State: connected' },
     { name: 'SyncEngine', running: true, ready: true, message: 'Placeholder — not implemented' },
     { name: 'Licensing', running: true, ready: true, message: 'Placeholder — not implemented' },
@@ -57,8 +58,28 @@ describe('DashboardService', () => {
     expect(state.connectionIndicator).toBe('connected');
     expect(state.companyName).toBe('ESTIMATION');
     expect(state.companyId).toBe('estimation');
-    expect(state.sessionStatus).toBe('SUCCESS');
+    expect(state.sessionStatus).toBe('ACTIVE');
     expect(state.syncStatus).toBe('idle');
     expect(state.connectorVersion).toBe('0.3.1');
+    expect(state.desktopVersion).toBe('0.4.2');
+    expect(state.erpName).toBe('Tally');
+    expect(state.lastRefresh).not.toBe('—');
+  });
+
+  it('returns disconnected session status when connector is unavailable', async () => {
+    const fetchImpl = async (): Promise<Response> => {
+      throw new TypeError('fetch failed');
+    };
+
+    const service = new DashboardService({
+      connectorBaseUrl: 'http://localhost:8080',
+      fetchImpl: fetchImpl as typeof fetch,
+      maxAttempts: 1,
+    });
+
+    const state = await service.getDashboardState();
+    expect(state.connectorReachable).toBe(false);
+    expect(state.sessionStatus).toBe('DISCONNECTED');
+    expect(state.userMessage).toContain('connector');
   });
 });

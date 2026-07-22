@@ -1,9 +1,11 @@
-import type { ConnectionIndicator, HealthResponse } from './types.js';
+import type { ConnectionIndicator, ConnectionLabel, HealthResponse } from './types.js';
 
-const CONNECTION_LABELS: Record<ConnectionIndicator, string> = {
+const CONNECTION_LABELS: Record<ConnectionIndicator, ConnectionLabel> = {
   connected: 'Connected',
   waiting: 'Waiting',
   disconnected: 'Disconnected',
+  starting: 'Starting',
+  error: 'Error',
   unknown: 'Unknown',
 };
 
@@ -12,22 +14,32 @@ export function mapConnectionIndicator(
   health: HealthResponse | null,
 ): ConnectionIndicator {
   if (!connectorReachable || !health) {
-    return 'unknown';
-  }
-
-  const tallyService = health.services.find((service) => service.name === 'TallyConnection');
-  const tallyState = tallyService?.message?.toLowerCase() ?? '';
-
-  if (health.status === 'unavailable' || !health.tallyReachable) {
     return 'disconnected';
   }
 
+  const apiServer = health.services.find((service) => service.name === 'ApiServer');
+  const tallyService = health.services.find((service) => service.name === 'TallyConnection');
+  const tallyState = tallyService?.message?.toLowerCase() ?? '';
+
+  if (!health.tallyReachable) {
+    return tallyState.includes('connecting') || tallyState.includes('reconnecting')
+      ? 'starting'
+      : 'disconnected';
+  }
+
+  if (health.status === 'unavailable') {
+    return apiServer?.running === false ? 'starting' : 'error';
+  }
+
   if (
-    health.status === 'degraded' ||
-    tallyState.includes('degraded') ||
     tallyState.includes('connecting') ||
-    tallyState.includes('reconnecting')
+    tallyState.includes('reconnecting') ||
+    (apiServer && !apiServer.ready)
   ) {
+    return 'starting';
+  }
+
+  if (health.status === 'degraded') {
     return 'waiting';
   }
 
@@ -35,13 +47,13 @@ export function mapConnectionIndicator(
     return 'connected';
   }
 
-  if (!tallyService?.ready) {
-    return 'waiting';
+  if (tallyService && !tallyService.ready) {
+    return tallyService.running ? 'starting' : 'error';
   }
 
   return 'unknown';
 }
 
-export function getConnectionLabel(indicator: ConnectionIndicator): string {
+export function getConnectionLabel(indicator: ConnectionIndicator): ConnectionLabel {
   return CONNECTION_LABELS[indicator];
 }

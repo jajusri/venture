@@ -12,6 +12,8 @@
 | Date | Summary |
 |------|---------|
 | 2026-07-22 | Initial module stage update aligned with Milestone 3B validation |
+| 2026-07-23 | Consumed by desktop 4B company picker via `GET /companies` |
+| 2026-07-23T00:16+05:30 | Live validated — ESTIMATION + Learn from live Tally |
 
 ---
 
@@ -59,6 +61,7 @@ Also consumed by:
 - Explicit discovery statuses and data quality
 - Slug-based company IDs
 - Duplicate removal and missing-identity counting
+- Desktop company picker consumer (4B)
 
 ---
 
@@ -66,7 +69,7 @@ Also consumed by:
 
 - Unit: parser (16 tests), adapter (10 tests)
 - Integration: `company-discovery.test.ts` (3 tests)
-- Live: 4/4 scenarios PASS (2026-07-22)
+- Live: 4/4 scenarios PASS (2026-07-22); desktop live 2026-07-23 — ESTIMATION + Learn on :8080 (8/8 PASS)
 - Regression: green in 3C and 3D suites
 
 ---
