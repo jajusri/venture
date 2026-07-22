@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Business OS Tally Connector</title>
+    <link rel="stylesheet" href="./styles/main.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand">
+          <h1 id="app-title">Business OS Tally Connector</h1>
+          <p class="subtitle">
+            Version <span id="header-version">—</span> ·
+            <span id="header-connection-label">Unknown</span>
+          </p>
+        </div>
+        <div class="header-status">
+          <div id="connection-indicator" class="indicator indicator-unknown" aria-label="Connection status"></div>
+          <div class="header-meta">
+            <div>Company: <strong id="header-company">—</strong></div>
+            <div>Sync: <strong id="header-sync">—</strong></div>
+            <div>Last Sync: <strong id="header-last-sync">—</strong></div>
+          </div>
+        </div>
+      </header>
+
+      <nav class="top-nav" aria-label="Primary">
+        <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+        <button class="nav-btn" data-view="connection">Connection</button>
+        <button class="nav-btn" data-view="logs">Logs</button>
+        <button class="nav-btn" data-view="settings">Settings</button>
+        <button class="nav-btn" data-view="about">About</button>
+      </nav>
+
+      <main class="app-main">
+        <section id="view-dashboard" class="view active">
+          <div class="card-grid">
+            <article class="card" id="card-connection">
+              <h2>Connection</h2>
+              <p class="card-value" id="dashboard-connection">Unknown</p>
+              <p class="card-meta" id="dashboard-health">Health: —</p>
+            </article>
+            <article class="card" id="card-company">
+              <h2>Company</h2>
+              <p class="card-value" id="dashboard-company-name">—</p>
+              <p class="card-meta">ID: <span id="dashboard-company-id">—</span></p>
+              <p class="card-meta">Selected: <span id="dashboard-selection-time">—</span></p>
+              <p class="card-meta">Session: <span id="dashboard-session-status">—</span></p>
+            </article>
+            <article class="card" id="card-sync">
+              <h2>Sync</h2>
+              <p class="card-value" id="dashboard-sync">Idle</p>
+              <p class="card-meta">Last Sync: <span id="dashboard-last-sync">—</span></p>
+            </article>
+            <article class="card" id="card-version">
+              <h2>Version</h2>
+              <p class="card-value" id="dashboard-version">—</p>
+              <p class="card-meta">ERP: <span id="dashboard-erp">tally</span></p>
+            </article>
+          </div>
+        </section>
+
+        <section id="view-connection" class="view">
+          <article class="panel">
+            <h2>Connection Details</h2>
+            <dl class="detail-list">
+              <dt>Indicator</dt><dd id="connection-detail-indicator">—</dd>
+              <dt>Label</dt><dd id="connection-detail-label">—</dd>
+              <dt>Connector Reachable</dt><dd id="connection-detail-reachable">—</dd>
+              <dt>Health Status</dt><dd id="connection-detail-health">—</dd>
+            </dl>
+          </article>
+        </section>
+
+        <section id="view-logs" class="view">
+          <article class="panel log-panel">
+            <h2>Application Logs</h2>
+            <div id="log-list" class="log-list" role="log" aria-live="polite"></div>
+          </article>
+        </section>
+
+        <section id="view-settings" class="view">
+          <article class="panel">
+            <h2>Settings</h2>
+            <dl class="detail-list">
+              <dt>Connector URL</dt><dd id="settings-connector-url">—</dd>
+              <dt>Poll Interval</dt><dd>5 seconds</dd>
+            </dl>
+          </article>
+        </section>
+
+        <section id="view-about" class="view">
+          <article class="panel">
+            <h2>About</h2>
+            <p>Business OS Tally Connector desktop shell.</p>
+            <p>Communicates with the local Budcom connector service only.</p>
+            <p>No business logic or ERP adapters in this application layer.</p>
+          </article>
+        </section>
+      </main>
+
+      <footer class="app-footer">
+        <span>Connector <strong id="footer-version">—</strong></span>
+        <span>ERP <strong id="footer-erp">tally</strong></span>
+        <span>License <strong id="footer-license">—</strong></span>
+      </footer>
+    </div>
+    <script type="module" src="./scripts/app.js"></script>
+  </body>
+</html>

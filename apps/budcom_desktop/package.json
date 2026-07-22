@@ -1,0 +1,26 @@
+{
+  "name": "@budcom/desktop",
+  "version": "0.4.0",
+  "private": true,
+  "description": "Business OS Tally Connector — Windows desktop shell",
+  "main": "dist/main/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json && node scripts/copy-renderer-assets.mjs",
+    "start": "npm run build && electron .",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && vitest run --passWithNoTests false",
+    "screenshot": "npm run build && electron dist/scripts/capture-screenshot.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "electron": "^33.2.0",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}

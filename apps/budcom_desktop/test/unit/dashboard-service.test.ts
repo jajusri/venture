@@ -1,0 +1,64 @@
+import { describe, expect, it } from 'vitest';
+
+import { DashboardService } from '../../src/application/dashboard-service.js';
+import type { HealthResponse, SessionSnapshotResponse } from '../../src/application/types.js';
+
+const health: HealthResponse = {
+  status: 'ok',
+  schemaVersion: '1.0.0',
+  connectorVersion: '0.3.1',
+  tallyReachable: true,
+  readOnly: true,
+  services: [
+    { name: 'TallyConnection', running: true, ready: true, message: 'State: connected' },
+    { name: 'SyncEngine', running: true, ready: true, message: 'Placeholder — not implemented' },
+    { name: 'Licensing', running: true, ready: true, message: 'Placeholder — not implemented' },
+  ],
+};
+
+const session: SessionSnapshotResponse = {
+  contractVersion: '1',
+  session: {
+    sessionId: 'sess-1',
+    selectedCompany: { id: 'estimation', name: 'ESTIMATION' },
+    connectionStatus: 'connected',
+    connectorVersion: '0.3.1',
+    erpType: 'tally',
+    selectedAt: '2026-07-22T17:00:00.000Z',
+    lastValidatedAt: '2026-07-22T17:05:00.000Z',
+    createdAt: '2026-07-22T16:00:00.000Z',
+  },
+};
+
+describe('DashboardService', () => {
+  it('binds dashboard state from connector services', async () => {
+    const fetchImpl = async (url: string | URL, init?: RequestInit): Promise<Response> => {
+      const path = String(url);
+      if (path.endsWith('/health')) {
+        return new Response(JSON.stringify(health), { status: 200 });
+      }
+      if (path.endsWith('/session') && init?.method !== 'POST') {
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      if (path.endsWith('/session/validate')) {
+        return new Response(JSON.stringify({ status: 'SUCCESS', session: session.session }), {
+          status: 200,
+        });
+      }
+      return new Response('Not found', { status: 404 });
+    };
+
+    const service = new DashboardService({
+      connectorBaseUrl: 'http://localhost:8080',
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    const state = await service.getDashboardState();
+    expect(state.connectionIndicator).toBe('connected');
+    expect(state.companyName).toBe('ESTIMATION');
+    expect(state.companyId).toBe('estimation');
+    expect(state.sessionStatus).toBe('SUCCESS');
+    expect(state.syncStatus).toBe('idle');
+    expect(state.connectorVersion).toBe('0.3.1');
+  });
+});
