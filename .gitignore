@@ -47,6 +47,8 @@ coverage/
 
 # Connector runtime
 connector/budcom_connector/dist/
+/connector/budcom_connector/diagnostics/
+/connector/budcom_connector/test-output.txt
 # TypeScript emit artifacts (tests run via vitest on .ts source)
 connector/budcom_connector/test/**/*.js
 connector/budcom_connector/test/**/*.js.map
