@@ -1,34 +1,68 @@
 # Budcom Tally Connector
 
-Local read-only service that runs on or near the Tally computer. **Milestone 2** adds the production-grade Tally communication layer — HTTP/XML transport, connection management, company discovery, and diagnostics. Sync, licensing, and database logic remain out of scope.
+Local read-only service that runs on or near the Tally computer.
+
+**Milestone 3** adds a production-grade read-only master data extraction layer — company info, ledger groups, ledgers, inventory masters, units, godowns, cost centres, voucher types, and GST registrations.
 
 ## Architecture
 
 ```
 src/
-├── main.ts                      # Process entry point
-├── bootstrap/                   # Startup, shutdown, DI registration
-├── config/                      # Configuration management
-├── core/                        # DI container, tokens, shared types
-├── infrastructure/
-│   ├── logging/                 # Structured JSON logging
-│   └── errors/                  # AppError, centralized handler
-├── tally/                       # ERP communication layer (M2)
-│   ├── core/                    # Transport types, ErpTransport interface
-│   ├── transport/               # HTTP transport, connection pool
-│   ├── connection/              # Connection manager, retry, reconnect
-│   ├── xml/                     # Request builder, response parser framework
-│   ├── discovery/               # Company discovery parser
-│   └── tally-module.ts          # Module factory for DI
+├── extraction/                  # M3 read-only data extraction layer
+│   ├── core/                    # Types, pagination
+│   ├── normalization/           # Dates, amounts, numbers, strings
+│   ├── templates/               # Tally XML request templates (all entities)
+│   ├── parsers/                 # Collection parsers + entity mappers
+│   └── extractors/              # Per-entity extractors + diagnostics
+├── tally/                       # M2 transport, connection, XML framework
 ├── services/
-│   ├── interfaces/              # Service contracts
-│   ├── tally/                   # Tally service implementations (M2)
-│   ├── placeholders/            # Stubs for future milestones
-│   └── health/                  # Health aggregation
-└── api/
-    ├── middleware/              # Read-only enforcement
-    └── routes/                  # HTTP routes
+│   ├── extraction/              # MasterDataService, CompanyResolver
+│   └── tally/                   # Connection, discovery, diagnostics
+└── api/routes/                  # HTTP endpoints
 ```
+
+## Master data endpoints (M3)
+
+All routes are scoped under `/companies/:companyId` (company ID = slugified Tally company name).
+
+| Method | Path | Entity |
+|--------|------|--------|
+| GET | `/companies` | Company list (discovery) |
+| GET | `/companies/:companyId` | Company information |
+| GET | `/companies/:companyId/ledger-groups` | Ledger groups |
+| GET | `/companies/:companyId/ledgers` | Ledgers |
+| GET | `/companies/:companyId/stock-groups` | Stock groups |
+| GET | `/companies/:companyId/stock-categories` | Stock categories |
+| GET | `/companies/:companyId/stock-items` | Stock items |
+| GET | `/companies/:companyId/units` | Units of measure |
+| GET | `/companies/:companyId/godowns` | Godowns |
+| GET | `/companies/:companyId/cost-categories` | Cost categories |
+| GET | `/companies/:companyId/cost-centres` | Cost centres |
+| GET | `/companies/:companyId/voucher-types` | Voucher types |
+| GET | `/companies/:companyId/gst-registrations` | GST registrations |
+| GET | `/diagnostics/extraction` | Per-extractor diagnostics |
+
+Paginated endpoints accept `?page=1&pageSize=50` (max 500). Extraction is in-memory paginated after full Tally collection fetch.
+
+## System endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Connector + Tally status |
+| GET | `/diagnostics/connection` | Connection diagnostics |
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BUDCOM_TALLY_HOST` | `localhost` | Tally HTTP host |
+| `BUDCOM_TALLY_PORT` | `9000` | Tally HTTP port |
+| `BUDCOM_TALLY_TIMEOUT_MS` | `120000` | Request timeout (large collections) |
+| `BUDCOM_TALLY_POOL_MAX` | `4` | Max concurrent Tally requests |
+| `BUDCOM_TALLY_RETRY_MAX` | `3` | Retry attempts |
+| `BUDCOM_TALLY_AUTO_RECONNECT` | `true` | Auto-reconnect on failure |
+
+See [README section from M2] for full config list.
 
 ## Scripts
 
@@ -40,65 +74,17 @@ npm run lint
 npm run dev
 ```
 
-## Configuration
+## Milestone 3 scope
 
-| Variable                      | Default                      | Description                              |
-| ----------------------------- | ---------------------------- | ---------------------------------------- |
-| `BUDCOM_CONNECTOR_HOST`       | `0.0.0.0`                    | HTTP bind address                        |
-| `BUDCOM_CONNECTOR_PORT`       | `8080`                       | HTTP port                                |
-| `BUDCOM_LOG_LEVEL`            | `info`                       | `debug`, `info`, `warn`, `error`         |
-| `BUDCOM_TALLY_HOST`           | `localhost`                  | Tally HTTP server host                   |
-| `BUDCOM_TALLY_PORT`           | `9000`                       | Tally HTTP server port                   |
-| `BUDCOM_TALLY_TIMEOUT_MS`     | `30000`                      | Per-request timeout (ms)                 |
-| `BUDCOM_TALLY_POOL_MAX`       | `4`                          | Max concurrent in-flight Tally requests  |
-| `BUDCOM_TALLY_RETRY_MAX`      | `3`                          | Max retry attempts per exchange          |
-| `BUDCOM_TALLY_RETRY_BASE_MS`  | `500`                        | Retry base delay (ms)                    |
-| `BUDCOM_TALLY_RETRY_MAX_MS`   | `8000`                       | Retry max delay cap (ms)                 |
-| `BUDCOM_TALLY_RETRY_JITTER`   | `0.2`                        | Retry jitter ratio (0–1)                 |
-| `BUDCOM_TALLY_AUTO_RECONNECT` | `true`                       | Enable automatic reconnect backoff       |
-| `BUDCOM_TALLY_RECONNECT_MS`   | `2000`                       | Reconnect delay (ms)                     |
-| `BUDCOM_DATABASE_PATH`        | `./data/budcom-connector.db` | Local DB path (reserved)                 |
-| `BUDCOM_SHUTDOWN_MS`          | `10000`                      | Graceful shutdown timeout                |
+**Implemented:** Read-only extraction of 12 master data entity types, XML templates, response parsing, normalization layer, repository/service layer, in-memory pagination, per-extractor diagnostics, unit + integration tests.
 
-## API endpoints (M2)
-
-| Method | Path                      | Description                          |
-| ------ | ------------------------- | ------------------------------------ |
-| GET    | `/health`                 | Connector + Tally reachability       |
-| GET    | `/diagnostics/connection` | Tally connection diagnostics         |
-| GET    | `/companies`              | Discover companies from Tally        |
-| GET    | `/companies/:id/ledgers`  | 501 — not implemented                |
-| POST   | `/device/pair`            | 501 — not implemented                |
-
-All routes are read-only except explicitly allowed POST endpoints.
-
-## Tally communication layer
-
-The `tally/` module is designed for reuse across future ERP connectors:
-
-- **`ErpTransport`** — abstract transport interface (Tally HTTP today)
-- **`TallyHttpTransport`** — POSTs XML to Tally with timeout via `AbortController`
-- **`ConnectionPool`** — semaphore limiting concurrent requests
-- **`RetryPolicy`** — exponential backoff with jitter for transient failures
-- **`ReconnectManager`** — automatic reconnect with configurable delay
-- **`TallyConnectionManager`** — orchestrates transport, retry, reconnect, and state
-- **`TallyXmlRequestBuilder`** — builds Tally XML envelopes (connectivity, company list)
-- **`TallyXmlResponseParser`** — structural XML parser with pluggable node handlers
-- **`CompanyDiscoveryParser`** — extracts company metadata from discovery responses
-
-## Milestone 2 scope
-
-**Implemented:** Tally HTTP/XML transport, XML request builder, XML response parser framework, connection manager, company discovery, connection diagnostics, retry policy, timeout handling, automatic reconnect, connection pooling, config enhancements, structured logging, error handling, health/diagnostics endpoints, unit + integration tests (mocked Tally only).
-
-**Not implemented:** Voucher/ledger/inventory sync, scheduler, licensing logic, database persistence, Flutter/mobile UI, business rules.
+**Not implemented:** Voucher/ledger transaction sync, database persistence, offline cache, scheduler, licensing, Flutter UI, write operations.
 
 ## Testing
-
-Tests use mocked `fetch` — no live Tally instance required:
 
 ```bash
 npm run test:unit
 npm run test:integration
 ```
 
-Mock helpers live in `test/helpers/mock-fetch.ts`.
+Mock fixtures in `test/helpers/master-data-fixtures.ts`. Live Tally optional for manual smoke tests.

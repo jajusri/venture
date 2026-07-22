@@ -116,7 +116,7 @@ export class TallyConnectionManager {
 
   async exchange(
     xml: string,
-    metadata: { collectionId?: string; reportId?: string } = {},
+    metadata: { collectionId?: string; reportId?: string; timeoutMs?: number } = {},
   ): Promise<TallyExchangeResult> {
     if (!this.running) {
       throw new AppError(
@@ -153,6 +153,7 @@ export class TallyConnectionManager {
           body: xml,
           contentType: 'text/xml',
           correlationId,
+          timeoutMs: metadata.timeoutMs,
         });
 
         await this.requestGuard.recordSuccess(context, response.body.length);
@@ -196,17 +197,7 @@ export class TallyConnectionManager {
         }
 
         this.state = 'reconnecting';
-        if (this.reconnectManager.shouldAttemptReconnect(this.state)) {
-          await this.reconnectManager.backoffBeforeReconnect();
-          if (!(await this.probeTallyReachable())) {
-            this.options.logger.warn('Tally unavailable after reconnect wait; suppressing retries', {
-              correlationId,
-            });
-            break;
-          }
-        } else {
-          await this.retryPolicy.wait(attempt);
-        }
+        await this.retryPolicy.wait(attempt);
       }
     }
 
@@ -250,24 +241,6 @@ export class TallyConnectionManager {
         timeoutMs: this.options.config.tallyTimeoutMs,
       },
     };
-  }
-
-  private async probeTallyReachable(): Promise<boolean> {
-    try {
-      const xml = this.requestBuilder.buildConnectivityCheck();
-      const probeTimeoutMs = Math.min(this.options.config.tallyTimeoutMs, 10_000);
-      const response = await this.options.transport.send({
-        body: xml,
-        contentType: 'text/xml',
-        timeoutMs: probeTimeoutMs,
-      });
-      return response.body.trim().length > 0;
-    } catch (error) {
-      this.options.logger.warn('Tally reconnect probe failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return false;
-    }
   }
 
   private markConnected(): void {

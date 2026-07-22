@@ -23,8 +23,12 @@ import { SyncEngineStub } from '../services/placeholders/sync-engine.stub.js';
 import { CompanyDiscoveryServiceImpl } from '../services/tally/company-discovery.service.js';
 import { TallyConnectionServiceImpl } from '../services/tally/tally-connection.service.js';
 import { TallyDiagnosticsServiceImpl } from '../services/tally/tally-diagnostics.service.js';
-import { XmlImportServiceImpl } from '../services/tally/xml-import.service.js';
+import { OfflineXmlIngestionService } from '../ingestion/offline-xml-ingestion.service.js';
+import { CompanyResolver } from '../services/extraction/company-resolver.js';
+import { MasterDataServiceImpl } from '../services/extraction/master-data.service.js';
 import { createTallyModule } from '../tally/tally-module.js';
+import { TallyXmlResponseParser } from '../tally/xml/response-parser.js';
+import type { MasterDataService } from '../services/extraction/master-data.service.js';
 
 export interface ApplicationContext {
   readonly container: ServiceContainer;
@@ -46,7 +50,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
   container.registerSingleton(ServiceTokens.Logger, logger);
 
   const tallyModule = createTallyModule({ config, logger, fetchImpl });
-  container.registerSingleton(ServiceTokens.TallyModule, tallyModule);
+  container.registerSingleton(ServiceTokens.ErpReadPort, tallyModule.readPort);
 
   container.registerFactory(
     ServiceTokens.TallyConnection,
@@ -56,12 +60,15 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         logger.child({ service: 'TallyConnection' }),
       ),
   );
+  // Offline Budcom XML file ingestion. Deliberately receives ONLY a pure XML
+  // parser — never the read gateway, connection manager, or transport — so it
+  // cannot reach live Tally. Uses its own parser instance (not the adapter's).
   container.registerFactory(
     ServiceTokens.XmlImport,
     () =>
-      new XmlImportServiceImpl(
-        tallyModule.responseParser,
-        logger.child({ service: 'XmlImport' }),
+      new OfflineXmlIngestionService(
+        new TallyXmlResponseParser(),
+        logger.child({ service: 'OfflineXmlIngestion' }),
       ),
   );
   container.registerFactory(
@@ -69,11 +76,22 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
     () =>
       new CompanyDiscoveryServiceImpl(
         config,
-        tallyModule.connectionManager,
-        tallyModule.requestBuilder,
-        tallyModule.responseParser,
-        tallyModule.companyDiscoveryParser,
+        tallyModule.readPort,
         logger.child({ service: 'CompanyDiscovery' }),
+      ),
+  );
+  container.registerFactory(ServiceTokens.CompanyResolver, () => {
+    const discovery = container.resolve<CompanyDiscoveryService>(ServiceTokens.CompanyDiscovery);
+    return new CompanyResolver(discovery);
+  });
+  container.registerFactory(
+    ServiceTokens.MasterData,
+    () =>
+      new MasterDataServiceImpl(
+        config,
+        tallyModule.readPort,
+        container.resolve<CompanyResolver>(ServiceTokens.CompanyResolver),
+        logger.child({ service: 'MasterData' }),
       ),
   );
   container.registerFactory(
@@ -95,6 +113,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         syncEngine: container.resolve<SyncEngineService>(ServiceTokens.SyncEngine),
         xmlImport: container.resolve<XmlImportService>(ServiceTokens.XmlImport),
         companyDiscovery: container.resolve<CompanyDiscoveryService>(ServiceTokens.CompanyDiscovery),
+        masterData: container.resolve<MasterDataService>(ServiceTokens.MasterData),
         localDatabase: container.resolve<LocalDatabaseService>(ServiceTokens.LocalDatabase),
         apiServer: container.resolve<ApiServerService>(ServiceTokens.ApiServer),
         licensing: container.resolve<LicensingService>(ServiceTokens.Licensing),
@@ -108,6 +127,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
       new ApiServerStub(config, logger, () => ({
         healthService: container.resolve<HealthService>(ServiceTokens.HealthService),
         companyDiscovery: container.resolve<CompanyDiscoveryService>(ServiceTokens.CompanyDiscovery),
+        masterData: container.resolve<MasterDataService>(ServiceTokens.MasterData),
         tallyDiagnostics: container.resolve<TallyDiagnosticsService>(ServiceTokens.TallyDiagnostics),
       })),
   );
@@ -120,6 +140,7 @@ const STARTUP_ORDER: ServiceToken[] = [
   ServiceTokens.TallyConnection,
   ServiceTokens.XmlImport,
   ServiceTokens.CompanyDiscovery,
+  ServiceTokens.MasterData,
   ServiceTokens.SyncEngine,
   ServiceTokens.Licensing,
   ServiceTokens.Scheduler,
@@ -130,6 +151,7 @@ const SHUTDOWN_ORDER: ServiceToken[] = [
   ServiceTokens.ApiServer,
   ServiceTokens.Scheduler,
   ServiceTokens.SyncEngine,
+  ServiceTokens.MasterData,
   ServiceTokens.CompanyDiscovery,
   ServiceTokens.XmlImport,
   ServiceTokens.TallyConnection,

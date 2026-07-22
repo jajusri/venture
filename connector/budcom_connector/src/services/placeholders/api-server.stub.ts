@@ -6,11 +6,13 @@ import type { Logger } from '../../infrastructure/logging/logger.js';
 import type { CompanyDiscoveryService } from '../interfaces/company-discovery.js';
 import type { HealthService } from '../health/health-service.js';
 import type { TallyDiagnosticsService } from '../interfaces/tally-diagnostics.js';
+import type { MasterDataService } from '../extraction/master-data.service.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
 
 export interface ApiServerDeps {
   readonly healthService: HealthService;
   readonly companyDiscovery: CompanyDiscoveryService;
+  readonly masterData: MasterDataService;
   readonly tallyDiagnostics: TallyDiagnosticsService;
 }
 
@@ -32,6 +34,7 @@ export class ApiServerStub implements ApiServerService {
       logger: this.logger,
       healthService: deps.healthService,
       companyDiscovery: deps.companyDiscovery,
+      masterData: deps.masterData,
       tallyDiagnostics: deps.tallyDiagnostics,
     });
 

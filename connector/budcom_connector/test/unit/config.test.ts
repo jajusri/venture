@@ -4,7 +4,15 @@ import { loadConfig } from '../../src/config/index.js';
 
 describe('loadConfig', () => {
   it('loads defaults', () => {
-    const config = loadConfig({ env: 'test', port: 8080 });
+    const config = loadConfig({
+      env: 'test',
+      port: 8080,
+      tallyMinRequestIntervalMs: 2_000,
+      tallySafeMode: true,
+      tallyPoolMaxConnections: 1,
+      tallyRetryMaxAttempts: 1,
+      tallyCircuitBreakerEnabled: true,
+    });
     expect(config.port).toBe(8080);
     expect(config.schemaVersion).toBe('1.0.0');
     expect(config.connectorVersion).toBe('0.3.1');

@@ -1,5 +1,5 @@
 import type { Logger } from '../../infrastructure/logging/logger.js';
-import type { TallyDiagnosticsSnapshot, TallyExchangeResult } from '../../tally/core/types.js';
+import type { TallyDiagnosticsSnapshot } from '../../tally/core/types.js';
 import type { TallyConnectionService } from '../interfaces/tally-connection.js';
 import { PlaceholderService } from './base-placeholder.js';
 
@@ -10,10 +10,6 @@ export class TallyConnectionStub extends PlaceholderService implements TallyConn
 
   async ping(): Promise<boolean> {
     return false;
-  }
-
-  async exchange(): Promise<TallyExchangeResult> {
-    throw new Error('TallyConnection stub does not support exchange');
   }
 
   getDiagnostics(): TallyDiagnosticsSnapshot {

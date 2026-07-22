@@ -109,7 +109,10 @@ describe('Tally safety integration', () => {
     await manager.stop();
   });
 
-  it('suppresses retries when safe reconnect probe fails', async () => {
+  it('enforces mandatory controls even when SAFE_MODE is disabled', async () => {
+    // SAFE_MODE=false is not an off-switch: no automatic retry, no reconnect
+    // storm, circuit breaker still active. A single transport failure results
+    // in exactly one fetch attempt and zero reconnect attempts.
     let calls = 0;
     const fetchImpl: typeof fetch = async () => {
       calls += 1;
@@ -139,8 +142,10 @@ describe('Tally safety integration', () => {
       }),
     ).rejects.toMatchObject({ statusCode: 503 });
 
-    expect(calls).toBe(2);
-    expect(manager.getDiagnostics().reconnectAttempts).toBe(1);
+    expect(calls).toBe(1);
+    expect(manager.getDiagnostics().reconnectAttempts).toBe(0);
+    expect(manager.getDiagnostics().runtimeLimits.retryMaxAttempts).toBe(1);
+    expect(manager.getDiagnostics().runtimeLimits.circuitBreakerEnabled).toBe(true);
 
     await manager.stop();
   });

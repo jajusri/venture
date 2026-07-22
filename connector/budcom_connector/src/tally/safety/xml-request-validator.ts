@@ -1,4 +1,9 @@
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
+import {
+  ALLOWED_REQUEST_KINDS,
+  FORBIDDEN_REQUEST_TOKENS,
+  ONLY_ALLOWED_TALLY_REQUEST,
+} from '../security/capabilities.js';
 
 function containsInvalidControlCharacters(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
@@ -10,8 +15,28 @@ function containsInvalidControlCharacters(value: string): boolean {
   return false;
 }
 const ENVELOPE_PATTERN = /^<ENVELOPE>[\s\S]*<\/ENVELOPE>$/i;
-const ALLOWED_TYPES = new Set(['EXPORT', 'IMPORT', 'EXECUTE']);
-const ALLOWED_REQUEST_KINDS = new Set(['DATA', 'COLLECTION', 'OBJECT', 'FUNCTION']);
+
+/**
+ * SECURITY: the egress validator is structurally read-only. Only EXPORT is
+ * permitted as TALLYREQUEST and only DATA/COLLECTION/OBJECT as TYPE. Write and
+ * server-execution verbs (IMPORT/EXECUTE/FUNCTION/CREATE/ALTER/DELETE/UPDATE...)
+ * are rejected before any transport occurs. This check is mandatory and is not
+ * affected by SAFE_MODE or any configuration flag.
+ */
+function assertContainsNoForbiddenToken(label: string, value: string | undefined): void {
+  if (!value) return;
+  const upper = value.toUpperCase();
+  for (const token of FORBIDDEN_REQUEST_TOKENS) {
+    if (upper.includes(token)) {
+      throw new AppError(
+        ErrorCodes.VALIDATION_ERROR,
+        `Forbidden write/execute verb "${token}" detected in ${label}`,
+        400,
+        { label, value },
+      );
+    }
+  }
+}
 
 export interface XmlValidationResult {
   readonly collectionId?: string;
@@ -52,15 +77,25 @@ export function validateTallyRequestXml(xml: string, maxBytes: number): XmlValid
   const type = extractTagValue(trimmed, 'TYPE')?.toUpperCase();
   const id = extractTagValue(trimmed, 'ID');
 
-  if (tallyRequest && !ALLOWED_TYPES.has(tallyRequest)) {
+  assertContainsNoForbiddenToken('TALLYREQUEST', tallyRequest);
+  assertContainsNoForbiddenToken('TYPE', type);
+
+  if (!tallyRequest) {
+    throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Tally XML request missing TALLYREQUEST', 400);
+  }
+  if (tallyRequest !== ONLY_ALLOWED_TALLY_REQUEST) {
     throw new AppError(
       ErrorCodes.VALIDATION_ERROR,
-      `Unsupported TALLYREQUEST value: ${tallyRequest}`,
+      `Only ${ONLY_ALLOWED_TALLY_REQUEST} requests are permitted; got TALLYREQUEST=${tallyRequest}`,
       400,
     );
   }
-  if (type && !ALLOWED_REQUEST_KINDS.has(type)) {
-    throw new AppError(ErrorCodes.VALIDATION_ERROR, `Unsupported TYPE value: ${type}`, 400);
+  if (!type || !ALLOWED_REQUEST_KINDS.has(type)) {
+    throw new AppError(
+      ErrorCodes.VALIDATION_ERROR,
+      `Unsupported TYPE value: ${type ?? '(missing)'}`,
+      400,
+    );
   }
   if (!id?.trim()) {
     throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Tally XML request missing ID', 400);

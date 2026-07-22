@@ -1,0 +1,39 @@
+{
+  "runType": "repeat-confirmation",
+  "startedAt": "2026-07-22T12:08:00Z",
+  "stoppedAt": "2026-07-22T12:12:00Z",
+  "status": "BLOCKED",
+  "stopReason": "Tally HTTP unresponsive after Stock Item object export probe during units investigation. Per protocol: stopped immediately. Full 11-entity sequential validation not executed.",
+  "safetyControls": {
+    "readOnly": true,
+    "safeMode": true,
+    "circuitBreaker": true,
+    "maxConcurrency": 1,
+    "interRequestDelaySec": 5,
+    "noParallelCalls": true,
+    "noAutoRetryOnFailure": true,
+    "listOfUnitsDirectCall": false
+  },
+  "connectorPort": null,
+  "connectorStarted": false,
+  "tallyStability": {
+    "initialLicenseInfo": "PASS (200, 148 bytes)",
+    "afterStockItemsCollection": "PASS (200, 434170 bytes, 646ms)",
+    "afterStockItemObjectProbe": "FAIL (30s timeout, then connection closed on subsequent probes)",
+    "tallyCrashes": 0,
+    "tallyHangs": 1
+  },
+  "entities": [],
+  "stockItemsFreshLiveRequest": {
+    "performed": true,
+    "method": "Direct Tally POST — List of Stock Items collection (not connector cache)",
+    "durationMs": 646,
+    "responseBytes": 434170,
+    "recordCount": 1502,
+    "cacheHit": false,
+    "parsing": "OK",
+    "normalization": "OK (names only; unit fields absent)",
+    "artifact": "docs/diagnostics/m3-stock-items-raw-sample.xml"
+  },
+  "firstRunComparisonSource": "docs/diagnostics/m3-live-validation-final.json"
+}

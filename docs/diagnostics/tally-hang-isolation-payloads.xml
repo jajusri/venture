@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Budcom Tally Hang Root-Cause Isolation — Exact Request Payloads
+  Generated: 2026-07-22 (controlled live isolation session)
+  Company: ESTIMATION (open in TallyPrime, localhost:9000)
+  Method: single hand-written POST per request, no connector, no concurrency, 5s cooldowns.
+  Tally process memory/CPU sampled around each request.
+-->
+<hang-isolation>
+
+  <!-- ============ GROUP 1: SUCCEED (fast, flat memory) ============ -->
+
+  <payload id="ok-license-info" result="OK" ms="410" bytes="148" memMB="356.6">
+    <ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>License Info</ID></HEADER></ENVELOPE>
+  </payload>
+
+  <payload id="ok-list-of-companies" result="OK" ms="10" bytes="2185" memMB="356.6">
+    <ENVELOPE>
+      <HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>List of Companies</ID></HEADER>
+      <BODY><DESC>List of Companies</DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT></STATICVARIABLES></BODY>
+    </ENVELOPE>
+  </payload>
+
+  <payload id="ok-list-of-stock-items" result="OK" ms="221" bytes="434166" memMB="359.6" note="LARGEST response — proves size is NOT the cause">
+    <ENVELOPE>
+      <HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>List of Stock Items</ID></HEADER>
+      <BODY><DESC>List of Stock Items</DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>ESTIMATION</SVCURRENTCOMPANY></STATICVARIABLES></BODY>
+    </ENVELOPE>
+  </payload>
+
+  <payload id="ok-list-of-ledgers" result="OK" ms="134" bytes="260382" memMB="359.6">
+    <ENVELOPE>
+      <HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>List of Ledgers</ID></HEADER>
+      <BODY><DESC>List of Ledgers</DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>ESTIMATION</SVCURRENTCOMPANY></STATICVARIABLES></BODY>
+    </ENVELOPE>
+  </payload>
+
+  <!-- ============ GROUP 2: HANG (timeout, flat memory + flat CPU, HTTP server dies) ============ -->
+
+  <payload id="hang-unknown-collection" result="HANG" ms="15058" outcome="timeout; Tally HTTP dead afterward" memMB="359.4" cpuFlat="4.3-&gt;4.4"
+           note="CONTROL: arbitrary unresolvable collection ID. Structurally identical well-formed XML. Hangs identically to List of Units.">
+    <ENVELOPE>
+      <HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>List of Zzz Nonexistent</ID></HEADER>
+      <BODY><DESC>List of Zzz Nonexistent</DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>ESTIMATION</SVCURRENTCOMPANY></STATICVARIABLES></BODY>
+    </ENVELOPE>
+  </payload>
+
+  <payload id="hang-list-of-units" result="HANG" evidence="audit 2026-07-22T11:27 (120000ms) and 11:36 (30000ms); prior sessions"
+           note="Connector-generated; byte-standard collection export. Only the ID string differs from working requests.">
+    <ENVELOPE>
+      <HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Collection</TYPE><ID>List of Units</ID></HEADER>
+      <BODY><DESC>List of Units</DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>ESTIMATION</SVCURRENTCOMPANY></STATICVARIABLES></BODY>
+    </ENVELOPE>
+  </payload>
+
+  <payload id="hang-stock-item-object" result="HANG" ms="30000" outcome="timeout; Tally HTTP dead afterward"
+           note="Object export of a single stock item by name. Separate but same class (unsupported/unresolvable request form).">
+    <ENVELOPE>
+      <HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Object</TYPE><ID>Stock Item</ID></HEADER>
+      <BODY><DESC>Stock Item</DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT><SVCURRENTCOMPANY>ESTIMATION</SVCURRENTCOMPANY><SVSTOCKITEMNAME>079 DIVERTER BUTTON</SVSTOCKITEMNAME></STATICVARIABLES></BODY>
+    </ENVELOPE>
+  </payload>
+
+</hang-isolation>

@@ -1,0 +1,53 @@
+{
+  "investigationAt": "2026-07-22T12:10:00Z",
+  "company": "ESTIMATION",
+  "tallyCollectionUsed": "List of Stock Items",
+  "listOfUnitsCalled": false,
+  "stockItemObjectExportAttempted": true,
+  "stockItemObjectExportResult": "30s timeout — Tally became unresponsive afterward",
+  "rawCollectionFetch": {
+    "durationMs": 646,
+    "responseBytes": 434170,
+    "stockItemNodeCount": 1503,
+    "actualStockItemRecords": 1502,
+    "artifact": "docs/diagnostics/m3-stock-items-raw-sample.xml"
+  },
+  "unitRelatedTagCountsInCollectionExport": {
+    "BASEUNITS": 0,
+    "ADDITIONALUNITS": 0,
+    "UNIT": 1,
+    "UOM": 0,
+    "BASEUNIT": 0,
+    "DENOMINATOR": 0,
+    "CONVERSION": 0,
+    "COMPOUND": 0
+  },
+  "cmpInfoMetadata": {
+    "STOCKITEM_count": 98,
+    "UNIT_count": 0,
+    "TAXUNIT_count": 6,
+    "note": "UNIT=0 in CMPINFO is company master count metadata, not per-item unit data. The lone <UNIT> tag is inside CMPINFO, not inside STOCKITEM nodes."
+  },
+  "stockItemNodeStructure": "Minimal — NAME attribute + LANGUAGENAME.LIST only. No PARENT, CATEGORY, BASEUNITS, OPENINGBALANCE, or HSNCODE in collection export.",
+  "parserVerification": {
+    "parsedStockItems": 1502,
+    "itemsWithBaseUnit": 0,
+    "itemsWithParentGroup": 0,
+    "parserDroppingFields": false,
+    "parserIssue": "Fields absent from Tally export XML, not a parser bug",
+    "sampleParsedItems": [
+      { "name": "079 DIVERTER BUTTON" },
+      { "name": "079 DIVERTER CATRIDGE" },
+      { "name": "079 DIVERTER GLASSY" },
+      { "name": "079 DIVERTER PROTECTION CAP" },
+      { "name": "079 DIVERTOR BRASS HANDLE ROUND" }
+    ]
+  },
+  "derivedUnitsResult": {
+    "uniqueUnits": 0,
+    "canDeriveReliably": false,
+    "reason": "No baseUnit values present in stock item collection export"
+  },
+  "unitsVerdict": "WARNING / INCOMPLETE",
+  "crossCheckNote": "Manual Tally UI cross-check not performed — Tally hung before UI verification. Company clearly has 1,502 stock items; units are assigned in Tally UI but not exported by default List of Stock Items collection."
+}

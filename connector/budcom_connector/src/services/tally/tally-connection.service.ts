@@ -1,7 +1,6 @@
 import type { Logger } from '../../infrastructure/logging/logger.js';
 import type { ServiceStatus } from '../../core/types.js';
 import type { TallyConnectionManager } from '../../tally/connection/tally-connection-manager.js';
-import type { TallyExchangeResult } from '../../tally/core/types.js';
 import type { TallyConnectionService } from '../interfaces/tally-connection.js';
 
 export class TallyConnectionServiceImpl implements TallyConnectionService {
@@ -26,13 +25,6 @@ export class TallyConnectionServiceImpl implements TallyConnectionService {
 
   async ping(): Promise<boolean> {
     return this.connectionManager.ping();
-  }
-
-  async exchange(
-    xml: string,
-    metadata: { collectionId?: string; reportId?: string } = {},
-  ): Promise<TallyExchangeResult> {
-    return this.connectionManager.exchange(xml, metadata);
   }
 
   getDiagnostics() {

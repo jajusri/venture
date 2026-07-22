@@ -4,6 +4,13 @@ import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import { TallyCircuitBreaker } from './tally-circuit-breaker.js';
 import { TallyRequestAuditor } from './tally-request-auditor.js';
 import { validateTallyRequestXml } from './xml-request-validator.js';
+import { TallyCapability } from '../security/capabilities.js';
+import {
+  findApprovedOperationByRequest,
+  toPolicyOperation,
+} from '../registry/operation-registry.js';
+import { findForbiddenOperation } from '../registry/forbidden-registry.js';
+import { decidePolicy } from '../../erp/policy/policy-engine.js';
 
 export interface TallyRequestGuardOptions {
   readonly config: ConnectorConfig;
@@ -29,29 +36,38 @@ export interface TallyRuntimeLimits {
   readonly maxReconnectAttempts: number;
 }
 
+/**
+ * Mandatory runtime controls. These are enforced regardless of SAFE_MODE and
+ * cannot be weakened by configuration. SAFE_MODE may only make behaviour MORE
+ * restrictive (currently: a longer minimum inter-request interval).
+ *
+ * This closes review finding W3 ("SAFE_MODE=false as a master off-switch"):
+ *  - single-flight concurrency is always enforced (poolMaxConnections = 1)
+ *  - automatic business retries are always disabled (retryMaxAttempts = 1)
+ *  - the circuit breaker is always enabled
+ *  - automatic reconnect storms are always disabled
+ */
+const MANDATORY_LIMITS = {
+  poolMaxConnections: 1 as const,
+  retryMaxAttempts: 1 as const,
+  circuitBreakerEnabled: true as const,
+  autoReconnect: false as const,
+  maxReconnectAttempts: 0 as const,
+};
+
+/** Hard ceiling on request size that configuration can only lower, never raise. */
+const HARD_MAX_REQUEST_BYTES = 262_144;
+
 export function resolveTallyRuntimeLimits(config: ConnectorConfig): TallyRuntimeLimits {
-  if (!config.tallySafeMode) {
-    return {
-      poolMaxConnections: Math.max(1, config.tallyPoolMaxConnections),
-      retryMaxAttempts: Math.max(1, config.tallyRetryMaxAttempts),
-      minRequestIntervalMs: config.tallyMinRequestIntervalMs,
-      maxRequestBytes: config.tallyMaxRequestBytes,
-      maxResponseBytes: config.tallyMaxResponseBytes,
-      circuitBreakerEnabled: config.tallyCircuitBreakerEnabled,
-      autoReconnect: config.tallyAutoReconnect,
-      maxReconnectAttempts: Number.MAX_SAFE_INTEGER,
-    };
-  }
+  const minRequestIntervalMs = config.tallySafeMode
+    ? Math.max(config.tallyMinRequestIntervalMs, 2_000)
+    : config.tallyMinRequestIntervalMs;
 
   return {
-    poolMaxConnections: 1,
-    retryMaxAttempts: 1,
-    minRequestIntervalMs: Math.max(config.tallyMinRequestIntervalMs, 2_000),
-    maxRequestBytes: config.tallyMaxRequestBytes,
+    ...MANDATORY_LIMITS,
+    minRequestIntervalMs,
+    maxRequestBytes: Math.min(config.tallyMaxRequestBytes, HARD_MAX_REQUEST_BYTES),
     maxResponseBytes: config.tallyMaxResponseBytes,
-    circuitBreakerEnabled: true,
-    autoReconnect: false,
-    maxReconnectAttempts: 0,
   };
 }
 
@@ -99,10 +115,56 @@ export class TallyRequestGuard {
       }
     }
 
-    validateTallyRequestXml(context.xml, this.limits.maxRequestBytes);
+    const validation = validateTallyRequestXml(context.xml, this.limits.maxRequestBytes);
+
+    // MANDATORY fail-closed policy decision point. Runs for EVERY request that
+    // reaches the transport chokepoint, regardless of caller or SAFE_MODE.
+    const requestBytes = Buffer.byteLength(context.xml, 'utf8');
+    const operation = findApprovedOperationByRequest(
+      validation.requestKind,
+      validation.collectionId,
+    );
+    const forbidden = findForbiddenOperation(validation.requestKind, validation.collectionId);
+    const isHealthProbe = operation?.capability === TallyCapability.HealthRead;
+    const policy = decidePolicy({
+      operation: operation ? toPolicyOperation(operation) : undefined,
+      forbidden: forbidden
+        ? { reason: forbidden.reason, operationId: forbidden.tallyId }
+        : undefined,
+      requestBytes,
+      circuitState: this.circuitBreaker.getState(),
+      isHealthProbe,
+    });
+
+    if (policy.decision !== 'ALLOW') {
+      await this.audit(context, 'blocked');
+      const status = policy.decision === 'QUARANTINE' ? 503 : 403;
+      throw new AppError(
+        policy.decision === 'QUARANTINE'
+          ? ErrorCodes.SERVICE_UNAVAILABLE
+          : ErrorCodes.VALIDATION_ERROR,
+        `Tally request denied by policy [${policy.decision}]: ${policy.reason}`,
+        status,
+        {
+          decision: policy.decision,
+          operationId: policy.operationId,
+          classification: policy.classification,
+          tallyId: validation.collectionId,
+          requestKind: validation.requestKind,
+        },
+      );
+    }
 
     await this.acquireSingleFlight();
     await this.enforceRateLimit();
+
+    // AUDIT INTENT BEFORE TRANSPORT (Phase 8): the attempted request is recorded
+    // even if Tally subsequently hangs and never returns.
+    await this.audit(context, 'intent', undefined, {
+      operationId: operation?.operationId,
+      capability: operation?.capability,
+      policyDecision: policy.decision,
+    });
 
     this.lastRequest = {
       correlationId: context.correlationId,
@@ -154,16 +216,21 @@ export class TallyRequestGuard {
 
   private async audit(
     context: GuardedRequestContext,
-    outcome: 'sent' | 'failed' | 'blocked',
+    outcome: 'intent' | 'sent' | 'failed' | 'blocked',
     error?: unknown,
+    meta?: { operationId?: string; capability?: string; policyDecision?: string },
   ): Promise<void> {
     if (!this.options.auditor) return;
     await this.options.auditor.record({
       timestamp: new Date().toISOString(),
       correlationId: context.correlationId,
+      operationId: meta?.operationId,
+      capability: meta?.capability,
+      policyDecision: meta?.policyDecision,
       collectionId: context.collectionId,
       reportId: context.reportId,
       requestByteLength: Buffer.byteLength(context.xml, 'utf8'),
+      circuitStateBefore: this.circuitBreaker.getState(),
       outcome,
       errorMessage: error instanceof Error ? error.message : undefined,
       xml: context.xml,
@@ -179,9 +246,7 @@ export class TallyRequestGuard {
   }
 
   private async acquireSingleFlight(): Promise<void> {
-    if (!this.options.config.tallySafeMode && this.limits.poolMaxConnections > 1) {
-      return;
-    }
+    // Single-flight is a mandatory control; there is deliberately no bypass.
     if (!this.inFlight) {
       this.inFlight = true;
       return;

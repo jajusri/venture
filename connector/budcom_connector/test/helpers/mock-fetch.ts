@@ -87,18 +87,48 @@ export const SAMPLE_TALLY_COMPANY_LIST_RESPONSE = `<ENVELOPE>
   </BODY>
 </ENVELOPE>`;
 
-export function createTallyMockFetch(options: {
+import {
+  SAMPLE_COMPANY_INFO_RESPONSE,
+  SAMPLE_EMPTY_COLLECTION_RESPONSE,
+  SAMPLE_LEDGER_GROUPS_RESPONSE,
+  SAMPLE_LEDGERS_RESPONSE,
+  SAMPLE_STOCK_ITEMS_RESPONSE,
+  SAMPLE_UNITS_RESPONSE,
+} from './master-data-fixtures.js';
+
+export function createMasterDataMockFetch(options: {
   readonly pingOk?: boolean;
   readonly companiesXml?: string;
-}) {
+} = {}) {
   return createMockFetch(({ init }) => {
     const body = typeof init?.body === 'string' ? init.body : '';
     if (body.includes('List of Companies')) {
-      return { body: options.companiesXml ?? SAMPLE_COMPANY_LIST_RESPONSE };
+      return { body: options.companiesXml ?? SAMPLE_TALLY_COMPANY_LIST_RESPONSE };
     }
+    if (body.includes('<ID>Company</ID>') || body.includes('Object')) {
+      return { body: SAMPLE_COMPANY_INFO_RESPONSE };
+    }
+    if (body.includes('List of Groups')) return { body: SAMPLE_LEDGER_GROUPS_RESPONSE };
+    if (body.includes('List of Ledgers')) return { body: SAMPLE_LEDGERS_RESPONSE };
+    if (body.includes('List of Stock Items')) return { body: SAMPLE_STOCK_ITEMS_RESPONSE };
+    if (body.includes('List of Units')) return { body: SAMPLE_UNITS_RESPONSE };
+    if (body.includes('List of Stock Groups')) return { body: SAMPLE_EMPTY_COLLECTION_RESPONSE };
+    if (body.includes('List of Stock Categories')) return { body: SAMPLE_EMPTY_COLLECTION_RESPONSE };
+    if (body.includes('List of Godowns')) return { body: SAMPLE_EMPTY_COLLECTION_RESPONSE };
+    if (body.includes('List of Cost Categories')) return { body: SAMPLE_EMPTY_COLLECTION_RESPONSE };
+    if (body.includes('List of Cost Centres')) return { body: SAMPLE_EMPTY_COLLECTION_RESPONSE };
+    if (body.includes('List of Voucher Types')) return { body: SAMPLE_EMPTY_COLLECTION_RESPONSE };
+    if (body.includes('List of GST Registrations')) return { body: SAMPLE_EMPTY_COLLECTION_RESPONSE };
     if (options.pingOk === false) {
       return { status: 503, body: 'Service Unavailable' };
     }
     return { body: SAMPLE_LICENSE_INFO_RESPONSE };
   });
+}
+
+export function createTallyMockFetch(options: {
+  readonly pingOk?: boolean;
+  readonly companiesXml?: string;
+}) {
+  return createMasterDataMockFetch(options);
 }

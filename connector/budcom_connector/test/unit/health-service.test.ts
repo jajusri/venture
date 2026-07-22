@@ -29,6 +29,7 @@ describe('registerServices', () => {
       ServiceTokens.SyncEngine,
       ServiceTokens.XmlImport,
       ServiceTokens.CompanyDiscovery,
+      ServiceTokens.MasterData,
       ServiceTokens.TallyDiagnostics,
       ServiceTokens.LocalDatabase,
       ServiceTokens.ApiServer,

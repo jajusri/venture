@@ -2,10 +2,7 @@ import type { ConnectorConfig } from '../../config/defaults.js';
 import type { Logger } from '../../infrastructure/logging/logger.js';
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import type { ServiceStatus } from '../../core/types.js';
-import type { CompanyDiscoveryParser } from '../../tally/discovery/company-discovery-parser.js';
-import type { TallyConnectionManager } from '../../tally/connection/tally-connection-manager.js';
-import type { TallyXmlRequestBuilder } from '../../tally/xml/request-builder.js';
-import type { TallyXmlResponseParser } from '../../tally/xml/response-parser.js';
+import type { ErpReadPort } from '../../erp/ports/erp-read-port.js';
 import type {
   CompanyDiscoveryService,
   CompanyListResult,
@@ -16,10 +13,7 @@ export class CompanyDiscoveryServiceImpl implements CompanyDiscoveryService {
 
   constructor(
     private readonly config: ConnectorConfig,
-    private readonly connectionManager: TallyConnectionManager,
-    private readonly requestBuilder: TallyXmlRequestBuilder,
-    private readonly responseParser: TallyXmlResponseParser,
-    private readonly companyDiscoveryParser: CompanyDiscoveryParser,
+    private readonly readPort: ErpReadPort,
     private readonly logger: Logger,
   ) {}
 
@@ -46,20 +40,9 @@ export class CompanyDiscoveryServiceImpl implements CompanyDiscoveryService {
       );
     }
 
-    const xml = this.requestBuilder.buildCompanyListRequest();
-    const exchange = await this.connectionManager.exchange(xml, {
-      collectionId: 'List of Companies',
-    });
-    const document = this.responseParser.parse(exchange.rawXml);
-    const discovered = this.companyDiscoveryParser.parseCompanies(document);
-
+    const items = await this.readPort.listCompanies();
     return {
-      items: discovered.map((company) => ({
-        id: company.id,
-        name: company.name,
-        financialYear: company.startingFrom ?? company.booksFrom ?? '',
-        baseCurrency: 'INR',
-      })),
+      items: [...items],
       schemaVersion: this.config.schemaVersion,
       dataFreshnessAt: new Date().toISOString(),
     };
@@ -69,7 +52,7 @@ export class CompanyDiscoveryServiceImpl implements CompanyDiscoveryService {
     return {
       name: 'CompanyDiscovery',
       running: this.running,
-      ready: this.running && this.connectionManager.isRunning(),
+      ready: this.running && this.readPort.isReady(),
       message: this.running ? 'Discovery ready' : 'Stopped',
     };
   }

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- M3 controlled validation failure: List of Units (2026-07-22T11:25:11Z) -->
+<!-- Correlation ID: fec501ed-bfc2-48fc-b830-0c950892e345 -->
+<!-- Outcome: 504 after 120000ms — Tally HTTP became unresponsive -->
+<payload entity="Units" collection="List of Units" company="[REDACTED]">
+  <ENVELOPE>
+    <HEADER>
+      <VERSION>1</VERSION>
+      <TALLYREQUEST>Export</TALLYREQUEST>
+      <TYPE>Collection</TYPE>
+      <ID>List of Units</ID>
+    </HEADER>
+    <BODY>
+      <DESC>List of Units</DESC>
+      <STATICVARIABLES>
+        <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+        <SVCURRENTCOMPANY>[REDACTED]</SVCURRENTCOMPANY>
+      </STATICVARIABLES>
+    </BODY>
+  </ENVELOPE>
+  <analysis>
+    XML structure validated OK (367 bytes). Same collection timed out in prior crash investigation probe.
+    Likely TallyPrime internal hang on List of Units for ESTIMATION company, not malformed request.
+    Fix applied: entity-level requestTimeoutMs reduced to 30s (fail fast) to reduce Tally lock-up duration.
+  </analysis>
+</payload>

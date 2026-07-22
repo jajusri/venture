@@ -14,7 +14,7 @@ describe('GET /health', () => {
       status: 'unavailable',
       schemaVersion: '1.0.0',
       readOnly: true,
-      connectorVersion: '0.2.0',
+      connectorVersion: '0.3.1',
     });
     expect(Array.isArray(response.body.services)).toBe(true);
     expect(response.body.services.length).toBeGreaterThan(0);
@@ -92,15 +92,9 @@ describe('GET /companies', () => {
     expect(response.body.schemaVersion).toBe('1.0.0');
     expect(response.body.items).toEqual([
       {
-        id: 'acme-traders-pvt-ltd',
-        name: 'Acme Traders Pvt Ltd',
-        financialYear: '20240401',
-        baseCurrency: 'INR',
-      },
-      {
-        id: 'demo-company',
-        name: 'Demo Company',
-        financialYear: '20230401',
+        id: 'estimation',
+        name: 'ESTIMATION',
+        financialYear: '',
         baseCurrency: 'INR',
       },
     ]);
@@ -115,8 +109,8 @@ describe('GET /companies', () => {
 });
 
 describe('API stubs', () => {
-  it('returns 501 for unimplemented ledger routes', async () => {
-    const response = await request(createTestApp()).get('/companies/demo/ledgers');
+  it('returns 501 for unimplemented ledger detail routes', async () => {
+    const response = await request(createTestApp()).get('/companies/demo/ledgers/ledger-id');
     expect(response.status).toBe(501);
     expect(response.body.code).toBe('NOT_IMPLEMENTED');
   });
