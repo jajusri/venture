@@ -27,7 +27,7 @@
 
 ## Current milestone
 
-**Milestone 1 — Connector Proof of Concept** (not started)
+**Milestone 1 — Connector Proof of Concept** (connector core foundation complete; Tally integration not started)
 
 ---
 
@@ -55,11 +55,33 @@
 
 **Verification:** Passed 2026-07-22 (23/23 automated tests, analyzer clean, debug APK built)
 
+### Milestone 1 — Connector Core Foundation ✅
+
+**Completed:** 2026-07-22
+
+**Goal:** Tally Connector project foundation — structure, config, logging, DI, health, graceful shutdown, placeholder services. No Tally/sync/XML/DB/licensing business logic.
+
+| Deliverable | Status |
+|-------------|--------|
+| Complete connector folder structure | ✅ |
+| TypeScript, ESLint, Prettier, Vitest config | ✅ |
+| Configuration management | ✅ |
+| Structured logging | ✅ |
+| Centralized error handling | ✅ |
+| Application bootstrap + graceful shutdown | ✅ |
+| Dependency injection / service registration | ✅ |
+| Health-check endpoint (aggregates service status) | ✅ |
+| Placeholder service interfaces + stubs | ✅ |
+| Unit + integration test scaffolding | ✅ |
+| Connector build (`npm run build`) | ✅ |
+
+**Verification:** Passed 2026-07-22 (18/18 connector tests, lint clean)
+
 ---
 
 ## In-progress milestone
 
-_None — ready to start Milestone 1._
+**Milestone 1 — Connector Proof of Concept** (remaining: Tally adapter, normalization, live companies endpoint, pairing, Flutter connection screen)
 
 ---
 
@@ -81,8 +103,8 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 
 | Metric | Value |
 |--------|-------|
-| **Milestones complete** | 1 / 6 |
-| **Overall completion** | **~17%** |
+| **Milestones complete** | 1.5 / 6 (M0 + M1 connector foundation) |
+| **Overall completion** | **~25%** |
 | **MVP 1 acceptance checklist** | 0 / 23 items (not started) |
 
 ---
@@ -111,7 +133,7 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 | Layered mobile app | ✅ Scaffolded | presentation → domain → data interfaces |
 | Domain model | ✅ Complete | Entities, Money, Dr/Cr, capabilities, events |
 | Connector contract | ✅ Complete | OpenAPI 3.1 v1.0.0 |
-| Connector implementation | 🟡 Skeleton | Health + read-only middleware; data routes stubbed |
+| Connector implementation | 🟡 Core foundation | DI, logging, health, placeholders; no Tally yet |
 | Tally adapter | ⬜ Not started | Milestone 1 |
 | Local database | ⬜ Not started | Milestone 2 |
 | Feature modules | 🟡 Stubs only | connection, ledgers, vouchers, search, pdf, diagnostics |
@@ -142,9 +164,9 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 | `budcom_core` | 9 | ✅ Pass |
 | `budcom_contracts` | 2 | ✅ Pass |
 | `budcom_mobile` | 1 | ✅ Pass |
-| `@budcom/connector` | 6 | ✅ Pass |
+| `@budcom/connector` | 18 | ✅ Pass |
 | `@budcom/contract-tests` | 5 | ✅ Pass |
-| **Total** | **23** | **✅ All passing** |
+| **Total** | **41** | **✅ All passing** |
 
 **Not yet covered:** Integration tests against Tally, migration tests, golden/UI tests, security tests (Milestone 1–5).
 
@@ -170,7 +192,7 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| KI-001 | Low | Connector `npm run build` fails — `test/` included but `rootDir` is `src` in `tsconfig.json` |
+| KI-001 | Low | ~~Connector `npm run build` fails~~ — **Fixed** in M1 foundation (`tsconfig.build.json`) |
 | KI-002 | Low | Flutter and Melos not on default system PATH (installed at `C:\src\flutter` and Pub cache) |
 | KI-003 | Info | Open M1 decisions: Tally access method, pairing flow, connector deployment form (see ADR 001) |
 
@@ -184,7 +206,7 @@ _None — Milestone 1 can begin once Tally test environment access is confirmed.
 
 ## Next recommended task
 
-**Start Milestone 1 — Connector Proof of Concept**
+**Implement Tally adapter and live connector proof of concept** (remaining Milestone 1)
 
 1. Confirm Tally XML/HTTP interface for target test installation
 2. Implement Tally adapter behind normalization interfaces
@@ -200,4 +222,4 @@ _None — Milestone 1 can begin once Tally test environment access is confirmed.
 
 ## Last updated
 
-**2026-07-22** — Milestone 0 completed and verified; tracker created.
+**2026-07-22** — Milestone 1 connector core foundation complete (18 tests, build + lint pass).
