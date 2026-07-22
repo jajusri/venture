@@ -7,19 +7,24 @@ import type { Logger } from '../infrastructure/logging/logger.js';
 import { createLogger } from '../infrastructure/logging/logger.js';
 import { HealthService } from '../services/health/health-service.js';
 import type { ApiServerService } from '../services/interfaces/api-server.js';
+import type { CompanyDiscoveryService } from '../services/interfaces/company-discovery.js';
 import type { LicensingService } from '../services/interfaces/licensing.js';
 import type { LocalDatabaseService } from '../services/interfaces/local-database.js';
 import type { SchedulerService } from '../services/interfaces/scheduler.js';
 import type { SyncEngineService } from '../services/interfaces/sync-engine.js';
 import type { TallyConnectionService } from '../services/interfaces/tally-connection.js';
+import type { TallyDiagnosticsService } from '../services/interfaces/tally-diagnostics.js';
 import type { XmlImportService } from '../services/interfaces/xml-import.js';
 import { ApiServerStub } from '../services/placeholders/api-server.stub.js';
 import { LicensingStub } from '../services/placeholders/licensing.stub.js';
 import { LocalDatabaseStub } from '../services/placeholders/local-database.stub.js';
 import { SchedulerStub } from '../services/placeholders/scheduler.stub.js';
 import { SyncEngineStub } from '../services/placeholders/sync-engine.stub.js';
-import { TallyConnectionStub } from '../services/placeholders/tally-connection.stub.js';
-import { XmlImportStub } from '../services/placeholders/xml-import.stub.js';
+import { CompanyDiscoveryServiceImpl } from '../services/tally/company-discovery.service.js';
+import { TallyConnectionServiceImpl } from '../services/tally/tally-connection.service.js';
+import { TallyDiagnosticsServiceImpl } from '../services/tally/tally-diagnostics.service.js';
+import { XmlImportServiceImpl } from '../services/tally/xml-import.service.js';
+import { createTallyModule } from '../tally/tally-module.js';
 
 export interface ApplicationContext {
   readonly container: ServiceContainer;
@@ -27,7 +32,12 @@ export interface ApplicationContext {
   readonly logger: Logger;
 }
 
-export function registerServices(configOverrides?: Partial<ConnectorConfig>): ApplicationContext {
+export interface RegisterServicesOptions extends Partial<ConnectorConfig> {
+  readonly fetchImpl?: typeof fetch;
+}
+
+export function registerServices(options: RegisterServicesOptions = {}): ApplicationContext {
+  const { fetchImpl, ...configOverrides } = options;
   const container = new ServiceContainer();
   const config = loadConfig(configOverrides);
   const logger = createLogger({ service: 'budcom-connector', level: config.logLevel });
@@ -35,9 +45,43 @@ export function registerServices(configOverrides?: Partial<ConnectorConfig>): Ap
   container.registerSingleton(ServiceTokens.Config, config);
   container.registerSingleton(ServiceTokens.Logger, logger);
 
-  container.registerFactory(ServiceTokens.TallyConnection, () => new TallyConnectionStub(logger));
+  const tallyModule = createTallyModule({ config, logger, fetchImpl });
+  container.registerSingleton(ServiceTokens.TallyModule, tallyModule);
+
+  container.registerFactory(
+    ServiceTokens.TallyConnection,
+    () =>
+      new TallyConnectionServiceImpl(
+        tallyModule.connectionManager,
+        logger.child({ service: 'TallyConnection' }),
+      ),
+  );
+  container.registerFactory(
+    ServiceTokens.XmlImport,
+    () =>
+      new XmlImportServiceImpl(
+        tallyModule.responseParser,
+        logger.child({ service: 'XmlImport' }),
+      ),
+  );
+  container.registerFactory(
+    ServiceTokens.CompanyDiscovery,
+    () =>
+      new CompanyDiscoveryServiceImpl(
+        config,
+        tallyModule.connectionManager,
+        tallyModule.requestBuilder,
+        tallyModule.responseParser,
+        tallyModule.companyDiscoveryParser,
+        logger.child({ service: 'CompanyDiscovery' }),
+      ),
+  );
+  container.registerFactory(
+    ServiceTokens.TallyDiagnostics,
+    () => new TallyDiagnosticsServiceImpl(tallyModule.connectionManager),
+  );
+
   container.registerFactory(ServiceTokens.SyncEngine, () => new SyncEngineStub(logger));
-  container.registerFactory(ServiceTokens.XmlImport, () => new XmlImportStub(logger));
   container.registerFactory(ServiceTokens.LocalDatabase, () => new LocalDatabaseStub(logger));
   container.registerFactory(ServiceTokens.Licensing, () => new LicensingStub(logger));
   container.registerFactory(ServiceTokens.Scheduler, () => new SchedulerStub(logger));
@@ -50,6 +94,7 @@ export function registerServices(configOverrides?: Partial<ConnectorConfig>): Ap
         tallyConnection: container.resolve<TallyConnectionService>(ServiceTokens.TallyConnection),
         syncEngine: container.resolve<SyncEngineService>(ServiceTokens.SyncEngine),
         xmlImport: container.resolve<XmlImportService>(ServiceTokens.XmlImport),
+        companyDiscovery: container.resolve<CompanyDiscoveryService>(ServiceTokens.CompanyDiscovery),
         localDatabase: container.resolve<LocalDatabaseService>(ServiceTokens.LocalDatabase),
         apiServer: container.resolve<ApiServerService>(ServiceTokens.ApiServer),
         licensing: container.resolve<LicensingService>(ServiceTokens.Licensing),
@@ -60,9 +105,11 @@ export function registerServices(configOverrides?: Partial<ConnectorConfig>): Ap
   container.registerFactory(
     ServiceTokens.ApiServer,
     () =>
-      new ApiServerStub(config, logger, () =>
-        container.resolve<HealthService>(ServiceTokens.HealthService),
-      ),
+      new ApiServerStub(config, logger, () => ({
+        healthService: container.resolve<HealthService>(ServiceTokens.HealthService),
+        companyDiscovery: container.resolve<CompanyDiscoveryService>(ServiceTokens.CompanyDiscovery),
+        tallyDiagnostics: container.resolve<TallyDiagnosticsService>(ServiceTokens.TallyDiagnostics),
+      })),
   );
 
   return { container, config, logger };
@@ -72,6 +119,7 @@ const STARTUP_ORDER: ServiceToken[] = [
   ServiceTokens.LocalDatabase,
   ServiceTokens.TallyConnection,
   ServiceTokens.XmlImport,
+  ServiceTokens.CompanyDiscovery,
   ServiceTokens.SyncEngine,
   ServiceTokens.Licensing,
   ServiceTokens.Scheduler,
@@ -82,6 +130,7 @@ const SHUTDOWN_ORDER: ServiceToken[] = [
   ServiceTokens.ApiServer,
   ServiceTokens.Scheduler,
   ServiceTokens.SyncEngine,
+  ServiceTokens.CompanyDiscovery,
   ServiceTokens.XmlImport,
   ServiceTokens.TallyConnection,
   ServiceTokens.Licensing,

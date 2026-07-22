@@ -1,4 +1,4 @@
-export const CONNECTOR_VERSION = '0.1.0';
+export const CONNECTOR_VERSION = '0.2.0';
 export const SCHEMA_VERSION = '1.0.0';
 
 export interface ConnectorConfig {
@@ -8,6 +8,14 @@ export interface ConnectorConfig {
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error';
   readonly tallyHost: string;
   readonly tallyPort: number;
+  readonly tallyTimeoutMs: number;
+  readonly tallyPoolMaxConnections: number;
+  readonly tallyRetryMaxAttempts: number;
+  readonly tallyRetryBaseDelayMs: number;
+  readonly tallyRetryMaxDelayMs: number;
+  readonly tallyRetryJitterRatio: number;
+  readonly tallyAutoReconnect: boolean;
+  readonly tallyReconnectDelayMs: number;
   readonly databasePath: string;
   readonly gracefulShutdownMs: number;
   readonly connectorVersion: string;
@@ -21,6 +29,14 @@ export const defaultConfig: ConnectorConfig = {
   logLevel: 'info',
   tallyHost: 'localhost',
   tallyPort: 9000,
+  tallyTimeoutMs: 30_000,
+  tallyPoolMaxConnections: 4,
+  tallyRetryMaxAttempts: 3,
+  tallyRetryBaseDelayMs: 500,
+  tallyRetryMaxDelayMs: 8_000,
+  tallyRetryJitterRatio: 0.2,
+  tallyAutoReconnect: true,
+  tallyReconnectDelayMs: 2_000,
   databasePath: './data/budcom-connector.db',
   gracefulShutdownMs: 10_000,
   connectorVersion: CONNECTOR_VERSION,

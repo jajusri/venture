@@ -42,7 +42,7 @@ export function isAppError(error: unknown): error is AppError {
 export function notImplemented(feature: string): AppError {
   return new AppError(
     ErrorCodes.NOT_IMPLEMENTED,
-    `${feature} is not implemented in Milestone 1 foundation.`,
+    `${feature} is not implemented yet.`,
     501,
   );
 }

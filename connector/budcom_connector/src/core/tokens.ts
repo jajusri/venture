@@ -1,9 +1,12 @@
 export const ServiceTokens = {
   Config: 'Config',
   Logger: 'Logger',
+  TallyModule: 'TallyModule',
   TallyConnection: 'TallyConnection',
   SyncEngine: 'SyncEngine',
   XmlImport: 'XmlImport',
+  CompanyDiscovery: 'CompanyDiscovery',
+  TallyDiagnostics: 'TallyDiagnostics',
   LocalDatabase: 'LocalDatabase',
   ApiServer: 'ApiServer',
   Licensing: 'Licensing',

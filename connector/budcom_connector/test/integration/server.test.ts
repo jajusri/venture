@@ -1,7 +1,10 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 
-import { createTestApp } from '../helpers/test-context.js';
+import { ServiceTokens } from '../../src/core/tokens.js';
+import type { TallyConnectionService } from '../../src/services/interfaces/tally-connection.js';
+import { createTallyMockFetch } from '../helpers/mock-fetch.js';
+import { createTestApp, createTestContext, startTestServices } from '../helpers/test-context.js';
 
 describe('GET /health', () => {
   it('returns read-only health envelope with service statuses', async () => {
@@ -11,10 +14,42 @@ describe('GET /health', () => {
       status: 'unavailable',
       schemaVersion: '1.0.0',
       readOnly: true,
-      connectorVersion: '0.1.0',
+      connectorVersion: '0.2.0',
     });
     expect(Array.isArray(response.body.services)).toBe(true);
     expect(response.body.services.length).toBeGreaterThan(0);
+  });
+
+  it('reports tallyReachable when mock Tally responds', async () => {
+    const { fetchImpl } = createTallyMockFetch({ pingOk: true });
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
+    await startTestServices(context);
+    const tally = context.container.resolve<TallyConnectionService>(ServiceTokens.TallyConnection);
+    await tally.ping();
+
+    const response = await request(createTestApp(context)).get('/health');
+    expect(response.status).toBe(200);
+    expect(response.body.tallyReachable).toBe(true);
+  });
+});
+
+describe('GET /diagnostics/connection', () => {
+  it('returns connection diagnostics snapshot', async () => {
+    const { fetchImpl } = createTallyMockFetch({ pingOk: true });
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
+    await startTestServices(context);
+    const tally = context.container.resolve<TallyConnectionService>(ServiceTokens.TallyConnection);
+    await tally.ping();
+
+    const response = await request(createTestApp(context)).get('/diagnostics/connection');
+    expect(response.status).toBe(200);
+    expect(response.body.schemaVersion).toBe('1.0.0');
+    expect(response.body.connection).toMatchObject({
+      state: 'connected',
+      host: 'localhost',
+      port: 9000,
+      totalRequests: 1,
+    });
   });
 });
 
@@ -46,9 +81,42 @@ describe('read-only enforcement', () => {
   });
 });
 
-describe('API stubs', () => {
-  it('returns 501 for unimplemented read routes', async () => {
+describe('GET /companies', () => {
+  it('returns discovered companies from mock Tally', async () => {
+    const { fetchImpl } = createTallyMockFetch({ pingOk: true });
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
+    await startTestServices(context);
+
+    const response = await request(createTestApp(context)).get('/companies');
+    expect(response.status).toBe(200);
+    expect(response.body.schemaVersion).toBe('1.0.0');
+    expect(response.body.items).toEqual([
+      {
+        id: 'acme-traders-pvt-ltd',
+        name: 'Acme Traders Pvt Ltd',
+        financialYear: '20240401',
+        baseCurrency: 'INR',
+      },
+      {
+        id: 'demo-company',
+        name: 'Demo Company',
+        financialYear: '20230401',
+        baseCurrency: 'INR',
+      },
+    ]);
+    expect(response.body.dataFreshnessAt).toBeTruthy();
+  });
+
+  it('returns 503 when company discovery service is not started', async () => {
     const response = await request(createTestApp()).get('/companies');
+    expect(response.status).toBe(503);
+    expect(response.body.code).toBe('SERVICE_UNAVAILABLE');
+  });
+});
+
+describe('API stubs', () => {
+  it('returns 501 for unimplemented ledger routes', async () => {
+    const response = await request(createTestApp()).get('/companies/demo/ledgers');
     expect(response.status).toBe(501);
     expect(response.body.code).toBe('NOT_IMPLEMENTED');
   });

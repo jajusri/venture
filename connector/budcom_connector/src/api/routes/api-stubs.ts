@@ -12,7 +12,6 @@ function stubRoute(feature: string) {
 export function createApiStubsRouter(): Router {
   const router = Router();
 
-  router.get('/companies', stubRoute('Company listing'));
   router.get('/companies/:companyId/ledgers', stubRoute('Ledger listing'));
   router.get('/companies/:companyId/ledgers/:ledgerId', stubRoute('Ledger detail'));
   router.get('/companies/:companyId/ledger-transactions', stubRoute('Ledger transactions'));

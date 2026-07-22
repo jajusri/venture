@@ -21,6 +21,23 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return parsed;
 }
 
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1') return true;
+  if (normalized === 'false' || normalized === '0') return false;
+  throw new Error(`Invalid boolean value: ${value}`);
+}
+
+function parseRatio(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error(`Invalid ratio value: ${value}`);
+  }
+  return parsed;
+}
+
 function parseLogLevel(value: string | undefined, fallback: ConnectorConfig['logLevel']) {
   if (value === undefined) return fallback;
   if (!LOG_LEVELS.has(value)) {
@@ -45,6 +62,38 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
     logLevel: parseLogLevel(process.env.BUDCOM_LOG_LEVEL, defaultConfig.logLevel),
     tallyHost: process.env.BUDCOM_TALLY_HOST ?? defaultConfig.tallyHost,
     tallyPort: parsePort(process.env.BUDCOM_TALLY_PORT, defaultConfig.tallyPort),
+    tallyTimeoutMs: parsePositiveInt(
+      process.env.BUDCOM_TALLY_TIMEOUT_MS,
+      defaultConfig.tallyTimeoutMs,
+    ),
+    tallyPoolMaxConnections: parsePositiveInt(
+      process.env.BUDCOM_TALLY_POOL_MAX,
+      defaultConfig.tallyPoolMaxConnections,
+    ),
+    tallyRetryMaxAttempts: parsePositiveInt(
+      process.env.BUDCOM_TALLY_RETRY_MAX,
+      defaultConfig.tallyRetryMaxAttempts,
+    ),
+    tallyRetryBaseDelayMs: parsePositiveInt(
+      process.env.BUDCOM_TALLY_RETRY_BASE_MS,
+      defaultConfig.tallyRetryBaseDelayMs,
+    ),
+    tallyRetryMaxDelayMs: parsePositiveInt(
+      process.env.BUDCOM_TALLY_RETRY_MAX_MS,
+      defaultConfig.tallyRetryMaxDelayMs,
+    ),
+    tallyRetryJitterRatio: parseRatio(
+      process.env.BUDCOM_TALLY_RETRY_JITTER,
+      defaultConfig.tallyRetryJitterRatio,
+    ),
+    tallyAutoReconnect: parseBoolean(
+      process.env.BUDCOM_TALLY_AUTO_RECONNECT,
+      defaultConfig.tallyAutoReconnect,
+    ),
+    tallyReconnectDelayMs: parsePositiveInt(
+      process.env.BUDCOM_TALLY_RECONNECT_MS,
+      defaultConfig.tallyReconnectDelayMs,
+    ),
     databasePath: process.env.BUDCOM_DATABASE_PATH ?? defaultConfig.databasePath,
     gracefulShutdownMs: parsePositiveInt(
       process.env.BUDCOM_SHUTDOWN_MS,

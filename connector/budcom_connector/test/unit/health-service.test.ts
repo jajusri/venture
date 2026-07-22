@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { ServiceTokens } from '../../src/core/tokens.js';
 import type { HealthService } from '../../src/services/health/health-service.js';
+import { createTallyMockFetch } from '../helpers/mock-fetch.js';
 import { createTestContext, startTestServices } from '../helpers/test-context.js';
 
 describe('HealthService', () => {
   it('reports degraded status when API server is not running', async () => {
-    const context = createTestContext();
+    const { fetchImpl } = createTallyMockFetch({ pingOk: false });
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
     await startTestServices(context);
     const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
 
@@ -26,6 +28,8 @@ describe('registerServices', () => {
       ServiceTokens.TallyConnection,
       ServiceTokens.SyncEngine,
       ServiceTokens.XmlImport,
+      ServiceTokens.CompanyDiscovery,
+      ServiceTokens.TallyDiagnostics,
       ServiceTokens.LocalDatabase,
       ServiceTokens.ApiServer,
       ServiceTokens.Licensing,

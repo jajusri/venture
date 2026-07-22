@@ -13,21 +13,21 @@
 
 ## Current version
 
-**0.1.0** (Milestone 0 foundation)
+**0.2.0** (Milestone 2 Tally communication layer — uncommitted)
 
 | Component | Version |
 |-----------|---------|
 | `budcom_core` | 0.1.0 |
 | `budcom_contracts` | 0.1.0 |
 | `budcom_mobile` | 0.1.0+1 |
-| `@budcom/connector` | 0.1.0 |
+| `@budcom/connector` | 0.2.0 |
 | Connector API (`openapi`) | 1.0.0 |
 
 ---
 
 ## Current milestone
 
-**Milestone 1 — Connector Proof of Concept** (connector core foundation complete; Tally integration not started)
+**Milestone 2 — Tally Communication Layer** (complete — awaiting review; not committed/tagged)
 
 ---
 
@@ -77,11 +77,37 @@
 
 **Verification:** Passed 2026-07-22 (18/18 connector tests, lint clean)
 
+### Milestone 2 — Tally Communication Layer ✅
+
+**Completed:** 2026-07-22 (awaiting user review — working tree uncommitted)
+
+**Goal:** Production-grade Tally HTTP/XML communication — transport, connection management, company discovery, diagnostics. No voucher/ledger sync, scheduler, licensing, or database persistence.
+
+| Deliverable | Status |
+|-------------|--------|
+| Tally HTTP/XML transport | ✅ |
+| XML request builder | ✅ |
+| XML response parser framework | ✅ |
+| Connection manager with state machine | ✅ |
+| Company discovery | ✅ |
+| Connection diagnostics endpoint | ✅ |
+| Retry policy + timeout handling | ✅ |
+| Automatic reconnect | ✅ |
+| Connection pooling | ✅ |
+| Config enhancements (Tally tuning) | ✅ |
+| Structured logging + error handling | ✅ |
+| Health endpoint with real Tally ping | ✅ |
+| `GET /companies` live (mock-tested) | ✅ |
+| Unit + integration tests (mocked Tally) | ✅ |
+| Connector README updated | ✅ |
+
+**Verification:** Passed 2026-07-22 (45/45 connector tests, lint clean, build clean)
+
 ---
 
 ## In-progress milestone
 
-**Milestone 1 — Connector Proof of Concept** (remaining: Tally adapter, normalization, live companies endpoint, pairing, Flutter connection screen)
+_None — Milestone 2 complete; awaiting user review before commit/tag._
 
 ---
 
@@ -103,8 +129,8 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 
 | Metric | Value |
 |--------|-------|
-| **Milestones complete** | 1.5 / 6 (M0 + M1 connector foundation) |
-| **Overall completion** | **~25%** |
+| **Milestones complete** | 2 / 6 (M0 + M1 + M2 connector communication layer) |
+| **Overall completion** | **~35%** |
 | **MVP 1 acceptance checklist** | 0 / 23 items (not started) |
 
 ---
@@ -115,13 +141,10 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 
 | Check | Result |
 |-------|--------|
-| `melos run analyze` | ✅ Pass |
-| `melos run test` | ✅ 12/12 |
-| Connector tests | ✅ 6/6 |
-| Contract tests | ✅ 5/5 |
-| `flutter build apk --debug` | ✅ Pass |
-| Read-only / Tradon naming audit | ✅ Pass |
-| Connector `npm run build` | ❌ Fail (tsconfig `rootDir`) |
+| Connector `npm run lint` | ✅ Pass |
+| Connector `npm run build` | ✅ Pass |
+| Connector `npm test` | ✅ 45/45 |
+| `@budcom/contract-tests` | ✅ 5/5 (unchanged) |
 
 ---
 
@@ -133,8 +156,8 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 | Layered mobile app | ✅ Scaffolded | presentation → domain → data interfaces |
 | Domain model | ✅ Complete | Entities, Money, Dr/Cr, capabilities, events |
 | Connector contract | ✅ Complete | OpenAPI 3.1 v1.0.0 |
-| Connector implementation | 🟡 Core foundation | DI, logging, health, placeholders; no Tally yet |
-| Tally adapter | ⬜ Not started | Milestone 1 |
+| Connector implementation | ✅ M2 communication layer | DI, logging, health, Tally transport, discovery, diagnostics |
+| Tally adapter | ✅ M2 foundation | HTTP/XML transport, connection manager, company discovery |
 | Local database | ⬜ Not started | Milestone 2 |
 | Feature modules | 🟡 Stubs only | connection, ledgers, vouchers, search, pdf, diagnostics |
 | Cloud backend | ⬜ Reserved | Optional per spec; `backend/` placeholder only |
@@ -164,11 +187,11 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 | `budcom_core` | 9 | ✅ Pass |
 | `budcom_contracts` | 2 | ✅ Pass |
 | `budcom_mobile` | 1 | ✅ Pass |
-| `@budcom/connector` | 18 | ✅ Pass |
+| `@budcom/connector` | 45 | ✅ Pass |
 | `@budcom/contract-tests` | 5 | ✅ Pass |
-| **Total** | **41** | **✅ All passing** |
+| **Total** | **68** | **✅ All passing (connector verified)** |
 
-**Not yet covered:** Integration tests against Tally, migration tests, golden/UI tests, security tests (Milestone 1–5).
+**Not yet covered:** Live Tally integration tests, migration tests, golden/UI tests, security tests (Milestone 3+).
 
 ---
 
@@ -200,26 +223,24 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 
 ## Current blockers
 
-_None — Milestone 1 can begin once Tally test environment access is confirmed._
+_None — Milestone 2 complete; awaiting user review and commit approval._
 
 ---
 
 ## Next recommended task
 
-**Implement Tally adapter and live connector proof of concept** (remaining Milestone 1)
+**Milestone 3 — Company and Ledger Reading** (after M2 commit/tag)
 
-1. Confirm Tally XML/HTTP interface for target test installation
-2. Implement Tally adapter behind normalization interfaces
-3. Wire `GET /health` to report real Tally reachability
-4. Implement `GET /companies` with one test company
-5. Add minimal device pairing flow
-6. Build Flutter connection setup screen
-7. Add contract tests against live connector
+1. Implement ledger list/detail normalization from Tally XML
+2. Add local database persistence for cached reads
+3. Wire `GET /companies/:id/ledgers` endpoints
+4. Add contract tests for ledger DTOs
+5. Build Flutter ledger browsing screens
 
-**Acceptance:** Developer build connects to one test company.
+**Acceptance:** Accurate read-only ledger data for one test company with local cache.
 
 ---
 
 ## Last updated
 
-**2026-07-22** — Milestone 1 connector core foundation complete (18 tests, build + lint pass).
+**2026-07-22** — Milestone 2 Tally communication layer complete (45 tests, build + lint pass; uncommitted).

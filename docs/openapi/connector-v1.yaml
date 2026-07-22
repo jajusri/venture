@@ -32,6 +32,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
+  /diagnostics/connection:
+    get:
+      tags: [system]
+      summary: Tally connection diagnostics
+      operationId: getConnectionDiagnostics
+      responses:
+        "200":
+          description: Connection diagnostics snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionDiagnosticsResponse"
   /device/pair:
     post:
       tags: [device]
@@ -261,12 +273,63 @@ components:
           example: "1.0.0"
         connectorVersion:
           type: string
-          example: "0.1.0"
+          example: "0.2.0"
         tallyReachable:
           type: boolean
         readOnly:
           type: boolean
           const: true
+    ConnectionDiagnosticsResponse:
+      type: object
+      required: [schemaVersion, connection]
+      properties:
+        schemaVersion:
+          type: string
+          example: "1.0.0"
+        connection:
+          $ref: "#/components/schemas/TallyConnectionDiagnostics"
+    TallyConnectionDiagnostics:
+      type: object
+      required:
+        - state
+        - host
+        - port
+        - totalRequests
+        - failedRequests
+        - reconnectAttempts
+        - averageLatencyMs
+        - poolActiveConnections
+        - poolWaitingRequests
+      properties:
+        state:
+          type: string
+          enum: [disconnected, connecting, connected, degraded, reconnecting]
+        host:
+          type: string
+        port:
+          type: integer
+        lastSuccessfulPingAt:
+          type: string
+          format: date-time
+        lastErrorAt:
+          type: string
+          format: date-time
+        lastErrorCode:
+          type: string
+        lastErrorMessage:
+          type: string
+        totalRequests:
+          type: integer
+        failedRequests:
+          type: integer
+        reconnectAttempts:
+          type: integer
+        averageLatencyMs:
+          type: integer
+        poolActiveConnections:
+          type: integer
+        poolWaitingRequests:
+          type: integer
     DevicePairRequest:
       type: object
       required: [deviceId, pairingCode]

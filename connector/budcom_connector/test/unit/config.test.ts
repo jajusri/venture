@@ -7,7 +7,7 @@ describe('loadConfig', () => {
     const config = loadConfig({ env: 'test' });
     expect(config.port).toBe(8080);
     expect(config.schemaVersion).toBe('1.0.0');
-    expect(config.connectorVersion).toBe('0.1.0');
+    expect(config.connectorVersion).toBe('0.2.0');
   });
 
   it('applies overrides', () => {

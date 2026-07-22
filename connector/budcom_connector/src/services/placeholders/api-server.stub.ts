@@ -3,8 +3,16 @@ import type { Server } from 'node:http';
 import { createExpressApp } from '../../api/server.js';
 import type { ConnectorConfig } from '../../config/defaults.js';
 import type { Logger } from '../../infrastructure/logging/logger.js';
+import type { CompanyDiscoveryService } from '../interfaces/company-discovery.js';
 import type { HealthService } from '../health/health-service.js';
+import type { TallyDiagnosticsService } from '../interfaces/tally-diagnostics.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
+
+export interface ApiServerDeps {
+  readonly healthService: HealthService;
+  readonly companyDiscovery: CompanyDiscoveryService;
+  readonly tallyDiagnostics: TallyDiagnosticsService;
+}
 
 export class ApiServerStub implements ApiServerService {
   private server: Server | null = null;
@@ -13,15 +21,18 @@ export class ApiServerStub implements ApiServerService {
   constructor(
     private readonly config: ConnectorConfig,
     private readonly logger: Logger,
-    private readonly getHealthService: () => HealthService,
+    private readonly getDeps: () => ApiServerDeps,
   ) {}
 
   async start(): Promise<void> {
     if (this.running) return;
 
+    const deps = this.getDeps();
     const app = createExpressApp({
       logger: this.logger,
-      healthService: this.getHealthService(),
+      healthService: deps.healthService,
+      companyDiscovery: deps.companyDiscovery,
+      tallyDiagnostics: deps.tallyDiagnostics,
     });
 
     await new Promise<void>((resolve) => {

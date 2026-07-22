@@ -18,6 +18,7 @@ describe('application lifecycle', () => {
       ServiceTokens.LocalDatabase,
       ServiceTokens.TallyConnection,
       ServiceTokens.XmlImport,
+      ServiceTokens.CompanyDiscovery,
       ServiceTokens.SyncEngine,
       ServiceTokens.Licensing,
       ServiceTokens.Scheduler,
