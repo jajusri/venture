@@ -3,6 +3,8 @@ import type { Logger } from '../../infrastructure/logging/logger.js';
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import type { ServiceStatus } from '../../core/types.js';
 import type { ErpReadPort } from '../../erp/ports/erp-read-port.js';
+import type { GroupExtractionStatus } from '../../erp/ports/groups.js';
+import { GROUPS_CONTRACT_VERSION } from '../../erp/ports/groups.js';
 import type {
   ExtractorDiagnostics,
   ExtractionResult,
@@ -147,9 +149,46 @@ export class MasterDataServiceImpl implements MasterDataService {
   }
 
   async getLedgerGroups(companyId: string, pagination: PaginationParams) {
-    return this.extractPaginated(companyId, pagination, (name) =>
-      this.readPort.readLedgerGroups(name),
-    );
+    this.assertRunning();
+    const companyName = await this.companyResolver.resolveName(companyId);
+    const groupsResult = await this.readPort.getGroups(companyName);
+
+    if (groupsResult.status === 'DENIED') {
+      throw new AppError(
+        ErrorCodes.VALIDATION_ERROR,
+        groupsResult.reason ?? 'Group extraction denied by policy',
+        403,
+        { status: groupsResult.status },
+      );
+    }
+
+    if (
+      groupsResult.status === 'UNAVAILABLE' ||
+      groupsResult.status === 'TIMEOUT' ||
+      groupsResult.status === 'MALFORMED' ||
+      groupsResult.status === 'COMPANY_UNAVAILABLE'
+    ) {
+      throw new AppError(
+        ErrorCodes.SERVICE_UNAVAILABLE,
+        groupsResult.reason ?? 'Group extraction unavailable',
+        503,
+        { status: groupsResult.status, tallyReachable: groupsResult.tallyReachable },
+      );
+    }
+
+    const paged = paginateItems([...groupsResult.items], pagination);
+    return {
+      items: paged.items,
+      pagination: paged.pagination,
+      schemaVersion: this.config.schemaVersion,
+      dataFreshnessAt: new Date().toISOString(),
+      contractVersion: GROUPS_CONTRACT_VERSION,
+      status: groupsResult.status as GroupExtractionStatus,
+      tallyReachable: groupsResult.tallyReachable,
+      dataQuality: groupsResult.dataQuality,
+      reason: groupsResult.reason,
+      hierarchyIssues: groupsResult.hierarchyIssues,
+    };
   }
 
   async getLedgers(companyId: string, pagination: PaginationParams) {

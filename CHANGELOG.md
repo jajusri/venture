@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Milestone 3C – Production Tally Groups
+
+- **ERP-neutral groups contract** — `ErpGroupsResult` with explicit `GroupExtractionStatus`, hierarchy issues, and `ErpGroupSummary` domain models
+- **`ErpReadPort.getGroups()`** — production group extraction with envelope validation, parsing, hierarchy validation, and explicit outcomes
+- **Tally adapter ownership** — `GroupsParser`, `validateGroupHierarchy`, and groups response contract in adapter layer only
+- **Master data service** — `getLedgerGroups()` uses `getGroups()` with explicit status, contract version, and hierarchy warnings
+- **Comprehensive automated tests** — 38 new tests (parser, hierarchy, adapter, integration); Milestone 3B regression preserved
+- **Controlled live Tally validation** — Scenarios 1–7 pass (2026-07-22); 28 groups on ESTIMATION; evidence in `docs/testing/milestone-3c-groups-manual-validation.md`
+
 ### Milestone 3B – Production Company Discovery
 
 - **ERP-neutral company discovery contract** — explicit `CompanyDiscoveryStatus` outcomes (`SUCCESS`, `EMPTY`, `INCOMPLETE`, `MALFORMED`, `UNAVAILABLE`, `DENIED`, `TIMEOUT`)

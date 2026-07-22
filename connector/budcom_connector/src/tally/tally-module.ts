@@ -4,6 +4,7 @@ import type { ErpReadPort } from '../erp/ports/erp-read-port.js';
 import { TallyReadAdapter } from './adapter/tally-read-adapter.js';
 import { TallyConnectionManager } from './connection/tally-connection-manager.js';
 import { CompanyDiscoveryParser } from './discovery/company-discovery-parser.js';
+import { GroupsParser } from './groups/groups-parser.js';
 import { TallyReadGateway } from './gateway/tally-read-gateway.js';
 import { TallyRequestAuditor } from './safety/tally-request-auditor.js';
 import { TallyHttpTransport } from './transport/tally-http-transport.js';
@@ -41,6 +42,7 @@ export function createTallyModule(options: TallyModuleOptions): TallyModule {
   const requestBuilder = new TallyXmlRequestBuilder();
   const responseParser = new TallyXmlResponseParser();
   const companyDiscoveryParser = new CompanyDiscoveryParser(responseParser);
+  const groupsParser = new GroupsParser(responseParser);
   const requestAuditor = new TallyRequestAuditor(
     options.config.tallyRequestAuditPath,
     options.config.tallyRequestAuditEnabled,
@@ -62,6 +64,7 @@ export function createTallyModule(options: TallyModuleOptions): TallyModule {
     gateway: readGateway,
     responseParser,
     companyDiscoveryParser,
+    groupsParser,
     logger: logger.child({ component: 'read-adapter' }),
   });
 

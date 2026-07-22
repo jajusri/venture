@@ -15,6 +15,7 @@ import type {
   NormalizedVoucherType,
 } from '../../extraction/core/types.js';
 import type { ErpCompanyDiscoveryResult } from './company-discovery.js';
+import type { ErpGroupsResult } from './groups.js';
 
 /**
  * ERP-neutral read boundary between business/application code and the connected
@@ -30,6 +31,12 @@ export interface ErpReadPort {
   isReady(): boolean;
 
   discoverCompanies(): Promise<ErpCompanyDiscoveryResult>;
+
+  /**
+   * Returns normalized accounting groups for the selected company with explicit
+   * extraction status and hierarchy validation. Never exposes raw XML.
+   */
+  getGroups(companyName: string): Promise<ErpGroupsResult>;
 
   /**
    * Returns normalized company info, or undefined when it cannot be resolved
@@ -54,3 +61,4 @@ export interface ErpReadPort {
 }
 
 export type { ErpCompanyDiscoveryResult, ErpCompanySummary } from './company-discovery.js';
+export type { ErpGroupsResult, ErpGroupSummary, GroupExtractionStatus } from './groups.js';
