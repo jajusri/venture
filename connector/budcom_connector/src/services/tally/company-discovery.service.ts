@@ -40,11 +40,54 @@ export class CompanyDiscoveryServiceImpl implements CompanyDiscoveryService {
       );
     }
 
-    const items = await this.readPort.listCompanies();
+    const discovery = await this.readPort.discoverCompanies();
+
+    if (discovery.status === 'DENIED') {
+      throw new AppError(
+        ErrorCodes.VALIDATION_ERROR,
+        discovery.reason ?? 'Company discovery denied by policy',
+        403,
+        { status: discovery.status },
+      );
+    }
+
+    if (discovery.status === 'UNAVAILABLE' || discovery.status === 'TIMEOUT') {
+      throw new AppError(
+        ErrorCodes.SERVICE_UNAVAILABLE,
+        discovery.reason ?? 'Tally is unavailable for company discovery',
+        503,
+        { status: discovery.status, tallyReachable: discovery.tallyReachable },
+      );
+    }
+
+    if (discovery.status === 'MALFORMED') {
+      throw new AppError(
+        ErrorCodes.SERVICE_UNAVAILABLE,
+        discovery.reason ?? 'Company discovery response was malformed',
+        503,
+        {
+          status: discovery.status,
+          dataQuality: discovery.dataQuality,
+          tallyReachable: discovery.tallyReachable,
+        },
+      );
+    }
+
+    this.logger.info('Company discovery completed', {
+      status: discovery.status,
+      companyCount: discovery.items.length,
+      tallyReachable: discovery.tallyReachable,
+    });
+
     return {
-      items: [...items],
+      items: [...discovery.items],
       schemaVersion: this.config.schemaVersion,
       dataFreshnessAt: new Date().toISOString(),
+      contractVersion: '1',
+      status: discovery.status,
+      tallyReachable: discovery.tallyReachable,
+      dataQuality: discovery.dataQuality,
+      reason: discovery.reason,
     };
   }
 

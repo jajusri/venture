@@ -90,12 +90,13 @@ describe('GET /companies', () => {
     const response = await request(createTestApp(context)).get('/companies');
     expect(response.status).toBe(200);
     expect(response.body.schemaVersion).toBe('1.0.0');
+    expect(response.body.status).toBe('SUCCESS');
+    expect(response.body.tallyReachable).toBe(true);
+    expect(response.body.contractVersion).toBe('1');
     expect(response.body.items).toEqual([
       {
         id: 'estimation',
         name: 'ESTIMATION',
-        financialYear: '',
-        baseCurrency: 'INR',
       },
     ]);
     expect(response.body.dataFreshnessAt).toBeTruthy();

@@ -34,8 +34,8 @@ describe('CompanyDiscoveryParser', () => {
 
   it('extracts companies from collection response', () => {
     const document = parser.parse(SAMPLE_COMPANY_LIST_RESPONSE);
-    const companies = discoveryParser.parseCompanies(document);
-    expect(companies).toEqual([
+    const result = discoveryParser.parseCompanies(document);
+    expect(result.companies).toEqual([
       {
         id: 'acme-traders-pvt-ltd',
         name: 'Acme Traders Pvt Ltd',
@@ -52,8 +52,8 @@ describe('CompanyDiscoveryParser', () => {
 
   it('ignores CMPINFO count nodes and reads NAME attributes from real Tally XML', () => {
     const document = parser.parse(SAMPLE_TALLY_COMPANY_LIST_RESPONSE);
-    const companies = discoveryParser.parseCompanies(document);
-    expect(companies).toEqual([
+    const result = discoveryParser.parseCompanies(document);
+    expect(result.companies).toEqual([
       {
         id: 'estimation',
         name: 'ESTIMATION',

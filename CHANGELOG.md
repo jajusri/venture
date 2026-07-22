@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Milestone 3B – Production Company Discovery
+
+- **ERP-neutral company discovery contract** — explicit `CompanyDiscoveryStatus` outcomes (`SUCCESS`, `EMPTY`, `INCOMPLETE`, `MALFORMED`, `UNAVAILABLE`, `DENIED`, `TIMEOUT`)
+- **`ErpReadPort.discoverCompanies()`** — returns typed `ErpCompanyDiscoveryResult` with reachability, data quality, and domain models (no raw XML)
+- **Tally adapter ownership** — response envelope validation, defensive parsing, normalization, deduplication, and incomplete-data detection in `TallyReadAdapter` and `CompanyDiscoveryParser`
+- **Production company discovery service** — `CompanyDiscoveryServiceImpl` maps port results to versioned `CompanyListResult` with explicit status
+- **Comprehensive automated tests** — parser, contract, adapter, service boundary, and integration tests with realistic XML fixtures (no live Tally)
+- **Controlled live Tally validation** — Scenarios 1–4 pass (2026-07-22); evidence in `docs/testing/milestone-3b-company-discovery-manual-validation.md`
+
 ## Milestone 3A – Secure ERP Foundation
 
 **Tag:** `v0.3.0-secure-foundation`  

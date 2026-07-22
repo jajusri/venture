@@ -1,0 +1,118 @@
+export const COMPANY_ONE_VALID = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <COMPANY NAME="ESTIMATION">
+          <NAME>ESTIMATION</NAME>
+          <STARTINGFROM>20240401</STARTINGFROM>
+          <BASECURRENCY>INR</BASECURRENCY>
+        </COMPANY>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const COMPANY_MULTIPLE_VALID = `<ENVELOPE>
+  <HEADER><VERSION>1</VERSION><STATUS>1</STATUS></HEADER>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <COMPANY>
+          <NAME>Acme Traders Pvt Ltd</NAME>
+          <STARTINGFROM>20240401</STARTINGFROM>
+          <BOOKSFROM>20240401</BOOKSFROM>
+        </COMPANY>
+        <COMPANY>
+          <NAME>Demo Company</NAME>
+          <STARTINGFROM>20230401</STARTINGFROM>
+        </COMPANY>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const COMPANY_DUPLICATE_RECORDS = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <COMPANY><NAME>Acme Traders</NAME></COMPANY>
+        <COMPANY><NAME>Acme Traders</NAME></COMPANY>
+        <COMPANY><NAME>Other Co</NAME></COMPANY>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const COMPANY_EMPTY_LIST = `<ENVELOPE>
+  <BODY>
+    <DESC><CMPINFO><COMPANY>0</COMPANY></CMPINFO></DESC>
+    <DATA><COLLECTION></COLLECTION></DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const COMPANY_NO_COMPANY_OPEN = `<ENVELOPE>
+  <HEADER><VERSION>1</VERSION><STATUS>1</STATUS></HEADER>
+  <BODY>
+    <DESC><CMPINFO><COMPANY>0</COMPANY></CMPINFO></DESC>
+    <DATA><COLLECTION/></DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const COMPANY_MISSING_OPTIONAL_FIELDS = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <COMPANY NAME="Minimal Co">
+          <NAME>Minimal Co</NAME>
+        </COMPANY>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const COMPANY_MISSING_REQUIRED_IDENTITY = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <COMPANY></COMPANY>
+        <COMPANY><NAME></NAME></COMPANY>
+        <COMPANY><STARTINGFROM>20240401</STARTINGFROM></COMPANY>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const COMPANY_WHITESPACE_NAME = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <COMPANY><NAME>  Acme Traders  </NAME></COMPANY>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const COMPANY_SPECIAL_CHARACTERS = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <COMPANY><NAME>Müller &amp; Söhne GmbH</NAME></COMPANY>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const COMPANY_UNEXPECTED_ENVELOPE = `<RESPONSE><DATA/></RESPONSE>`;
+
+export const COMPANY_MALFORMED_XML = `<ENVELOPE><BODY><DATA><COLLECTION>`;
+
+export const COMPANY_PARTIAL_WITH_VALID = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <COMPANY></COMPANY>
+        <COMPANY><NAME>Valid Co</NAME></COMPANY>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;

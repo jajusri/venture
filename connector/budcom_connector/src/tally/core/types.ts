@@ -49,6 +49,7 @@ export interface DiscoveredCompany {
   readonly name: string;
   readonly startingFrom?: string;
   readonly booksFrom?: string;
+  readonly baseCurrency?: string;
 }
 
 export interface TallyLastRequestSnapshot {

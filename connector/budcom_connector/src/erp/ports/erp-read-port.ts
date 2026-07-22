@@ -14,6 +14,7 @@ import type {
   NormalizedStockItem,
   NormalizedVoucherType,
 } from '../../extraction/core/types.js';
+import type { ErpCompanyDiscoveryResult } from './company-discovery.js';
 
 /**
  * ERP-neutral read boundary between business/application code and the connected
@@ -25,17 +26,10 @@ import type {
  * models across this boundary. A future BUSY/SAP/Zoho adapter implements the
  * same port without changing any business code.
  */
-export interface ErpCompanySummary {
-  readonly id: string;
-  readonly name: string;
-  readonly financialYear: string;
-  readonly baseCurrency: string;
-}
-
 export interface ErpReadPort {
   isReady(): boolean;
 
-  listCompanies(): Promise<readonly ErpCompanySummary[]>;
+  discoverCompanies(): Promise<ErpCompanyDiscoveryResult>;
 
   /**
    * Returns normalized company info, or undefined when it cannot be resolved
@@ -58,3 +52,5 @@ export interface ErpReadPort {
   /** Adapter-owned read diagnostics for the collection extractors. */
   getReadDiagnostics(entityType?: MasterDataEntityType): readonly ExtractorDiagnostics[];
 }
+
+export type { ErpCompanyDiscoveryResult, ErpCompanySummary } from './company-discovery.js';
