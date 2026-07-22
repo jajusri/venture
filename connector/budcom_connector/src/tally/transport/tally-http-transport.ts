@@ -3,6 +3,7 @@ import type { Logger } from '../../infrastructure/logging/logger.js';
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import type { ErpTransport } from '../core/erp-transport.interface.js';
 import type { ErpTransportRequest, ErpTransportResponse } from '../core/types.js';
+import { resolveTallyRuntimeLimits } from '../safety/tally-request-guard.js';
 import { ConnectionPool } from './connection-pool.js';
 
 export interface TallyHttpTransportOptions {
@@ -17,7 +18,8 @@ export class TallyHttpTransport implements ErpTransport {
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly options: TallyHttpTransportOptions) {
-    this.pool = options.pool ?? new ConnectionPool(options.config.tallyPoolMaxConnections);
+    const poolMax = resolveTallyRuntimeLimits(options.config).poolMaxConnections;
+    this.pool = options.pool ?? new ConnectionPool(poolMax);
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -80,6 +82,7 @@ export class TallyHttpTransport implements ErpTransport {
       });
 
       this.options.logger.debug('Tally HTTP exchange complete', {
+        correlationId: request.correlationId,
         durationMs,
         byteLength: body.length,
         statusCode: response.status,
@@ -103,7 +106,11 @@ export class TallyHttpTransport implements ErpTransport {
           { timeoutMs },
         );
       }
-      throw error;
+      throw new AppError(
+        ErrorCodes.SERVICE_UNAVAILABLE,
+        `Tally connection failed: ${error instanceof Error ? error.message : String(error)}. Tally may be unavailable or restarting.`,
+        503,
+      );
     } finally {
       clearTimeout(timer);
     }

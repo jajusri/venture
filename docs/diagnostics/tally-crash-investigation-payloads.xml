@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Budcom Tally Crash Investigation — Redacted Request Payloads
+  Generated: 2026-07-22
+  Purpose: Diagnostic reference only. Business data redacted.
+  Source: connector templates + live probe scripts (terminal 708399–708402)
+-->
+<diagnostic-payloads>
+
+  <!-- 1. Last connector-bound request before crash (M3 smoke test, ~10:36 UTC) -->
+  <payload id="connector-ledger-groups" sequence="6" endpoint="GET /companies/estimation/ledger-groups">
+    <ENVELOPE>
+      <HEADER>
+        <VERSION>1</VERSION>
+        <TALLYREQUEST>Export</TALLYREQUEST>
+        <TYPE>Collection</TYPE>
+        <ID>List of Groups</ID>
+      </HEADER>
+      <BODY>
+        <DESC>List of Groups</DESC>
+        <STATICVARIABLES>
+          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+          <SVCURRENTCOMPANY>[REDACTED]</SVCURRENTCOMPANY>
+        </STATICVARIABLES>
+      </BODY>
+    </ENVELOPE>
+    <notes>Valid TallyPrime collection export. Sent after /health, /companies, /companies/estimation succeeded. Tally HTTP server became unreachable during retry/reconnect loop.</notes>
+  </payload>
+
+  <!-- 2. Prior connector request in same smoke sequence -->
+  <payload id="connector-company-object" sequence="5" endpoint="GET /companies/estimation">
+    <ENVELOPE>
+      <HEADER>
+        <VERSION>1</VERSION>
+        <TALLYREQUEST>Export</TALLYREQUEST>
+        <TYPE>Object</TYPE>
+        <ID>Company</ID>
+      </HEADER>
+      <BODY>
+        <DESC>Company</DESC>
+        <STATICVARIABLES>
+          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+          <SVCURRENTCOMPANY>[REDACTED]</SVCURRENTCOMPANY>
+        </STATICVARIABLES>
+      </BODY>
+    </ENVELOPE>
+    <notes>Object export may fail gracefully with discovery fallback; not the crash trigger.</notes>
+  </payload>
+
+  <!-- 3. Heavy probe request (terminal 708399, succeeded before instability) -->
+  <payload id="probe-list-of-ledgers" sequence="probe-1" endpoint="POST http://localhost:9000">
+    <ENVELOPE>
+      <HEADER>
+        <VERSION>1</VERSION>
+        <TALLYREQUEST>Export</TALLYREQUEST>
+        <TYPE>Collection</TYPE>
+        <ID>List of Ledgers</ID>
+      </HEADER>
+      <BODY>
+        <DESC>List of Ledgers</DESC>
+        <STATICVARIABLES>
+          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+          <SVCURRENTCOMPANY>[REDACTED]</SVCURRENTCOMPANY>
+        </STATICVARIABLES>
+      </BODY>
+    </ENVELOPE>
+    <response sizeBytes="260382" status="200"/>
+    <notes>Large collection export. Part of sequential 12-collection probe (~229s total).</notes>
+  </payload>
+
+  <!-- 4. Heaviest probe request -->
+  <payload id="probe-list-of-stock-items" sequence="probe-3" endpoint="POST http://localhost:9000">
+    <ENVELOPE>
+      <HEADER>
+        <VERSION>1</VERSION>
+        <TALLYREQUEST>Export</TALLYREQUEST>
+        <TYPE>Collection</TYPE>
+        <ID>List of Stock Items</ID>
+      </HEADER>
+      <BODY>
+        <DESC>List of Stock Items</DESC>
+        <STATICVARIABLES>
+          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+          <SVCURRENTCOMPANY>[REDACTED]</SVCURRENTCOMPANY>
+        </STATICVARIABLES>
+      </BODY>
+    </ENVELOPE>
+    <response sizeBytes="434166" status="200"/>
+    <notes>Largest response in probe sequence. Likely stressed Tally memory before parallel duplicates.</notes>
+  </payload>
+
+  <!-- 5. Parallel duplicate while Tally busy (terminal 708400/708401, timed out 60s) -->
+  <payload id="parallel-duplicate-ledgers" sequence="parallel-1" endpoint="POST http://localhost:9000">
+    <ENVELOPE>
+      <HEADER>
+        <VERSION>1</VERSION>
+        <TALLYREQUEST>Export</TALLYREQUEST>
+        <TYPE>Collection</TYPE>
+        <ID>List of Ledgers</ID>
+      </HEADER>
+      <BODY>
+        <DESC>List of Ledgers</DESC>
+        <STATICVARIABLES>
+          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+          <SVCURRENTCOMPANY>[REDACTED]</SVCURRENTCOMPANY>
+        </STATICVARIABLES>
+      </BODY>
+    </ENVELOPE>
+    <notes>Started at 10:28:53 UTC overlapping probe timeouts. Both parallel fetches timed out — Tally already overloaded.</notes>
+  </payload>
+
+  <!-- 6. Invalid probe ID (timed out, unlikely crash root cause) -->
+  <payload id="probe-company-features" sequence="probe-12" endpoint="POST http://localhost:9000">
+    <ENVELOPE>
+      <HEADER>
+        <VERSION>1</VERSION>
+        <TALLYREQUEST>Export</TALLYREQUEST>
+        <TYPE>Collection</TYPE>
+        <ID>Company Features</ID>
+      </HEADER>
+      <BODY>
+        <DESC>Company Features</DESC>
+        <STATICVARIABLES>
+          <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+          <SVCURRENTCOMPANY>[REDACTED]</SVCURRENTCOMPANY>
+        </STATICVARIABLES>
+      </BODY>
+    </ENVELOPE>
+    <notes>Not a standard Tally collection ID. Timed out after prior overload; may have added load but XML structure is otherwise valid.</notes>
+  </payload>
+
+  <!-- 7. Safe minimal request for future live testing -->
+  <payload id="safe-connectivity-check" sequence="safe-1" endpoint="License Info">
+    <ENVELOPE>
+      <HEADER>
+        <VERSION>1</VERSION>
+        <TALLYREQUEST>Export</TALLYREQUEST>
+        <TYPE>Data</TYPE>
+        <ID>License Info</ID>
+      </HEADER>
+    </ENVELOPE>
+    <notes>Recommended first live probe after crash. No company context, no master data export.</notes>
+  </payload>
+
+</diagnostic-payloads>

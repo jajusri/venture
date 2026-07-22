@@ -3,6 +3,7 @@ export interface ErpTransportRequest {
   readonly body: string;
   readonly contentType: string;
   readonly timeoutMs?: number;
+  readonly correlationId?: string;
 }
 
 /** Raw ERP transport response before domain parsing. */
@@ -50,6 +51,14 @@ export interface DiscoveredCompany {
   readonly booksFrom?: string;
 }
 
+export interface TallyLastRequestSnapshot {
+  readonly correlationId: string;
+  readonly collectionId?: string;
+  readonly reportId?: string;
+  readonly sentAt: string;
+  readonly outcome?: string;
+}
+
 export interface TallyDiagnosticsSnapshot {
   readonly state: TallyConnectionState;
   readonly host: string;
@@ -64,4 +73,16 @@ export interface TallyDiagnosticsSnapshot {
   readonly averageLatencyMs: number;
   readonly poolActiveConnections: number;
   readonly poolWaitingRequests: number;
+  readonly safeMode: boolean;
+  readonly circuitState: 'closed' | 'open' | 'half_open';
+  readonly lastRequest?: TallyLastRequestSnapshot;
+  readonly runtimeLimits: {
+    readonly poolMaxConnections: number;
+    readonly retryMaxAttempts: number;
+    readonly minRequestIntervalMs: number;
+    readonly maxRequestBytes: number;
+    readonly maxResponseBytes: number;
+    readonly circuitBreakerEnabled: boolean;
+    readonly timeoutMs: number;
+  };
 }

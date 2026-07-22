@@ -94,6 +94,37 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
       process.env.BUDCOM_TALLY_RECONNECT_MS,
       defaultConfig.tallyReconnectDelayMs,
     ),
+    tallySafeMode: parseBoolean(process.env.BUDCOM_TALLY_SAFE_MODE, defaultConfig.tallySafeMode),
+    tallyMinRequestIntervalMs: parsePositiveInt(
+      process.env.BUDCOM_TALLY_MIN_REQUEST_INTERVAL_MS,
+      defaultConfig.tallyMinRequestIntervalMs,
+    ),
+    tallyMaxRequestBytes: parsePositiveInt(
+      process.env.BUDCOM_TALLY_MAX_REQUEST_BYTES,
+      defaultConfig.tallyMaxRequestBytes,
+    ),
+    tallyMaxResponseBytes: parsePositiveInt(
+      process.env.BUDCOM_TALLY_MAX_RESPONSE_BYTES,
+      defaultConfig.tallyMaxResponseBytes,
+    ),
+    tallyCircuitBreakerEnabled: parseBoolean(
+      process.env.BUDCOM_TALLY_CIRCUIT_BREAKER,
+      defaultConfig.tallyCircuitBreakerEnabled,
+    ),
+    tallyCircuitBreakerFailureThreshold: parsePositiveInt(
+      process.env.BUDCOM_TALLY_CIRCUIT_BREAKER_THRESHOLD,
+      defaultConfig.tallyCircuitBreakerFailureThreshold,
+    ),
+    tallyCircuitBreakerCooldownMs: parsePositiveInt(
+      process.env.BUDCOM_TALLY_CIRCUIT_BREAKER_COOLDOWN_MS,
+      defaultConfig.tallyCircuitBreakerCooldownMs,
+    ),
+    tallyRequestAuditEnabled: parseBoolean(
+      process.env.BUDCOM_TALLY_REQUEST_AUDIT,
+      defaultConfig.tallyRequestAuditEnabled,
+    ),
+    tallyRequestAuditPath:
+      process.env.BUDCOM_TALLY_REQUEST_AUDIT_PATH ?? defaultConfig.tallyRequestAuditPath,
     databasePath: process.env.BUDCOM_DATABASE_PATH ?? defaultConfig.databasePath,
     gracefulShutdownMs: parsePositiveInt(
       process.env.BUDCOM_SHUTDOWN_MS,

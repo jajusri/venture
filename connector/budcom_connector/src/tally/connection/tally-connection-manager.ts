@@ -11,6 +11,8 @@ import type {
 } from '../core/types.js';
 import { ReconnectManager } from './reconnect-manager.js';
 import { RetryPolicy } from './retry-policy.js';
+import { TallyRequestGuard, resolveTallyRuntimeLimits } from '../safety/tally-request-guard.js';
+import type { TallyRequestAuditor } from '../safety/tally-request-auditor.js';
 import { TallyXmlRequestBuilder } from '../xml/request-builder.js';
 
 export interface TallyConnectionManagerOptions {
@@ -20,6 +22,8 @@ export interface TallyConnectionManagerOptions {
   readonly requestBuilder?: TallyXmlRequestBuilder;
   readonly retryPolicy?: RetryPolicy;
   readonly reconnectManager?: ReconnectManager;
+  readonly requestGuard?: TallyRequestGuard;
+  readonly requestAuditor?: TallyRequestAuditor;
 }
 
 export class TallyConnectionManager {
@@ -28,6 +32,8 @@ export class TallyConnectionManager {
   private readonly requestBuilder: TallyXmlRequestBuilder;
   private readonly retryPolicy: RetryPolicy;
   private readonly reconnectManager: ReconnectManager;
+  private readonly requestGuard: TallyRequestGuard;
+  private readonly runtimeLimits;
   private totalRequests = 0;
   private failedRequests = 0;
   private totalLatencyMs = 0;
@@ -37,11 +43,12 @@ export class TallyConnectionManager {
   private lastErrorMessage?: string;
 
   constructor(private readonly options: TallyConnectionManagerOptions) {
+    this.runtimeLimits = resolveTallyRuntimeLimits(options.config);
     this.requestBuilder = options.requestBuilder ?? new TallyXmlRequestBuilder();
     this.retryPolicy =
       options.retryPolicy ??
       new RetryPolicy({
-        maxAttempts: options.config.tallyRetryMaxAttempts,
+        maxAttempts: this.runtimeLimits.retryMaxAttempts,
         baseDelayMs: options.config.tallyRetryBaseDelayMs,
         maxDelayMs: options.config.tallyRetryMaxDelayMs,
         jitterRatio: options.config.tallyRetryJitterRatio,
@@ -50,11 +57,19 @@ export class TallyConnectionManager {
       options.reconnectManager ??
       new ReconnectManager(
         {
-          autoReconnect: options.config.tallyAutoReconnect,
+          autoReconnect: this.runtimeLimits.autoReconnect,
           reconnectDelayMs: options.config.tallyReconnectDelayMs,
+          maxAttempts: this.runtimeLimits.maxReconnectAttempts,
         },
         options.logger,
       );
+    this.requestGuard =
+      options.requestGuard ??
+      new TallyRequestGuard({
+        config: options.config,
+        logger: options.logger,
+        auditor: options.requestAuditor,
+      });
   }
 
   async start(): Promise<void> {
@@ -63,6 +78,9 @@ export class TallyConnectionManager {
     this.options.logger.info('Tally connection manager starting', {
       host: this.options.config.tallyHost,
       port: this.options.config.tallyPort,
+      safeMode: this.options.config.tallySafeMode,
+      poolMaxConnections: this.runtimeLimits.poolMaxConnections,
+      retryMaxAttempts: this.runtimeLimits.retryMaxAttempts,
     });
   }
 
@@ -113,17 +131,31 @@ export class TallyConnectionManager {
 
     while (attempt < this.retryPolicy.maxAttempts) {
       attempt += 1;
+      const correlationId = randomUUID();
+      const context = {
+        correlationId,
+        collectionId: metadata.collectionId,
+        reportId: metadata.reportId,
+        xml,
+      };
+
+      let prepared = false;
       try {
         if (this.state === 'disconnected' || this.state === 'reconnecting') {
           this.state = 'connecting';
         }
 
-        const requestId = randomUUID();
+        await this.requestGuard.prepare(context);
+        prepared = true;
+
         const sentAt = new Date().toISOString();
         const response = await this.options.transport.send({
           body: xml,
           contentType: 'text/xml',
+          correlationId,
         });
+
+        await this.requestGuard.recordSuccess(context, response.body.length);
 
         this.totalRequests += 1;
         this.totalLatencyMs += response.durationMs;
@@ -131,13 +163,13 @@ export class TallyConnectionManager {
 
         return {
           request: {
-            requestId,
+            requestId: correlationId,
             collectionId: metadata.collectionId,
             reportId: metadata.reportId,
             sentAt,
           },
           response: {
-            requestId,
+            requestId: correlationId,
             receivedAt: new Date().toISOString(),
             durationMs: response.durationMs,
             statusCode: response.statusCode,
@@ -147,8 +179,17 @@ export class TallyConnectionManager {
         };
       } catch (error) {
         lastError = error;
-        this.failedRequests += 1;
-        this.markFailure(error);
+        if (prepared) {
+          this.failedRequests += 1;
+          this.markFailure(error);
+          await this.requestGuard.recordFailure(context, error);
+        } else {
+          this.markFailure(error);
+        }
+
+        if (this.requestGuard.circuitState === 'open') {
+          break;
+        }
 
         if (!this.retryPolicy.shouldRetry(attempt, error)) {
           break;
@@ -157,6 +198,12 @@ export class TallyConnectionManager {
         this.state = 'reconnecting';
         if (this.reconnectManager.shouldAttemptReconnect(this.state)) {
           await this.reconnectManager.backoffBeforeReconnect();
+          if (!(await this.probeTallyReachable())) {
+            this.options.logger.warn('Tally unavailable after reconnect wait; suppressing retries', {
+              correlationId,
+            });
+            break;
+          }
         } else {
           await this.retryPolicy.wait(attempt);
         }
@@ -190,7 +237,37 @@ export class TallyConnectionManager {
         this.totalRequests === 0 ? 0 : Math.round(this.totalLatencyMs / this.totalRequests),
       poolActiveConnections: poolStats.activeConnections,
       poolWaitingRequests: poolStats.waitingRequests,
+      safeMode: this.options.config.tallySafeMode,
+      circuitState: this.requestGuard.circuitState,
+      lastRequest: this.requestGuard.lastRequest,
+      runtimeLimits: {
+        poolMaxConnections: this.runtimeLimits.poolMaxConnections,
+        retryMaxAttempts: this.runtimeLimits.retryMaxAttempts,
+        minRequestIntervalMs: this.runtimeLimits.minRequestIntervalMs,
+        maxRequestBytes: this.runtimeLimits.maxRequestBytes,
+        maxResponseBytes: this.runtimeLimits.maxResponseBytes,
+        circuitBreakerEnabled: this.runtimeLimits.circuitBreakerEnabled,
+        timeoutMs: this.options.config.tallyTimeoutMs,
+      },
     };
+  }
+
+  private async probeTallyReachable(): Promise<boolean> {
+    try {
+      const xml = this.requestBuilder.buildConnectivityCheck();
+      const probeTimeoutMs = Math.min(this.options.config.tallyTimeoutMs, 10_000);
+      const response = await this.options.transport.send({
+        body: xml,
+        contentType: 'text/xml',
+        timeoutMs: probeTimeoutMs,
+      });
+      return response.body.trim().length > 0;
+    } catch (error) {
+      this.options.logger.warn('Tally reconnect probe failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
   }
 
   private markConnected(): void {

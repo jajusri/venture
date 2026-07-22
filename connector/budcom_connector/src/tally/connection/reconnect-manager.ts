@@ -4,6 +4,7 @@ import type { TallyConnectionState } from '../core/types.js';
 export interface ReconnectManagerOptions {
   readonly autoReconnect: boolean;
   readonly reconnectDelayMs: number;
+  readonly maxAttempts?: number;
 }
 
 export class ReconnectManager {
@@ -24,7 +25,16 @@ export class ReconnectManager {
   }
 
   shouldAttemptReconnect(state: TallyConnectionState): boolean {
-    return this.options.autoReconnect && state !== 'connected';
+    if (!this.options.autoReconnect || state === 'connected') {
+      return false;
+    }
+    if (
+      this.options.maxAttempts !== undefined &&
+      this.reconnectAttempts >= this.options.maxAttempts
+    ) {
+      return false;
+    }
+    return true;
   }
 
   async backoffBeforeReconnect(): Promise<void> {

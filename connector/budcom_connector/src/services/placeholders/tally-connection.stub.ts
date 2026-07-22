@@ -27,6 +27,17 @@ export class TallyConnectionStub extends PlaceholderService implements TallyConn
       averageLatencyMs: 0,
       poolActiveConnections: 0,
       poolWaitingRequests: 0,
+      safeMode: true,
+      circuitState: 'closed',
+      runtimeLimits: {
+        poolMaxConnections: 1,
+        retryMaxAttempts: 1,
+        minRequestIntervalMs: 2_000,
+        maxRequestBytes: 65_536,
+        maxResponseBytes: 10_485_760,
+        circuitBreakerEnabled: true,
+        timeoutMs: 120_000,
+      },
     };
   }
 }
