@@ -1,0 +1,11 @@
+name: budcom
+repository: https://github.com/budcom/budcom
+
+packages:
+  - apps/budcom_mobile
+  - shared/packages/budcom_core
+  - shared/packages/budcom_contracts
+
+command:
+  bootstrap:
+    usePubspecOverrides: true

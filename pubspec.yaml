@@ -1,0 +1,25 @@
+name: budcom_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.5.0
+
+workspace:
+  - apps/budcom_mobile
+  - shared/packages/budcom_core
+  - shared/packages/budcom_contracts
+
+dev_dependencies:
+  melos: ^8.2.2
+
+melos:
+  scripts:
+    analyze:
+      run: melos exec -- dart analyze --fatal-infos
+      description: Run static analysis across all Dart packages.
+    test:
+      run: melos exec -- dart test
+      description: Run unit tests across all Dart packages.
+    format:
+      run: melos exec -- flutter format --set-exit-if-changed .
+      description: Check Dart formatting.

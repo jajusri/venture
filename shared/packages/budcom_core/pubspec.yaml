@@ -1,0 +1,12 @@
+name: budcom_core
+description: Budcom domain entities, value objects, events, and capability model.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.5.0
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^4.0.0

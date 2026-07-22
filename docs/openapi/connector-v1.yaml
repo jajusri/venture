@@ -1,0 +1,471 @@
+openapi: 3.1.0
+info:
+  title: Budcom Connector API
+  version: 1.0.0
+  description: |
+    Read-only local connector API between the Budcom mobile app and Tally.
+    All write operations to Tally are prohibited in MVP 1.
+servers:
+  - url: http://{host}:{port}
+    variables:
+      host:
+        default: localhost
+      port:
+        default: "8080"
+tags:
+  - name: system
+  - name: device
+  - name: companies
+  - name: ledgers
+  - name: vouchers
+  - name: sync
+paths:
+  /health:
+    get:
+      tags: [system]
+      summary: Connector and Tally status
+      operationId: getHealth
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /device/pair:
+    post:
+      tags: [device]
+      summary: Pair an authorized mobile device
+      operationId: pairDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DevicePairRequest"
+      responses:
+        "200":
+          description: Pairing accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DevicePairResponse"
+        "403":
+          description: Pairing rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorError"
+  /companies:
+    get:
+      tags: [companies]
+      summary: List authorized companies
+      operationId: listCompanies
+      responses:
+        "200":
+          description: Company list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyListResponse"
+  /companies/{companyId}/ledgers:
+    get:
+      tags: [ledgers]
+      summary: Paged ledger summaries
+      operationId: listLedgers
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Ledger page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerListResponse"
+  /companies/{companyId}/ledgers/{ledgerId}:
+    get:
+      tags: [ledgers]
+      summary: Ledger detail
+      operationId: getLedger
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+        - $ref: "#/components/parameters/LedgerId"
+      responses:
+        "200":
+          description: Ledger detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerDetailResponse"
+  /companies/{companyId}/ledger-transactions:
+    get:
+      tags: [ledgers]
+      summary: Transactions by ledger and date range
+      operationId: listLedgerTransactions
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+        - $ref: "#/components/parameters/LedgerIdQuery"
+        - $ref: "#/components/parameters/FromDate"
+        - $ref: "#/components/parameters/ToDate"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Transaction page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LedgerTransactionListResponse"
+  /companies/{companyId}/vouchers:
+    get:
+      tags: [vouchers]
+      summary: Paged voucher summaries
+      operationId: listVouchers
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+        - $ref: "#/components/parameters/FromDate"
+        - $ref: "#/components/parameters/ToDate"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Voucher page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoucherListResponse"
+  /companies/{companyId}/vouchers/{voucherId}:
+    get:
+      tags: [vouchers]
+      summary: Voucher detail
+      operationId: getVoucher
+      parameters:
+        - $ref: "#/components/parameters/CompanyId"
+        - $ref: "#/components/parameters/VoucherId"
+      responses:
+        "200":
+          description: Voucher detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoucherDetailResponse"
+  /sync/checkpoint:
+    get:
+      tags: [sync]
+      summary: Freshness and sync status
+      operationId: getSyncCheckpoint
+      parameters:
+        - $ref: "#/components/parameters/CompanyIdQuery"
+      responses:
+        "200":
+          description: Sync checkpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncCheckpointResponse"
+components:
+  parameters:
+    CompanyId:
+      name: companyId
+      in: path
+      required: true
+      schema:
+        type: string
+    LedgerId:
+      name: ledgerId
+      in: path
+      required: true
+      schema:
+        type: string
+    VoucherId:
+      name: voucherId
+      in: path
+      required: true
+      schema:
+        type: string
+    CompanyIdQuery:
+      name: companyId
+      in: query
+      required: true
+      schema:
+        type: string
+    LedgerIdQuery:
+      name: ledgerId
+      in: query
+      required: true
+      schema:
+        type: string
+    FromDate:
+      name: from
+      in: query
+      schema:
+        type: string
+        format: date
+    ToDate:
+      name: to
+      in: query
+      schema:
+        type: string
+        format: date
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+  schemas:
+    Money:
+      type: object
+      required: [amount, currencyCode, side]
+      properties:
+        amount:
+          type: number
+          format: double
+        currencyCode:
+          type: string
+          example: INR
+        side:
+          type: string
+          enum: [Dr, Cr]
+    ConnectorError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    HealthResponse:
+      type: object
+      required: [status, schemaVersion, connectorVersion, tallyReachable, readOnly]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unavailable]
+        schemaVersion:
+          type: string
+          example: "1.0.0"
+        connectorVersion:
+          type: string
+          example: "0.1.0"
+        tallyReachable:
+          type: boolean
+        readOnly:
+          type: boolean
+          const: true
+    DevicePairRequest:
+      type: object
+      required: [deviceId, pairingCode]
+      properties:
+        deviceId:
+          type: string
+        pairingCode:
+          type: string
+    DevicePairResponse:
+      type: object
+      required: [paired, accessTokenExpiresAt, schemaVersion]
+      properties:
+        paired:
+          type: boolean
+        accessTokenExpiresAt:
+          type: string
+          format: date-time
+        schemaVersion:
+          type: string
+    PaginationMeta:
+      type: object
+      required: [page, pageSize, totalItems, hasMore]
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        hasMore:
+          type: boolean
+    CompanySummary:
+      type: object
+      required: [id, name, financialYear, baseCurrency]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        financialYear:
+          type: string
+        baseCurrency:
+          type: string
+    CompanyListResponse:
+      type: object
+      required: [items, schemaVersion, dataFreshnessAt]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompanySummary"
+        schemaVersion:
+          type: string
+        dataFreshnessAt:
+          type: string
+          format: date-time
+    LedgerSummary:
+      type: object
+      required: [id, name, normalizedName, closingBalance]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        normalizedName:
+          type: string
+        alias:
+          type: string
+        group:
+          type: string
+        closingBalance:
+          $ref: "#/components/schemas/Money"
+    LedgerListResponse:
+      type: object
+      required: [items, pagination, schemaVersion, dataFreshnessAt]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerSummary"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+        schemaVersion:
+          type: string
+        dataFreshnessAt:
+          type: string
+          format: date-time
+    LedgerDetailResponse:
+      type: object
+      required: [ledger, openingBalance, periodDebitTotal, periodCreditTotal, closingBalance, schemaVersion, dataFreshnessAt]
+      properties:
+        ledger:
+          $ref: "#/components/schemas/LedgerSummary"
+        openingBalance:
+          $ref: "#/components/schemas/Money"
+        periodDebitTotal:
+          $ref: "#/components/schemas/Money"
+        periodCreditTotal:
+          $ref: "#/components/schemas/Money"
+        closingBalance:
+          $ref: "#/components/schemas/Money"
+        schemaVersion:
+          type: string
+        dataFreshnessAt:
+          type: string
+          format: date-time
+    LedgerTransaction:
+      type: object
+      required: [id, voucherId, date, voucherType, voucherNumber, amount]
+      properties:
+        id:
+          type: string
+        voucherId:
+          type: string
+        date:
+          type: string
+          format: date
+        voucherType:
+          type: string
+        voucherNumber:
+          type: string
+        amount:
+          $ref: "#/components/schemas/Money"
+        narration:
+          type: string
+    LedgerTransactionListResponse:
+      type: object
+      required: [items, pagination, schemaVersion, dataFreshnessAt]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LedgerTransaction"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+        schemaVersion:
+          type: string
+        dataFreshnessAt:
+          type: string
+          format: date-time
+    VoucherSummary:
+      type: object
+      required: [id, type, number, date, partyName, totalAmount]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        number:
+          type: string
+        date:
+          type: string
+          format: date
+        partyName:
+          type: string
+        totalAmount:
+          $ref: "#/components/schemas/Money"
+        referenceNumber:
+          type: string
+        isCancelled:
+          type: boolean
+    VoucherListResponse:
+      type: object
+      required: [items, pagination, schemaVersion, dataFreshnessAt]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoucherSummary"
+        pagination:
+          $ref: "#/components/schemas/PaginationMeta"
+        schemaVersion:
+          type: string
+        dataFreshnessAt:
+          type: string
+          format: date-time
+    VoucherDetailResponse:
+      type: object
+      required: [voucher, schemaVersion, dataFreshnessAt]
+      properties:
+        voucher:
+          $ref: "#/components/schemas/VoucherSummary"
+        schemaVersion:
+          type: string
+        dataFreshnessAt:
+          type: string
+          format: date-time
+    SyncCheckpointResponse:
+      type: object
+      required: [companyId, schemaVersion, isRefreshing]
+      properties:
+        companyId:
+          type: string
+        lastSuccessfulSyncAt:
+          type: string
+          format: date-time
+        schemaVersion:
+          type: string
+        isRefreshing:
+          type: boolean
+        errorCode:
+          type: string

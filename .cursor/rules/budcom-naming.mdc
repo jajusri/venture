@@ -1,0 +1,42 @@
+---
+description: Budcom monorepo naming — use Budcom, not Tradon
+alwaysApply: true
+---
+
+# Budcom Naming Convention
+
+The monorepo is **Budcom**. Use that name consistently everywhere.
+
+## Use "Budcom"
+
+- Folder and package names (e.g. `@budcom/shared`, `apps/budcom-web`)
+- Namespaces, modules, and identifiers
+- Documentation, README, and branding
+- User-facing copy and comments
+
+## Do not use "Tradon"
+
+"Tradon" is a retired working name. Do not introduce it in:
+
+- Folder names, namespaces, or package names
+- Documentation, branding, or source code
+
+Exception: intentionally preserved historical comments that document the rename.
+
+## Examples
+
+```typescript
+// ❌ BAD
+import { config } from '@tradon/core';
+
+// ✅ GOOD
+import { config } from '@budcom/core';
+```
+
+```json
+// ❌ BAD
+{ "name": "tradon-backend" }
+
+// ✅ GOOD
+{ "name": "@budcom/backend" }
+```

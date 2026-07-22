@@ -1,0 +1,16 @@
+name: budcom_contracts
+description: Budcom connector API DTOs aligned with the OpenAPI contract.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  budcom_core:
+    path: ../budcom_core
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^4.0.0
