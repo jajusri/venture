@@ -87,6 +87,7 @@ export class ConnectorLifecycleService {
       connectorExecutable: this.config.connectorExecutable,
       connectorPort: this.config.connectorPort,
       userMessage: this.lastError,
+      managedProcessPid: this.managedProcess?.pid ?? null,
     };
   }
 

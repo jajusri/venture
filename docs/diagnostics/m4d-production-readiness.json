@@ -1,0 +1,64 @@
+{
+  "checkedAt": "2026-07-23T07:11:14.944Z",
+  "desktopVersion": "0.4.3",
+  "checks": [
+    {
+      "id": "required-files",
+      "status": "PASS",
+      "detail": "Required desktop and connector build artifacts exist."
+    },
+    {
+      "id": "config-schema",
+      "status": "PASS",
+      "detail": "Configuration schema validates defaults."
+    },
+    {
+      "id": "desktop-build",
+      "status": "PASS",
+      "detail": "Desktop build passed."
+    },
+    {
+      "id": "connector-build",
+      "status": "PASS",
+      "detail": "Connector build passed."
+    },
+    {
+      "id": "desktop-tests",
+      "status": "PASS",
+      "detail": "Desktop tests passed."
+    },
+    {
+      "id": "connector-tests",
+      "status": "PASS",
+      "detail": "Connector tests passed."
+    },
+    {
+      "id": "security-settings",
+      "status": "PASS",
+      "detail": "Core Electron security settings present."
+    },
+    {
+      "id": "diagnostics-export",
+      "status": "PASS",
+      "detail": "Diagnostics export works and bundle created."
+    },
+    {
+      "id": "log-writer",
+      "status": "PASS",
+      "detail": "Log writer works."
+    },
+    {
+      "id": "redaction",
+      "status": "PASS",
+      "detail": "Redaction utility masks sensitive values."
+    }
+  ],
+  "summary": {
+    "pass": 10,
+    "fail": 0,
+    "blocked": 0,
+    "total": 10,
+    "readinessScore": 100,
+    "overall": "PASS"
+  }
+}

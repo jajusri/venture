@@ -131,6 +131,9 @@ export interface LogEntry {
   readonly timestamp: string;
   readonly level: LogLevel;
   readonly message: string;
+  readonly event?: string | null;
+  readonly component?: string | null;
+  readonly metadata?: Record<string, string | number | boolean | null> | null;
 }
 
 export interface DashboardState {
@@ -158,6 +161,7 @@ export interface DashboardState {
 
 export interface SettingsState {
   readonly connectorUrl: string;
+  readonly connectorHost: string;
   readonly apiVersion: string;
   readonly desktopVersion: string;
   readonly erpType: string;
@@ -165,6 +169,73 @@ export interface SettingsState {
   readonly connectorExecutable: string;
   readonly connectorPort: number;
   readonly autoStartConnector: boolean;
+  readonly healthPollIntervalMs: number;
+  readonly startupTimeoutMs: number;
+  readonly shutdownGraceMs: number;
+  readonly maxRestartAttempts: number;
+  readonly reconnectBaseDelayMs: number;
+  readonly logLevel: string;
+  readonly diagnosticsRetentionDays: number;
+  readonly tallyHost: string;
+  readonly tallyPort: number;
+  readonly configSource: string;
+  readonly configStatus: string;
+  readonly restartRequired: boolean;
+  readonly hasUnsavedChanges?: boolean;
+}
+
+export interface SettingsSaveResult {
+  readonly ok: boolean;
+  readonly message: string;
+  readonly restartRequired: boolean;
+  readonly settings: SettingsState | null;
+}
+
+export interface SettingsValidationResult {
+  readonly ok: boolean;
+  readonly errors: readonly { field: string; message: string }[];
+}
+
+export interface DiagnosticsSnapshot {
+  readonly generatedAt: string;
+  readonly desktopVersion: string;
+  readonly connectorVersion: string | null;
+  readonly electronVersion: string;
+  readonly nodeVersion: string;
+  readonly platform: string;
+  readonly osRelease: string;
+  readonly architecture: string;
+  readonly uptimeSeconds: number;
+  readonly connectorBaseUrl: string;
+  readonly connectorProcessState: string;
+  readonly connectorOwnership: 'desktop-managed' | 'external' | 'none';
+  readonly connectorPid: number | null;
+  readonly healthStatus: string;
+  readonly healthReachable: boolean;
+  readonly lastSuccessfulHealthCheck: string | null;
+  readonly tallyReachable: boolean | null;
+  readonly sessionSummary: string;
+  readonly configSource: string;
+  readonly configStatus: string;
+  readonly logFilePath: string | null;
+  readonly fileLoggingAvailable: boolean;
+  readonly recentLifecycleEvents: readonly LogEntry[];
+  readonly recentErrors: readonly LogEntry[];
+}
+
+export interface DiagnosticsExportResult {
+  readonly ok: boolean;
+  readonly message: string;
+  readonly bundlePath: string | null;
+  readonly cancelled?: boolean;
+}
+
+export interface HealthCheckResult {
+  readonly ok: boolean;
+  readonly reachable: boolean;
+  readonly status: string;
+  readonly message: string;
+  readonly checkedAt: string;
 }
 
 export interface CompanySelectionOutcome {

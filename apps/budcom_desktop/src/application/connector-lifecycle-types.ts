@@ -51,6 +51,7 @@ export interface ConnectorLifecycleStatus {
   readonly connectorExecutable: string;
   readonly connectorPort: number;
   readonly userMessage: string | null;
+  readonly managedProcessPid: number | null;
 }
 
 export interface SpawnSpec {

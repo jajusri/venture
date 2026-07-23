@@ -1,7 +1,9 @@
 import type {
   CompanyListItemDto,
   DashboardState,
+  DiagnosticsSnapshot,
   LogEntry,
+  SettingsSaveResult,
   SettingsState,
 } from '../../application/types.js';
 import type { ConnectorLifecycleStatus } from '../../application/connector-lifecycle-types.js';
@@ -10,6 +12,9 @@ export interface DesktopBridge {
   getDashboardState(): Promise<DashboardState>;
   getLogs(): Promise<readonly LogEntry[]>;
   getSettings(): Promise<SettingsState>;
+  validateSettings(input: Record<string, unknown>): Promise<{ ok: boolean; errors: readonly { field: string; message: string }[] }>;
+  saveSettings(input: Record<string, unknown>): Promise<SettingsSaveResult>;
+  restoreDefaultSettings(): Promise<SettingsSaveResult>;
   getLifecycleStatus(): Promise<ConnectorLifecycleStatus>;
   startConnector(): Promise<ConnectorLifecycleStatus>;
   stopConnector(): Promise<ConnectorLifecycleStatus>;
@@ -17,6 +22,14 @@ export interface DesktopBridge {
   getCompanies(): Promise<{ items: readonly CompanyListItemDto[]; status: string; reason?: string }>;
   selectCompany(companyId: string): Promise<{ ok: boolean; userMessage: string }>;
   clearCompany(): Promise<unknown>;
+  getDiagnostics(): Promise<DiagnosticsSnapshot>;
+  refreshDiagnostics(): Promise<DiagnosticsSnapshot>;
+  copyDiagnosticsSummary(): Promise<string>;
+  exportDiagnosticsBundle(): Promise<{ ok: boolean; message: string; bundlePath: string | null }>;
+  openLogsFolder(): Promise<{ ok: boolean; message: string }>;
+  clearNonessentialLogs(): Promise<{ ok: boolean; message: string }>;
+  runHealthCheck(): Promise<{ ok: boolean; message: string }>;
+  reloadRenderer(): Promise<{ ok: boolean }>;
   onStatusUpdated(listener: () => void): () => void;
 }
 
@@ -26,15 +39,19 @@ declare global {
   }
 }
 
-export type DesktopView = 'dashboard' | 'connection' | 'logs' | 'settings' | 'about';
+export type DesktopView = 'dashboard' | 'connection' | 'logs' | 'diagnostics' | 'settings' | 'about';
 
 export interface UiLoadingState {
   readonly dashboard: boolean;
   readonly companies: boolean;
   readonly selecting: boolean;
+  readonly settings: boolean;
+  readonly diagnostics: boolean;
 }
 
 let refreshInFlight = false;
+let currentSettings: SettingsState | null = null;
+let settingsDirty = false;
 
 export function setText(id: string, value: string): void {
   const element = document.getElementById(id);
@@ -63,12 +80,16 @@ export function setLoading(state: Partial<UiLoadingState>, message = 'Loading…
   if (!bar || !label) {
     return;
   }
-  const active = Boolean(state.dashboard || state.companies || state.selecting);
+  const active = Boolean(state.dashboard || state.companies || state.selecting || state.settings || state.diagnostics);
   bar.className = active ? 'loading-bar' : 'loading-bar hidden';
   if (state.selecting) {
     label.textContent = 'Selecting company…';
   } else if (state.companies) {
     label.textContent = 'Fetching companies…';
+  } else if (state.settings) {
+    label.textContent = 'Saving settings…';
+  } else if (state.diagnostics) {
+    label.textContent = 'Refreshing diagnostics…';
   } else {
     label.textContent = message;
   }
@@ -119,15 +140,84 @@ export function renderDashboard(state: DashboardState): void {
   }
 }
 
-export function renderSettings(settings: SettingsState): void {
-  setText('settings-connector-url', settings.connectorUrl);
-  setText('settings-api-version', settings.apiVersion);
+function setInputValue(id: string, value: string | number | boolean): void {
+  const element = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
+  if (!element) {
+    return;
+  }
+  if (element instanceof HTMLInputElement && element.type === 'checkbox') {
+    element.checked = Boolean(value);
+    return;
+  }
+  element.value = String(value);
+}
+
+export function renderSettingsForm(settings: SettingsState): void {
+  currentSettings = settings;
+  setInputValue('input-connector-host', settings.connectorHost);
+  setInputValue('input-connector-port', settings.connectorPort);
+  setInputValue('input-auto-start', settings.autoStartConnector);
+  setInputValue('input-health-poll', settings.healthPollIntervalMs);
+  setInputValue('input-startup-timeout', settings.startupTimeoutMs);
+  setInputValue('input-log-level', settings.logLevel);
+  setInputValue('input-tally-host', settings.tallyHost);
+  setInputValue('input-tally-port', settings.tallyPort);
   setText('settings-desktop-version', settings.desktopVersion);
-  setText('settings-erp', settings.erpType);
-  setText('settings-poll-interval', `${settings.pollIntervalSeconds} seconds`);
-  setText('settings-connector-executable', settings.connectorExecutable);
-  setText('settings-connector-port', String(settings.connectorPort));
-  setText('settings-auto-start', settings.autoStartConnector ? 'Enabled' : 'Disabled');
+  setText('settings-config-source', settings.configSource);
+  setText('settings-config-status', settings.configStatus);
+
+  const restartNotice = document.getElementById('settings-restart-notice');
+  if (restartNotice) {
+    restartNotice.className = settings.restartRequired ? 'form-note' : 'form-note hidden';
+  }
+}
+
+export function renderSettingsStatus(message: string, isError = false): void {
+  const status = document.getElementById('settings-status-message');
+  if (status) {
+    status.textContent = message;
+    status.className = isError ? 'panel-meta form-error' : 'panel-meta';
+  }
+}
+
+export function renderValidationErrors(errors: readonly { field: string; message: string }[]): void {
+  const container = document.getElementById('settings-validation-errors');
+  if (!container) {
+    return;
+  }
+  if (errors.length === 0) {
+    container.className = 'form-error hidden';
+    container.textContent = '';
+    return;
+  }
+  container.className = 'form-error';
+  container.textContent = errors.map((error) => `${error.field}: ${error.message}`).join(' ');
+}
+
+function collectSettingsForm(): Record<string, unknown> {
+  const host = (document.getElementById('input-connector-host') as HTMLInputElement | null)?.value ?? '';
+  const port = Number.parseInt((document.getElementById('input-connector-port') as HTMLInputElement | null)?.value ?? '8080', 10);
+  const autoStart = (document.getElementById('input-auto-start') as HTMLInputElement | null)?.checked ?? true;
+  const healthPoll = Number.parseInt((document.getElementById('input-health-poll') as HTMLInputElement | null)?.value ?? '5000', 10);
+  const startupTimeout = Number.parseInt((document.getElementById('input-startup-timeout') as HTMLInputElement | null)?.value ?? '30000', 10);
+  const logLevel = (document.getElementById('input-log-level') as HTMLSelectElement | null)?.value ?? 'info';
+  const tallyHost = (document.getElementById('input-tally-host') as HTMLInputElement | null)?.value ?? 'localhost';
+  const tallyPort = Number.parseInt((document.getElementById('input-tally-port') as HTMLInputElement | null)?.value ?? '9000', 10);
+
+  return {
+    connectorHost: host,
+    connectorPort: port,
+    autoStartConnector: autoStart,
+    healthPollIntervalMs: healthPoll,
+    startupTimeoutMs: startupTimeout,
+    shutdownGraceMs: currentSettings?.shutdownGraceMs ?? 5000,
+    maxRestartAttempts: currentSettings?.maxRestartAttempts ?? 5,
+    reconnectBaseDelayMs: currentSettings?.reconnectBaseDelayMs ?? 1000,
+    logLevel,
+    diagnosticsRetentionDays: currentSettings?.diagnosticsRetentionDays ?? 14,
+    tallyHost,
+    tallyPort,
+  };
 }
 
 export function renderLifecycle(status: ConnectorLifecycleStatus): void {
@@ -144,17 +234,42 @@ export function renderLifecycle(status: ConnectorLifecycleStatus): void {
   }
 }
 
-export function renderLogs(entries: readonly LogEntry[]): void {
-  const container = document.getElementById('log-list');
+function renderLogList(containerId: string, entries: readonly LogEntry[]): void {
+  const container = document.getElementById(containerId);
   if (!container) {
     return;
   }
-  container.innerHTML = entries
-    .map(
-      (entry) =>
-        `<div class="log-entry log-${entry.level}"><span class="log-time">[${entry.timestamp}]</span> <span class="log-level">${entry.level.toUpperCase()}</span> ${entry.message}</div>`,
-    )
-    .join('');
+  container.innerHTML = entries.length === 0
+    ? '<p class="empty-state">No entries.</p>'
+    : entries.map((entry) =>
+      `<div class="log-entry log-${entry.level}"><span class="log-time">[${entry.timestamp}]</span> <span class="log-level">${entry.level.toUpperCase()}</span> ${entry.message}</div>`,
+    ).join('');
+}
+
+export function renderLogs(entries: readonly LogEntry[]): void {
+  renderLogList('log-list', entries);
+}
+
+export function renderDiagnostics(snapshot: DiagnosticsSnapshot, message?: string): void {
+  setText('diag-desktop-version', snapshot.desktopVersion);
+  setText('diag-connector-version', snapshot.connectorVersion ?? '—');
+  setText('diag-runtime-versions', `${snapshot.electronVersion} / ${snapshot.nodeVersion}`);
+  setText('diag-os', `${snapshot.platform} ${snapshot.osRelease} (${snapshot.architecture})`);
+  setText('diag-uptime', `${snapshot.uptimeSeconds}s`);
+  setText('diag-connector-url', snapshot.connectorBaseUrl);
+  setText('diag-process-state', snapshot.connectorProcessState);
+  setText('diag-ownership', snapshot.connectorOwnership);
+  setText('diag-pid', snapshot.connectorPid === null ? '—' : String(snapshot.connectorPid));
+  setText('diag-health', `${snapshot.healthStatus} (reachable=${snapshot.healthReachable})`);
+  setText('diag-last-health', snapshot.lastSuccessfulHealthCheck ?? '—');
+  setText('diag-session', snapshot.sessionSummary);
+  setText('diag-config-status', `${snapshot.configStatus} · ${snapshot.configSource}`);
+  setText('diag-log-file', snapshot.logFilePath ?? 'unavailable');
+  renderLogList('diag-lifecycle-events', snapshot.recentLifecycleEvents);
+  renderLogList('diag-recent-errors', snapshot.recentErrors);
+  if (message) {
+    setText('diagnostics-status-message', message);
+  }
 }
 
 export function renderCompanyList(
@@ -190,6 +305,10 @@ export function activateView(view: DesktopView): void {
 
   document.getElementById(`view-${view}`)?.classList.add('active');
   document.querySelector(`.nav-btn[data-view="${view}"]`)?.classList.add('active');
+
+  if (view === 'diagnostics') {
+    void refreshDiagnostics();
+  }
 }
 
 export async function refreshUi(): Promise<void> {
@@ -208,11 +327,25 @@ export async function refreshUi(): Promise<void> {
     ]);
     renderDashboard(state);
     renderLogs(logs);
-    renderSettings(settings);
+    if (!settingsDirty) {
+      renderSettingsForm(settings);
+    }
     renderLifecycle(lifecycle);
   } finally {
     setLoading({ dashboard: false });
     refreshInFlight = false;
+  }
+}
+
+export async function refreshDiagnostics(): Promise<void> {
+  setLoading({ diagnostics: true });
+  try {
+    const snapshot = await window.budcomDesktop.refreshDiagnostics();
+    renderDiagnostics(snapshot, `Diagnostics refreshed at ${snapshot.generatedAt}`);
+  } catch {
+    setText('diagnostics-status-message', 'Unable to refresh diagnostics.');
+  } finally {
+    setLoading({ diagnostics: false });
   }
 }
 
@@ -299,6 +432,131 @@ async function runLifecycleAction(
   }
 }
 
+export function bindSettingsActions(): void {
+  const form = document.getElementById('settings-form');
+  form?.addEventListener('input', () => {
+    settingsDirty = true;
+  });
+  form?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void saveSettings();
+  });
+  document.getElementById('btn-restore-settings')?.addEventListener('click', () => {
+    void restoreSettings();
+  });
+}
+
+async function saveSettings(): Promise<void> {
+  setLoading({ settings: true });
+  renderValidationErrors([]);
+  try {
+    const payload = collectSettingsForm();
+    const validation = await window.budcomDesktop.validateSettings(payload);
+    if (!validation.ok) {
+      renderValidationErrors(validation.errors);
+      renderSettingsStatus('Fix validation errors before saving.', true);
+      return;
+    }
+    const result = await window.budcomDesktop.saveSettings(payload);
+    if (!result.ok || !result.settings) {
+      renderSettingsStatus(result.message, true);
+      return;
+    }
+    settingsDirty = false;
+    renderSettingsForm(result.settings);
+    renderSettingsStatus(result.message, false);
+    setBanner(result.message, result.restartRequired ? 'warning' : 'information');
+    await refreshUi();
+  } catch {
+    renderSettingsStatus('Settings save failed.', true);
+  } finally {
+    setLoading({ settings: false });
+  }
+}
+
+async function restoreSettings(): Promise<void> {
+  setLoading({ settings: true });
+  try {
+    const result = await window.budcomDesktop.restoreDefaultSettings();
+    if (result.settings) {
+      settingsDirty = false;
+      renderSettingsForm(result.settings);
+    }
+    renderSettingsStatus(result.message, !result.ok);
+    setBanner(result.message, result.restartRequired ? 'warning' : 'information');
+    await refreshUi();
+  } catch {
+    renderSettingsStatus('Unable to restore defaults.', true);
+  } finally {
+    setLoading({ settings: false });
+  }
+}
+
+export function bindDiagnosticsActions(): void {
+  document.getElementById('btn-refresh-diagnostics')?.addEventListener('click', () => {
+    void refreshDiagnostics();
+  });
+  document.getElementById('btn-copy-diagnostics')?.addEventListener('click', () => {
+    void copyDiagnostics();
+  });
+  document.getElementById('btn-export-diagnostics')?.addEventListener('click', () => {
+    void exportDiagnostics();
+  });
+  document.getElementById('btn-run-health-check')?.addEventListener('click', () => {
+    void runHealthCheckAction();
+  });
+  document.getElementById('btn-open-logs-folder')?.addEventListener('click', () => {
+    void window.budcomDesktop.openLogsFolder();
+  });
+  document.getElementById('btn-clear-logs')?.addEventListener('click', () => {
+    if (window.confirm('Clear nonessential logs? Error logs will be kept in memory.')) {
+      void clearLogsAction();
+    }
+  });
+  document.getElementById('btn-reload-renderer')?.addEventListener('click', () => {
+    void window.budcomDesktop.reloadRenderer();
+  });
+}
+
+async function copyDiagnostics(): Promise<void> {
+  try {
+    const summary = await window.budcomDesktop.copyDiagnosticsSummary();
+    await navigator.clipboard.writeText(summary);
+    setText('diagnostics-status-message', 'Diagnostics summary copied to clipboard.');
+  } catch {
+    setText('diagnostics-status-message', 'Unable to copy diagnostics summary.');
+  }
+}
+
+async function exportDiagnostics(): Promise<void> {
+  setLoading({ diagnostics: true });
+  try {
+    const result = await window.budcomDesktop.exportDiagnosticsBundle();
+    setText('diagnostics-status-message', result.ok ? `${result.message} ${result.bundlePath ?? ''}` : result.message);
+  } catch {
+    setText('diagnostics-status-message', 'Diagnostics export failed.');
+  } finally {
+    setLoading({ diagnostics: false });
+  }
+}
+
+async function runHealthCheckAction(): Promise<void> {
+  setLoading({ diagnostics: true });
+  try {
+    const result = await window.budcomDesktop.runHealthCheck();
+    setText('diagnostics-status-message', result.message);
+    await refreshDiagnostics();
+  } finally {
+    setLoading({ diagnostics: false });
+  }
+}
+
+async function clearLogsAction(): Promise<void> {
+  const result = await window.budcomDesktop.clearNonessentialLogs();
+  setText('diagnostics-status-message', result.message);
+  await refreshUi();
+}
+
 export function bindCompanyActions(): void {
   document.getElementById('btn-refresh-companies')?.addEventListener('click', () => {
     void loadCompanies();
@@ -331,6 +589,8 @@ export async function startDesktopShell(): Promise<void> {
   bindNavigation();
   bindCompanyActions();
   bindLifecycleActions();
+  bindSettingsActions();
+  bindDiagnosticsActions();
   await refreshUi();
   await loadCompanies();
   window.budcomDesktop.onStatusUpdated(() => {

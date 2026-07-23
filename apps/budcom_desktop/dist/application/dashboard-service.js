@@ -8,7 +8,7 @@ const log_service_js_1 = require("./log-service.js");
 const session_display_mapper_js_1 = require("./session-display-mapper.js");
 const sync_status_mapper_js_1 = require("./sync-status-mapper.js");
 exports.DESKTOP_WINDOW_TITLE = 'Business OS Tally Connector';
-exports.DESKTOP_VERSION = '0.4.2';
+exports.DESKTOP_VERSION = '0.4.3';
 exports.POLL_INTERVAL_SECONDS = 5;
 class DashboardService {
     client;
@@ -31,6 +31,7 @@ class DashboardService {
     getSettingsState(overrides = {}) {
         return {
             connectorUrl: this.connectorBaseUrl,
+            connectorHost: 'localhost',
             apiVersion: '1.0.0',
             desktopVersion: exports.DESKTOP_VERSION,
             erpType: 'tally',
@@ -38,6 +39,18 @@ class DashboardService {
             connectorExecutable: '—',
             connectorPort: 8080,
             autoStartConnector: true,
+            healthPollIntervalMs: 5_000,
+            startupTimeoutMs: 30_000,
+            shutdownGraceMs: 5_000,
+            maxRestartAttempts: 5,
+            reconnectBaseDelayMs: 1_000,
+            logLevel: 'info',
+            diagnosticsRetentionDays: 14,
+            tallyHost: 'localhost',
+            tallyPort: 9000,
+            configSource: 'runtime',
+            configStatus: 'runtime',
+            restartRequired: false,
             ...overrides,
         };
     }

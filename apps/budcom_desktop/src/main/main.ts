@@ -1,19 +1,30 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
 
 import { CompanyService } from '../application/company-service.js';
-import { resolveConnectorLifecycleConfig } from '../application/connector-lifecycle-config.js';
+import { DiagnosticsService } from '../application/diagnostics-service.js';
+import { getEnvironmentDefaults } from '../application/desktop-config-defaults.js';
+import { resolveDesktopConfigPaths } from '../application/desktop-config-paths.js';
+import { DesktopConfigStore } from '../application/desktop-config-store.js';
 import {
   ConnectorLifecycleService,
   HttpHealthChecker,
 } from '../application/connector-lifecycle-service.js';
 import { DashboardService, DESKTOP_WINDOW_TITLE } from '../application/dashboard-service.js';
+import { FileLogWriter } from '../application/file-log-writer.js';
+import {
+  assertAllowedIpcChannel,
+  validateCompanyId,
+  validateExportDirectory,
+  validateSettingsInput,
+} from '../application/ipc-allowlist.js';
 import { LogService } from '../application/log-service.js';
 import { NodeProcessSpawner } from '../application/node-process-spawner.js';
+import { RecoveryService } from '../application/recovery-service.js';
+import { SettingsService } from '../application/settings-service.js';
 
-const lifecycleConfig = resolveConnectorLifecycleConfig();
-const CONNECTOR_BASE_URL = lifecycleConfig.connectorBaseUrl;
-const POLL_INTERVAL_MS = lifecycleConfig.healthPollIntervalMs;
+const startedAt = Date.now();
+const isDevelopment = process.env.NODE_ENV !== 'production';
 
 let mainWindow: BrowserWindow | null = null;
 let pollTimer: NodeJS.Timeout | null = null;
@@ -34,25 +45,88 @@ process.on('unhandledRejection', (reason) => {
   startupLog('unhandledRejection', detail);
 });
 
-const logService = new LogService();
-const dashboardService = new DashboardService({
-  connectorBaseUrl: CONNECTOR_BASE_URL,
-  logService,
+const configPaths = resolveDesktopConfigPaths(app.getPath('userData'));
+const configStore = new DesktopConfigStore({
+  paths: configPaths,
+  defaults: getEnvironmentDefaults(isDevelopment),
 });
-const companyService = new CompanyService({
-  connectorBaseUrl: CONNECTOR_BASE_URL,
-  logService,
+const fileLogWriter = new FileLogWriter({ logsDir: configPaths.logsDir });
+const logService = new LogService({
+  fileWriter: fileLogWriter,
+  minimumLevel: isDevelopment ? 'debug' : 'info',
+  consoleEnabled: isDevelopment,
 });
-const lifecycleService = new ConnectorLifecycleService({
-  config: lifecycleConfig,
-  processSpawner: new NodeProcessSpawner(),
-  healthChecker: new HttpHealthChecker(CONNECTOR_BASE_URL),
-  logService,
-});
+const recoveryService = new RecoveryService(logService);
+const configLoadResult = configStore.loadFromDisk();
+recoveryService.handleConfigLoad(configLoadResult);
 
-lifecycleService.setStatusListener(() => {
-  notifyRenderer();
+const settingsService = new SettingsService({
+  configStore,
+  logService,
+  isDevelopment,
+  connectorExecutable: process.env.BUDCOM_CONNECTOR_EXECUTABLE ?? process.execPath,
 });
+settingsService.setConfigStatus(configLoadResult.status);
+
+let resolved = settingsService.getResolvedConfig();
+let dashboardService = createDashboardService(resolved.connectorBaseUrl);
+let companyService = createCompanyService(resolved.connectorBaseUrl);
+let lifecycleService = createLifecycleService(resolved.lifecycleConfig);
+let diagnosticsService = createDiagnosticsService();
+
+function createDashboardService(baseUrl: string): DashboardService {
+  return new DashboardService({
+    connectorBaseUrl: baseUrl,
+    logService,
+  });
+}
+
+function createCompanyService(baseUrl: string): CompanyService {
+  return new CompanyService({
+    connectorBaseUrl: baseUrl,
+    logService,
+  });
+}
+
+function createLifecycleService(config: ReturnType<typeof settingsService.getResolvedConfig>['lifecycleConfig']): ConnectorLifecycleService {
+  const service = new ConnectorLifecycleService({
+    config,
+    processSpawner: new NodeProcessSpawner(),
+    healthChecker: new HttpHealthChecker(config.connectorBaseUrl),
+    logService,
+  });
+  service.setStatusListener(() => {
+    notifyRenderer();
+  });
+  return service;
+}
+
+function createDiagnosticsService(): DiagnosticsService {
+  return new DiagnosticsService({
+    desktopVersion: settingsService.getSettingsState().desktopVersion,
+    electronVersion: process.versions.electron,
+    configStore,
+    resolvedConfig: resolved,
+    configStatus: settingsService.getConfigStatus(),
+    dashboardService,
+    lifecycleService,
+    logService,
+    exportDir: configPaths.diagnosticsExportDir,
+    startedAt,
+  });
+}
+
+async function reinitializeRuntimeServices(): Promise<void> {
+  await lifecycleService.shutdown();
+  resolved = settingsService.getResolvedConfig();
+  logService.setMinimumLevel(resolved.effective.logLevel);
+  dashboardService = createDashboardService(resolved.connectorBaseUrl);
+  companyService = createCompanyService(resolved.connectorBaseUrl);
+  lifecycleService = createLifecycleService(resolved.lifecycleConfig);
+  diagnosticsService = createDiagnosticsService();
+  startPolling(resolved.effective.healthPollIntervalMs);
+  await lifecycleService.initialize();
+}
 
 function notifyRenderer(): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -80,7 +154,21 @@ export function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      devTools: isDevelopment,
     },
+  });
+
+  if (!isDevelopment) {
+    window.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
   });
 
   startupLog('BrowserWindow created', `id=${window.id}`);
@@ -116,39 +204,109 @@ export function createMainWindow(): BrowserWindow {
   return window;
 }
 
+function registerIpcHandler<T extends unknown[], R>(
+  channel: string,
+  handler: (...args: T) => Promise<R> | R,
+): void {
+  assertAllowedIpcChannel(channel);
+  ipcMain.handle(channel, async (_event, ...args: T) => handler(...args));
+}
+
 function registerIpcHandlers(): void {
-  ipcMain.handle('desktop:get-dashboard', async () => dashboardService.getDashboardState());
-  ipcMain.handle('desktop:get-logs', async () => dashboardService.getLogService().getEntries());
-  ipcMain.handle('desktop:get-settings', async () => ({
-    ...dashboardService.getSettingsState(),
-    connectorExecutable: lifecycleConfig.connectorExecutable,
-    connectorPort: lifecycleConfig.connectorPort,
-    autoStartConnector: lifecycleConfig.autoStart,
-  }));
-  ipcMain.handle('desktop:get-lifecycle-status', async () => lifecycleService.getStatus());
-  ipcMain.handle('desktop:start-connector', async () => lifecycleService.ensureConnectorRunning());
-  ipcMain.handle('desktop:stop-connector', async () => lifecycleService.stopConnector());
-  ipcMain.handle('desktop:restart-connector', async () => lifecycleService.restartConnector());
-  ipcMain.handle('desktop:get-companies', async () => companyService.discoverCompanies());
-  ipcMain.handle('desktop:select-company', async (_event, companyId: string) => {
-    const outcome = await companyService.selectCompany(companyId);
+  registerIpcHandler('desktop:get-dashboard', async () => dashboardService.getDashboardState());
+  registerIpcHandler('desktop:get-logs', async () => dashboardService.getLogService().getEntries());
+  registerIpcHandler('desktop:get-settings', async () => settingsService.getSettingsState());
+  registerIpcHandler('desktop:validate-settings', async (input: unknown) => settingsService.validateInput(validateSettingsInput(input)));
+  registerIpcHandler('desktop:save-settings', async (input: unknown) => {
+    const result = settingsService.saveSettings(validateSettingsInput(input));
+    if (result.ok && result.restartRequired) {
+      await reinitializeRuntimeServices();
+    } else if (result.ok) {
+      diagnosticsService.updateResolvedConfig(settingsService.getResolvedConfig());
+      logService.setMinimumLevel(settingsService.getResolvedConfig().effective.logLevel);
+    }
+    notifyRenderer();
+    return result;
+  });
+  registerIpcHandler('desktop:restore-default-settings', async () => {
+    const result = settingsService.restoreDefaults();
+    await reinitializeRuntimeServices();
+    notifyRenderer();
+    return result;
+  });
+  registerIpcHandler('desktop:get-lifecycle-status', async () => lifecycleService.getStatus());
+  registerIpcHandler('desktop:start-connector', async () => lifecycleService.ensureConnectorRunning());
+  registerIpcHandler('desktop:stop-connector', async () => lifecycleService.stopConnector());
+  registerIpcHandler('desktop:restart-connector', async () => {
+    const status = lifecycleService.getStatus();
+    if (status.externalProcessDetected && !status.managedByDesktop) {
+      return status;
+    }
+    return lifecycleService.restartConnector();
+  });
+  registerIpcHandler('desktop:get-companies', async () => companyService.discoverCompanies());
+  registerIpcHandler('desktop:select-company', async (companyId: unknown) => {
+    const outcome = await companyService.selectCompany(validateCompanyId(companyId));
     notifyRenderer();
     return outcome;
   });
-  ipcMain.handle('desktop:clear-company', async () => {
+  registerIpcHandler('desktop:clear-company', async () => {
     const session = await companyService.clearSelection();
     notifyRenderer();
     return session;
   });
+  registerIpcHandler('desktop:get-diagnostics', async () => diagnosticsService.getSnapshot());
+  registerIpcHandler('desktop:refresh-diagnostics', async () => diagnosticsService.getSnapshot());
+  registerIpcHandler('desktop:copy-diagnostics-summary', async () => {
+    const snapshot = await diagnosticsService.getSnapshot();
+    return diagnosticsService.formatSummary(snapshot);
+  });
+  registerIpcHandler('desktop:export-diagnostics-bundle', async (targetDir?: unknown) => {
+    return diagnosticsService.exportBundle(validateExportDirectory(targetDir));
+  });
+  registerIpcHandler('desktop:open-logs-folder', async () => {
+    const result = await shell.openPath(configPaths.logsDir);
+    return { ok: result === '', message: result || 'Logs folder opened.' };
+  });
+  registerIpcHandler('desktop:clear-nonessential-logs', async () => {
+    logService.clearNonessential();
+    fileLogWriter.clearCurrentLog();
+    return { ok: true, message: 'Nonessential logs cleared.' };
+  });
+  registerIpcHandler('desktop:run-health-check', async () => {
+    const healthy = await new HttpHealthChecker(resolved.connectorBaseUrl).checkHealth();
+    let status = 'unknown';
+    if (healthy) {
+      try {
+        const health = await dashboardService.getDashboardState();
+        status = health.healthStatus;
+      } catch {
+        status = 'reachable';
+      }
+    }
+    return {
+      ok: healthy,
+      reachable: healthy,
+      status,
+      message: healthy ? 'Connector health check passed.' : 'Connector health check failed.',
+      checkedAt: new Date().toISOString(),
+    };
+  });
+  registerIpcHandler('desktop:reload-renderer', async () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      await mainWindow.webContents.reload();
+    }
+    return { ok: true };
+  });
 }
 
-function startPolling(): void {
+function startPolling(intervalMs: number): void {
   if (pollTimer) {
     clearInterval(pollTimer);
   }
   pollTimer = setInterval(() => {
     notifyRenderer();
-  }, POLL_INTERVAL_MS);
+  }, intervalMs);
 }
 
 export function bootstrapApp(): void {
@@ -158,7 +316,7 @@ export function bootstrapApp(): void {
   app.whenReady().then(() => {
     startupLog('app ready');
     mainWindow = createMainWindow();
-    startPolling();
+    startPolling(resolved.effective.healthPollIntervalMs);
     void lifecycleService.initialize();
 
     app.on('activate', () => {

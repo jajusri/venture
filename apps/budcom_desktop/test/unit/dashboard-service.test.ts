@@ -61,7 +61,7 @@ describe('DashboardService', () => {
     expect(state.sessionStatus).toBe('ACTIVE');
     expect(state.syncStatus).toBe('idle');
     expect(state.connectorVersion).toBe('0.3.1');
-    expect(state.desktopVersion).toBe('0.4.2');
+    expect(state.desktopVersion).toBe('0.4.3');
     expect(state.erpName).toBe('Tally');
     expect(state.lastRefresh).not.toBe('—');
   });

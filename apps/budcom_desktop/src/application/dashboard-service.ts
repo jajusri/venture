@@ -21,7 +21,7 @@ import {
 } from './sync-status-mapper.js';
 
 export const DESKTOP_WINDOW_TITLE = 'Business OS Tally Connector';
-export const DESKTOP_VERSION = '0.4.2';
+export const DESKTOP_VERSION = '0.4.3';
 export const POLL_INTERVAL_SECONDS = 5;
 
 export interface DashboardServiceOptions {
@@ -56,6 +56,7 @@ export class DashboardService {
   getSettingsState(overrides: Partial<SettingsState> = {}): SettingsState {
     return {
       connectorUrl: this.connectorBaseUrl,
+      connectorHost: 'localhost',
       apiVersion: '1.0.0',
       desktopVersion: DESKTOP_VERSION,
       erpType: 'tally',
@@ -63,6 +64,18 @@ export class DashboardService {
       connectorExecutable: '—',
       connectorPort: 8080,
       autoStartConnector: true,
+      healthPollIntervalMs: 5_000,
+      startupTimeoutMs: 30_000,
+      shutdownGraceMs: 5_000,
+      maxRestartAttempts: 5,
+      reconnectBaseDelayMs: 1_000,
+      logLevel: 'info',
+      diagnosticsRetentionDays: 14,
+      tallyHost: 'localhost',
+      tallyPort: 9000,
+      configSource: 'runtime',
+      configStatus: 'runtime',
+      restartRequired: false,
       ...overrides,
     };
   }

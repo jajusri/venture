@@ -67,6 +67,21 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-004 — Tally settings not forwarded to connector spawn
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-004 |
+| **Description** | Desktop settings store Tally host/port but do not yet pass them to connector process environment on spawn |
+| **Impact** | Low — Tally connection still configured in connector/Tally directly |
+| **Priority** | P3 |
+| **Estimated fix** | 2 hours |
+| **Target milestone** | 5A |
+| **Status** | Open |
+| **Introduced** | Milestone 4D (2026-07-23) |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
@@ -74,3 +89,4 @@ Engineering-tracked compromises, defects, and deferred work.
 | TD-001 | Parent encoding normalization (`&#4; Primary`) | P2 | Open | 5A |
 | TD-002 | Desktop company selection UI | P2 | **Resolved** | 4B |
 | TD-003 | Connector process supervision | P2 | **Resolved** | 4C |
+| TD-004 | Tally host/port not forwarded to connector spawn | P3 | Open | 5A |

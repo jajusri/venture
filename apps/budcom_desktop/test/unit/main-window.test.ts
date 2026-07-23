@@ -9,12 +9,16 @@ vi.mock('electron', () => {
       once: vi.fn((_event: string, callback: () => void) => {
         callback();
       }),
+      setWindowOpenHandler: vi.fn(),
+      reload: vi.fn().mockResolvedValue(undefined),
+      send: vi.fn(),
     };
     constructor(options: { webPreferences?: unknown }) {
       this.webPreferences = options.webPreferences;
     }
     loadFile = vi.fn().mockResolvedValue(undefined);
     show = vi.fn();
+    isDestroyed = vi.fn(() => false);
     once = vi.fn((_event: string, callback: () => void) => {
       callback();
     });
@@ -24,9 +28,13 @@ vi.mock('electron', () => {
       whenReady: vi.fn().mockResolvedValue(undefined),
       on: vi.fn(),
       quit: vi.fn(),
+      getPath: vi.fn(() => '/tmp/budcom-test-userdata'),
     },
     BrowserWindow,
     ipcMain: { handle: vi.fn() },
+    shell: {
+      openPath: vi.fn().mockResolvedValue(''),
+    },
   };
 });
 
@@ -53,6 +61,8 @@ describe('application startup', () => {
     expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:get-logs', expect.any(Function));
     expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:get-lifecycle-status', expect.any(Function));
     expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:start-connector', expect.any(Function));
-    expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:select-company', expect.any(Function));
+    expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:get-settings', expect.any(Function));
+    expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:get-diagnostics', expect.any(Function));
+    expect(electron.ipcMain.handle).toHaveBeenCalledWith('desktop:save-settings', expect.any(Function));
   });
 });

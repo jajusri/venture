@@ -8,14 +8,20 @@ exports.bootstrapApp = bootstrapApp;
 const electron_1 = require("electron");
 const node_path_1 = __importDefault(require("node:path"));
 const company_service_js_1 = require("../application/company-service.js");
-const connector_lifecycle_config_js_1 = require("../application/connector-lifecycle-config.js");
+const diagnostics_service_js_1 = require("../application/diagnostics-service.js");
+const desktop_config_defaults_js_1 = require("../application/desktop-config-defaults.js");
+const desktop_config_paths_js_1 = require("../application/desktop-config-paths.js");
+const desktop_config_store_js_1 = require("../application/desktop-config-store.js");
 const connector_lifecycle_service_js_1 = require("../application/connector-lifecycle-service.js");
 const dashboard_service_js_1 = require("../application/dashboard-service.js");
+const file_log_writer_js_1 = require("../application/file-log-writer.js");
+const ipc_allowlist_js_1 = require("../application/ipc-allowlist.js");
 const log_service_js_1 = require("../application/log-service.js");
 const node_process_spawner_js_1 = require("../application/node-process-spawner.js");
-const lifecycleConfig = (0, connector_lifecycle_config_js_1.resolveConnectorLifecycleConfig)();
-const CONNECTOR_BASE_URL = lifecycleConfig.connectorBaseUrl;
-const POLL_INTERVAL_MS = lifecycleConfig.healthPollIntervalMs;
+const recovery_service_js_1 = require("../application/recovery-service.js");
+const settings_service_js_1 = require("../application/settings-service.js");
+const startedAt = Date.now();
+const isDevelopment = process.env.NODE_ENV !== 'production';
 let mainWindow = null;
 let pollTimer = null;
 function startupLog(stage, detail) {
@@ -30,24 +36,81 @@ process.on('unhandledRejection', (reason) => {
     const detail = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
     startupLog('unhandledRejection', detail);
 });
-const logService = new log_service_js_1.LogService();
-const dashboardService = new dashboard_service_js_1.DashboardService({
-    connectorBaseUrl: CONNECTOR_BASE_URL,
+const configPaths = (0, desktop_config_paths_js_1.resolveDesktopConfigPaths)(electron_1.app.getPath('userData'));
+const configStore = new desktop_config_store_js_1.DesktopConfigStore({
+    paths: configPaths,
+    defaults: (0, desktop_config_defaults_js_1.getEnvironmentDefaults)(isDevelopment),
+});
+const fileLogWriter = new file_log_writer_js_1.FileLogWriter({ logsDir: configPaths.logsDir });
+const logService = new log_service_js_1.LogService({
+    fileWriter: fileLogWriter,
+    minimumLevel: isDevelopment ? 'debug' : 'info',
+    consoleEnabled: isDevelopment,
+});
+const recoveryService = new recovery_service_js_1.RecoveryService(logService);
+const configLoadResult = configStore.loadFromDisk();
+recoveryService.handleConfigLoad(configLoadResult);
+const settingsService = new settings_service_js_1.SettingsService({
+    configStore,
     logService,
+    isDevelopment,
+    connectorExecutable: process.env.BUDCOM_CONNECTOR_EXECUTABLE ?? process.execPath,
 });
-const companyService = new company_service_js_1.CompanyService({
-    connectorBaseUrl: CONNECTOR_BASE_URL,
-    logService,
-});
-const lifecycleService = new connector_lifecycle_service_js_1.ConnectorLifecycleService({
-    config: lifecycleConfig,
-    processSpawner: new node_process_spawner_js_1.NodeProcessSpawner(),
-    healthChecker: new connector_lifecycle_service_js_1.HttpHealthChecker(CONNECTOR_BASE_URL),
-    logService,
-});
-lifecycleService.setStatusListener(() => {
-    notifyRenderer();
-});
+settingsService.setConfigStatus(configLoadResult.status);
+let resolved = settingsService.getResolvedConfig();
+let dashboardService = createDashboardService(resolved.connectorBaseUrl);
+let companyService = createCompanyService(resolved.connectorBaseUrl);
+let lifecycleService = createLifecycleService(resolved.lifecycleConfig);
+let diagnosticsService = createDiagnosticsService();
+function createDashboardService(baseUrl) {
+    return new dashboard_service_js_1.DashboardService({
+        connectorBaseUrl: baseUrl,
+        logService,
+    });
+}
+function createCompanyService(baseUrl) {
+    return new company_service_js_1.CompanyService({
+        connectorBaseUrl: baseUrl,
+        logService,
+    });
+}
+function createLifecycleService(config) {
+    const service = new connector_lifecycle_service_js_1.ConnectorLifecycleService({
+        config,
+        processSpawner: new node_process_spawner_js_1.NodeProcessSpawner(),
+        healthChecker: new connector_lifecycle_service_js_1.HttpHealthChecker(config.connectorBaseUrl),
+        logService,
+    });
+    service.setStatusListener(() => {
+        notifyRenderer();
+    });
+    return service;
+}
+function createDiagnosticsService() {
+    return new diagnostics_service_js_1.DiagnosticsService({
+        desktopVersion: settingsService.getSettingsState().desktopVersion,
+        electronVersion: process.versions.electron,
+        configStore,
+        resolvedConfig: resolved,
+        configStatus: settingsService.getConfigStatus(),
+        dashboardService,
+        lifecycleService,
+        logService,
+        exportDir: configPaths.diagnosticsExportDir,
+        startedAt,
+    });
+}
+async function reinitializeRuntimeServices() {
+    await lifecycleService.shutdown();
+    resolved = settingsService.getResolvedConfig();
+    logService.setMinimumLevel(resolved.effective.logLevel);
+    dashboardService = createDashboardService(resolved.connectorBaseUrl);
+    companyService = createCompanyService(resolved.connectorBaseUrl);
+    lifecycleService = createLifecycleService(resolved.lifecycleConfig);
+    diagnosticsService = createDiagnosticsService();
+    startPolling(resolved.effective.healthPollIntervalMs);
+    await lifecycleService.initialize();
+}
 function notifyRenderer() {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('desktop:status-updated');
@@ -71,7 +134,19 @@ function createMainWindow() {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: true,
+            devTools: isDevelopment,
         },
+    });
+    if (!isDevelopment) {
+        window.webContents.on('before-input-event', (event, input) => {
+            if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+                event.preventDefault();
+            }
+        });
+    }
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    window.webContents.on('will-navigate', (event) => {
+        event.preventDefault();
     });
     startupLog('BrowserWindow created', `id=${window.id}`);
     window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
@@ -99,38 +174,106 @@ function createMainWindow() {
     });
     return window;
 }
+function registerIpcHandler(channel, handler) {
+    (0, ipc_allowlist_js_1.assertAllowedIpcChannel)(channel);
+    electron_1.ipcMain.handle(channel, async (_event, ...args) => handler(...args));
+}
 function registerIpcHandlers() {
-    electron_1.ipcMain.handle('desktop:get-dashboard', async () => dashboardService.getDashboardState());
-    electron_1.ipcMain.handle('desktop:get-logs', async () => dashboardService.getLogService().getEntries());
-    electron_1.ipcMain.handle('desktop:get-settings', async () => ({
-        ...dashboardService.getSettingsState(),
-        connectorExecutable: lifecycleConfig.connectorExecutable,
-        connectorPort: lifecycleConfig.connectorPort,
-        autoStartConnector: lifecycleConfig.autoStart,
-    }));
-    electron_1.ipcMain.handle('desktop:get-lifecycle-status', async () => lifecycleService.getStatus());
-    electron_1.ipcMain.handle('desktop:start-connector', async () => lifecycleService.ensureConnectorRunning());
-    electron_1.ipcMain.handle('desktop:stop-connector', async () => lifecycleService.stopConnector());
-    electron_1.ipcMain.handle('desktop:restart-connector', async () => lifecycleService.restartConnector());
-    electron_1.ipcMain.handle('desktop:get-companies', async () => companyService.discoverCompanies());
-    electron_1.ipcMain.handle('desktop:select-company', async (_event, companyId) => {
-        const outcome = await companyService.selectCompany(companyId);
+    registerIpcHandler('desktop:get-dashboard', async () => dashboardService.getDashboardState());
+    registerIpcHandler('desktop:get-logs', async () => dashboardService.getLogService().getEntries());
+    registerIpcHandler('desktop:get-settings', async () => settingsService.getSettingsState());
+    registerIpcHandler('desktop:validate-settings', async (input) => settingsService.validateInput((0, ipc_allowlist_js_1.validateSettingsInput)(input)));
+    registerIpcHandler('desktop:save-settings', async (input) => {
+        const result = settingsService.saveSettings((0, ipc_allowlist_js_1.validateSettingsInput)(input));
+        if (result.ok && result.restartRequired) {
+            await reinitializeRuntimeServices();
+        }
+        else if (result.ok) {
+            diagnosticsService.updateResolvedConfig(settingsService.getResolvedConfig());
+            logService.setMinimumLevel(settingsService.getResolvedConfig().effective.logLevel);
+        }
+        notifyRenderer();
+        return result;
+    });
+    registerIpcHandler('desktop:restore-default-settings', async () => {
+        const result = settingsService.restoreDefaults();
+        await reinitializeRuntimeServices();
+        notifyRenderer();
+        return result;
+    });
+    registerIpcHandler('desktop:get-lifecycle-status', async () => lifecycleService.getStatus());
+    registerIpcHandler('desktop:start-connector', async () => lifecycleService.ensureConnectorRunning());
+    registerIpcHandler('desktop:stop-connector', async () => lifecycleService.stopConnector());
+    registerIpcHandler('desktop:restart-connector', async () => {
+        const status = lifecycleService.getStatus();
+        if (status.externalProcessDetected && !status.managedByDesktop) {
+            return status;
+        }
+        return lifecycleService.restartConnector();
+    });
+    registerIpcHandler('desktop:get-companies', async () => companyService.discoverCompanies());
+    registerIpcHandler('desktop:select-company', async (companyId) => {
+        const outcome = await companyService.selectCompany((0, ipc_allowlist_js_1.validateCompanyId)(companyId));
         notifyRenderer();
         return outcome;
     });
-    electron_1.ipcMain.handle('desktop:clear-company', async () => {
+    registerIpcHandler('desktop:clear-company', async () => {
         const session = await companyService.clearSelection();
         notifyRenderer();
         return session;
     });
+    registerIpcHandler('desktop:get-diagnostics', async () => diagnosticsService.getSnapshot());
+    registerIpcHandler('desktop:refresh-diagnostics', async () => diagnosticsService.getSnapshot());
+    registerIpcHandler('desktop:copy-diagnostics-summary', async () => {
+        const snapshot = await diagnosticsService.getSnapshot();
+        return diagnosticsService.formatSummary(snapshot);
+    });
+    registerIpcHandler('desktop:export-diagnostics-bundle', async (targetDir) => {
+        return diagnosticsService.exportBundle((0, ipc_allowlist_js_1.validateExportDirectory)(targetDir));
+    });
+    registerIpcHandler('desktop:open-logs-folder', async () => {
+        const result = await electron_1.shell.openPath(configPaths.logsDir);
+        return { ok: result === '', message: result || 'Logs folder opened.' };
+    });
+    registerIpcHandler('desktop:clear-nonessential-logs', async () => {
+        logService.clearNonessential();
+        fileLogWriter.clearCurrentLog();
+        return { ok: true, message: 'Nonessential logs cleared.' };
+    });
+    registerIpcHandler('desktop:run-health-check', async () => {
+        const healthy = await new connector_lifecycle_service_js_1.HttpHealthChecker(resolved.connectorBaseUrl).checkHealth();
+        let status = 'unknown';
+        if (healthy) {
+            try {
+                const health = await dashboardService.getDashboardState();
+                status = health.healthStatus;
+            }
+            catch {
+                status = 'reachable';
+            }
+        }
+        return {
+            ok: healthy,
+            reachable: healthy,
+            status,
+            message: healthy ? 'Connector health check passed.' : 'Connector health check failed.',
+            checkedAt: new Date().toISOString(),
+        };
+    });
+    registerIpcHandler('desktop:reload-renderer', async () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            await mainWindow.webContents.reload();
+        }
+        return { ok: true };
+    });
 }
-function startPolling() {
+function startPolling(intervalMs) {
     if (pollTimer) {
         clearInterval(pollTimer);
     }
     pollTimer = setInterval(() => {
         notifyRenderer();
-    }, POLL_INTERVAL_MS);
+    }, intervalMs);
 }
 function bootstrapApp() {
     startupLog('bootstrapApp invoked');
@@ -138,7 +281,7 @@ function bootstrapApp() {
     electron_1.app.whenReady().then(() => {
         startupLog('app ready');
         mainWindow = createMainWindow();
-        startPolling();
+        startPolling(resolved.effective.healthPollIntervalMs);
         void lifecycleService.initialize();
         electron_1.app.on('activate', () => {
             if (electron_1.BrowserWindow.getAllWindows().length === 0) {

@@ -1,0 +1,62 @@
+{
+  "validatedAt": "2026-07-23T07:10:42.021Z",
+  "desktopVersion": "0.4.3",
+  "validationPort": 18081,
+  "results": [
+    {
+      "scenario": "Desktop starts with valid persisted settings",
+      "status": "PASS",
+      "detail": "port=8080"
+    },
+    {
+      "scenario": "Invalid persisted settings recover safely",
+      "status": "PASS",
+      "detail": "defaults restored"
+    },
+    {
+      "scenario": "Settings can be changed and saved",
+      "status": "PASS",
+      "detail": "Settings saved. Restart the desktop app or reconnect the connector for all changes to take effect."
+    },
+    {
+      "scenario": "Connector auto-start still works",
+      "status": "PASS",
+      "detail": "managed=true"
+    },
+    {
+      "scenario": "No duplicate connector process",
+      "status": "PASS",
+      "detail": "state=Connected"
+    },
+    {
+      "scenario": "Diagnostics refresh works",
+      "status": "PASS",
+      "detail": "health=ok"
+    },
+    {
+      "scenario": "Copy diagnostics works",
+      "status": "PASS",
+      "detail": "summary generated"
+    },
+    {
+      "scenario": "Export diagnostics bundle works",
+      "status": "PASS",
+      "detail": "Diagnostics bundle exported successfully."
+    },
+    {
+      "scenario": "Bundle contains no secrets or business data",
+      "status": "PASS",
+      "detail": "sanitized bundle"
+    },
+    {
+      "scenario": "Log retention works",
+      "status": "PASS",
+      "detail": "entries=1"
+    },
+    {
+      "scenario": "External connector detection still works",
+      "status": "PASS",
+      "detail": "external=true"
+    }
+  ]
+}
