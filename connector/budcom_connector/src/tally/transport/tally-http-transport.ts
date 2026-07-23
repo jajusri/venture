@@ -44,6 +44,13 @@ export class TallyHttpTransport implements ErpTransport {
     const started = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    if (request.signal) {
+      if (request.signal.aborted) {
+        clearTimeout(timer);
+        throw new AppError(ErrorCodes.SYNC_CANCELLED, 'Tally request was cancelled.', 499);
+      }
+      request.signal.addEventListener('abort', () => controller.abort(), { once: true });
+    }
 
     try {
       const response = await this.fetchImpl(url, {
@@ -99,6 +106,9 @@ export class TallyHttpTransport implements ErpTransport {
         throw error;
       }
       if (error instanceof Error && error.name === 'AbortError') {
+        if (request.signal?.aborted) {
+          throw new AppError(ErrorCodes.SYNC_CANCELLED, 'Tally request was cancelled.', 499);
+        }
         throw new AppError(
           ErrorCodes.SERVICE_UNAVAILABLE,
           `Tally request timed out after ${timeoutMs}ms`,

@@ -1,0 +1,23 @@
+{
+  "auditId": "connector-precommit-5ap",
+  "generatedAt": "2026-07-23T08:55:00.000Z",
+  "baseline": {
+    "branch": "main",
+    "head": "9e24483b038e3417c2731e662ff8fe551bff6057",
+    "milestone": "5A-P-uncommitted"
+  },
+  "verdict": "CONTROLLED_PILOT_READY",
+  "safeToCommit": true,
+  "safeToTag": false,
+  "tests": {
+    "connectorBeforeAudit": { "passed": 261, "total": 261 },
+    "connectorAfterFixes": { "passed": 264, "total": 264 },
+    "desktopAfterFixes": { "passed": 67, "total": 67 }
+  },
+  "builds": { "connector": "PASS", "desktop": "PASS" },
+  "confirmedDefectsFound": 11,
+  "confirmedDefectsFixed": 9,
+  "acceptedRisks": 5,
+  "liveTally": "BLOCKED",
+  "productionGateScore": 78
+}

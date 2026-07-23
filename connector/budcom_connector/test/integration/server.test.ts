@@ -7,7 +7,7 @@ import { createTallyMockFetch } from '../helpers/mock-fetch.js';
 import { createTestApp, createTestContext, startTestServices } from '../helpers/test-context.js';
 
 describe('GET /health', () => {
-  it('returns read-only health envelope with service statuses', async () => {
+  it('returns read-only health envelope with loopback network binding', async () => {
     const response = await request(createTestApp()).get('/health');
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
@@ -15,6 +15,10 @@ describe('GET /health', () => {
       schemaVersion: '1.0.0',
       readOnly: true,
       connectorVersion: '0.3.1',
+      bindHost: '127.0.0.1',
+      networkExposure: 'loopback',
+      networkPolicySatisfied: true,
+      authenticatedLanAccessEnabled: false,
     });
     expect(Array.isArray(response.body.services)).toBe(true);
     expect(response.body.services.length).toBeGreaterThan(0);

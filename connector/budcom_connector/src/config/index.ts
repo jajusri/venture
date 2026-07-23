@@ -1,4 +1,9 @@
 import { defaultConfig, type ConnectorConfig } from './defaults.js';
+import {
+  getNetworkExposureWarning,
+  isLanModePolicySatisfied,
+  parseConnectorBindHost,
+} from './network-binding.js';
 
 const LOG_LEVELS = new Set(['debug', 'info', 'warn', 'error']);
 const ENVS = new Set(['development', 'production', 'test']);
@@ -29,6 +34,10 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   throw new Error(`Invalid boolean value: ${value}`);
 }
 
+function parseConnectorHost(value: string | undefined, fallback: string): ReturnType<typeof parseConnectorBindHost> {
+  return parseConnectorBindHost(value, fallback);
+}
+
 function parseRatio(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback;
   const parsed = Number(value);
@@ -55,10 +64,18 @@ function parseEnv(value: string | undefined, fallback: ConnectorConfig['env']) {
 }
 
 export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorConfig {
+  const bindHost = parseConnectorHost(process.env.BUDCOM_CONNECTOR_HOST, defaultConfig.host);
+  const lanModeAcknowledged = parseBoolean(
+    process.env.BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED,
+    defaultConfig.lanModeAcknowledged,
+  );
   const config: ConnectorConfig = {
     env: parseEnv(process.env.NODE_ENV, defaultConfig.env),
-    host: process.env.BUDCOM_CONNECTOR_HOST ?? defaultConfig.host,
+    host: bindHost.host,
     port: parsePort(process.env.BUDCOM_CONNECTOR_PORT, defaultConfig.port),
+    networkExposure: bindHost.exposure,
+    networkExposureWarning: getNetworkExposureWarning(bindHost),
+    lanModeAcknowledged,
     logLevel: parseLogLevel(process.env.BUDCOM_LOG_LEVEL, defaultConfig.logLevel),
     tallyHost: process.env.BUDCOM_TALLY_HOST ?? defaultConfig.tallyHost,
     tallyPort: parsePort(process.env.BUDCOM_TALLY_PORT, defaultConfig.tallyPort),
@@ -139,12 +156,29 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
     ...overrides,
   };
 
-  if (config.port < 1 || config.port > 65535) {
-    throw new Error(`Invalid port value: ${config.port}`);
+  const effectiveBindHost = parseConnectorBindHost(config.host, defaultConfig.host);
+  const resolved: ConnectorConfig = {
+    ...config,
+    host: effectiveBindHost.host,
+    networkExposure: effectiveBindHost.exposure,
+    networkExposureWarning: getNetworkExposureWarning(effectiveBindHost),
+  };
+
+  if (resolved.port < 1 || resolved.port > 65535) {
+    throw new Error(`Invalid port value: ${resolved.port}`);
   }
-  if (config.tallyPort < 1 || config.tallyPort > 65535) {
-    throw new Error(`Invalid port value: ${config.tallyPort}`);
+  if (resolved.tallyPort < 1 || resolved.tallyPort > 65535) {
+    throw new Error(`Invalid port value: ${resolved.tallyPort}`);
+  }
+  if (
+    resolved.env === 'production' &&
+    resolved.networkExposure === 'lan' &&
+    !isLanModePolicySatisfied(effectiveBindHost, resolved.lanModeAcknowledged)
+  ) {
+    throw new Error(
+      'Non-loopback connector bind requires BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED=true in production.',
+    );
   }
 
-  return config;
+  return resolved;
 }

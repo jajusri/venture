@@ -27,6 +27,10 @@ import type { ErpGroupsResult } from './groups.js';
  * models across this boundary. A future BUSY/SAP/Zoho adapter implements the
  * same port without changing any business code.
  */
+export interface ErpReadOptions {
+  readonly signal?: AbortSignal;
+}
+
 export interface ErpReadPort {
   isReady(): boolean;
 
@@ -46,7 +50,7 @@ export interface ErpReadPort {
   getCompanyInfo(companyId: string, companyName: string): Promise<NormalizedCompanyInfo | undefined>;
 
   readLedgerGroups(companyName: string): Promise<ExtractionResult<NormalizedLedgerGroup>>;
-  readLedgers(companyName: string): Promise<ExtractionResult<NormalizedLedger>>;
+  readLedgers(companyName: string, options?: ErpReadOptions): Promise<ExtractionResult<NormalizedLedger>>;
   readStockGroups(companyName: string): Promise<ExtractionResult<NormalizedStockGroup>>;
   readStockCategories(companyName: string): Promise<ExtractionResult<NormalizedStockCategory>>;
   readStockItems(companyName: string): Promise<ExtractionResult<NormalizedStockItem>>;

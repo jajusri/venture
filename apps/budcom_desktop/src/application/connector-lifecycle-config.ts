@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { ConnectorLifecycleConfig } from './connector-lifecycle-types.js';
+import { parseConnectorHostPort } from './desktop-config-schema.js';
 
 const DEFAULT_PORT = 8080;
 
@@ -14,23 +15,12 @@ function resolveDefaultConnectorScript(): string {
   return fromRepoRoot;
 }
 
-function parsePort(baseUrl: string, fallback: number): number {
-  try {
-    const parsed = new URL(baseUrl);
-    if (parsed.port) {
-      return Number.parseInt(parsed.port, 10);
-    }
-    return parsed.protocol === 'https:' ? 443 : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-export function resolveConnectorLifecycleConfig(
-  overrides: Partial<ConnectorLifecycleConfig> = {},
+export function resolveConnectorLifecycleConfig(  overrides: Partial<ConnectorLifecycleConfig> = {},
 ): ConnectorLifecycleConfig {
-  const connectorBaseUrl = overrides.connectorBaseUrl ?? process.env.BUDCOM_CONNECTOR_URL ?? 'http://localhost:8080';
-  const connectorPort = overrides.connectorPort ?? parsePort(connectorBaseUrl, DEFAULT_PORT);
+  const connectorBaseUrl = overrides.connectorBaseUrl ?? process.env.BUDCOM_CONNECTOR_URL ?? 'http://127.0.0.1:8080';
+  const parsedHostPort = parseConnectorHostPort(connectorBaseUrl);
+  const connectorHost = overrides.connectorHost ?? parsedHostPort?.host ?? '127.0.0.1';
+  const connectorPort = overrides.connectorPort ?? parsedHostPort?.port ?? DEFAULT_PORT;
   const defaultScript = resolveDefaultConnectorScript();
   const connectorExecutable = overrides.connectorExecutable ?? process.env.BUDCOM_CONNECTOR_EXECUTABLE ?? process.execPath;
   const connectorArgs = overrides.connectorArgs
@@ -43,6 +33,7 @@ export function resolveConnectorLifecycleConfig(
 
   return {
     connectorBaseUrl,
+    connectorHost,
     connectorPort,
     connectorExecutable,
     connectorArgs,

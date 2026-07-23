@@ -4,6 +4,7 @@ export interface ErpTransportRequest {
   readonly contentType: string;
   readonly timeoutMs?: number;
   readonly correlationId?: string;
+  readonly signal?: AbortSignal;
 }
 
 /** Raw ERP transport response before domain parsing. */

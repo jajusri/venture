@@ -17,5 +17,12 @@ export interface HealthReport {
   readonly connectorVersion: string;
   readonly tallyReachable: boolean;
   readonly readOnly: true;
+  readonly bindHost: string;
+  readonly bindPort: number;
+  readonly networkExposure: 'loopback' | 'lan';
+  readonly networkExposureWarning: string | null;
+  readonly networkPolicySatisfied: boolean;
+  /** Reserved for future authenticated LAN access; always false today. */
+  readonly authenticatedLanAccessEnabled: false;
   readonly services: readonly ServiceStatus[];
 }

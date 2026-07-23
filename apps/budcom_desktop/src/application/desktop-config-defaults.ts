@@ -3,7 +3,7 @@ import { DESKTOP_CONFIG_SCHEMA_VERSION } from './desktop-config-schema.js';
 
 export const PRODUCTION_DEFAULTS: DesktopConfigV1 = {
   schemaVersion: DESKTOP_CONFIG_SCHEMA_VERSION,
-  connectorHost: 'localhost',
+  connectorHost: '127.0.0.1',
   connectorPort: 8080,
   autoStartConnector: true,
   healthPollIntervalMs: 5_000,

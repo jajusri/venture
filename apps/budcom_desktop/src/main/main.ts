@@ -280,6 +280,11 @@ function registerIpcHandlers(): void {
     notifyRenderer();
     return result;
   });
+  registerIpcHandler('desktop:cancel-ledger-sync', async () => {
+    const result = await ledgerService.cancelSync();
+    notifyRenderer();
+    return result;
+  });
   registerIpcHandler('desktop:get-ledger-statistics', async () => ledgerService.getStatistics());
   registerIpcHandler('desktop:clear-ledger-cache', async () => {
     const result = await ledgerService.clearCache();

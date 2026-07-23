@@ -44,6 +44,7 @@ export class LedgerService {
         list,
         statistics,
         progress,
+        storage: progress.storage ?? null,
         userMessage: null,
       };
     } catch (error) {
@@ -54,6 +55,7 @@ export class LedgerService {
         list: null,
         statistics: null,
         progress: null,
+        storage: null,
         userMessage: message,
       };
     }
@@ -95,6 +97,10 @@ export class LedgerService {
     readonly pageSize?: number;
   }): Promise<LedgerListResult> {
     return this.client.getLedgers(params);
+  }
+
+  async cancelSync(): Promise<LedgerSyncProgressResult> {
+    return this.client.cancelLedgerSync();
   }
 
   async clearCache(): Promise<{ ok: boolean; message: string }> {

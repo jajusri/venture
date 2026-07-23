@@ -17,7 +17,7 @@ import type { TallyDiagnosticsService } from '../services/interfaces/tally-diagn
 import type { XmlImportService } from '../services/interfaces/xml-import.js';
 import { ApiServerStub } from '../services/placeholders/api-server.stub.js';
 import { LicensingStub } from '../services/placeholders/licensing.stub.js';
-import { LocalDatabaseStub } from '../services/placeholders/local-database.stub.js';
+import { SqliteStorageService } from '../storage/sqlite/storage-service.js';
 import { SchedulerStub } from '../services/placeholders/scheduler.stub.js';
 import { LedgerSyncServiceImpl } from '../services/ledger/ledger-sync.service.js';
 import type { LedgerSyncService } from '../services/ledger/ledger-sync.service.js';
@@ -114,20 +114,25 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
     () => new TallyDiagnosticsServiceImpl(tallyModule.connectionManager),
   );
 
+  container.registerFactory(
+    ServiceTokens.LocalDatabase,
+    () => new SqliteStorageService(config, logger.child({ service: 'LocalDatabase' })),
+  );
   container.registerFactory(ServiceTokens.LedgerSync, () => {
+    const storage = container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase);
     const service = new LedgerSyncServiceImpl(
       config,
       tallyModule.readPort,
       container.resolve<CompanyResolver>(ServiceTokens.CompanyResolver),
       container.resolve<ConnectorSessionService>(ServiceTokens.ConnectorSession),
       logger.child({ service: 'LedgerSync' }),
+      storage,
     );
     return service;
   });
   container.registerFactory(ServiceTokens.SyncEngine, () =>
     container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync),
   );
-  container.registerFactory(ServiceTokens.LocalDatabase, () => new LocalDatabaseStub(logger));
   container.registerFactory(ServiceTokens.Licensing, () => new LicensingStub(logger));
   container.registerFactory(ServiceTokens.Scheduler, () => new SchedulerStub(logger));
 

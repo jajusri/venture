@@ -45,8 +45,14 @@ docs/spec.zip
 coverage/
 .nyc_output/
 
+# Desktop build output
+apps/budcom_desktop/dist/
+
 # Connector runtime
 connector/budcom_connector/dist/
+connector/budcom_connector/data/
+connector/budcom_connector/test-data/
+connector/budcom_connector/docs/
 /connector/budcom_connector/diagnostics/
 /connector/budcom_connector/test-output.txt
 # TypeScript emit artifacts (tests run via vitest on .ts source)

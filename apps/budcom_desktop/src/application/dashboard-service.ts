@@ -56,7 +56,7 @@ export class DashboardService {
   getSettingsState(overrides: Partial<SettingsState> = {}): SettingsState {
     return {
       connectorUrl: this.connectorBaseUrl,
-      connectorHost: 'localhost',
+      connectorHost: '127.0.0.1',
       apiVersion: '1.0.0',
       desktopVersion: DESKTOP_VERSION,
       erpType: 'tally',

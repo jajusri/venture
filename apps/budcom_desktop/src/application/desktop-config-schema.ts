@@ -130,6 +130,12 @@ export function validateDesktopConfig(input: unknown): ConfigValidationResult {
   if (connectorHost && !/^[a-zA-Z0-9.-]+$/.test(connectorHost)) {
     errors.push({ field: 'connectorHost', message: 'connectorHost contains invalid characters.' });
   }
+  if (connectorHost && (connectorHost === '0.0.0.0' || connectorHost === '::')) {
+    errors.push({
+      field: 'connectorHost',
+      message: 'connectorHost 0.0.0.0 is not permitted. Use 127.0.0.1 or a specific LAN address.',
+    });
+  }
 
   if (errors.length > 0) {
     return { ok: false, config: null, errors };

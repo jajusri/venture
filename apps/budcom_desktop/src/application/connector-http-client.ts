@@ -83,16 +83,12 @@ export class ConnectorHttpClient {
   }
 
   async syncLedgers(incremental = false): Promise<LedgerSyncResult> {
-    return retryWithBackoff(
-      async () => {
-        const response = await this.request('/sync/ledgers', {
-          method: 'POST',
-          body: JSON.stringify({ incremental }),
-        });
-        return this.parseJson<LedgerSyncResult>(response);
-      },
-      { maxAttempts: this.maxAttempts, baseDelayMs: this.retryBaseDelayMs },
-    );
+    const response = await this.request('/sync/ledgers', {
+      method: 'POST',
+      body: JSON.stringify({ incremental }),
+      timeoutMs: 600_000,
+    });
+    return this.parseJson<LedgerSyncResult>(response);
   }
 
   async getLedgerSyncStatus(): Promise<LedgerSyncProgressResult> {
@@ -101,6 +97,10 @@ export class ConnectorHttpClient {
 
   async getLedgerStatistics(): Promise<LedgerStatisticsResult> {
     return this.getJsonWithRetry<LedgerStatisticsResult>('/sync/ledgers/statistics');
+  }
+
+  async cancelLedgerSync(): Promise<LedgerSyncProgressResult> {
+    return this.postJsonWithRetry<LedgerSyncProgressResult>('/sync/ledgers/cancel');
   }
 
   async clearLedgerCache(): Promise<{ ok: boolean; message: string }> {
@@ -140,16 +140,18 @@ export class ConnectorHttpClient {
     );
   }
 
-  private async request(path: string, init: RequestInit): Promise<Response> {
+  private async request(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<Response> {
+    const timeoutMs = init.timeoutMs ?? this.timeoutMs;
+    const { timeoutMs: _ignored, ...requestInit } = init;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       return await this.fetchImpl(`${this.baseUrl}${path}`, {
-        ...init,
+        ...requestInit,
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
-          ...(init.headers ?? {}),
+          ...(requestInit.headers ?? {}),
         },
         signal: controller.signal,
       });

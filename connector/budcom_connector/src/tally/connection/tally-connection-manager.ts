@@ -116,7 +116,7 @@ export class TallyConnectionManager {
 
   async exchange(
     xml: string,
-    metadata: { collectionId?: string; reportId?: string; timeoutMs?: number } = {},
+    metadata: { collectionId?: string; reportId?: string; timeoutMs?: number; signal?: AbortSignal } = {},
   ): Promise<TallyExchangeResult> {
     if (!this.running) {
       throw new AppError(
@@ -154,6 +154,7 @@ export class TallyConnectionManager {
           contentType: 'text/xml',
           correlationId,
           timeoutMs: metadata.timeoutMs,
+          signal: metadata.signal,
         });
 
         await this.requestGuard.recordSuccess(context, response.body.length);
@@ -180,6 +181,9 @@ export class TallyConnectionManager {
         };
       } catch (error) {
         lastError = error;
+        if (error instanceof AppError && error.code === ErrorCodes.SYNC_CANCELLED) {
+          break;
+        }
         if (prepared) {
           this.failedRequests += 1;
           this.markFailure(error);

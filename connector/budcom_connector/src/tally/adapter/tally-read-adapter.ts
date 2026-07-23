@@ -246,8 +246,8 @@ export class TallyReadAdapter implements ErpReadPort {
     };
   }
 
-  readLedgers(companyName: string) {
-    return this.extractors.ledgers.extract(companyName);
+  readLedgers(companyName: string, options?: { signal?: AbortSignal }) {
+    return this.extractors.ledgers.extract(companyName, options ?? {});
   }
 
   readStockGroups(companyName: string) {

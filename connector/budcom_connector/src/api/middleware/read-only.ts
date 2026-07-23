@@ -6,7 +6,10 @@ const ALLOWED_WRITE_ROUTES = new Set([
   'DELETE /session/company',
   'POST /session/validate',
   'POST /sync/ledgers',
+  'POST /sync/ledgers/cancel',
   'POST /sync/ledgers/clear-cache',
+  'POST /storage/ledgers/integrity-check',
+  'POST /storage/ledgers/backup',
 ]);
 
 /**

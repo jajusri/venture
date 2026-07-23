@@ -9,6 +9,7 @@ import path from 'node:path';
 
 import { getEnvironmentDefaults } from '../application/desktop-config-defaults.js';
 import { validateDesktopConfig } from '../application/desktop-config-schema.js';
+import { isConnectorLanModePolicySatisfied } from '../application/connector-network-binding.js';
 import { DesktopConfigStore } from '../application/desktop-config-store.js';
 import { resolveDesktopConfigPaths } from '../application/desktop-config-paths.js';
 import { resolveDesktopConfig } from '../application/desktop-config-resolver.js';
@@ -97,6 +98,27 @@ async function main(): Promise<void> {
   checks.push(runCheck('connector-tests', () => {
     runCommand('npm test', connectorRoot);
     return 'Connector tests passed.';
+  }));
+
+  checks.push(runCheck('connector-loopback-default', () => {
+    const defaults = getEnvironmentDefaults(true);
+    if (defaults.connectorHost !== '127.0.0.1') {
+      throw new Error(`Expected connectorHost default 127.0.0.1, got ${defaults.connectorHost}.`);
+    }
+    return 'Desktop defaults target loopback connector host 127.0.0.1.';
+  }));
+
+  checks.push(runCheck('connector-network-policy', () => {
+    const defaults = getEnvironmentDefaults(true);
+    const lanAck = process.env.BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED === 'true';
+    if (!isConnectorLanModePolicySatisfied(defaults.connectorHost, lanAck)) {
+      throw new Error(
+        'Non-loopback connector host configured without BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED=true.',
+      );
+    }
+    return lanAck && defaults.connectorHost !== '127.0.0.1'
+      ? 'LAN-mode connector acknowledged by operator (no authentication yet).'
+      : 'Connector network policy satisfied (loopback default).';
   }));
 
   checks.push(runCheck('security-settings', () => {

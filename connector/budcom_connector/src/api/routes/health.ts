@@ -16,6 +16,12 @@ export function createHealthRouter(healthService: HealthService): Router {
         connectorVersion: report.connectorVersion,
         tallyReachable: report.tallyReachable,
         readOnly: report.readOnly,
+        bindHost: report.bindHost,
+        bindPort: report.bindPort,
+        networkExposure: report.networkExposure,
+        networkExposureWarning: report.networkExposureWarning,
+        networkPolicySatisfied: report.networkPolicySatisfied,
+        authenticatedLanAccessEnabled: report.authenticatedLanAccessEnabled,
         services: report.services,
       });
     }),

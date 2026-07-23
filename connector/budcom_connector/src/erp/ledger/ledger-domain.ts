@@ -9,7 +9,9 @@ export type LedgerSyncStatus =
   | 'completed'
   | 'failed'
   | 'cancelled'
-  | 'interrupted';
+  | 'interrupted'
+  | 'recovering'
+  | 'cancelling';
 
 export type BalanceNature = 'debit' | 'credit' | 'unknown';
 
@@ -83,6 +85,7 @@ export interface LedgerStatistics {
 }
 
 export interface LedgerSyncProgress {
+  readonly syncRunId: string | null;
   readonly status: LedgerSyncStatus;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
@@ -94,9 +97,43 @@ export interface LedgerSyncProgress {
   readonly itemsFailed: number;
   readonly lastError: string | null;
   readonly cancelRequested: boolean;
+  readonly storageBackend: 'sqlite' | 'json';
+  readonly migrationStatus: 'none' | 'pending' | 'completed' | 'failed';
+}
+
+export interface LedgerSyncRunRecord {
+  readonly syncRunId: string;
+  readonly companyId: string;
+  readonly syncType: 'full' | 'incremental';
+  readonly status: LedgerSyncStatus;
+  readonly startedAt: string;
+  readonly updatedAt: string;
+  readonly completedAt: string | null;
+  readonly totalExpected: number | null;
+  readonly processed: number;
+  readonly inserted: number;
+  readonly updated: number;
+  readonly skipped: number;
+  readonly failed: number;
+  readonly lastProcessedId: string | null;
+  readonly retryCount: number;
+  readonly cancelRequested: boolean;
+  readonly failureCode: string | null;
+  readonly failureSummary: string | null;
+  readonly connectorVersion: string;
+  readonly schemaVersion: string;
+}
+
+export interface StorageStatus {
+  readonly backend: 'sqlite';
+  readonly schemaVersion: number;
+  readonly databaseHealthy: boolean;
+  readonly migrationStatus: 'none' | 'pending' | 'completed' | 'failed';
+  readonly message: string | null;
 }
 
 export interface LedgerSyncResult {
+  readonly syncRunId: string;
   readonly status: LedgerSyncStatus;
   readonly statistics: LedgerStatistics;
   readonly progress: LedgerSyncProgress;

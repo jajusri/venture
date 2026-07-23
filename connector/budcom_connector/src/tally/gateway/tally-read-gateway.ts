@@ -25,6 +25,7 @@ import {
 export interface ApprovedReadRequest {
   readonly operationId: ApprovedOperationId;
   readonly companyName?: string;
+  readonly signal?: AbortSignal;
 }
 
 export interface ApprovedReadResult {
@@ -74,6 +75,7 @@ export class TallyReadGateway {
       collectionId: isCollection ? operation.tallyId : undefined,
       reportId: isCollection ? undefined : operation.tallyId,
       timeoutMs: operation.timeoutMs,
+      signal: request.signal,
     });
 
     if (exchange.response.byteLength > operation.maxResponseBytes) {

@@ -121,6 +121,7 @@
               <h2>Ledger Synchronization</h2>
               <div class="panel-actions">
                 <button id="btn-sync-ledgers" class="action-btn" type="button">Sync Now</button>
+                <button id="btn-cancel-ledger-sync" class="action-btn secondary hidden" type="button">Cancel Sync</button>
                 <button id="btn-refresh-ledgers" class="action-btn secondary" type="button">Refresh</button>
                 <button id="btn-clear-ledger-cache" class="action-btn secondary" type="button">Clear Cache</button>
               </div>
@@ -132,6 +133,8 @@
               <div><strong>Last Sync</strong><span id="ledger-stat-last-sync">—</span></div>
               <div><strong>Sync Status</strong><span id="ledger-sync-status">—</span></div>
               <div><strong>Duration</strong><span id="ledger-sync-duration">—</span></div>
+              <div><strong>Storage</strong><span id="ledger-storage-status">—</span></div>
+              <div><strong>Migration</strong><span id="ledger-migration-status">—</span></div>
             </div>
             <div class="ledger-toolbar">
               <label>Search<input id="ledger-search-input" type="search" placeholder="Search ledgers" /></label>

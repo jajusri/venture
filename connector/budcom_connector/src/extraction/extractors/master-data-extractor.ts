@@ -53,7 +53,7 @@ export class MasterDataExtractor<T extends { id: string }> {
     return { ...this.diagnostics };
   }
 
-  async extract(companyName: string): Promise<ExtractionResult<T>> {
+  async extract(companyName: string, options: { signal?: AbortSignal } = {}): Promise<ExtractionResult<T>> {
     const started = Date.now();
     this.diagnostics.totalExtractions += 1;
 
@@ -61,6 +61,7 @@ export class MasterDataExtractor<T extends { id: string }> {
       const exchange = await this.gateway.executeApprovedRead({
         operationId: this.config.operationId,
         companyName,
+        signal: options.signal,
       });
 
       const document = this.collectionParser.parseDocument(exchange.rawXml);

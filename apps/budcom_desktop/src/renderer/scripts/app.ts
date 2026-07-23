@@ -33,6 +33,7 @@ export interface DesktopBridge {
   reloadRenderer(): Promise<{ ok: boolean }>;
   getLedgers(payload?: { query?: string; page?: number; pageSize?: number }): Promise<LedgerPageState>;
   syncLedgers(incremental?: boolean): Promise<unknown>;
+  cancelLedgerSync(): Promise<unknown>;
   clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
   onStatusUpdated(listener: () => void): () => void;
 }
@@ -573,17 +574,56 @@ async function clearLogsAction(): Promise<void> {
   await refreshUi();
 }
 
+const SYNC_BUSY_STATUSES = new Set(['running', 'cancelling', 'recovering']);
+
+function formatSyncStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case 'running':
+      return 'Running';
+    case 'cancelling':
+      return 'Cancelling…';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'recovering':
+      return 'Recovering';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    case 'interrupted':
+      return 'Interrupted';
+    default:
+      return status ?? '—';
+  }
+}
+
 export function renderLedgers(state: LedgerPageState): void {
   const stats = state.statistics?.statistics;
+  const syncStatus = state.progress?.progress.status;
   setText('ledger-stat-total', stats ? String(stats.totalLedgers) : '—');
   setText('ledger-stat-active', stats ? String(stats.activeLedgers) : '—');
   setText('ledger-stat-gst', stats ? String(stats.withGst) : '—');
   setText('ledger-stat-last-sync', stats?.lastSyncedAt ?? 'Never');
-  setText('ledger-sync-status', state.progress?.progress.status ?? '—');
+  setText('ledger-sync-status', formatSyncStatusLabel(syncStatus));
   setText(
     'ledger-sync-duration',
     state.progress?.progress.durationMs != null ? `${state.progress.progress.durationMs} ms` : '—',
   );
+  setText(
+    'ledger-storage-status',
+    state.storage
+      ? `${state.storage.backend} · ${state.storage.databaseHealthy ? 'healthy' : 'unhealthy'}`
+      : '—',
+  );
+  setText('ledger-migration-status', state.storage?.migrationStatus ?? state.progress?.progress.migrationStatus ?? '—');
+
+  const syncButton = document.getElementById('btn-sync-ledgers') as HTMLButtonElement | null;
+  const cancelButton = document.getElementById('btn-cancel-ledger-sync');
+  const busy = SYNC_BUSY_STATUSES.has(syncStatus ?? '');
+  if (syncButton) {
+    syncButton.disabled = busy;
+  }
+  cancelButton?.classList.toggle('hidden', !busy);
 
   const list = document.getElementById('ledger-list');
   const meta = document.getElementById('ledger-list-meta');
@@ -647,6 +687,20 @@ async function handleLedgerSync(): Promise<void> {
   }
 }
 
+async function handleCancelLedgerSync(): Promise<void> {
+  setLoading({ syncing: true });
+  try {
+    await window.budcomDesktop.cancelLedgerSync();
+    await loadLedgers();
+    await refreshUi();
+    setBanner('Ledger sync cancellation requested.', 'information');
+  } catch {
+    setBanner('Unable to cancel ledger sync.', 'error');
+  } finally {
+    setLoading({ syncing: false });
+  }
+}
+
 async function handleClearLedgerCache(): Promise<void> {
   if (!window.confirm('Clear the local ledger cache for the selected company?')) {
     return;
@@ -663,6 +717,9 @@ async function handleClearLedgerCache(): Promise<void> {
 export function bindLedgerActions(): void {
   document.getElementById('btn-sync-ledgers')?.addEventListener('click', () => {
     void handleLedgerSync();
+  });
+  document.getElementById('btn-cancel-ledger-sync')?.addEventListener('click', () => {
+    void handleCancelLedgerSync();
   });
   document.getElementById('btn-refresh-ledgers')?.addEventListener('click', () => {
     void loadLedgers();

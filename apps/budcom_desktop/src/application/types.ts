@@ -207,6 +207,9 @@ export interface DiagnosticsSnapshot {
   readonly architecture: string;
   readonly uptimeSeconds: number;
   readonly connectorBaseUrl: string;
+  readonly connectorBindHost: string;
+  readonly connectorNetworkExposure: 'loopback' | 'lan';
+  readonly connectorNetworkExposureWarning: string | null;
   readonly connectorProcessState: string;
   readonly connectorOwnership: 'desktop-managed' | 'external' | 'none';
   readonly connectorPid: number | null;
@@ -296,6 +299,7 @@ export interface LedgerStatisticsResult {
 
 export interface LedgerSyncProgressDto {
   readonly status: string;
+  readonly syncRunId?: string | null;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
   readonly durationMs: number | null;
@@ -306,11 +310,22 @@ export interface LedgerSyncProgressDto {
   readonly itemsFailed: number;
   readonly lastError: string | null;
   readonly cancelRequested: boolean;
+  readonly storageBackend?: string;
+  readonly migrationStatus?: string;
+}
+
+export interface StorageStatusDto {
+  readonly backend: string;
+  readonly schemaVersion: number;
+  readonly databaseHealthy: boolean;
+  readonly migrationStatus: string;
+  readonly message: string | null;
 }
 
 export interface LedgerSyncProgressResult {
   readonly schemaVersion: string;
   readonly progress: LedgerSyncProgressDto;
+  readonly storage?: StorageStatusDto;
 }
 
 export interface LedgerSyncResult {
@@ -326,5 +341,6 @@ export interface LedgerPageState {
   readonly list: LedgerListResult | null;
   readonly statistics: LedgerStatisticsResult | null;
   readonly progress: LedgerSyncProgressResult | null;
+  readonly storage: StorageStatusDto | null;
   readonly userMessage: string | null;
 }

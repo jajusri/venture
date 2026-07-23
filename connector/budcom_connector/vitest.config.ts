@@ -5,11 +5,20 @@ export default defineConfig({
     globals: false,
     environment: 'node',
     include: ['test/**/*.test.ts'],
+    pool: 'forks',
+    server: {
+      deps: {
+        external: ['node:sqlite'],
+      },
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.d.ts'],
     },
+  },
+  ssr: {
+    external: ['node:sqlite'],
   },
 });

@@ -55,6 +55,9 @@ Paginated endpoints accept `?page=1&pageSize=50` (max 500). Extraction is in-mem
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `BUDCOM_CONNECTOR_HOST` | `127.0.0.1` | Connector API bind host (loopback-only default; not Tally host) |
+| `BUDCOM_CONNECTOR_PORT` | `8080` | Connector API port |
+| `BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED` | `false` | Required `true` for non-loopback bind in production (no auth yet) |
 | `BUDCOM_TALLY_HOST` | `localhost` | Tally HTTP host |
 | `BUDCOM_TALLY_PORT` | `9000` | Tally HTTP port |
 | `BUDCOM_TALLY_TIMEOUT_MS` | `120000` | Request timeout (large collections) |

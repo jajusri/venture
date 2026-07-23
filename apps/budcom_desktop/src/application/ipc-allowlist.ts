@@ -22,6 +22,7 @@ export const ALLOWED_IPC_CHANNELS = [
   'desktop:reload-renderer',
   'desktop:get-ledgers',
   'desktop:sync-ledgers',
+  'desktop:cancel-ledger-sync',
   'desktop:get-ledger-statistics',
   'desktop:clear-ledger-cache',
 ] as const;

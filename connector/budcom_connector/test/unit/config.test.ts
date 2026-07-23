@@ -14,6 +14,8 @@ describe('loadConfig', () => {
       tallyCircuitBreakerEnabled: true,
     });
     expect(config.port).toBe(8080);
+    expect(config.host).toBe('127.0.0.1');
+    expect(config.networkExposure).toBe('loopback');
     expect(config.schemaVersion).toBe('1.0.0');
     expect(config.connectorVersion).toBe('0.3.1');
     expect(config.tallySafeMode).toBe(true);

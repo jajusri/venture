@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { LedgerRepository } from '../../../src/services/ledger/ledger-repository.js';
+import { JsonLedgerRepository } from '../../../src/services/ledger/json-ledger-repository.js';
 import type { LedgerDetails } from '../../../src/erp/ledger/ledger-domain.js';
 
 const tempDirs: string[] = [];
@@ -15,10 +15,10 @@ afterEach(() => {
   }
 });
 
-function createRepository(): LedgerRepository {
+function createRepository(): JsonLedgerRepository {
   const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-ledgers-'));
   tempDirs.push(basePath);
-  return new LedgerRepository({ basePath });
+  return new JsonLedgerRepository({ basePath });
 }
 
 function sampleLedger(id: string, name: string): LedgerDetails {
@@ -33,7 +33,7 @@ function sampleLedger(id: string, name: string): LedgerDetails {
   };
 }
 
-describe('LedgerRepository', () => {
+describe('JsonLedgerRepository', () => {
   it('supports insert, lookup, search, and statistics', async () => {
     const repository = createRepository();
     await repository.upsertMany('company-1', [

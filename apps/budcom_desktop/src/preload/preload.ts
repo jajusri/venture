@@ -42,6 +42,7 @@ export interface DesktopBridge {
   reloadRenderer(): Promise<{ ok: boolean }>;
   getLedgers(payload?: { query?: string; page?: number; pageSize?: number }): Promise<LedgerPageState>;
   syncLedgers(incremental?: boolean): Promise<LedgerSyncResult>;
+  cancelLedgerSync(): Promise<LedgerSyncProgressResult>;
   clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
   onStatusUpdated(listener: () => void): () => void;
 }
@@ -70,6 +71,7 @@ const desktopBridge: DesktopBridge = {
   reloadRenderer: () => ipcRenderer.invoke('desktop:reload-renderer'),
   getLedgers: (payload) => ipcRenderer.invoke('desktop:get-ledgers', payload),
   syncLedgers: (incremental = false) => ipcRenderer.invoke('desktop:sync-ledgers', { incremental }),
+  cancelLedgerSync: () => ipcRenderer.invoke('desktop:cancel-ledger-sync'),
   clearLedgerCache: () => ipcRenderer.invoke('desktop:clear-ledger-cache'),
   onStatusUpdated: (listener) => {
     const channel = 'desktop:status-updated';

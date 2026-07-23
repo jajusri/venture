@@ -1,4 +1,5 @@
 import type { ConnectorConfig } from '../../config/defaults.js';
+import { isLanModePolicySatisfied, parseConnectorBindHost } from '../../config/network-binding.js';
 import type { HealthReport } from '../../core/types.js';
 import type { TallyConnectionService } from '../interfaces/tally-connection.js';
 import type { SyncEngineService } from '../interfaces/sync-engine.js';
@@ -45,9 +46,14 @@ export class HealthService {
     ];
 
     const allReady = services.every((service) => service.ready);
+    const bindHost = parseConnectorBindHost(this.deps.config.host, '127.0.0.1');
+    const networkPolicySatisfied = isLanModePolicySatisfied(
+      bindHost,
+      this.deps.config.lanModeAcknowledged,
+    );
 
     let status: HealthReport['status'] = 'ok';
-    if (!allReady) {
+    if (!allReady || !networkPolicySatisfied) {
       status = 'degraded';
     }
     if (!this.deps.apiServer.isRunning()) {
@@ -60,6 +66,12 @@ export class HealthService {
       connectorVersion: this.deps.config.connectorVersion,
       tallyReachable,
       readOnly: true,
+      bindHost: this.deps.config.host,
+      bindPort: this.deps.config.port,
+      networkExposure: this.deps.config.networkExposure,
+      networkExposureWarning: this.deps.config.networkExposureWarning,
+      networkPolicySatisfied,
+      authenticatedLanAccessEnabled: false,
       services,
     };
   }

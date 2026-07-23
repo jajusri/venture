@@ -50,7 +50,15 @@ export class ApiServerStub implements ApiServerService {
         this.logger.info('API server listening', {
           host: this.config.host,
           port: this.config.port,
+          networkExposure: this.config.networkExposure,
         });
+        if (this.config.networkExposureWarning) {
+          this.logger.warn('connector_network_exposed', {
+            host: this.config.host,
+            port: this.config.port,
+            message: this.config.networkExposureWarning,
+          });
+        }
         resolve();
       });
     });

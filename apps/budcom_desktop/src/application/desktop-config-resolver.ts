@@ -142,6 +142,7 @@ export function resolveDesktopConfig(
 
   const lifecycleConfig = resolveConnectorLifecycleConfig({
     connectorBaseUrl,
+    connectorHost: effective.connectorHost,
     connectorPort: effective.connectorPort,
     autoStart: effective.autoStartConnector,
     healthPollIntervalMs: effective.healthPollIntervalMs,

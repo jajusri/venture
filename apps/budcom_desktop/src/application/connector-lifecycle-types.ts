@@ -26,6 +26,7 @@ export type LifecycleLogEvent =
 
 export interface ConnectorLifecycleConfig {
   readonly connectorBaseUrl: string;
+  readonly connectorHost: string;
   readonly connectorPort: number;
   readonly connectorExecutable: string;
   readonly connectorArgs: readonly string[];

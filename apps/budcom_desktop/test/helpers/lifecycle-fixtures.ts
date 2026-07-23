@@ -15,7 +15,7 @@ export const lifecycleStatusFixture = {
 
 export const settingsFixture = {
   connectorUrl: 'http://localhost:8080',
-  connectorHost: 'localhost',
+  connectorHost: '127.0.0.1',
   apiVersion: '1.0.0',
   desktopVersion: '0.4.3',
   erpType: 'tally',

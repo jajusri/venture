@@ -1,10 +1,17 @@
+import type { ConnectorNetworkExposure } from './network-binding.js';
+
 export const CONNECTOR_VERSION = '0.3.1';
 export const SCHEMA_VERSION = '1.0.0';
 
 export interface ConnectorConfig {
   readonly env: 'development' | 'production' | 'test';
+  /** Connector API bind host (not Tally host). Defaults to loopback-only. */
   readonly host: string;
   readonly port: number;
+  readonly networkExposure: ConnectorNetworkExposure;
+  readonly networkExposureWarning: string | null;
+  /** Explicit operator acknowledgement for non-loopback bind without authentication. */
+  readonly lanModeAcknowledged: boolean;
   readonly logLevel: 'debug' | 'info' | 'warn' | 'error';
   readonly tallyHost: string;
   readonly tallyPort: number;
@@ -35,8 +42,11 @@ export interface ConnectorConfig {
 
 export const defaultConfig: ConnectorConfig = {
   env: 'development',
-  host: '0.0.0.0',
+  host: '127.0.0.1',
   port: 8080,
+  networkExposure: 'loopback',
+  networkExposureWarning: null,
+  lanModeAcknowledged: false,
   logLevel: 'info',
   tallyHost: 'localhost',
   tallyPort: 9000,

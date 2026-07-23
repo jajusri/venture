@@ -1,0 +1,42 @@
+{
+  "generatedAt": "2026-07-23T08:33:10.990Z",
+  "nodeVersion": "v24.18.0",
+  "platform": "win32",
+  "thresholds": {
+    "insertMsPer1k": 2000,
+    "searchMs": 250,
+    "paginationMs": 150
+  },
+  "results": [
+    {
+      "size": 1000,
+      "parseMs": 0,
+      "insertMs": 42,
+      "searchMs": 3,
+      "paginationMs": 1,
+      "statsMs": 1,
+      "dbSizeBytes": 4096,
+      "constraints": null
+    },
+    {
+      "size": 10000,
+      "parseMs": 1,
+      "insertMs": 350,
+      "searchMs": 22,
+      "paginationMs": 12,
+      "statsMs": 7,
+      "dbSizeBytes": 4730880,
+      "constraints": null
+    },
+    {
+      "size": 50000,
+      "parseMs": 10,
+      "insertMs": 2278,
+      "searchMs": 268,
+      "paginationMs": 75,
+      "statsMs": 62,
+      "dbSizeBytes": 24104960,
+      "constraints": "May be skipped on low-memory hosts"
+    }
+  ]
+}

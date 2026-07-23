@@ -7,6 +7,10 @@ import type { DashboardService } from './dashboard-service.js';
 import type { DesktopConfigStore } from './desktop-config-store.js';
 import type { ResolvedDesktopConfig } from './desktop-config-resolver.js';
 import { sanitizeConfigForExport, stripEnvironmentVariables } from './log-redaction.js';
+import {
+  getConnectorNetworkExposure,
+  getConnectorNetworkExposureWarning,
+} from './connector-network-binding.js';
 import type { LogService } from './log-service.js';
 import type { DiagnosticsExportResult, DiagnosticsSnapshot } from './types.js';
 
@@ -75,6 +79,11 @@ export class DiagnosticsService {
       architecture: process.arch,
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),
       connectorBaseUrl: this.resolvedConfig.connectorBaseUrl,
+      connectorBindHost: this.resolvedConfig.effective.connectorHost,
+      connectorNetworkExposure: getConnectorNetworkExposure(this.resolvedConfig.effective.connectorHost),
+      connectorNetworkExposureWarning: getConnectorNetworkExposureWarning(
+        this.resolvedConfig.effective.connectorHost,
+      ),
       connectorProcessState: lifecycle.stateLabel,
       connectorOwnership: ownership,
       connectorPid: lifecycle.managedProcessPid,
@@ -103,6 +112,10 @@ export class DiagnosticsService {
       `OS: ${snapshot.platform} ${snapshot.osRelease} (${snapshot.architecture})`,
       `Uptime: ${snapshot.uptimeSeconds}s`,
       `Connector URL: ${snapshot.connectorBaseUrl}`,
+      `Connector bind host: ${snapshot.connectorBindHost} (${snapshot.connectorNetworkExposure})`,
+      snapshot.connectorNetworkExposureWarning
+        ? `Security warning: ${snapshot.connectorNetworkExposureWarning}`
+        : 'Connector network exposure: loopback-only (secure default).',
       `Process State: ${snapshot.connectorProcessState}`,
       `Ownership: ${snapshot.connectorOwnership}`,
       `PID: ${snapshot.connectorPid ?? 'n/a'}`,
@@ -137,6 +150,9 @@ export class DiagnosticsService {
         },
         connector: {
           baseUrl: snapshot.connectorBaseUrl,
+          bindHost: snapshot.connectorBindHost,
+          networkExposure: snapshot.connectorNetworkExposure,
+          networkExposureWarning: snapshot.connectorNetworkExposureWarning,
           processState: snapshot.connectorProcessState,
           ownership: snapshot.connectorOwnership,
           pid: snapshot.connectorPid,

@@ -4,18 +4,22 @@ import { asyncHandler } from '../../infrastructure/errors/error-handler.js';
 import type { LedgerSearchParams } from '../../erp/ledger/ledger-domain.js';
 import type { LedgerSyncService } from '../../services/ledger/ledger-sync.service.js';
 
+const ALLOWED_SORT = new Set(['name', 'parentGroup', 'closingBalance', 'syncedAt']);
+const MAX_PAGE_SIZE = 100;
+
 function parseLedgerSearchParams(query: Record<string, unknown>): LedgerSearchParams {
   const page = Math.max(1, Number.parseInt(String(query.page ?? '1'), 10) || 1);
-  const pageSize = Math.min(500, Math.max(1, Number.parseInt(String(query.pageSize ?? '50'), 10) || 50));
-  const sortBy = query.sortBy as LedgerSearchParams['sortBy'];
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number.parseInt(String(query.pageSize ?? '50'), 10) || 50));
+  const sortByRaw = typeof query.sortBy === 'string' ? query.sortBy : 'name';
+  const sortBy = ALLOWED_SORT.has(sortByRaw) ? (sortByRaw as LedgerSearchParams['sortBy']) : 'name';
   const sortDirection = query.sortDirection === 'desc' ? 'desc' : 'asc';
   return {
-    query: typeof query.query === 'string' ? query.query : undefined,
+    query: typeof query.query === 'string' ? query.query.slice(0, 128) : undefined,
     status: query.status as LedgerSearchParams['status'],
-    parentGroup: typeof query.parentGroup === 'string' ? query.parentGroup : undefined,
+    parentGroup: typeof query.parentGroup === 'string' ? query.parentGroup.slice(0, 128) : undefined,
     page,
     pageSize,
-    sortBy: sortBy ?? 'name',
+    sortBy,
     sortDirection,
   };
 }
@@ -31,6 +35,7 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
       res.status(200).json({
         schemaVersion: '1.0.0',
         dataFreshnessAt: new Date().toISOString(),
+        storage: ledgerSync.getStorageStatus(),
         ...result,
       });
     }),
@@ -39,12 +44,10 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
   router.get(
     '/ledgers/:id',
     asyncHandler(async (req, res) => {
-      const ledger = await ledgerSync.getLedgerById(req.params.id);
+      const ledgerId = String(req.params.id).slice(0, 128);
+      const ledger = await ledgerSync.getLedgerById(ledgerId);
       if (!ledger) {
-        res.status(404).json({
-          code: 'NOT_FOUND',
-          message: `Ledger '${req.params.id}' was not found.`,
-        });
+        res.status(404).json({ code: 'NOT_FOUND', message: `Ledger '${ledgerId}' was not found.` });
         return;
       }
       res.status(200).json({
@@ -60,10 +63,15 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
     asyncHandler(async (req, res) => {
       const incremental = Boolean(req.body?.incremental);
       const result = await ledgerSync.syncLedgers({ incremental });
-      res.status(200).json({
-        schemaVersion: '1.0.0',
-        ...result,
-      });
+      res.status(200).json({ schemaVersion: '1.0.0', ...result });
+    }),
+  );
+
+  router.post(
+    '/sync/ledgers/cancel',
+    asyncHandler(async (_req, res) => {
+      const progress = await ledgerSync.cancelSync();
+      res.status(200).json({ schemaVersion: '1.0.0', progress });
     }),
   );
 
@@ -74,6 +82,7 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
       res.status(200).json({
         schemaVersion: '1.0.0',
         progress,
+        storage: ledgerSync.getStorageStatus(),
       });
     }),
   );
@@ -82,10 +91,28 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
     '/sync/ledgers/statistics',
     asyncHandler(async (_req, res) => {
       const statistics = await ledgerSync.getStatistics();
-      res.status(200).json({
-        schemaVersion: '1.0.0',
-        statistics,
-      });
+      res.status(200).json({ schemaVersion: '1.0.0', statistics });
+    }),
+  );
+
+  router.get(
+    '/sync/ledgers/runs',
+    asyncHandler(async (req, res) => {
+      const limit = Math.min(50, Math.max(1, Number.parseInt(String(req.query.limit ?? '20'), 10) || 20));
+      const runs = await ledgerSync.listSyncRuns(limit);
+      res.status(200).json({ schemaVersion: '1.0.0', runs });
+    }),
+  );
+
+  router.get(
+    '/sync/ledgers/runs/:id',
+    asyncHandler(async (req, res) => {
+      const run = await ledgerSync.getSyncRun(String(req.params.id));
+      if (!run) {
+        res.status(404).json({ code: 'NOT_FOUND', message: 'Sync run not found.' });
+        return;
+      }
+      res.status(200).json({ schemaVersion: '1.0.0', run });
     }),
   );
 
@@ -93,11 +120,23 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
     '/sync/ledgers/clear-cache',
     asyncHandler(async (_req, res) => {
       await ledgerSync.clearCache();
-      res.status(200).json({
-        schemaVersion: '1.0.0',
-        ok: true,
-        message: 'Ledger cache cleared.',
-      });
+      res.status(200).json({ schemaVersion: '1.0.0', ok: true, message: 'Ledger cache cleared.' });
+    }),
+  );
+
+  router.post(
+    '/storage/ledgers/integrity-check',
+    asyncHandler(async (_req, res) => {
+      const result = await ledgerSync.runIntegrityCheck();
+      res.status(200).json({ schemaVersion: '1.0.0', ...result });
+    }),
+  );
+
+  router.post(
+    '/storage/ledgers/backup',
+    asyncHandler(async (_req, res) => {
+      const result = await ledgerSync.createBackup();
+      res.status(result.ok ? 200 : 503).json({ schemaVersion: '1.0.0', ...result });
     }),
   );
 

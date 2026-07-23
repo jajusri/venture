@@ -3,6 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { LedgerDetails } from '../../../src/erp/ledger/ledger-domain.js';
 import { validateLedgerCollection } from '../../../src/erp/ledger/ledger-validation.js';
 import { mapNormalizedLedgerToDomain } from '../../../src/erp/ledger/ledger-mapper.js';
+import {
+  sampleNormalizedAmount,
+  sampleNormalizedLedger,
+} from '../../helpers/ledger-fixtures.js';
 
 function sampleLedger(overrides: Partial<LedgerDetails> = {}): LedgerDetails {
   return {
@@ -48,14 +52,16 @@ describe('validateLedgerCollection', () => {
 
 describe('mapNormalizedLedgerToDomain', () => {
   it('maps extraction model into ledger domain record', () => {
-    const mapped = mapNormalizedLedgerToDomain({
-      id: 'acme-corp',
-      name: 'Acme Corp',
-      normalizedName: 'acme corp',
-      parentGroup: 'Sundry Debtors',
-      closingBalance: { raw: '500.00 Cr', amount: 500, side: 'Cr' },
-      gstin: '27AAAAA0000A1Z5',
-    });
+    const mapped = mapNormalizedLedgerToDomain(
+      sampleNormalizedLedger({
+        id: 'acme-corp',
+        name: 'Acme Corp',
+        normalizedName: 'acme corp',
+        parentGroup: 'Sundry Debtors',
+        closingBalance: sampleNormalizedAmount('500', 'Cr'),
+        gstin: '27AAAAA0000A1Z5',
+      }),
+    );
 
     expect(mapped.id).toBe('acme-corp');
     expect(mapped.balanceNature).toBe('credit');

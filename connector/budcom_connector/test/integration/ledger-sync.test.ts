@@ -1,16 +1,34 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { createMasterDataMockFetch } from '../helpers/mock-fetch.js';
 import { createTestApp, createTestContext, startTestServices } from '../helpers/test-context.js';
 
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  for (const dir of tempDirs.splice(0)) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    } catch {
+      // Windows may keep SQLite WAL handles briefly after service shutdown.
+    }
+  }
+});
+
 describe('ledger sync API', () => {
   it('syncs ledgers and exposes repository endpoints', async () => {
+    const databasePath = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-ledger-api-'));
+    tempDirs.push(databasePath);
     const { fetchImpl } = createMasterDataMockFetch({ pingOk: true });
     const context = createTestContext({
       fetchImpl,
       tallyRetryMaxAttempts: 1,
-      databasePath: './test-data/ledger-api',
+      databasePath,
     });
     await startTestServices(context, { selectCompanyId: 'estimation' });
 
