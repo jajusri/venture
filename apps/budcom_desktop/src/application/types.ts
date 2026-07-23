@@ -252,3 +252,79 @@ export interface ConnectorClientConfig {
   readonly maxAttempts?: number;
   readonly retryBaseDelayMs?: number;
 }
+
+export interface LedgerSummaryDto {
+  readonly id: string;
+  readonly name: string;
+  readonly normalizedName: string;
+  readonly alias?: string;
+  readonly parentGroup?: string;
+  readonly status: string;
+  readonly balanceNature: string;
+  readonly guid?: string;
+  readonly alterId?: string;
+  readonly syncedAt: string;
+}
+
+export interface LedgerListResult {
+  readonly schemaVersion: string;
+  readonly dataFreshnessAt: string;
+  readonly items: readonly LedgerSummaryDto[];
+  readonly pagination: {
+    readonly page: number;
+    readonly pageSize: number;
+    readonly totalItems: number;
+    readonly totalPages: number;
+  };
+}
+
+export interface LedgerStatisticsDto {
+  readonly totalLedgers: number;
+  readonly activeLedgers: number;
+  readonly inactiveLedgers: number;
+  readonly reservedLedgers: number;
+  readonly deletedLedgers: number;
+  readonly withGst: number;
+  readonly withOpeningBalance: number;
+  readonly lastSyncedAt: string | null;
+}
+
+export interface LedgerStatisticsResult {
+  readonly schemaVersion: string;
+  readonly statistics: LedgerStatisticsDto;
+}
+
+export interface LedgerSyncProgressDto {
+  readonly status: string;
+  readonly startedAt: string | null;
+  readonly completedAt: string | null;
+  readonly durationMs: number | null;
+  readonly itemsProcessed: number;
+  readonly itemsAdded: number;
+  readonly itemsUpdated: number;
+  readonly itemsSkipped: number;
+  readonly itemsFailed: number;
+  readonly lastError: string | null;
+  readonly cancelRequested: boolean;
+}
+
+export interface LedgerSyncProgressResult {
+  readonly schemaVersion: string;
+  readonly progress: LedgerSyncProgressDto;
+}
+
+export interface LedgerSyncResult {
+  readonly schemaVersion: string;
+  readonly status: string;
+  readonly statistics: LedgerStatisticsDto;
+  readonly progress: LedgerSyncProgressDto;
+  readonly validationIssueCount: number;
+}
+
+export interface LedgerPageState {
+  readonly ok: boolean;
+  readonly list: LedgerListResult | null;
+  readonly statistics: LedgerStatisticsResult | null;
+  readonly progress: LedgerSyncProgressResult | null;
+  readonly userMessage: string | null;
+}

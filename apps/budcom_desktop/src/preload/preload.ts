@@ -9,6 +9,9 @@ import type {
   DiagnosticsExportResult,
   DiagnosticsSnapshot,
   HealthCheckResult,
+  LedgerPageState,
+  LedgerSyncProgressResult,
+  LedgerSyncResult,
   LogEntry,
   SettingsSaveResult,
   SettingsState,
@@ -37,6 +40,9 @@ export interface DesktopBridge {
   clearNonessentialLogs(): Promise<{ ok: boolean; message: string }>;
   runHealthCheck(): Promise<HealthCheckResult>;
   reloadRenderer(): Promise<{ ok: boolean }>;
+  getLedgers(payload?: { query?: string; page?: number; pageSize?: number }): Promise<LedgerPageState>;
+  syncLedgers(incremental?: boolean): Promise<LedgerSyncResult>;
+  clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
   onStatusUpdated(listener: () => void): () => void;
 }
 
@@ -62,6 +68,9 @@ const desktopBridge: DesktopBridge = {
   clearNonessentialLogs: () => ipcRenderer.invoke('desktop:clear-nonessential-logs'),
   runHealthCheck: () => ipcRenderer.invoke('desktop:run-health-check'),
   reloadRenderer: () => ipcRenderer.invoke('desktop:reload-renderer'),
+  getLedgers: (payload) => ipcRenderer.invoke('desktop:get-ledgers', payload),
+  syncLedgers: (incremental = false) => ipcRenderer.invoke('desktop:sync-ledgers', { incremental }),
+  clearLedgerCache: () => ipcRenderer.invoke('desktop:clear-ledger-cache'),
   onStatusUpdated: (listener) => {
     const channel = 'desktop:status-updated';
     const wrapped = (): void => listener();

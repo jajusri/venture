@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'node:path';
 
 import { CompanyService } from '../application/company-service.js';
+import { LedgerService } from '../application/ledger-service.js';
 import { DiagnosticsService } from '../application/diagnostics-service.js';
 import { getEnvironmentDefaults } from '../application/desktop-config-defaults.js';
 import { resolveDesktopConfigPaths } from '../application/desktop-config-paths.js';
@@ -16,6 +17,7 @@ import {
   assertAllowedIpcChannel,
   validateCompanyId,
   validateExportDirectory,
+  validateLedgerQuery,
   validateSettingsInput,
 } from '../application/ipc-allowlist.js';
 import { LogService } from '../application/log-service.js';
@@ -71,6 +73,7 @@ settingsService.setConfigStatus(configLoadResult.status);
 let resolved = settingsService.getResolvedConfig();
 let dashboardService = createDashboardService(resolved.connectorBaseUrl);
 let companyService = createCompanyService(resolved.connectorBaseUrl);
+let ledgerService = createLedgerService(resolved.connectorBaseUrl);
 let lifecycleService = createLifecycleService(resolved.lifecycleConfig);
 let diagnosticsService = createDiagnosticsService();
 
@@ -83,6 +86,13 @@ function createDashboardService(baseUrl: string): DashboardService {
 
 function createCompanyService(baseUrl: string): CompanyService {
   return new CompanyService({
+    connectorBaseUrl: baseUrl,
+    logService,
+  });
+}
+
+function createLedgerService(baseUrl: string): LedgerService {
+  return new LedgerService({
     connectorBaseUrl: baseUrl,
     logService,
   });
@@ -122,6 +132,7 @@ async function reinitializeRuntimeServices(): Promise<void> {
   logService.setMinimumLevel(resolved.effective.logLevel);
   dashboardService = createDashboardService(resolved.connectorBaseUrl);
   companyService = createCompanyService(resolved.connectorBaseUrl);
+  ledgerService = createLedgerService(resolved.connectorBaseUrl);
   lifecycleService = createLifecycleService(resolved.lifecycleConfig);
   diagnosticsService = createDiagnosticsService();
   startPolling(resolved.effective.healthPollIntervalMs);
@@ -254,6 +265,26 @@ function registerIpcHandlers(): void {
     const session = await companyService.clearSelection();
     notifyRenderer();
     return session;
+  });
+  registerIpcHandler('desktop:get-ledgers', async (payload: unknown) => {
+    const input = validateLedgerQuery(payload);
+    return ledgerService.getPageState(input.query, input.page, input.pageSize);
+  });
+  registerIpcHandler('desktop:sync-ledgers', async (payload: unknown) => {
+    const incremental = Boolean(
+      payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as { incremental?: boolean }).incremental
+        : false,
+    );
+    const result = await ledgerService.syncLedgers(incremental);
+    notifyRenderer();
+    return result;
+  });
+  registerIpcHandler('desktop:get-ledger-statistics', async () => ledgerService.getStatistics());
+  registerIpcHandler('desktop:clear-ledger-cache', async () => {
+    const result = await ledgerService.clearCache();
+    notifyRenderer();
+    return result;
   });
   registerIpcHandler('desktop:get-diagnostics', async () => diagnosticsService.getSnapshot());
   registerIpcHandler('desktop:refresh-diagnostics', async () => diagnosticsService.getSnapshot());

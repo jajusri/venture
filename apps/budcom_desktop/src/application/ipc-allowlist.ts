@@ -20,6 +20,10 @@ export const ALLOWED_IPC_CHANNELS = [
   'desktop:clear-nonessential-logs',
   'desktop:run-health-check',
   'desktop:reload-renderer',
+  'desktop:get-ledgers',
+  'desktop:sync-ledgers',
+  'desktop:get-ledger-statistics',
+  'desktop:clear-ledger-cache',
 ] as const;
 
 export type AllowedIpcChannel = (typeof ALLOWED_IPC_CHANNELS)[number];
@@ -52,6 +56,20 @@ export function validateSettingsInput(value: unknown): Record<string, unknown> {
     throw new Error('Settings payload must be an object.');
   }
   return value as Record<string, unknown>;
+}
+
+export function validateLedgerQuery(value: unknown): { query: string; page: number; pageSize: number } {
+  if (value === undefined || value === null) {
+    return { query: '', page: 1, pageSize: 25 };
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Ledger query payload must be an object.');
+  }
+  const input = value as Record<string, unknown>;
+  const query = typeof input.query === 'string' ? input.query : '';
+  const page = Math.max(1, Number.parseInt(String(input.page ?? '1'), 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(input.pageSize ?? '25'), 10) || 25));
+  return { query, page, pageSize };
 }
 
 export function validateExportDirectory(value: unknown): string | undefined {

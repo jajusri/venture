@@ -9,6 +9,7 @@ export const ServiceTokens = {
   CompanyResolver: 'CompanyResolver',
   ConnectorSession: 'ConnectorSession',
   MasterData: 'MasterData',
+  LedgerSync: 'LedgerSync',
   TallyDiagnostics: 'TallyDiagnostics',
   LocalDatabase: 'LocalDatabase',
   ApiServer: 'ApiServer',

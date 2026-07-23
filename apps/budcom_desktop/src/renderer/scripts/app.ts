@@ -2,6 +2,7 @@ import type {
   CompanyListItemDto,
   DashboardState,
   DiagnosticsSnapshot,
+  LedgerPageState,
   LogEntry,
   SettingsSaveResult,
   SettingsState,
@@ -30,6 +31,9 @@ export interface DesktopBridge {
   clearNonessentialLogs(): Promise<{ ok: boolean; message: string }>;
   runHealthCheck(): Promise<{ ok: boolean; message: string }>;
   reloadRenderer(): Promise<{ ok: boolean }>;
+  getLedgers(payload?: { query?: string; page?: number; pageSize?: number }): Promise<LedgerPageState>;
+  syncLedgers(incremental?: boolean): Promise<unknown>;
+  clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
   onStatusUpdated(listener: () => void): () => void;
 }
 
@@ -39,7 +43,7 @@ declare global {
   }
 }
 
-export type DesktopView = 'dashboard' | 'connection' | 'logs' | 'diagnostics' | 'settings' | 'about';
+export type DesktopView = 'dashboard' | 'connection' | 'ledgers' | 'logs' | 'diagnostics' | 'settings' | 'about';
 
 export interface UiLoadingState {
   readonly dashboard: boolean;
@@ -47,11 +51,16 @@ export interface UiLoadingState {
   readonly selecting: boolean;
   readonly settings: boolean;
   readonly diagnostics: boolean;
+  readonly ledgers: boolean;
+  readonly syncing: boolean;
 }
 
 let refreshInFlight = false;
 let currentSettings: SettingsState | null = null;
 let settingsDirty = false;
+let ledgerPage = 1;
+let ledgerQuery = '';
+const ledgerPageSize = 25;
 
 export function setText(id: string, value: string): void {
   const element = document.getElementById(id);
@@ -80,7 +89,7 @@ export function setLoading(state: Partial<UiLoadingState>, message = 'Loading…
   if (!bar || !label) {
     return;
   }
-  const active = Boolean(state.dashboard || state.companies || state.selecting || state.settings || state.diagnostics);
+  const active = Boolean(state.dashboard || state.companies || state.selecting || state.settings || state.diagnostics || state.ledgers || state.syncing);
   bar.className = active ? 'loading-bar' : 'loading-bar hidden';
   if (state.selecting) {
     label.textContent = 'Selecting company…';
@@ -90,6 +99,10 @@ export function setLoading(state: Partial<UiLoadingState>, message = 'Loading…
     label.textContent = 'Saving settings…';
   } else if (state.diagnostics) {
     label.textContent = 'Refreshing diagnostics…';
+  } else if (state.syncing) {
+    label.textContent = 'Syncing ledgers…';
+  } else if (state.ledgers) {
+    label.textContent = 'Loading ledgers…';
   } else {
     label.textContent = message;
   }
@@ -308,6 +321,9 @@ export function activateView(view: DesktopView): void {
 
   if (view === 'diagnostics') {
     void refreshDiagnostics();
+  }
+  if (view === 'ledgers') {
+    void loadLedgers();
   }
 }
 
@@ -557,6 +573,120 @@ async function clearLogsAction(): Promise<void> {
   await refreshUi();
 }
 
+export function renderLedgers(state: LedgerPageState): void {
+  const stats = state.statistics?.statistics;
+  setText('ledger-stat-total', stats ? String(stats.totalLedgers) : '—');
+  setText('ledger-stat-active', stats ? String(stats.activeLedgers) : '—');
+  setText('ledger-stat-gst', stats ? String(stats.withGst) : '—');
+  setText('ledger-stat-last-sync', stats?.lastSyncedAt ?? 'Never');
+  setText('ledger-sync-status', state.progress?.progress.status ?? '—');
+  setText(
+    'ledger-sync-duration',
+    state.progress?.progress.durationMs != null ? `${state.progress.progress.durationMs} ms` : '—',
+  );
+
+  const list = document.getElementById('ledger-list');
+  const meta = document.getElementById('ledger-list-meta');
+  if (!list || !meta) {
+    return;
+  }
+
+  if (!state.ok || !state.list) {
+    meta.textContent = state.userMessage ?? 'Unable to load ledgers.';
+    list.innerHTML = '';
+    return;
+  }
+
+  meta.textContent = `${state.list.pagination.totalItems} ledgers · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
+  list.innerHTML = state.list.items
+    .map(
+      (ledger) => `
+        <div class="ledger-row" role="row">
+          <div class="ledger-name" role="cell">${ledger.name}</div>
+          <div class="ledger-meta" role="cell">${ledger.parentGroup ?? '—'}</div>
+          <div class="ledger-meta" role="cell">${ledger.status}</div>
+        </div>`,
+    )
+    .join('');
+
+  setText('ledger-page-label', `Page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`);
+}
+
+export async function loadLedgers(): Promise<void> {
+  setLoading({ ledgers: true });
+  try {
+    const state = await window.budcomDesktop.getLedgers({
+      query: ledgerQuery,
+      page: ledgerPage,
+      pageSize: ledgerPageSize,
+    });
+    renderLedgers(state);
+    if (state.userMessage) {
+      setBanner(state.userMessage, 'warning');
+    }
+  } catch {
+    setBanner('Unable to load ledgers.', 'error');
+  } finally {
+    setLoading({ ledgers: false });
+  }
+}
+
+async function handleLedgerSync(): Promise<void> {
+  setLoading({ syncing: true });
+  const progress = document.getElementById('ledger-progress');
+  progress?.classList.remove('hidden');
+  try {
+    await window.budcomDesktop.syncLedgers(false);
+    await loadLedgers();
+    await refreshUi();
+  } catch {
+    setBanner('Ledger sync failed.', 'error');
+  } finally {
+    progress?.classList.add('hidden');
+    setLoading({ syncing: false });
+  }
+}
+
+async function handleClearLedgerCache(): Promise<void> {
+  if (!window.confirm('Clear the local ledger cache for the selected company?')) {
+    return;
+  }
+  try {
+    const result = await window.budcomDesktop.clearLedgerCache();
+    setBanner(result.message, result.ok ? 'information' : 'warning');
+    await loadLedgers();
+  } catch {
+    setBanner('Unable to clear ledger cache.', 'error');
+  }
+}
+
+export function bindLedgerActions(): void {
+  document.getElementById('btn-sync-ledgers')?.addEventListener('click', () => {
+    void handleLedgerSync();
+  });
+  document.getElementById('btn-refresh-ledgers')?.addEventListener('click', () => {
+    void loadLedgers();
+  });
+  document.getElementById('btn-clear-ledger-cache')?.addEventListener('click', () => {
+    void handleClearLedgerCache();
+  });
+  document.getElementById('btn-ledger-prev')?.addEventListener('click', () => {
+    if (ledgerPage > 1) {
+      ledgerPage -= 1;
+      void loadLedgers();
+    }
+  });
+  document.getElementById('btn-ledger-next')?.addEventListener('click', () => {
+    ledgerPage += 1;
+    void loadLedgers();
+  });
+  document.getElementById('ledger-search-input')?.addEventListener('change', (event) => {
+    ledgerQuery = (event.target as HTMLInputElement).value.trim();
+    ledgerPage = 1;
+    void loadLedgers();
+  });
+}
+
 export function bindCompanyActions(): void {
   document.getElementById('btn-refresh-companies')?.addEventListener('click', () => {
     void loadCompanies();
@@ -588,6 +718,7 @@ export function bindNavigation(): void {
 export async function startDesktopShell(): Promise<void> {
   bindNavigation();
   bindCompanyActions();
+  bindLedgerActions();
   bindLifecycleActions();
   bindSettingsActions();
   bindDiagnosticsActions();

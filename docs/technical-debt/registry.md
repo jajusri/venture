@@ -67,7 +67,50 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
-## TD-004 — Tally settings not forwarded to connector spawn
+## TD-005 — JSON ledger repository
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-005 |
+| **Description** | Ledger repository uses per-company JSON files instead of SQLite/embedded DB configured in connector defaults |
+| **Impact** | Medium — no transactional incremental checkpoints; large datasets load full file |
+| **Priority** | P2 |
+| **Estimated fix** | 1 day |
+| **Target milestone** | 5A.1 |
+| **Status** | Open |
+| **Introduced** | Milestone 5A (2026-07-23) |
+
+---
+
+## TD-006 — Durable interrupted sync resume
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-006 |
+| **Description** | Sync progress and resume state are in-memory only; connector restart loses interrupted sync checkpoint |
+| **Impact** | Medium — operator must re-run full sync after crash |
+| **Priority** | P2 |
+| **Estimated fix** | 4 hours |
+| **Target milestone** | 5A.1 |
+| **Status** | Open |
+| **Introduced** | Milestone 5A (2026-07-23) |
+
+---
+
+## TD-007 — Cooperative cancellation only
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-007 |
+| **Description** | Ledger sync cancellation uses in-process flag; no API to cancel mid-extraction before mapping loop |
+| **Impact** | Low — cancellation works within mapping/upsert phase |
+| **Priority** | P3 |
+| **Estimated fix** | 2 hours |
+| **Target milestone** | 5A.1 |
+| **Status** | Open |
+| **Introduced** | Milestone 5A (2026-07-23) |
+
+---
 
 | Field | Value |
 |-------|-------|

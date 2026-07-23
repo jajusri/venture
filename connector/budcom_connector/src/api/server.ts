@@ -7,6 +7,8 @@ import type { ConnectorSessionService } from '../services/interfaces/connector-s
 import type { HealthService } from '../services/health/health-service.js';
 import type { TallyDiagnosticsService } from '../services/interfaces/tally-diagnostics.js';
 import type { MasterDataService } from '../services/extraction/master-data.service.js';
+import type { LedgerSyncService } from '../services/ledger/ledger-sync.service.js';
+import { createLedgersRouter } from './routes/ledgers.js';
 import { readOnlyMiddleware } from './middleware/read-only.js';
 import { createApiStubsRouter } from './routes/api-stubs.js';
 import { createCompaniesRouter } from './routes/companies.js';
@@ -22,6 +24,7 @@ export interface ExpressAppDeps {
   readonly companyDiscovery: CompanyDiscoveryService;
   readonly connectorSession: ConnectorSessionService;
   readonly masterData: MasterDataService;
+  readonly ledgerSync: LedgerSyncService;
   readonly tallyDiagnostics: TallyDiagnosticsService;
 }
 
@@ -36,6 +39,7 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
   app.use(createCompaniesRouter(deps.companyDiscovery));
   app.use(createSessionRouter(deps.connectorSession));
   app.use(createMasterDataRouter(deps.masterData));
+  app.use(createLedgersRouter(deps.ledgerSync));
   app.use(createApiStubsRouter());
   app.use(createErrorMiddleware(deps.logger));
 

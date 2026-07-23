@@ -116,19 +116,64 @@ export function mapLedgerGroup(
   };
 }
 
+function resolveLedgerStatus(parser: CollectionEntityParser, node: ParsedXmlNode): NormalizedLedger['status'] {
+  const reserved = parser.getChildText(node, 'RESERVEDNAME');
+  if (reserved) return 'reserved';
+  if (parser.getLogical(node, 'ISDELETED') === true) return 'inactive';
+  if (parser.getLogical(node, 'ISACTIVE') === false) return 'inactive';
+  return 'active';
+}
+
+function resolveLedgerBalanceNature(
+  openingText: string | undefined,
+  closingText: string | undefined,
+  closingSide?: string,
+  openingSide?: string,
+): NormalizedLedger['balanceNature'] {
+  if (closingSide === 'Dr' || openingSide === 'Dr') return 'debit';
+  if (closingSide === 'Cr' || openingSide === 'Cr') return 'credit';
+  const sample = (closingText ?? openingText)?.toLowerCase() ?? '';
+  if (sample.includes(' dr')) return 'debit';
+  if (sample.includes(' cr')) return 'credit';
+  return 'unknown';
+}
+
 export function mapLedger(parser: CollectionEntityParser, node: ParsedXmlNode): NormalizedLedger | undefined {
   const name = parser.resolveName(node);
   if (!name) return undefined;
+  const openingText = parser.getChildText(node, 'OPENINGBALANCE');
+  const closingText = parser.getChildText(node, 'CLOSINGBALANCE');
+  const openingBalance = normalizeAmount(openingText);
+  const closingBalance = normalizeAmount(closingText);
   return {
     id: slugify(name),
     name,
     normalizedName: normalizeName(name),
     alias: parser.getChildText(node, 'ALIAS'),
-    parentGroup: parser.getChildText(node, 'PARENT'),
-    openingBalance: normalizeAmount(parser.getChildText(node, 'OPENINGBALANCE')),
-    closingBalance: normalizeAmount(parser.getChildText(node, 'CLOSINGBALANCE')),
+    parentGroup: normalizeText(parser.getChildText(node, 'PARENT')),
+    openingBalance,
+    closingBalance,
+    balanceNature: resolveLedgerBalanceNature(
+      openingText,
+      closingText,
+      closingBalance?.side,
+      openingBalance?.side,
+    ),
+    status: resolveLedgerStatus(parser, node),
+    guid: parser.getChildText(node, 'GUID'),
+    alterId: parser.getChildText(node, 'ALTERID'),
+    reservedName: parser.getChildText(node, 'RESERVEDNAME'),
     mailingName: parser.getChildText(node, 'MAILINGNAME'),
-    gstin: parser.getChildText(node, 'PARTYGSTIN'),
+    address: parser.getChildText(node, 'ADDRESS'),
+    state: parser.getChildText(node, 'STATENAME'),
+    country: parser.getChildText(node, 'COUNTRYNAME'),
+    pincode: parser.getChildText(node, 'PINCODE'),
+    email: parser.getChildText(node, 'EMAIL'),
+    phone: parser.getChildText(node, 'PHONENUMBER'),
+    mobile: parser.getChildText(node, 'MOBILENUMBER'),
+    gstin: parser.getChildText(node, 'PARTYGSTIN') ?? parser.getChildText(node, 'GSTIN'),
+    gstRegistrationType: parser.getChildText(node, 'GSTREGISTRATIONTYPE'),
+    gstApplicableFrom: parser.getChildText(node, 'APPLICABLEFROM'),
   };
 }
 

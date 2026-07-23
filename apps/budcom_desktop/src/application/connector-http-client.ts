@@ -6,6 +6,10 @@ import type {
   ConnectorClientConfig,
   ConnectorErrorBody,
   HealthResponse,
+  LedgerListResult,
+  LedgerStatisticsResult,
+  LedgerSyncProgressResult,
+  LedgerSyncResult,
   SessionSnapshotResponse,
   SessionValidationResponse,
 } from './types.js';
@@ -63,6 +67,44 @@ export class ConnectorHttpClient {
       session: body.session,
       contractVersion: body.contractVersion ?? '1',
     };
+  }
+
+  async getLedgers(params: {
+    readonly query?: string;
+    readonly page?: number;
+    readonly pageSize?: number;
+  } = {}): Promise<LedgerListResult> {
+    const search = new URLSearchParams();
+    if (params.query) search.set('query', params.query);
+    if (params.page) search.set('page', String(params.page));
+    if (params.pageSize) search.set('pageSize', String(params.pageSize));
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return this.getJsonWithRetry<LedgerListResult>(`/ledgers${suffix}`);
+  }
+
+  async syncLedgers(incremental = false): Promise<LedgerSyncResult> {
+    return retryWithBackoff(
+      async () => {
+        const response = await this.request('/sync/ledgers', {
+          method: 'POST',
+          body: JSON.stringify({ incremental }),
+        });
+        return this.parseJson<LedgerSyncResult>(response);
+      },
+      { maxAttempts: this.maxAttempts, baseDelayMs: this.retryBaseDelayMs },
+    );
+  }
+
+  async getLedgerSyncStatus(): Promise<LedgerSyncProgressResult> {
+    return this.getJsonWithRetry<LedgerSyncProgressResult>('/sync/ledgers/status');
+  }
+
+  async getLedgerStatistics(): Promise<LedgerStatisticsResult> {
+    return this.getJsonWithRetry<LedgerStatisticsResult>('/sync/ledgers/statistics');
+  }
+
+  async clearLedgerCache(): Promise<{ ok: boolean; message: string }> {
+    return this.postJsonWithRetry<{ ok: boolean; message: string }>('/sync/ledgers/clear-cache');
   }
 
   isReachable(): Promise<boolean> {

@@ -82,8 +82,22 @@ export interface NormalizedLedger {
   readonly parentGroup?: string;
   readonly openingBalance?: NormalizedAmount;
   readonly closingBalance?: NormalizedAmount;
+  readonly balanceNature?: 'debit' | 'credit' | 'unknown';
+  readonly status?: 'active' | 'inactive' | 'reserved' | 'unknown';
+  readonly guid?: string;
+  readonly alterId?: string;
+  readonly reservedName?: string;
   readonly mailingName?: string;
+  readonly address?: string;
+  readonly state?: string;
+  readonly country?: string;
+  readonly pincode?: string;
+  readonly email?: string;
+  readonly phone?: string;
+  readonly mobile?: string;
   readonly gstin?: string;
+  readonly gstRegistrationType?: string;
+  readonly gstApplicableFrom?: string;
 }
 
 export interface NormalizedStockGroup {

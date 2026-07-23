@@ -8,6 +8,7 @@ import type { HealthService } from '../health/health-service.js';
 import type { TallyDiagnosticsService } from '../interfaces/tally-diagnostics.js';
 import type { ConnectorSessionService } from '../interfaces/connector-session.js';
 import type { MasterDataService } from '../extraction/master-data.service.js';
+import type { LedgerSyncService } from '../ledger/ledger-sync.service.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
 
 export interface ApiServerDeps {
@@ -15,6 +16,7 @@ export interface ApiServerDeps {
   readonly companyDiscovery: CompanyDiscoveryService;
   readonly connectorSession: ConnectorSessionService;
   readonly masterData: MasterDataService;
+  readonly ledgerSync: LedgerSyncService;
   readonly tallyDiagnostics: TallyDiagnosticsService;
 }
 
@@ -38,6 +40,7 @@ export class ApiServerStub implements ApiServerService {
       companyDiscovery: deps.companyDiscovery,
       connectorSession: deps.connectorSession,
       masterData: deps.masterData,
+      ledgerSync: deps.ledgerSync,
       tallyDiagnostics: deps.tallyDiagnostics,
     });
 

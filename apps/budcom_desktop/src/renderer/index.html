@@ -36,6 +36,7 @@
       <nav class="top-nav" aria-label="Primary">
         <button class="nav-btn active" data-view="dashboard">Dashboard</button>
         <button class="nav-btn" data-view="connection">Connection</button>
+        <button class="nav-btn" data-view="ledgers">Ledgers</button>
         <button class="nav-btn" data-view="logs">Logs</button>
         <button class="nav-btn" data-view="diagnostics">Diagnostics</button>
         <button class="nav-btn" data-view="settings">Settings</button>
@@ -111,6 +112,41 @@
               <dt>Health Status</dt><dd id="connection-detail-health">—</dd>
               <dt>Session Status</dt><dd id="connection-detail-session">—</dd>
             </dl>
+          </article>
+        </section>
+
+        <section id="view-ledgers" class="view">
+          <article class="panel">
+            <div class="panel-header">
+              <h2>Ledger Synchronization</h2>
+              <div class="panel-actions">
+                <button id="btn-sync-ledgers" class="action-btn" type="button">Sync Now</button>
+                <button id="btn-refresh-ledgers" class="action-btn secondary" type="button">Refresh</button>
+                <button id="btn-clear-ledger-cache" class="action-btn secondary" type="button">Clear Cache</button>
+              </div>
+            </div>
+            <div class="ledger-stats-grid">
+              <div><strong>Total</strong><span id="ledger-stat-total">—</span></div>
+              <div><strong>Active</strong><span id="ledger-stat-active">—</span></div>
+              <div><strong>With GST</strong><span id="ledger-stat-gst">—</span></div>
+              <div><strong>Last Sync</strong><span id="ledger-stat-last-sync">—</span></div>
+              <div><strong>Sync Status</strong><span id="ledger-sync-status">—</span></div>
+              <div><strong>Duration</strong><span id="ledger-sync-duration">—</span></div>
+            </div>
+            <div class="ledger-toolbar">
+              <label>Search<input id="ledger-search-input" type="search" placeholder="Search ledgers" /></label>
+              <span id="ledger-list-meta" class="panel-meta">Load ledgers after selecting a company.</span>
+            </div>
+            <div id="ledger-progress" class="ledger-progress hidden" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <span id="ledger-progress-message">Syncing ledgers…</span>
+            </div>
+            <div id="ledger-list" class="ledger-list" role="table" aria-label="Synced ledgers"></div>
+            <div class="ledger-pagination">
+              <button id="btn-ledger-prev" class="action-btn secondary" type="button">Previous</button>
+              <span id="ledger-page-label">Page 1</span>
+              <button id="btn-ledger-next" class="action-btn secondary" type="button">Next</button>
+            </div>
           </article>
         </section>
 

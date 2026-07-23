@@ -19,7 +19,8 @@ import { ApiServerStub } from '../services/placeholders/api-server.stub.js';
 import { LicensingStub } from '../services/placeholders/licensing.stub.js';
 import { LocalDatabaseStub } from '../services/placeholders/local-database.stub.js';
 import { SchedulerStub } from '../services/placeholders/scheduler.stub.js';
-import { SyncEngineStub } from '../services/placeholders/sync-engine.stub.js';
+import { LedgerSyncServiceImpl } from '../services/ledger/ledger-sync.service.js';
+import type { LedgerSyncService } from '../services/ledger/ledger-sync.service.js';
 import { CompanyDiscoveryServiceImpl } from '../services/tally/company-discovery.service.js';
 import { TallyConnectionServiceImpl } from '../services/tally/tally-connection.service.js';
 import { TallyDiagnosticsServiceImpl } from '../services/tally/tally-diagnostics.service.js';
@@ -113,7 +114,19 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
     () => new TallyDiagnosticsServiceImpl(tallyModule.connectionManager),
   );
 
-  container.registerFactory(ServiceTokens.SyncEngine, () => new SyncEngineStub(logger));
+  container.registerFactory(ServiceTokens.LedgerSync, () => {
+    const service = new LedgerSyncServiceImpl(
+      config,
+      tallyModule.readPort,
+      container.resolve<CompanyResolver>(ServiceTokens.CompanyResolver),
+      container.resolve<ConnectorSessionService>(ServiceTokens.ConnectorSession),
+      logger.child({ service: 'LedgerSync' }),
+    );
+    return service;
+  });
+  container.registerFactory(ServiceTokens.SyncEngine, () =>
+    container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync),
+  );
   container.registerFactory(ServiceTokens.LocalDatabase, () => new LocalDatabaseStub(logger));
   container.registerFactory(ServiceTokens.Licensing, () => new LicensingStub(logger));
   container.registerFactory(ServiceTokens.Scheduler, () => new SchedulerStub(logger));
@@ -144,6 +157,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         companyDiscovery: container.resolve<CompanyDiscoveryService>(ServiceTokens.CompanyDiscovery),
         connectorSession: container.resolve<ConnectorSessionService>(ServiceTokens.ConnectorSession),
         masterData: container.resolve<MasterDataService>(ServiceTokens.MasterData),
+        ledgerSync: container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync),
         tallyDiagnostics: container.resolve<TallyDiagnosticsService>(ServiceTokens.TallyDiagnostics),
       })),
   );
@@ -158,6 +172,7 @@ const STARTUP_ORDER: ServiceToken[] = [
   ServiceTokens.CompanyDiscovery,
   ServiceTokens.ConnectorSession,
   ServiceTokens.MasterData,
+  ServiceTokens.LedgerSync,
   ServiceTokens.SyncEngine,
   ServiceTokens.Licensing,
   ServiceTokens.Scheduler,
@@ -168,6 +183,7 @@ const SHUTDOWN_ORDER: ServiceToken[] = [
   ServiceTokens.ApiServer,
   ServiceTokens.Scheduler,
   ServiceTokens.SyncEngine,
+  ServiceTokens.LedgerSync,
   ServiceTokens.MasterData,
   ServiceTokens.ConnectorSession,
   ServiceTokens.CompanyDiscovery,

@@ -1,0 +1,32 @@
+{
+  "validatedAt": "2026-07-23T07:53:07.038Z",
+  "milestone": "5A",
+  "connectorVersion": "0.3.1",
+  "results": [
+    {
+      "scenario": "Tally reachable",
+      "status": "PASS",
+      "detail": "1 companies discovered."
+    },
+    {
+      "scenario": "Initial full sync",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Repeated sync",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Search and pagination",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Statistics",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    }
+  ]
+}
