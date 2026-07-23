@@ -23,6 +23,7 @@ export const TallyMasterDataObjects = {
 export interface MasterDataTemplateOptions {
   readonly companyName?: string;
   readonly extraVariables?: Readonly<Record<string, string>>;
+  readonly collectionModifyFetch?: readonly string[];
 }
 
 export function buildCollectionTemplate(
@@ -40,8 +41,9 @@ export function buildCollectionTemplate(
     tallyRequest: 'Export',
     type: 'Collection',
     id: collectionId,
-    description: collectionId,
+    description: options.collectionModifyFetch?.length ? undefined : collectionId,
     staticVariables,
+    collectionModifyFetch: options.collectionModifyFetch,
   };
 }
 
@@ -78,7 +80,22 @@ export const MasterDataTemplates = {
   stockCategories: (companyName: string) =>
     buildCollectionTemplate(TallyMasterDataCollections.StockCategories, { companyName }),
   stockItems: (companyName: string) =>
-    buildCollectionTemplate(TallyMasterDataCollections.StockItems, { companyName }),
+    buildCollectionTemplate(TallyMasterDataCollections.StockItems, {
+      companyName,
+      collectionModifyFetch: [
+        'GUID',
+        'ALTERID',
+        'NAME',
+        'PARENT',
+        'BASEUNITS',
+        'ALIAS',
+        'PARTNUMBER',
+        'HSNCODE',
+        'GSTAPPLICABLE',
+        'OPENINGBALANCE',
+        'OPENINGRATE',
+      ],
+    }),
   units: (companyName: string) =>
     buildCollectionTemplate(TallyMasterDataCollections.Units, { companyName }),
   godowns: (companyName: string) =>

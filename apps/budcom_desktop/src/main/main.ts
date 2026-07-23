@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { CompanyService } from '../application/company-service.js';
 import { LedgerService } from '../application/ledger-service.js';
+import { StockItemService } from '../application/stock-item-service.js';
 import { DiagnosticsService } from '../application/diagnostics-service.js';
 import { getEnvironmentDefaults } from '../application/desktop-config-defaults.js';
 import { resolveDesktopConfigPaths } from '../application/desktop-config-paths.js';
@@ -18,6 +19,7 @@ import {
   validateCompanyId,
   validateExportDirectory,
   validateLedgerQuery,
+  validateStockItemQuery,
   validateSettingsInput,
 } from '../application/ipc-allowlist.js';
 import { LogService } from '../application/log-service.js';
@@ -74,6 +76,7 @@ let resolved = settingsService.getResolvedConfig();
 let dashboardService = createDashboardService(resolved.connectorBaseUrl);
 let companyService = createCompanyService(resolved.connectorBaseUrl);
 let ledgerService = createLedgerService(resolved.connectorBaseUrl);
+let stockItemService = createStockItemService(resolved.connectorBaseUrl);
 let lifecycleService = createLifecycleService(resolved.lifecycleConfig);
 let diagnosticsService = createDiagnosticsService();
 
@@ -93,6 +96,13 @@ function createCompanyService(baseUrl: string): CompanyService {
 
 function createLedgerService(baseUrl: string): LedgerService {
   return new LedgerService({
+    connectorBaseUrl: baseUrl,
+    logService,
+  });
+}
+
+function createStockItemService(baseUrl: string): StockItemService {
+  return new StockItemService({
     connectorBaseUrl: baseUrl,
     logService,
   });
@@ -133,6 +143,7 @@ async function reinitializeRuntimeServices(): Promise<void> {
   dashboardService = createDashboardService(resolved.connectorBaseUrl);
   companyService = createCompanyService(resolved.connectorBaseUrl);
   ledgerService = createLedgerService(resolved.connectorBaseUrl);
+  stockItemService = createStockItemService(resolved.connectorBaseUrl);
   lifecycleService = createLifecycleService(resolved.lifecycleConfig);
   diagnosticsService = createDiagnosticsService();
   startPolling(resolved.effective.healthPollIntervalMs);
@@ -288,6 +299,31 @@ function registerIpcHandlers(): void {
   registerIpcHandler('desktop:get-ledger-statistics', async () => ledgerService.getStatistics());
   registerIpcHandler('desktop:clear-ledger-cache', async () => {
     const result = await ledgerService.clearCache();
+    notifyRenderer();
+    return result;
+  });
+  registerIpcHandler('desktop:get-stock-items', async (payload: unknown) => {
+    const input = validateStockItemQuery(payload);
+    return stockItemService.getPageState(input.query, input.page, input.pageSize);
+  });
+  registerIpcHandler('desktop:sync-stock-items', async (payload: unknown) => {
+    const incremental = Boolean(
+      payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as { incremental?: boolean }).incremental
+        : false,
+    );
+    const result = await stockItemService.syncStockItems(incremental);
+    notifyRenderer();
+    return result;
+  });
+  registerIpcHandler('desktop:cancel-stock-item-sync', async () => {
+    const result = await stockItemService.cancelSync();
+    notifyRenderer();
+    return result;
+  });
+  registerIpcHandler('desktop:get-stock-item-statistics', async () => stockItemService.getStatistics());
+  registerIpcHandler('desktop:clear-stock-item-cache', async () => {
+    const result = await stockItemService.clearCache();
     notifyRenderer();
     return result;
   });

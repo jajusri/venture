@@ -1,0 +1,132 @@
+{
+  "probedAt": "2026-07-23T11:51:03.431Z",
+  "company": "[REDACTED]",
+  "results": [
+    {
+      "name": "stock-items-baseline",
+      "status": "OK",
+      "ms": 96,
+      "bytes": 434185,
+      "preview": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>1</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>2045</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>1243</GODOWN>\r\n    <STOCKGROUP>0</STOCKGROUP>\r\n    <STOCKCATEGORY>0</STOCKCATEGORY>\r\n    <STOCKITEM>1243</STOCKITEM>\r\n    <VOUCHERT",
+      "counts": {
+        "stockItems": 1503,
+        "ledgers": 1,
+        "guid": 0,
+        "alterId": 0,
+        "baseUnits": 0,
+        "parent": 0,
+        "alias": 0,
+        "partNumber": 0,
+        "hsn": 0,
+        "gst": 0,
+        "openingBalance": 0,
+        "openingRate": 0
+      }
+    },
+    {
+      "name": "ledgers-baseline",
+      "status": "OK",
+      "ms": 44,
+      "bytes": 260707,
+      "preview": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>1</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>2045</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>1243</GODOWN>\r\n    <STOCKGROUP>0</STOCKGROUP>\r\n    <STOCKCATEGORY>0</STOCKCATEGORY>\r\n    <STOCKITEM>1243</STOCKITEM>\r\n    <VOUCHERT",
+      "counts": {
+        "stockItems": 1,
+        "ledgers": 923,
+        "guid": 0,
+        "alterId": 0,
+        "baseUnits": 0,
+        "parent": 0,
+        "alias": 0,
+        "partNumber": 0,
+        "hsn": 0,
+        "gst": 0,
+        "openingBalance": 0,
+        "openingRate": 0
+      }
+    },
+    {
+      "name": "ledgers-nested-plain-fields",
+      "status": "OK",
+      "ms": 5,
+      "bytes": 59,
+      "preview": "<RESPONSE>Unknown Request, cannot be processed</RESPONSE>\r\n",
+      "counts": {
+        "stockItems": 0,
+        "ledgers": 0,
+        "guid": 0,
+        "alterId": 0,
+        "baseUnits": 0,
+        "parent": 0,
+        "alias": 0,
+        "partNumber": 0,
+        "hsn": 0,
+        "gst": 0,
+        "openingBalance": 0,
+        "openingRate": 0
+      }
+    },
+    {
+      "name": "stock-items-nested-plain-fields",
+      "status": "OK",
+      "ms": 19,
+      "bytes": 59,
+      "preview": "<RESPONSE>Unknown Request, cannot be processed</RESPONSE>\r\n",
+      "counts": {
+        "stockItems": 0,
+        "ledgers": 0,
+        "guid": 0,
+        "alterId": 0,
+        "baseUnits": 0,
+        "parent": 0,
+        "alias": 0,
+        "partNumber": 0,
+        "hsn": 0,
+        "gst": 0,
+        "openingBalance": 0,
+        "openingRate": 0
+      }
+    },
+    {
+      "name": "stock-items-tdl-custom-collection",
+      "status": "OK",
+      "ms": 152,
+      "bytes": 963268,
+      "preview": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>1</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>2045</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>1243</GODOWN>\r\n    <STOCKGROUP>0</STOCKGROUP>\r\n    <STOCKCATEGORY>0</STOCKCATEGORY>\r\n    <STOCKITEM>1243</STOCKITEM>\r\n    <VOUCHERT",
+      "counts": {
+        "stockItems": 1503,
+        "ledgers": 1,
+        "guid": 0,
+        "alterId": 0,
+        "baseUnits": 0,
+        "parent": 0,
+        "alias": 0,
+        "partNumber": 0,
+        "hsn": 0,
+        "gst": 0,
+        "openingBalance": 0,
+        "openingRate": 0
+      }
+    },
+    {
+      "name": "stock-items-tdl-modify-default-collection",
+      "status": "OK",
+      "ms": 142,
+      "bytes": 963268,
+      "preview": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>1</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>2045</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>1243</GODOWN>\r\n    <STOCKGROUP>0</STOCKGROUP>\r\n    <STOCKCATEGORY>0</STOCKCATEGORY>\r\n    <STOCKITEM>1243</STOCKITEM>\r\n    <VOUCHERT",
+      "counts": {
+        "stockItems": 1503,
+        "ledgers": 1,
+        "guid": 0,
+        "alterId": 0,
+        "baseUnits": 0,
+        "parent": 0,
+        "alias": 0,
+        "partNumber": 0,
+        "hsn": 0,
+        "gst": 0,
+        "openingBalance": 0,
+        "openingRate": 0
+      }
+    }
+  ]
+}

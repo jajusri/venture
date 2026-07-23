@@ -2,6 +2,7 @@ import type { TallyXmlRequestSpec } from '../xml/request-builder.js';
 import {
   buildCollectionTemplate,
   buildObjectTemplate,
+  MasterDataTemplates,
   TallyMasterDataCollections,
 } from '../../extraction/templates/master-data-templates.js';
 import { TallyCapability } from '../security/capabilities.js';
@@ -195,15 +196,23 @@ const REGISTRY: Readonly<Record<ApprovedOperationId, ApprovedOperation>> = Objec
     20_000,
     'live 0 rec (fast-empty)',
   ),
-  [ApprovedOperationId.StockItems]: masterCollection(
-    ApprovedOperationId.StockItems,
-    TallyMasterDataCollections.StockItems,
-    'VERIFIED_SAFE',
-    'MEDIUM',
-    1_048_576,
-    45_000,
-    'live 1502 rec / 434KB / 221ms',
-  ),
+  [ApprovedOperationId.StockItems]: {
+    ...masterCollection(
+      ApprovedOperationId.StockItems,
+      TallyMasterDataCollections.StockItems,
+      'VERIFIED_SAFE',
+      'MEDIUM',
+      1_048_576,
+      45_000,
+      'live 1502 rec / 963KB / 192ms (TDL FETCH enrich)',
+    ),
+    render: (params) => {
+      if (!params.companyName) {
+        throw new Error(`Operation for ${TallyMasterDataCollections.StockItems} requires a company context`);
+      }
+      return MasterDataTemplates.stockItems(params.companyName);
+    },
+  },
   [ApprovedOperationId.Godowns]: masterCollection(
     ApprovedOperationId.Godowns,
     TallyMasterDataCollections.Godowns,

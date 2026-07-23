@@ -22,6 +22,7 @@ try {
   const repository = new SyncRunRepository(database);
   const run = repository.createRun({
     companyId: input.companyId,
+    resourceKind: 'ledgers',
     syncType: 'full',
     connectorVersion: '0.3.1',
     schemaVersion: '1',

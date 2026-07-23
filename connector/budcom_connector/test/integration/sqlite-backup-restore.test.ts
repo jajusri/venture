@@ -6,9 +6,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createLogger } from '../../src/infrastructure/logging/logger.js';
 import type { LedgerDetails } from '../../src/erp/ledger/ledger-domain.js';
+import { computeStockItemFingerprint } from '../../src/services/stock-item/stock-item-fingerprint.js';
 import { STORAGE_SCHEMA_VERSION } from '../../src/storage/sqlite/schema.js';
 import { SqliteDatabase } from '../../src/storage/sqlite/sqlite-database.js';
+import { SqliteStockItemRepository } from '../../src/storage/sqlite/sqlite-stock-item-repository.js';
 import { SqliteStorageService } from '../../src/storage/sqlite/storage-service.js';
+import { sampleNormalizedAmount, sampleStockItemDetails } from '../helpers/stock-item-fixtures.js';
 import {
   cleanupTestSqliteStorage,
   createTestConnectorConfig,
@@ -42,6 +45,7 @@ describe('SQLite backup and restore drill', () => {
 
     bundle.syncRunRepository.createRun({
       companyId: 'demo-co',
+      resourceKind: 'ledgers',
       syncType: 'full',
       connectorVersion: '0.3.1',
       schemaVersion: String(STORAGE_SCHEMA_VERSION),
@@ -139,5 +143,212 @@ describe('SyncRunRepository direct backup path safety', () => {
     expect(backup.ok).toBe(true);
     expect(backup.backupPath).toMatch(/^budcom-ledger-\d+\.db$/);
     await storage.stop();
+  });
+});
+
+describe('SQLite backup and restore with stock items', () => {
+  it('preserves schema-v2 ledgers, stock items, sync runs, and supports post-restore writes', async () => {
+    const { storage, basePath } = await createTestSqliteStorage();
+    const bundle = storage.getBundle();
+    const now = '2026-01-15T10:00:00.000Z';
+    const stockRepo = bundle.stockItemRepository;
+
+    await bundle.ledgerRepository.upsertMany('company-a', [
+      sampleLedger('cash', 'Cash'),
+      sampleLedger('bank', 'Bank'),
+    ]);
+    await bundle.ledgerRepository.upsertMany('company-b', [sampleLedger('petty', 'Petty Cash')]);
+
+    const guidItem = sampleStockItemDetails({
+      id: 'guid:aaa-bbb',
+      guid: 'aaa-bbb',
+      name: 'Guid Widget',
+      normalizedName: 'guid widget',
+      baseUnit: 'Nos',
+      openingBalance: sampleNormalizedAmount('1234.5678'),
+      alias: 'GW',
+      partNumber: 'PN-1',
+    });
+    const alterItem = sampleStockItemDetails({
+      id: 'alter:42',
+      alterId: '42',
+      name: 'Alter Part',
+      normalizedName: 'alter part',
+      baseUnit: 'Kg',
+    });
+    const incompleteItem = sampleStockItemDetails({
+      id: 'name:incomplete-item',
+      name: 'Incomplete Item',
+      normalizedName: 'incomplete item',
+      baseUnit: undefined,
+      dataQuality: 'incomplete',
+    });
+    const unchangedItem = sampleStockItemDetails({
+      id: 'name:stable',
+      name: 'Stable Item',
+      normalizedName: 'stable item',
+      baseUnit: 'Nos',
+    });
+    const changedItem = sampleStockItemDetails({
+      id: 'name:changed',
+      name: 'Changed Item',
+      normalizedName: 'changed item',
+      baseUnit: 'Nos',
+      category: 'Updated',
+    });
+
+    await stockRepo.upsertMany('company-a', [guidItem, alterItem, incompleteItem, unchangedItem, changedItem]);
+    await stockRepo.upsertMany('company-b', [
+      sampleStockItemDetails({ id: 'name:other', name: 'Other Co Item', normalizedName: 'other co item' }),
+    ]);
+
+    const guidFingerprint = computeStockItemFingerprint(guidItem);
+    const ledgerRun = bundle.syncRunRepository.createRun({
+      companyId: 'company-a',
+      resourceKind: 'ledgers',
+      syncType: 'full',
+      connectorVersion: '0.3.1',
+      schemaVersion: String(STORAGE_SCHEMA_VERSION),
+    });
+    bundle.syncRunRepository.updateRun({
+      ...ledgerRun,
+      status: 'completed',
+      completedAt: now,
+      updatedAt: now,
+      processed: 2,
+      inserted: 2,
+    });
+
+    const stockCompleted = bundle.syncRunRepository.createRun({
+      companyId: 'company-a',
+      resourceKind: 'stock-items',
+      syncType: 'full',
+      connectorVersion: '0.3.1',
+      schemaVersion: String(STORAGE_SCHEMA_VERSION),
+    });
+    bundle.syncRunRepository.updateRun({
+      ...stockCompleted,
+      status: 'completed',
+      completedAt: now,
+      updatedAt: now,
+      processed: 5,
+      inserted: 5,
+    });
+
+    const stockFailed = bundle.syncRunRepository.createRun({
+      companyId: 'company-a',
+      resourceKind: 'stock-items',
+      syncType: 'incremental',
+      connectorVersion: '0.3.1',
+      schemaVersion: String(STORAGE_SCHEMA_VERSION),
+    });
+    bundle.syncRunRepository.updateRun({
+      ...stockFailed,
+      status: 'failed',
+      completedAt: now,
+      updatedAt: now,
+      failureCode: 'SERVICE_UNAVAILABLE',
+      failureSummary: 'Simulated extraction failure',
+    });
+
+    const stockCancelled = bundle.syncRunRepository.createRun({
+      companyId: 'company-a',
+      resourceKind: 'stock-items',
+      syncType: 'full',
+      connectorVersion: '0.3.1',
+      schemaVersion: String(STORAGE_SCHEMA_VERSION),
+    });
+    bundle.syncRunRepository.updateRun({
+      ...stockCancelled,
+      status: 'cancelled',
+      completedAt: now,
+      updatedAt: now,
+      cancelRequested: true,
+    });
+
+    const db = bundle.database.getDatabase();
+    db.prepare("INSERT OR REPLACE INTO storage_meta (key, value) VALUES ('migration_marker', 'v2-complete')").run();
+
+    const backupDir = path.join(basePath, 'backups');
+    const backup = storage.createBackup(backupDir);
+    expect(backup.ok).toBe(true);
+
+    await storage.stop();
+
+    const restoreDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-restore-'));
+    const restoredDbPath = path.join(restoreDir, 'budcom-ledger.db');
+    fs.copyFileSync(path.join(backupDir, backup.backupPath!), restoredDbPath);
+
+    const restored = new SqliteDatabase({ databasePath: restoredDbPath });
+    restored.open();
+    const rdb = restored.getDatabase();
+    const restoredRepo = new SqliteStockItemRepository(restored);
+
+    expect((rdb.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check).toBe('ok');
+    expect((rdb.prepare('PRAGMA foreign_key_check').all() as unknown[])).toHaveLength(0);
+
+    const schemaVersion = rdb
+      .prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
+      .get() as { version: number };
+    expect(schemaVersion.version).toBe(STORAGE_SCHEMA_VERSION);
+
+    expect(
+      (rdb.prepare('SELECT COUNT(*) AS count FROM ledgers WHERE company_id = ?').get('company-a') as { count: number })
+        .count,
+    ).toBe(2);
+    expect(
+      (rdb.prepare('SELECT COUNT(*) AS count FROM stock_items WHERE company_id = ?').get('company-a') as { count: number })
+        .count,
+    ).toBe(5);
+    expect(
+      (rdb.prepare('SELECT COUNT(*) AS count FROM stock_items WHERE company_id = ?').get('company-b') as { count: number })
+        .count,
+    ).toBe(1);
+
+    const restoredGuid = rdb
+      .prepare('SELECT guid, alter_id, content_fingerprint, opening_balance_json, data_quality FROM stock_items WHERE stock_item_id = ? AND company_id = ?')
+      .get('guid:aaa-bbb', 'company-a') as {
+      guid: string;
+      alter_id: string | null;
+      content_fingerprint: string;
+      opening_balance_json: string;
+      data_quality: string;
+    };
+    expect(restoredGuid.guid).toBe('aaa-bbb');
+    expect(restoredGuid.content_fingerprint).toBe(guidFingerprint);
+    expect(restoredGuid.opening_balance_json).toContain('1234.5678');
+    expect(restoredGuid.data_quality).toBe('complete');
+
+    const incompleteRow = rdb
+      .prepare('SELECT data_quality, base_unit FROM stock_items WHERE stock_item_id = ? AND company_id = ?')
+      .get('name:incomplete-item', 'company-a') as { data_quality: string; base_unit: string | null };
+    expect(incompleteRow.data_quality).toBe('incomplete');
+    expect(incompleteRow.base_unit).toBeNull();
+
+    const ledgerRuns = rdb
+      .prepare("SELECT COUNT(*) AS count FROM sync_runs WHERE company_id = ? AND resource_kind = 'ledgers'")
+      .get('company-a') as { count: number };
+    const stockRuns = rdb
+      .prepare("SELECT COUNT(*) AS count FROM sync_runs WHERE company_id = ? AND resource_kind = 'stock-items'")
+      .get('company-a') as { count: number };
+    expect(ledgerRuns.count).toBe(1);
+    expect(stockRuns.count).toBe(3);
+
+    const marker = rdb
+      .prepare("SELECT value FROM storage_meta WHERE key = 'migration_marker'")
+      .get() as { value: string };
+    expect(marker.value).toBe('v2-complete');
+
+    await restoredRepo.insert('company-a', sampleStockItemDetails({
+      id: 'name:post-restore',
+      name: 'Post Restore Item',
+      normalizedName: 'post restore item',
+      baseUnit: 'Nos',
+      syncedAt: now,
+    }));
+    expect(await restoredRepo.countByCompany('company-a')).toBe(6);
+
+    restored.close();
+    fs.rmSync(restoreDir, { recursive: true, force: true });
   });
 });

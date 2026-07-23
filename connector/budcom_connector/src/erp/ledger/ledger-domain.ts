@@ -2,6 +2,8 @@ import type { NormalizedAmount } from '../../extraction/normalization/amounts.js
 
 export const LEDGER_DOMAIN_CONTRACT_VERSION = '1' as const;
 
+export type SyncResourceKind = 'ledgers' | 'stock-items';
+
 export type LedgerStatus = 'active' | 'inactive' | 'reserved' | 'unknown';
 export type LedgerSyncStatus =
   | 'idle'
@@ -104,6 +106,7 @@ export interface LedgerSyncProgress {
 export interface LedgerSyncRunRecord {
   readonly syncRunId: string;
   readonly companyId: string;
+  readonly resourceKind: SyncResourceKind;
   readonly syncType: 'full' | 'incremental';
   readonly status: LedgerSyncStatus;
   readonly startedAt: string;

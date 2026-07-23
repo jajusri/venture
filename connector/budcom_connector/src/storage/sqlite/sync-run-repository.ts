@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
-import type { LedgerSyncRunRecord, LedgerSyncStatus } from '../../erp/ledger/ledger-domain.js';
+import type { SyncResourceKind, LedgerSyncRunRecord, LedgerSyncStatus } from '../../erp/ledger/ledger-domain.js';
 import type { SqliteDatabase } from './sqlite-database.js';
 
 export interface CreateSyncRunInput {
   readonly companyId: string;
+  readonly resourceKind: SyncResourceKind;
   readonly syncType: 'full' | 'incremental';
   readonly connectorVersion: string;
   readonly schemaVersion: string;
@@ -20,50 +21,53 @@ export class SyncRunRepository {
       const active = db
         .prepare(
           `SELECT sync_run_id FROM sync_runs
-           WHERE company_id = ? AND status IN ('running', 'cancelling', 'recovering')
+           WHERE company_id = ? AND resource_kind = ? AND status IN ('running', 'cancelling', 'recovering')
            LIMIT 1`,
         )
-        .get(input.companyId) as { sync_run_id: string } | undefined;
+        .get(input.companyId, input.resourceKind) as { sync_run_id: string } | undefined;
       if (active) {
-        throw new Error(`Active sync run already exists for company '${input.companyId}'.`);
+        throw new Error(
+          `Active sync run already exists for company '${input.companyId}' and resource '${input.resourceKind}'.`,
+        );
       }
 
-    const now = new Date().toISOString();
-    const record: LedgerSyncRunRecord = {
-      syncRunId: randomUUID(),
-      companyId: input.companyId,
-      syncType: input.syncType,
-      status: 'running',
-      startedAt: now,
-      updatedAt: now,
-      completedAt: null,
-      totalExpected: null,
-      processed: 0,
-      inserted: 0,
-      updated: 0,
-      skipped: 0,
-      failed: 0,
-      lastProcessedId: null,
-      retryCount: 0,
-      cancelRequested: false,
-      failureCode: null,
-      failureSummary: null,
-      connectorVersion: input.connectorVersion,
-      schemaVersion: input.schemaVersion,
-    };
-    db.prepare(
-      `INSERT INTO sync_runs (
-        sync_run_id, company_id, sync_type, status, started_at, updated_at, completed_at,
-        total_expected, processed, inserted, updated_count, skipped, failed, last_processed_id,
-        retry_count, cancel_requested, failure_code, failure_summary, connector_version, schema_version
-      ) VALUES (
-        @syncRunId, @companyId, @syncType, @status, @startedAt, @updatedAt, @completedAt,
-        @totalExpected, @processed, @inserted, @updated, @skipped, @failed, @lastProcessedId,
-        @retryCount, @cancelRequested, @failureCode, @failureSummary, @connectorVersion, @schemaVersion
-      )`,
-    ).run(toParams(record));
-    db.exec('COMMIT');
-    return record;
+      const now = new Date().toISOString();
+      const record: LedgerSyncRunRecord = {
+        syncRunId: randomUUID(),
+        companyId: input.companyId,
+        resourceKind: input.resourceKind,
+        syncType: input.syncType,
+        status: 'running',
+        startedAt: now,
+        updatedAt: now,
+        completedAt: null,
+        totalExpected: null,
+        processed: 0,
+        inserted: 0,
+        updated: 0,
+        skipped: 0,
+        failed: 0,
+        lastProcessedId: null,
+        retryCount: 0,
+        cancelRequested: false,
+        failureCode: null,
+        failureSummary: null,
+        connectorVersion: input.connectorVersion,
+        schemaVersion: input.schemaVersion,
+      };
+      db.prepare(
+        `INSERT INTO sync_runs (
+          sync_run_id, company_id, resource_kind, sync_type, status, started_at, updated_at, completed_at,
+          total_expected, processed, inserted, updated_count, skipped, failed, last_processed_id,
+          retry_count, cancel_requested, failure_code, failure_summary, connector_version, schema_version
+        ) VALUES (
+          @syncRunId, @companyId, @resourceKind, @syncType, @status, @startedAt, @updatedAt, @completedAt,
+          @totalExpected, @processed, @inserted, @updated, @skipped, @failed, @lastProcessedId,
+          @retryCount, @cancelRequested, @failureCode, @failureSummary, @connectorVersion, @schemaVersion
+        )`,
+      ).run(toParams(record));
+      db.exec('COMMIT');
+      return record;
     } catch (error) {
       db.exec('ROLLBACK');
       throw error;
@@ -107,29 +111,41 @@ export class SyncRunRepository {
     return row ? fromRow(row as unknown as SyncRunRow) : null;
   }
 
-  findActiveRun(companyId: string): LedgerSyncRunRecord | null {
+  findActiveRun(companyId: string, resourceKind: SyncResourceKind): LedgerSyncRunRecord | null {
     const db = this.database.getDatabase();
     const row = db
       .prepare(
         `SELECT * FROM sync_runs
-         WHERE company_id = ? AND status IN ('running', 'cancelling', 'recovering')
+         WHERE company_id = ? AND resource_kind = ? AND status IN ('running', 'cancelling', 'recovering')
          ORDER BY started_at DESC LIMIT 1`,
       )
-      .get(companyId);
+      .get(companyId, resourceKind);
     return row ? fromRow(row as unknown as SyncRunRow) : null;
   }
 
-  listRuns(companyId: string, limit = 20): LedgerSyncRunRecord[] {
+  listRuns(companyId: string, resourceKind: SyncResourceKind, limit = 20): LedgerSyncRunRecord[] {
     const db = this.database.getDatabase();
     const rows = db
-      .prepare('SELECT * FROM sync_runs WHERE company_id = ? ORDER BY started_at DESC LIMIT ?')
-      .all(companyId, limit) as unknown as SyncRunRow[];
+      .prepare(
+        'SELECT * FROM sync_runs WHERE company_id = ? AND resource_kind = ? ORDER BY started_at DESC LIMIT ?',
+      )
+      .all(companyId, resourceKind, limit) as unknown as SyncRunRow[];
     return rows.map(fromRow);
   }
 
-  recoverAbandonedRuns(companyId: string): number {
+  recoverAbandonedRuns(companyId: string, resourceKind?: SyncResourceKind): number {
     const db = this.database.getDatabase();
     const now = new Date().toISOString();
+    if (resourceKind) {
+      const result = db
+        .prepare(
+          `UPDATE sync_runs SET status = 'interrupted', updated_at = ?, completed_at = ?,
+           failure_code = 'ABANDONED', failure_summary = 'Sync was abandoned after connector restart.'
+           WHERE company_id = ? AND resource_kind = ? AND status IN ('running', 'cancelling')`,
+        )
+        .run(now, now, companyId, resourceKind);
+      return Number(result.changes);
+    }
     const result = db
       .prepare(
         `UPDATE sync_runs SET status = 'interrupted', updated_at = ?, completed_at = ?,
@@ -157,6 +173,7 @@ export class SyncRunRepository {
 interface SyncRunRow {
   sync_run_id: string;
   company_id: string;
+  resource_kind: string;
   sync_type: string;
   status: string;
   started_at: string;
@@ -181,6 +198,7 @@ function fromRow(row: SyncRunRow): LedgerSyncRunRecord {
   return {
     syncRunId: row.sync_run_id,
     companyId: row.company_id,
+    resourceKind: (row.resource_kind ?? 'ledgers') as SyncResourceKind,
     syncType: row.sync_type as LedgerSyncRunRecord['syncType'],
     status: row.status as LedgerSyncStatus,
     startedAt: row.started_at,
@@ -226,6 +244,7 @@ function toParams(record: LedgerSyncRunRecord) {
   return {
     syncRunId: record.syncRunId,
     companyId: record.companyId,
+    resourceKind: record.resourceKind,
     syncType: record.syncType,
     status: record.status,
     startedAt: record.startedAt,

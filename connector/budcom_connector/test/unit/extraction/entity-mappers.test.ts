@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { TallyXmlResponseParser } from '../../../src/tally/xml/response-parser.js';
-import { CollectionEntityParser, mapLedger, mapLedgerGroup } from '../../../src/extraction/parsers/entity-mappers.js';
+import { CollectionEntityParser, mapLedger, mapLedgerGroup, mapStockItem } from '../../../src/extraction/parsers/entity-mappers.js';
 import {
   SAMPLE_LEDGER_GROUPS_RESPONSE,
   SAMPLE_LEDGERS_RESPONSE,
+  SAMPLE_STOCK_ITEMS_RESPONSE,
   SAMPLE_UNICODE_LEDGER_RESPONSE,
 } from '../../helpers/master-data-fixtures.js';
 
@@ -38,5 +39,20 @@ describe('entity mappers', () => {
     const ledger = mapLedger(collectionParser, nodes[0]!);
     expect(ledger?.name).toBe('ग्राहक खाता');
     expect(ledger?.id).toBeTruthy();
+  });
+
+  it('maps stock items with GUID and AlterID identity fields', () => {
+    const document = collectionParser.parseDocument(SAMPLE_STOCK_ITEMS_RESPONSE);
+    const nodes = collectionParser.parseNodes(document, { nodeName: 'STOCKITEM' });
+    const item = mapStockItem(collectionParser, nodes[0]!);
+    expect(item).toMatchObject({
+      name: 'Widget A',
+      guid: '6a2a5ccc-6394-4ccb-bb34-113991142c4f-0000040b',
+      alterId: '2053',
+      parentGroup: 'Finished Goods',
+      baseUnit: 'Nos',
+      hsnCode: '8471',
+    });
+    expect(item?.id).toBe('guid:6a2a5ccc-6394-4ccb-bb34-113991142c4f-0000040b');
   });
 });

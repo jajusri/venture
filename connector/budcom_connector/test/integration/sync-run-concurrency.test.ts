@@ -75,6 +75,7 @@ describe.sequential('sync run multi-connection concurrency', () => {
 
     repoA.createRun({
       companyId: 'company-a',
+      resourceKind: 'ledgers',
       syncType: 'full',
       connectorVersion: '0.3.1',
       schemaVersion: String(STORAGE_SCHEMA_VERSION),
@@ -83,6 +84,7 @@ describe.sequential('sync run multi-connection concurrency', () => {
     expect(() =>
       repoB.createRun({
         companyId: 'company-a',
+        resourceKind: 'ledgers',
         syncType: 'full',
         connectorVersion: '0.3.1',
         schemaVersion: String(STORAGE_SCHEMA_VERSION),
@@ -109,7 +111,7 @@ describe.sequential('sync run multi-connection concurrency', () => {
     const verifyDb = new SqliteDatabase({ databasePath });
     verifyDb.open();
     const repository = new SyncRunRepository(verifyDb);
-    const active = repository.findActiveRun('company-a');
+    const active = repository.findActiveRun('company-a', 'ledgers');
     expect(active).not.toBeNull();
     const allActive = verifyDb
       .getDatabase()
@@ -141,8 +143,8 @@ describe.sequential('sync run multi-connection concurrency', () => {
     const verifyDb = new SqliteDatabase({ databasePath });
     verifyDb.open();
     const repository = new SyncRunRepository(verifyDb);
-    expect(repository.findActiveRun('company-a')).not.toBeNull();
-    expect(repository.findActiveRun('company-b')).not.toBeNull();
+    expect(repository.findActiveRun('company-a', 'ledgers')).not.toBeNull();
+    expect(repository.findActiveRun('company-b', 'ledgers')).not.toBeNull();
     verifyDb.close();
   });
 
@@ -153,6 +155,7 @@ describe.sequential('sync run multi-connection concurrency', () => {
     const repoA = new SyncRunRepository(connectionA);
     const abandoned = repoA.createRun({
       companyId: 'company-a',
+      resourceKind: 'ledgers',
       syncType: 'full',
       connectorVersion: '0.3.1',
       schemaVersion: String(STORAGE_SCHEMA_VERSION),
@@ -166,6 +169,7 @@ describe.sequential('sync run multi-connection concurrency', () => {
     expect(() =>
       repoB.createRun({
         companyId: 'company-a',
+        resourceKind: 'ledgers',
         syncType: 'full',
         connectorVersion: '0.3.1',
         schemaVersion: String(STORAGE_SCHEMA_VERSION),
@@ -177,12 +181,41 @@ describe.sequential('sync run multi-connection concurrency', () => {
 
     const resumed = repoB.createRun({
       companyId: 'company-a',
+      resourceKind: 'ledgers',
       syncType: 'full',
       connectorVersion: '0.3.1',
       schemaVersion: String(STORAGE_SCHEMA_VERSION),
     });
     expect(resumed.status).toBe('running');
-    expect(repoB.findActiveRun('company-a')?.syncRunId).toBe(resumed.syncRunId);
+    expect(repoB.findActiveRun('company-a', 'ledgers')?.syncRunId).toBe(resumed.syncRunId);
     connectionB.close();
+  });
+
+  it('allows concurrent active runs for different resource kinds on the same company', () => {
+    const { databasePath } = createSharedDatabase();
+    const connection = new SqliteDatabase({ databasePath });
+    connection.open();
+    const repository = new SyncRunRepository(connection);
+
+    const ledgerRun = repository.createRun({
+      companyId: 'company-a',
+      resourceKind: 'ledgers',
+      syncType: 'full',
+      connectorVersion: '0.3.1',
+      schemaVersion: String(STORAGE_SCHEMA_VERSION),
+    });
+    const stockRun = repository.createRun({
+      companyId: 'company-a',
+      resourceKind: 'stock-items',
+      syncType: 'full',
+      connectorVersion: '0.3.1',
+      schemaVersion: String(STORAGE_SCHEMA_VERSION),
+    });
+
+    expect(ledgerRun.resourceKind).toBe('ledgers');
+    expect(stockRun.resourceKind).toBe('stock-items');
+    expect(repository.findActiveRun('company-a', 'ledgers')?.syncRunId).toBe(ledgerRun.syncRunId);
+    expect(repository.findActiveRun('company-a', 'stock-items')?.syncRunId).toBe(stockRun.syncRunId);
+    connection.close();
   });
 });

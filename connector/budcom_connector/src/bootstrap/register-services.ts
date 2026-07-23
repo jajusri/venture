@@ -21,6 +21,8 @@ import { SqliteStorageService } from '../storage/sqlite/storage-service.js';
 import { SchedulerStub } from '../services/placeholders/scheduler.stub.js';
 import { LedgerSyncServiceImpl } from '../services/ledger/ledger-sync.service.js';
 import type { LedgerSyncService } from '../services/ledger/ledger-sync.service.js';
+import { StockItemSyncServiceImpl } from '../services/stock-item/stock-item-sync.service.js';
+import type { StockItemSyncService } from '../services/stock-item/stock-item-sync.service.js';
 import { CompanyDiscoveryServiceImpl } from '../services/tally/company-discovery.service.js';
 import { TallyConnectionServiceImpl } from '../services/tally/tally-connection.service.js';
 import { TallyDiagnosticsServiceImpl } from '../services/tally/tally-diagnostics.service.js';
@@ -130,6 +132,18 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
     );
     return service;
   });
+  container.registerFactory(ServiceTokens.StockItemSync, () => {
+    const storage = container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase);
+    const service = new StockItemSyncServiceImpl(
+      config,
+      tallyModule.readPort,
+      container.resolve<CompanyResolver>(ServiceTokens.CompanyResolver),
+      container.resolve<ConnectorSessionService>(ServiceTokens.ConnectorSession),
+      logger.child({ service: 'StockItemSync' }),
+      storage,
+    );
+    return service;
+  });
   container.registerFactory(ServiceTokens.SyncEngine, () =>
     container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync),
   );
@@ -163,6 +177,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         connectorSession: container.resolve<ConnectorSessionService>(ServiceTokens.ConnectorSession),
         masterData: container.resolve<MasterDataService>(ServiceTokens.MasterData),
         ledgerSync: container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync),
+        stockItemSync: container.resolve<StockItemSyncService>(ServiceTokens.StockItemSync),
         tallyDiagnostics: container.resolve<TallyDiagnosticsService>(ServiceTokens.TallyDiagnostics),
       })),
   );
@@ -178,6 +193,7 @@ const STARTUP_ORDER: ServiceToken[] = [
   ServiceTokens.ConnectorSession,
   ServiceTokens.MasterData,
   ServiceTokens.LedgerSync,
+  ServiceTokens.StockItemSync,
   ServiceTokens.SyncEngine,
   ServiceTokens.Licensing,
   ServiceTokens.Scheduler,
@@ -189,6 +205,7 @@ const SHUTDOWN_ORDER: ServiceToken[] = [
   ServiceTokens.Scheduler,
   ServiceTokens.SyncEngine,
   ServiceTokens.LedgerSync,
+  ServiceTokens.StockItemSync,
   ServiceTokens.MasterData,
   ServiceTokens.ConnectorSession,
   ServiceTokens.CompanyDiscovery,

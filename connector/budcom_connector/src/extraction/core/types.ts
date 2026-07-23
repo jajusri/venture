@@ -122,6 +122,11 @@ export interface NormalizedStockItem {
   readonly closingBalance?: NormalizedAmount;
   readonly hsnCode?: string;
   readonly gstRate?: string;
+  readonly guid?: string;
+  readonly alterId?: string;
+  readonly alias?: string;
+  readonly partNumber?: string;
+  readonly status?: 'active' | 'inactive' | 'unknown';
 }
 
 export interface NormalizedUnit {

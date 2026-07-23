@@ -25,6 +25,11 @@ export const ALLOWED_IPC_CHANNELS = [
   'desktop:cancel-ledger-sync',
   'desktop:get-ledger-statistics',
   'desktop:clear-ledger-cache',
+  'desktop:get-stock-items',
+  'desktop:sync-stock-items',
+  'desktop:cancel-stock-item-sync',
+  'desktop:get-stock-item-statistics',
+  'desktop:clear-stock-item-cache',
 ] as const;
 
 export type AllowedIpcChannel = (typeof ALLOWED_IPC_CHANNELS)[number];
@@ -71,6 +76,10 @@ export function validateLedgerQuery(value: unknown): { query: string; page: numb
   const page = Math.max(1, Number.parseInt(String(input.page ?? '1'), 10) || 1);
   const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(input.pageSize ?? '25'), 10) || 25));
   return { query, page, pageSize };
+}
+
+export function validateStockItemQuery(value: unknown): { query: string; page: number; pageSize: number } {
+  return validateLedgerQuery(value);
 }
 
 export function validateExportDirectory(value: unknown): string | undefined {

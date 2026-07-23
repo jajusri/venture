@@ -5,6 +5,8 @@ export interface TallyXmlRequestSpec {
   readonly description?: string;
   readonly staticVariables?: Readonly<Record<string, string>>;
   readonly version?: string;
+  /** When set, modifies the default Tally collection export to FETCH additional fields. */
+  readonly collectionModifyFetch?: readonly string[];
 }
 
 export class TallyXmlRequestBuilder {
@@ -16,8 +18,27 @@ export class TallyXmlRequestBuilder {
       .join('\n');
 
     const body =
-      spec.description || Object.keys(staticVariables).length > 0
-        ? `<BODY>
+      spec.description || Object.keys(staticVariables).length > 0 || spec.collectionModifyFetch?.length
+        ? spec.collectionModifyFetch?.length
+          ? `<BODY>
+    <DESC>
+    ${
+      Object.keys(staticVariables).length > 0
+        ? `<STATICVARIABLES>
+${staticXml}
+    </STATICVARIABLES>`
+        : ''
+    }
+      <TDL>
+        <TDLMESSAGE>
+          <COLLECTION NAME="${escapeXml(spec.id)}" ISMODIFY="Yes">
+            <ADD>Fetch : ${escapeXml(spec.collectionModifyFetch.join(', '))}</ADD>
+          </COLLECTION>
+        </TDLMESSAGE>
+      </TDL>
+    </DESC>
+  </BODY>`
+          : `<BODY>
     ${spec.description ? `<DESC>${escapeXml(spec.description)}</DESC>` : ''}
     ${
       Object.keys(staticVariables).length > 0

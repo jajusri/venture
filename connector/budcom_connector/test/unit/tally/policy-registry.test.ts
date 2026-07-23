@@ -25,6 +25,15 @@ describe('operation registry', () => {
     expect(ledgers.classification).toBe('VERIFIED_SAFE');
   });
 
+  it('enriches stock items via TDL FETCH on the approved collection', () => {
+    const spec = getApprovedOperation(ApprovedOperationId.StockItems).render({
+      companyName: 'ESTIMATION',
+    });
+    expect(spec.collectionModifyFetch).toContain('GUID');
+    expect(spec.collectionModifyFetch).toContain('ALTERID');
+    expect(spec.id).toBe('List of Stock Items');
+  });
+
   it('returns undefined for unregistered collections (UNKNOWN)', () => {
     expect(findApprovedOperationByRequest('COLLECTION', 'List of Zzz Nonexistent')).toBeUndefined();
   });

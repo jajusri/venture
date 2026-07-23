@@ -12,6 +12,10 @@ import type {
   LedgerSyncResult,
   SessionSnapshotResponse,
   SessionValidationResponse,
+  StockItemListResult,
+  StockItemStatisticsResult,
+  StockItemSyncProgressResult,
+  StockItemSyncResult,
 } from './types.js';
 
 export class ConnectorHttpClient {
@@ -105,6 +109,44 @@ export class ConnectorHttpClient {
 
   async clearLedgerCache(): Promise<{ ok: boolean; message: string }> {
     return this.postJsonWithRetry<{ ok: boolean; message: string }>('/sync/ledgers/clear-cache');
+  }
+
+  async getStockItems(params: {
+    readonly query?: string;
+    readonly page?: number;
+    readonly pageSize?: number;
+  } = {}): Promise<StockItemListResult> {
+    const search = new URLSearchParams();
+    if (params.query) search.set('query', params.query);
+    if (params.page) search.set('page', String(params.page));
+    if (params.pageSize) search.set('pageSize', String(params.pageSize));
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return this.getJsonWithRetry<StockItemListResult>(`/stock-items${suffix}`);
+  }
+
+  async syncStockItems(incremental = false): Promise<StockItemSyncResult> {
+    const response = await this.request('/sync/stock-items', {
+      method: 'POST',
+      body: JSON.stringify({ incremental }),
+      timeoutMs: 600_000,
+    });
+    return this.parseJson<StockItemSyncResult>(response);
+  }
+
+  async getStockItemSyncStatus(): Promise<StockItemSyncProgressResult> {
+    return this.getJsonWithRetry<StockItemSyncProgressResult>('/sync/stock-items/status');
+  }
+
+  async getStockItemStatistics(): Promise<StockItemStatisticsResult> {
+    return this.getJsonWithRetry<StockItemStatisticsResult>('/sync/stock-items/statistics');
+  }
+
+  async cancelStockItemSync(): Promise<StockItemSyncProgressResult> {
+    return this.postJsonWithRetry<StockItemSyncProgressResult>('/sync/stock-items/cancel');
+  }
+
+  async clearStockItemCache(): Promise<{ ok: boolean; message: string }> {
+    return this.postJsonWithRetry<{ ok: boolean; message: string }>('/sync/stock-items/clear-cache');
   }
 
   isReachable(): Promise<boolean> {

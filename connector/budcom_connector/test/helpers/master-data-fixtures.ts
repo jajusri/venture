@@ -44,6 +44,8 @@ export const SAMPLE_STOCK_ITEMS_RESPONSE = `<ENVELOPE>
       <COLLECTION>
         <STOCKITEM NAME="Widget A">
           <NAME>Widget A</NAME>
+          <GUID TYPE="String">6a2a5ccc-6394-4ccb-bb34-113991142c4f-0000040b</GUID>
+          <ALTERID TYPE="Number">2053</ALTERID>
           <PARENT>Finished Goods</PARENT>
           <BASEUNITS>Nos</BASEUNITS>
           <HSNCODE>8471</HSNCODE>

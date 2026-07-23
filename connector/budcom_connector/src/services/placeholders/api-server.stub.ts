@@ -9,6 +9,7 @@ import type { TallyDiagnosticsService } from '../interfaces/tally-diagnostics.js
 import type { ConnectorSessionService } from '../interfaces/connector-session.js';
 import type { MasterDataService } from '../extraction/master-data.service.js';
 import type { LedgerSyncService } from '../ledger/ledger-sync.service.js';
+import type { StockItemSyncService } from '../stock-item/stock-item-sync.service.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
 
 export interface ApiServerDeps {
@@ -17,6 +18,7 @@ export interface ApiServerDeps {
   readonly connectorSession: ConnectorSessionService;
   readonly masterData: MasterDataService;
   readonly ledgerSync: LedgerSyncService;
+  readonly stockItemSync: StockItemSyncService;
   readonly tallyDiagnostics: TallyDiagnosticsService;
 }
 
@@ -41,6 +43,7 @@ export class ApiServerStub implements ApiServerService {
       connectorSession: deps.connectorSession,
       masterData: deps.masterData,
       ledgerSync: deps.ledgerSync,
+      stockItemSync: deps.stockItemSync,
       tallyDiagnostics: deps.tallyDiagnostics,
     });
 

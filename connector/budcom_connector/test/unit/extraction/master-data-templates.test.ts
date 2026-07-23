@@ -27,4 +27,11 @@ describe('MasterDataTemplates', () => {
     expect(xml).toContain('<SVCURRENTCOMPANY>ESTIMATION</SVCURRENTCOMPANY>');
     expect(xml).toContain('<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>');
   });
+
+  it('enriches stock items collection with TDL FETCH fields', () => {
+    const xml = builder.build(MasterDataTemplates.stockItems('ESTIMATION'));
+    expect(xml).toContain('<COLLECTION NAME="List of Stock Items" ISMODIFY="Yes">');
+    expect(xml).toContain('Fetch : GUID, ALTERID, NAME, PARENT, BASEUNITS');
+    expect(xml).not.toContain('<DESC>List of Stock Items</DESC>');
+  });
 });

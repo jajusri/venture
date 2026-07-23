@@ -3,6 +3,7 @@ import type {
   DashboardState,
   DiagnosticsSnapshot,
   LedgerPageState,
+  StockItemPageState,
   LogEntry,
   SettingsSaveResult,
   SettingsState,
@@ -35,6 +36,10 @@ export interface DesktopBridge {
   syncLedgers(incremental?: boolean): Promise<unknown>;
   cancelLedgerSync(): Promise<unknown>;
   clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
+  getStockItems(payload?: { query?: string; page?: number; pageSize?: number }): Promise<StockItemPageState>;
+  syncStockItems(incremental?: boolean): Promise<unknown>;
+  cancelStockItemSync(): Promise<unknown>;
+  clearStockItemCache(): Promise<{ ok: boolean; message: string }>;
   onStatusUpdated(listener: () => void): () => void;
 }
 
@@ -44,7 +49,7 @@ declare global {
   }
 }
 
-export type DesktopView = 'dashboard' | 'connection' | 'ledgers' | 'logs' | 'diagnostics' | 'settings' | 'about';
+export type DesktopView = 'dashboard' | 'connection' | 'ledgers' | 'stock-items' | 'logs' | 'diagnostics' | 'settings' | 'about';
 
 export interface UiLoadingState {
   readonly dashboard: boolean;
@@ -53,7 +58,9 @@ export interface UiLoadingState {
   readonly settings: boolean;
   readonly diagnostics: boolean;
   readonly ledgers: boolean;
+  readonly stockItems: boolean;
   readonly syncing: boolean;
+  readonly syncingStockItems: boolean;
 }
 
 let refreshInFlight = false;
@@ -62,6 +69,9 @@ let settingsDirty = false;
 let ledgerPage = 1;
 let ledgerQuery = '';
 const ledgerPageSize = 25;
+let stockItemPage = 1;
+let stockItemQuery = '';
+const stockItemPageSize = 25;
 
 export function setText(id: string, value: string): void {
   const element = document.getElementById(id);
@@ -90,7 +100,17 @@ export function setLoading(state: Partial<UiLoadingState>, message = 'Loading…
   if (!bar || !label) {
     return;
   }
-  const active = Boolean(state.dashboard || state.companies || state.selecting || state.settings || state.diagnostics || state.ledgers || state.syncing);
+  const active = Boolean(
+    state.dashboard ||
+      state.companies ||
+      state.selecting ||
+      state.settings ||
+      state.diagnostics ||
+      state.ledgers ||
+      state.stockItems ||
+      state.syncing ||
+      state.syncingStockItems,
+  );
   bar.className = active ? 'loading-bar' : 'loading-bar hidden';
   if (state.selecting) {
     label.textContent = 'Selecting company…';
@@ -100,8 +120,12 @@ export function setLoading(state: Partial<UiLoadingState>, message = 'Loading…
     label.textContent = 'Saving settings…';
   } else if (state.diagnostics) {
     label.textContent = 'Refreshing diagnostics…';
+  } else if (state.syncingStockItems) {
+    label.textContent = 'Syncing stock items…';
   } else if (state.syncing) {
     label.textContent = 'Syncing ledgers…';
+  } else if (state.stockItems) {
+    label.textContent = 'Loading stock items…';
   } else if (state.ledgers) {
     label.textContent = 'Loading ledgers…';
   } else {
@@ -325,6 +349,9 @@ export function activateView(view: DesktopView): void {
   }
   if (view === 'ledgers') {
     void loadLedgers();
+  }
+  if (view === 'stock-items') {
+    void loadStockItems();
   }
 }
 
@@ -744,6 +771,156 @@ export function bindLedgerActions(): void {
   });
 }
 
+export function renderStockItems(state: StockItemPageState): void {
+  const stats = state.statistics?.statistics;
+  const syncStatus = state.progress?.progress.status;
+  setText('stock-item-stat-total', stats ? String(stats.totalStockItems) : '—');
+  setText('stock-item-stat-unit', stats ? String(stats.withBaseUnit) : '—');
+  setText('stock-item-stat-incomplete', stats ? String(stats.incompleteData) : '—');
+  setText('stock-item-stat-last-sync', stats?.lastSyncedAt ?? 'Never');
+  setText('stock-item-sync-status', formatSyncStatusLabel(syncStatus));
+  setText(
+    'stock-item-sync-duration',
+    state.progress?.progress.durationMs != null ? `${state.progress.progress.durationMs} ms` : '—',
+  );
+  setText(
+    'stock-item-storage-status',
+    state.storage
+      ? `${state.storage.backend} · ${state.storage.databaseHealthy ? 'healthy' : 'unhealthy'}`
+      : '—',
+  );
+  setText(
+    'stock-item-migration-status',
+    state.storage?.migrationStatus ?? state.progress?.progress.migrationStatus ?? '—',
+  );
+
+  const syncButton = document.getElementById('btn-sync-stock-items') as HTMLButtonElement | null;
+  const cancelButton = document.getElementById('btn-cancel-stock-item-sync');
+  const busy = SYNC_BUSY_STATUSES.has(syncStatus ?? '');
+  if (syncButton) {
+    syncButton.disabled = busy;
+  }
+  cancelButton?.classList.toggle('hidden', !busy);
+
+  const list = document.getElementById('stock-item-list');
+  const meta = document.getElementById('stock-item-list-meta');
+  if (!list || !meta) {
+    return;
+  }
+
+  if (!state.ok || !state.list) {
+    meta.textContent = state.userMessage ?? 'Unable to load stock items.';
+    list.innerHTML = '';
+    return;
+  }
+
+  meta.textContent = `${state.list.pagination.totalItems} stock items · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
+  list.innerHTML = state.list.items
+    .map(
+      (item) => `
+        <div class="ledger-row" role="row">
+          <div class="ledger-name" role="cell">${item.name}</div>
+          <div class="ledger-meta" role="cell">${item.parentGroup ?? '—'}</div>
+          <div class="ledger-meta" role="cell">${item.baseUnit ?? item.dataQuality}</div>
+        </div>`,
+    )
+    .join('');
+
+  setText('stock-item-page-label', `Page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`);
+}
+
+export async function loadStockItems(): Promise<void> {
+  setLoading({ stockItems: true });
+  try {
+    const state = await window.budcomDesktop.getStockItems({
+      query: stockItemQuery,
+      page: stockItemPage,
+      pageSize: stockItemPageSize,
+    });
+    renderStockItems(state);
+    if (state.userMessage) {
+      setBanner(state.userMessage, 'warning');
+    }
+  } catch {
+    setBanner('Unable to load stock items.', 'error');
+  } finally {
+    setLoading({ stockItems: false });
+  }
+}
+
+async function handleStockItemSync(): Promise<void> {
+  setLoading({ syncingStockItems: true });
+  const progress = document.getElementById('stock-item-progress');
+  progress?.classList.remove('hidden');
+  try {
+    await window.budcomDesktop.syncStockItems(false);
+    await loadStockItems();
+    await refreshUi();
+  } catch {
+    setBanner('Stock item sync failed.', 'error');
+  } finally {
+    progress?.classList.add('hidden');
+    setLoading({ syncingStockItems: false });
+  }
+}
+
+async function handleCancelStockItemSync(): Promise<void> {
+  setLoading({ syncingStockItems: true });
+  try {
+    await window.budcomDesktop.cancelStockItemSync();
+    await loadStockItems();
+    await refreshUi();
+    setBanner('Stock item sync cancellation requested.', 'information');
+  } catch {
+    setBanner('Unable to cancel stock item sync.', 'error');
+  } finally {
+    setLoading({ syncingStockItems: false });
+  }
+}
+
+async function handleClearStockItemCache(): Promise<void> {
+  if (!window.confirm('Clear the local stock item cache for the selected company?')) {
+    return;
+  }
+  try {
+    const result = await window.budcomDesktop.clearStockItemCache();
+    setBanner(result.message, result.ok ? 'information' : 'warning');
+    await loadStockItems();
+  } catch {
+    setBanner('Unable to clear stock item cache.', 'error');
+  }
+}
+
+export function bindStockItemActions(): void {
+  document.getElementById('btn-sync-stock-items')?.addEventListener('click', () => {
+    void handleStockItemSync();
+  });
+  document.getElementById('btn-cancel-stock-item-sync')?.addEventListener('click', () => {
+    void handleCancelStockItemSync();
+  });
+  document.getElementById('btn-refresh-stock-items')?.addEventListener('click', () => {
+    void loadStockItems();
+  });
+  document.getElementById('btn-clear-stock-item-cache')?.addEventListener('click', () => {
+    void handleClearStockItemCache();
+  });
+  document.getElementById('btn-stock-item-prev')?.addEventListener('click', () => {
+    if (stockItemPage > 1) {
+      stockItemPage -= 1;
+      void loadStockItems();
+    }
+  });
+  document.getElementById('btn-stock-item-next')?.addEventListener('click', () => {
+    stockItemPage += 1;
+    void loadStockItems();
+  });
+  document.getElementById('stock-item-search-input')?.addEventListener('change', (event) => {
+    stockItemQuery = (event.target as HTMLInputElement).value.trim();
+    stockItemPage = 1;
+    void loadStockItems();
+  });
+}
+
 export function bindCompanyActions(): void {
   document.getElementById('btn-refresh-companies')?.addEventListener('click', () => {
     void loadCompanies();
@@ -776,6 +953,7 @@ export async function startDesktopShell(): Promise<void> {
   bindNavigation();
   bindCompanyActions();
   bindLedgerActions();
+  bindStockItemActions();
   bindLifecycleActions();
   bindSettingsActions();
   bindDiagnosticsActions();

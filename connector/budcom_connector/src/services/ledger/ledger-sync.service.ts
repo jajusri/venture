@@ -125,7 +125,7 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
   }
 
   listSyncRuns(limit = 20): Promise<readonly LedgerSyncRunRecord[]> {
-    return this.requireCompanyId().then((companyId) => this.syncRuns.listRuns(companyId, limit));
+    return this.requireCompanyId().then((companyId) => this.syncRuns.listRuns(companyId, 'ledgers', limit));
   }
 
   getSyncRun(syncRunId: string): Promise<LedgerSyncRunRecord | null> {
@@ -180,8 +180,8 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     }
 
     const companyId = await this.requireCompanyId();
-    this.syncRuns.recoverAbandonedRuns(companyId);
-    const active = this.syncRuns.findActiveRun(companyId);
+    this.syncRuns.recoverAbandonedRuns(companyId, 'ledgers');
+    const active = this.syncRuns.findActiveRun(companyId, 'ledgers');
     if (active) {
       throw new AppError(
         ErrorCodes.SYNC_CONFLICT,
@@ -209,6 +209,7 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
 
     this.activeRun = this.syncRuns.createRun({
       companyId,
+      resourceKind: 'ledgers',
       syncType: options.incremental ? 'incremental' : 'full',
       connectorVersion: this.config.connectorVersion,
       schemaVersion: String(STORAGE_SCHEMA_VERSION),

@@ -344,3 +344,65 @@ export interface LedgerPageState {
   readonly storage: StorageStatusDto | null;
   readonly userMessage: string | null;
 }
+
+export interface StockItemSummaryDto {
+  readonly id: string;
+  readonly name: string;
+  readonly normalizedName: string;
+  readonly parentGroup?: string;
+  readonly category?: string;
+  readonly baseUnit?: string;
+  readonly dataQuality: string;
+  readonly syncedAt: string;
+}
+
+export interface StockItemListResult {
+  readonly schemaVersion: string;
+  readonly dataFreshnessAt: string;
+  readonly items: readonly StockItemSummaryDto[];
+  readonly pagination: {
+    readonly page: number;
+    readonly pageSize: number;
+    readonly totalItems: number;
+    readonly totalPages: number;
+  };
+}
+
+export interface StockItemStatisticsDto {
+  readonly totalStockItems: number;
+  readonly withBaseUnit: number;
+  readonly incompleteData: number;
+  readonly withHsn: number;
+  readonly withGst: number;
+  readonly withOpeningBalance: number;
+  readonly deletedStockItems: number;
+  readonly lastSyncedAt: string | null;
+}
+
+export interface StockItemStatisticsResult {
+  readonly schemaVersion: string;
+  readonly statistics: StockItemStatisticsDto;
+}
+
+export interface StockItemSyncProgressResult {
+  readonly schemaVersion: string;
+  readonly progress: LedgerSyncProgressDto;
+  readonly storage?: StorageStatusDto;
+}
+
+export interface StockItemSyncResult {
+  readonly schemaVersion: string;
+  readonly status: string;
+  readonly statistics: StockItemStatisticsDto;
+  readonly progress: LedgerSyncProgressDto;
+  readonly validationIssueCount: number;
+}
+
+export interface StockItemPageState {
+  readonly ok: boolean;
+  readonly list: StockItemListResult | null;
+  readonly statistics: StockItemStatisticsResult | null;
+  readonly progress: StockItemSyncProgressResult | null;
+  readonly storage: StorageStatusDto | null;
+  readonly userMessage: string | null;
+}

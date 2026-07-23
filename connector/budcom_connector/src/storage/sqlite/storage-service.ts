@@ -7,9 +7,11 @@ import type { ServiceStatus } from '../../core/types.js';
 import type { StorageStatus } from '../../erp/ledger/ledger-domain.js';
 import type { LocalDatabaseService } from '../../services/interfaces/local-database.js';
 import type { LedgerRepositoryPort } from '../../services/ledger/ledger-repository.interface.js';
+import type { StockItemRepositoryPort } from '../../services/stock-item/stock-item-repository.interface.js';
 import { JsonToSqliteMigrationService, type JsonMigrationReport } from './json-to-sqlite-migration.js';
 import { nodeSqlite } from './node-sqlite.js';
 import { SqliteLedgerRepository } from './sqlite-ledger-repository.js';
+import { SqliteStockItemRepository } from './sqlite-stock-item-repository.js';
 import { SqliteDatabase } from './sqlite-database.js';
 import { SyncRunRepository } from './sync-run-repository.js';
 import { STORAGE_SCHEMA_VERSION } from './schema.js';
@@ -17,6 +19,7 @@ import { STORAGE_SCHEMA_VERSION } from './schema.js';
 export interface LedgerStorageBundle {
   readonly database: SqliteDatabase;
   readonly ledgerRepository: LedgerRepositoryPort;
+  readonly stockItemRepository: StockItemRepositoryPort;
   readonly syncRunRepository: SyncRunRepository;
   readonly migrationReport: JsonMigrationReport;
 }
@@ -36,6 +39,7 @@ export class SqliteStorageService implements LocalDatabaseService {
     const database = new SqliteDatabase({ databasePath });
     database.open();
     const ledgerRepository = new SqliteLedgerRepository(database);
+    const stockItemRepository = new SqliteStockItemRepository(database);
     const syncRunRepository = new SyncRunRepository(database);
     const migration = new JsonToSqliteMigrationService(
       database,
@@ -44,7 +48,7 @@ export class SqliteStorageService implements LocalDatabaseService {
       path.join(this.config.databasePath, 'ledgers-backup'),
     );
     const migrationReport = migration.migrateIfNeeded();
-    this.bundle = { database, ledgerRepository, syncRunRepository, migrationReport };
+    this.bundle = { database, ledgerRepository, stockItemRepository, syncRunRepository, migrationReport };
     this.running = true;
     this.logger.info('sqlite_storage_started', {
       component: 'sqlite-storage',

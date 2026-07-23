@@ -89,7 +89,7 @@ describe('LedgerSyncServiceImpl (SQLite)', () => {
     );
     await service.start();
     await service.syncLedgers();
-    const active = storage.getBundle().syncRunRepository.findActiveRun('estimation');
+    const active = storage.getBundle().syncRunRepository.findActiveRun('estimation', 'ledgers');
     expect(active).toBeNull();
   });
 });

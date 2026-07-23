@@ -4,7 +4,7 @@ import path from 'node:path';
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import type { DatabaseSync } from './node-sqlite.js';
 import { nodeSqlite } from './node-sqlite.js';
-import { MIGRATION_001, STORAGE_SCHEMA_VERSION } from './schema.js';
+import { MIGRATION_001, MIGRATION_002, MIGRATION_003, STOCK_ITEM_COLUMN_UPGRADES, STORAGE_SCHEMA_VERSION } from './schema.js';
 export interface SqliteDatabaseOptions {
   readonly databasePath: string;
   readonly readonly?: boolean;
@@ -60,27 +60,36 @@ export class SqliteDatabase {
 
   private runMigrations(): void {
     const db = this.db!;
-    let appliedVersion: number | undefined;
+    let currentVersion = 0;
     try {
       const applied = db
-        .prepare('SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1')
-        .get() as { version: number } | undefined;
-      appliedVersion = applied?.version;
+        .prepare('SELECT MAX(version) AS version FROM schema_migrations')
+        .get() as { version: number | null } | undefined;
+      currentVersion = applied?.version ?? 0;
     } catch {
-      appliedVersion = undefined;
+      currentVersion = 0;
     }
 
-    if (appliedVersion === STORAGE_SCHEMA_VERSION) {
+    if (currentVersion >= STORAGE_SCHEMA_VERSION) {
       return;
     }
 
     db.exec('BEGIN IMMEDIATE;');
     try {
-      db.exec(MIGRATION_001);
-      db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
-        STORAGE_SCHEMA_VERSION,
-        new Date().toISOString(),
-      );
+      const now = new Date().toISOString();
+      if (currentVersion < 1) {
+        db.exec(MIGRATION_001);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(1, now);
+      }
+      if (currentVersion < 2) {
+        db.exec(MIGRATION_002);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(2, now);
+      }
+      if (currentVersion < 3) {
+        this.ensureStockItemColumns(db);
+        db.exec(MIGRATION_003);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(3, now);
+      }
       db.exec('COMMIT;');
     } catch (error) {
       db.exec('ROLLBACK;');
@@ -90,6 +99,23 @@ export class SqliteDatabase {
         500,
         { cause: error instanceof Error ? error.message : String(error) },
       );
+    }
+  }
+
+  private ensureStockItemColumns(db: DatabaseSync): void {
+    const tableExists = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'stock_items'")
+      .get() as { name: string } | undefined;
+    if (!tableExists) {
+      return;
+    }
+    const columns = new Set(
+      (db.prepare('PRAGMA table_info(stock_items)').all() as Array<{ name: string }>).map((row) => row.name),
+    );
+    for (const upgrade of STOCK_ITEM_COLUMN_UPGRADES) {
+      if (!columns.has(upgrade.name)) {
+        db.exec(upgrade.ddl);
+      }
     }
   }
 }

@@ -70,6 +70,7 @@ describe('Ledger sync audit regressions', () => {
     const syncRuns = new SyncRunRepository(db);
     const otherRun = syncRuns.createRun({
       companyId: 'other-company',
+      resourceKind: 'ledgers',
       syncType: 'full',
       connectorVersion: '0.3.1',
       schemaVersion: '1',

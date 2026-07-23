@@ -53,7 +53,7 @@ export interface ErpReadPort {
   readLedgers(companyName: string, options?: ErpReadOptions): Promise<ExtractionResult<NormalizedLedger>>;
   readStockGroups(companyName: string): Promise<ExtractionResult<NormalizedStockGroup>>;
   readStockCategories(companyName: string): Promise<ExtractionResult<NormalizedStockCategory>>;
-  readStockItems(companyName: string): Promise<ExtractionResult<NormalizedStockItem>>;
+  readStockItems(companyName: string, options?: ErpReadOptions): Promise<ExtractionResult<NormalizedStockItem>>;
   readGodowns(companyName: string): Promise<ExtractionResult<NormalizedGodown>>;
   readCostCategories(companyName: string): Promise<ExtractionResult<NormalizedCostCategory>>;
   readCostCentres(companyName: string): Promise<ExtractionResult<NormalizedCostCentre>>;

@@ -1,0 +1,98 @@
+{
+  "validatedAt": "2026-07-23T12:24:11.935Z",
+  "connectorHost": "127.0.0.1",
+  "connectorPort": 8080,
+  "tallyHost": "localhost",
+  "tallyPort": 9000,
+  "requestCollection": "List of Stock Items",
+  "testEnvironment": "win32",
+  "companyLabel": "[COMPANY-10]",
+  "approximateSourceCount": 1502,
+  "dataClassification": "operator-controlled",
+  "milestone": "5B",
+  "connectorVersion": "0.3.1",
+  "scenarios": [
+    {
+      "scenario": "Preflight Tally reachable",
+      "status": "PASS",
+      "detail": "1 companies discovered."
+    },
+    {
+      "scenario": "Scenario A — initial stock item sync",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Scenario B — identity coverage",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Scenario C — field coverage",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Scenario D — repeat sync idempotency",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Scenario E — cancellation",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Scenario F — Tally unavailable and recovery",
+      "status": "BLOCKED",
+      "detail": "Requires operator to stop Tally temporarily. Not auto-executed in unattended gate."
+    }
+  ],
+  "firstSyncSummary": {
+    "sourceItemCount": 1502,
+    "acceptedCount": 1502,
+    "rejectedCount": 0,
+    "insertedCount": 1502,
+    "updatedCount": 0,
+    "skippedCount": 0,
+    "durationMs": 8668,
+    "databaseRowCount": 1502,
+    "validationIssueCount": 0
+  },
+  "repeatSyncSummary": {
+    "insertedCount": 0,
+    "updatedCount": 0,
+    "skippedCount": 1502,
+    "rowCountStable": true,
+    "identityStable": true
+  },
+  "identityCoverage": {
+    "totalItems": 1502,
+    "withGuidField": 1502,
+    "withAlterIdField": 1502,
+    "withBothFields": 1502,
+    "guidIdentityCount": 1502,
+    "alterIdentityCount": 0,
+    "nameFallbackCount": 0,
+    "guidCoveragePct": 100,
+    "alterIdCoveragePct": 100,
+    "nameFallbackPct": 0,
+    "duplicateDisplayNameCount": 0,
+    "fallbackCollisionCount": 0,
+    "blankIdentityCount": 0
+  },
+  "fieldCoverage": {
+    "withBaseUnit": 1502,
+    "withParentGroup": 1502,
+    "withAlias": 0,
+    "withPartNumber": 0,
+    "withHsn": 0,
+    "withGst": 686,
+    "incompleteData": 0,
+    "baseUnitCoveragePct": 100,
+    "parentGroupCoveragePct": 100,
+    "aliasCoveragePct": 0,
+    "partNumberCoveragePct": 0
+  },
+  "identityVerdict": "STABLE SOURCE IDENTITY CONFIRMED"
+}

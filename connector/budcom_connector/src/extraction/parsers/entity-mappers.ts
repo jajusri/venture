@@ -17,6 +17,7 @@ import type {
   NormalizedUnit,
   NormalizedVoucherType,
 } from '../core/types.js';
+import { resolveStockItemStableId } from '../core/stock-item-identity.js';
 
 export interface CollectionParseOptions {
   readonly nodeName: string;
@@ -205,8 +206,11 @@ export function mapStockItem(
 ): NormalizedStockItem | undefined {
   const name = parser.resolveName(node);
   if (!name) return undefined;
+  const guid = parser.getChildText(node, 'GUID');
+  const alterId = parser.getChildText(node, 'ALTERID');
+  const inactive = parser.getLogical(node, 'ISINACTIVE');
   return {
-    id: slugify(name),
+    id: resolveStockItemStableId({ guid, alterId, name }),
     name,
     normalizedName: normalizeName(name),
     parentGroup: parser.getChildText(node, 'PARENT'),
@@ -216,6 +220,11 @@ export function mapStockItem(
     closingBalance: normalizeAmount(parser.getChildText(node, 'CLOSINGBALANCE')),
     hsnCode: parser.getChildText(node, 'HSNCODE'),
     gstRate: parser.getChildText(node, 'GSTAPPLICABLE'),
+    guid,
+    alterId,
+    alias: parser.getChildText(node, 'ALIAS'),
+    partNumber: parser.getChildText(node, 'PARTNUMBER'),
+    status: inactive ? 'inactive' : 'active',
   };
 }
 
