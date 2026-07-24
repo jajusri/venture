@@ -48,6 +48,13 @@ export class SqliteStorageService implements LocalDatabaseService {
       path.join(this.config.databasePath, 'ledgers-backup'),
     );
     const migrationReport = migration.migrateIfNeeded();
+    const recovered = syncRunRepository.recoverAllAbandonedRuns();
+    if (recovered > 0) {
+      this.logger.info('sqlite_abandoned_sync_runs_recovered', {
+        component: 'sqlite-storage',
+        recoveredCount: recovered,
+      });
+    }
     this.bundle = { database, ledgerRepository, stockItemRepository, syncRunRepository, migrationReport };
     this.running = true;
     this.logger.info('sqlite_storage_started', {

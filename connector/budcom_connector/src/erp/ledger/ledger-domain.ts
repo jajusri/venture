@@ -118,7 +118,10 @@ export interface LedgerSyncRunRecord {
   readonly updated: number;
   readonly skipped: number;
   readonly failed: number;
+  /** Local domain ID of the final record in the last atomically committed batch (audit only; not a source cursor). */
   readonly lastProcessedId: string | null;
+  /** Interrupted run that this retry continues from; null for ordinary fresh runs. */
+  readonly predecessorSyncRunId: string | null;
   readonly retryCount: number;
   readonly cancelRequested: boolean;
   readonly failureCode: string | null;

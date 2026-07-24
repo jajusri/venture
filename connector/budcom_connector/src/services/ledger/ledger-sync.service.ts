@@ -78,9 +78,6 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
 
   async start(): Promise<void> {
     this.running = true;
-    if (this.storage.isRunning()) {
-      this.syncRuns.recoverAllAbandonedRuns();
-    }
   }
 
   async stop(): Promise<void> {
@@ -213,6 +210,7 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
       syncType: options.incremental ? 'incremental' : 'full',
       connectorVersion: this.config.connectorVersion,
       schemaVersion: String(STORAGE_SCHEMA_VERSION),
+      predecessorSyncRunId: this.syncRuns.findRetryPredecessor(companyId, 'ledgers')?.syncRunId ?? null,
     });
 
     this.progress = toProgress(this.activeRun, this.storage.getStorageStatus().migrationStatus);
@@ -234,13 +232,8 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
       };
       this.syncRuns.updateRun(this.activeRun);
 
-      const resumeFrom = this.activeRun.lastProcessedId;
-      let startIndex = 0;
-      if (resumeFrom) {
-        startIndex = mapped.findIndex((ledger) => ledger.id === resumeFrom) + 1;
-      }
-
-      for (let index = startIndex; index < mapped.length; index += BATCH_SIZE) {
+      // Full restart from index zero on every run. lastProcessedId is audit-only (TD-006).
+      for (let index = 0; index < mapped.length; index += BATCH_SIZE) {
         if (signal.aborted) {
           break;
         }

@@ -1,4 +1,4 @@
-export const STORAGE_SCHEMA_VERSION = 3;
+export const STORAGE_SCHEMA_VERSION = 4;
 
 export const MIGRATION_001 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -176,4 +176,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_items_company_guid
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_items_company_alter_id
   ON stock_items(company_id, alter_id) WHERE alter_id IS NOT NULL;
+`;
+
+/** TD-006: sync run retry lineage (predecessor link for interrupted-run retries). */
+export const MIGRATION_004 = `
+ALTER TABLE sync_runs ADD COLUMN predecessor_sync_run_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_sync_runs_predecessor
+  ON sync_runs(predecessor_sync_run_id) WHERE predecessor_sync_run_id IS NOT NULL;
 `;

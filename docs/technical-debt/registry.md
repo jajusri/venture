@@ -93,10 +93,10 @@ Engineering-tracked compromises, defects, and deferred work.
 | **Priority** | P2 |
 | **Estimated fix** | 4 hours |
 | **Target milestone** | 5A-P |
-| **Status** | **Partially resolved** (2026-07-23) |
+| **Status** | **Resolved for controlled-pilot restart safety** (2026-07-24) |
 | **Introduced** | Milestone 5A (2026-07-23) |
-| **Resolution** | Milestone 5A-P — `sync_runs` table, abandoned-run recovery on startup |
-| **Residual limitation** | Full upsert resume from `lastProcessedId` not implemented; interrupted sync re-processes all extracted ledgers |
+| **Resolution** | Reliability Step 2 — abandoned runs marked `interrupted`; retry creates a new linked run that re-extracts from the beginning and relies on idempotent upserts plus atomic batch checkpoints (`predecessor_sync_run_id`, `retry_count` lineage) |
+| **Accepted limitation** | Exact positional/source-cursor and AlterID/GUID watermark resume are intentionally unsupported unless a future proven Tally ordering, immutable cursor, or snapshot contract makes it safe. Tally export order is not guaranteed today, no snapshot identity exists, ledger ids are name-slugs. `lastProcessedId` is audit-only. Deletion reconciliation and ledger-rename stale rows remain unchanged. |
 
 ---
 
@@ -172,7 +172,7 @@ Engineering-tracked compromises, defects, and deferred work.
 | TD-003 | Connector process supervision | P2 | **Resolved** | 4C |
 | TD-004 | Tally host/port not forwarded to connector spawn | P3 | Open | 5A |
 | TD-005 | JSON ledger repository | P2 | **Resolved** | 5A-P |
-| TD-006 | Durable interrupted sync resume | P2 | **Partial** | 5A-P |
+| TD-006 | Durable interrupted sync resume | P2 | **Resolved (controlled pilot)** | 5A-P / Reliability Step 2 |
 | TD-007 | Extraction-phase cancellation | P3 | **Resolved w/ limitation** | 5A-P |
 | TD-008 | Insecure default network binding | P2 | **Resolved** | 5A-P |
 | TD-009 | Authenticated LAN access | P2 | Open | 5B |

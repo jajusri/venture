@@ -160,7 +160,7 @@ Evidence: `docs/diagnostics/m5b-operational-validation.json` (baseline `f2a6b3a`
 | Name-fallback identity rename risk | Medium | Live export: 0% GUID/AlterID; 100% name-fallback for measured company |
 | Per-item `dataQuality: incomplete` | Accepted limitation | Default export omits `BASEUNITS` (100% incomplete in measured live set) |
 | Extraction completeness at port | Low / partial | Result field exists; port-level partial extraction detection deferred |
-| TD-006 full resume | Medium | Interrupted sync still re-processes extracted set; resume from `lastProcessedId` incomplete |
+| TD-006 full resume | **Resolved (Step 2)** | Safe restart-from-beginning with run lineage; positional resume intentionally unsupported |
 
 ---
 
@@ -170,7 +170,7 @@ Evidence: `docs/diagnostics/m5b-operational-validation.json` (baseline `f2a6b3a`
 |----|--------|-------|
 | TD-001 | Open | Parent encoding normalization |
 | TD-004 | Open | Tally host/port not forwarded to connector spawn |
-| TD-006 | **Partial** | Durable interrupted sync resume; full upsert resume from `lastProcessedId` incomplete |
+| TD-006 | **Resolved (Step 2)** | Safe interrupted-sync restart with lineage; positional resume intentionally unsupported |
 | TD-009 | Open | Authenticated LAN access for connector API (does not block loopback pilot) |
 | TD-005 / TD-007 / TD-008 | Resolved (prior milestones) | JSON repo replaced; cancel with limitation; loopback bind default |
 
@@ -372,6 +372,89 @@ Unrelated async callers never join one another’s transaction; nested repositor
 
 ---
 
+## Reliability Step 2 — TD-006 safe restart-from-beginning (2026-07-24)
+
+**Requirement addressed:** Control #2 — detect interrupted sync and retry safely without duplicate or omitted records.
+
+**TD-006 definition adopted:** Safe restart-from-beginning with durable interrupted-run lineage. Exact positional/source-cursor resume is intentionally unsupported.
+
+**Why positional resume was rejected:** Tally export order is not guaranteed between requests; no ordering contract or source snapshot identity exists; ledger checkpoint ids are name-slugs; inserts/renames or order changes could cause silent omission if records were skipped via `lastProcessedId`.
+
+### Implementation status
+
+Complete for ledger and stock-item sync paths (controlled pilot).
+
+### Behavior
+
+| Area | Behavior |
+|------|----------|
+| Abandoned run | `running` / `cancelling` → `interrupted` with `ABANDONED`; counters and `lastProcessedId` preserved; domain data unchanged |
+| Retry run | New run with `predecessor_sync_run_id` → interrupted run; `retryCount = predecessor.retryCount + 1`; full Tally re-extraction; processing from index zero |
+| Fresh run | No eligible interrupted predecessor → `predecessor_sync_run_id = null`, `retryCount = 0` |
+| Predecessor selection | Most recent `interrupted` run for same `(company_id, resource_kind)` that is not superseded and has no newer sync run |
+| `lastProcessedId` | Audit marker for last record in last atomically committed batch — **not** a source cursor |
+| Positional skip | Removed from ledger and stock-item sync services |
+| Startup recovery | `SqliteStorageService.start()` calls `recoverAllAbandonedRuns()` once (ledger + stock parity) |
+
+### Schema / migration
+
+- **Version 4:** nullable `predecessor_sync_run_id` on `sync_runs` + partial index for superseded lookup
+- Existing rows default to `NULL` predecessor
+
+### Files changed
+
+| Path | Change |
+|------|--------|
+| `schema.ts` | `MIGRATION_004`, `STORAGE_SCHEMA_VERSION = 4` |
+| `sqlite-database.ts` | Apply migration 4 |
+| `sync-run-repository.ts` | `findRetryPredecessor`, predecessor validation, lineage on `createRun` |
+| `ledger-domain.ts` | `predecessorSyncRunId` on run record |
+| `ledger-sync.service.ts` | Retry lineage; remove positional skip; startup recovery moved to storage |
+| `stock-item-sync.service.ts` | Retry lineage; remove positional skip |
+| `storage-service.ts` | Central `recoverAllAbandonedRuns()` on startup |
+| `test/integration/interrupted-sync-restart.test.ts` | **Added** — 12 TD-006 integration tests |
+| `test/integration/schema-migration-v2.test.ts` | v3→v4 migration test |
+
+### Tests added
+
+`interrupted-sync-restart.test.ts` — **12/12 PASS** (ledger + stock retry lineage, full restart, ordering/insert safety, isolation, rollback+retry, predecessor selection, storage startup recovery)
+
+### Validation commands and results (2026-07-24)
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` | **PASS** |
+| `npm run build` | **PASS** |
+| `npx vitest run test/integration/interrupted-sync-restart.test.ts` | **12/12 PASS** |
+| `npx vitest run test/integration/schema-migration-v2.test.ts` | **4/4 PASS** |
+| `npx vitest run test/integration/sync-batch-atomicity.test.ts` | **12/12 PASS** |
+| `npx vitest run test/integration/transaction-concurrency-safety.test.ts` | **6/6 PASS** |
+| `npx vitest run test/integration/sync-run-concurrency.test.ts` | **5/5 PASS** |
+| `npx vitest run` | **357/357 PASS** (68 files) |
+| Architecture `module-boundaries.test.ts` | **12/12 PASS** |
+| Desktop checks | **Not run** — no shared contracts or desktop code changed |
+
+### Known limitations (unchanged)
+
+- Deletion reconciliation disabled — stale rows possible on ledger rename (name-slug identity)
+- Scenario 12 (mid-sync Tally unavailability detection) **unchanged** — separate defect
+- Exact positional, AlterID, or GUID watermark resume: intentionally unsupported unless a future proven Tally ordering, immutable cursor, or snapshot contract makes it safe
+- Unrestricted production readiness **not** approved
+
+### Control #2 wording after Step 2
+
+**Atomic batch commit and controlled-pilot interrupted-run restart safety are complete for existing ledger and stock-item paths. More advanced positional/source-watermark resume is intentionally not part of the approved design.**
+
+### TD-006 status
+
+**TD-006 resolved for controlled-pilot durable restart safety through full restart with run lineage. Exact positional/source-cursor resume is intentionally unsupported unless a future proven Tally ordering, immutable cursor, or snapshot contract makes it safe.**
+
+### Scenario 12
+
+**Not modified; remains unresolved** (`m5b-operational-validation.json` scenario 12 still `pass: false`).
+
+---
+
 ## 12. Accepted Reliability Controls Registration
 
 **Authority:** `.cursor/rules/budcom-tally-connector-reliability.mdc` · `docs/architecture/accepted-reliability-hardening.md`  
@@ -383,7 +466,7 @@ These principles do **not** expand MVP-1. Implementation occurs only when requir
 | # | Control | Status | Notes |
 |---|---------|--------|-------|
 | 1 | Capability-based Tally pre-flight | **PARTIAL** | Configurable probing and typed discovery/session outcomes exist; no unified typed pre-flight capability matrix; must not assume `tally.exe`, fixed port, one release, or one XML schema |
-| 2 | Atomic SQLite data plus checkpoint and crash recovery | **PARTIAL** | **Atomic data plus checkpoint commit: complete for existing ledger and stock-item batch paths; broader crash-resume control remains partial under TD-006.** |
+| 2 | Atomic SQLite data plus checkpoint and crash recovery | **COMPLETE (controlled pilot)** | **Atomic batch commit and controlled-pilot interrupted-run restart safety are complete for existing ledger and stock-item paths. More advanced positional/source-watermark resume is intentionally not part of the approved design.** |
 | 3 | Strict XML boundary validation | **PARTIAL** | Egress EXPORT validation strong; inbound/offline depth, encoding ambiguity, XXE/entity, and size/nesting limits incomplete |
 | 4 | Privacy-safe diagnostics | **PARTIAL, identifiable company-name exposure must be removed** | Bundle exclusions exist; not a hard allowlist with absence proofs; `sessionSummary` may carry company names |
 | 5 | Electron and Windows production hardening | **PARTIAL, release signing/updater/AV work deferred** | Core isolation / CSP / IPC allowlist exist (4A–4D); signing, authenticated updates, and antivirus compatibility are deferred to an explicit production-readiness milestone |
@@ -391,7 +474,7 @@ These principles do **not** expand MVP-1. Implementation occurs only when requir
 ### Current reliability defects (registered)
 
 1. ~~Ledger and stock-item data writes commit separately from `sync_runs` checkpoint/status updates.~~ **Resolved for sync batches by Reliability Step 1** (terminal/create/cancel updates remain outside batch TX by design).
-2. TD-006 full resume behavior remains incomplete.
+2. ~~TD-006 full resume behavior remains incomplete.~~ **Resolved for controlled-pilot restart safety by Reliability Step 2** (full restart with lineage; positional resume rejected).
 3. Diagnostic `sessionSummary` may contain identifiable company names.
 4. Existing progress and production-gate documents may be stale relative to Milestones 4x through 5B.
 5. Operational scenario 12 (mid-sync Tally unavailability) remains unresolved and is treated as a separate defect from batch atomicity.
@@ -400,7 +483,7 @@ These principles do **not** expand MVP-1. Implementation occurs only when requir
 
 1. Stage-update and reliability registration ← **Step 0 complete**
 2. Atomic data plus checkpoint transactions for existing ledger and stock-item sync ← **Reliability Step 1 complete (this update)**
-3. TD-006 resume completion ← **next code step when authorized**
+3. TD-006 resume completion ← **Reliability Step 2 complete (2026-07-24)**
 4. Diagnostic allowlist and absence tests
 5. Unified typed capability pre-flight
 6. Inbound/offline XML safety limits
@@ -438,7 +521,7 @@ Broad rewrites were intentionally deferred. Narrow later corrections are recomme
 
 | Item | Deferred to |
 |------|-------------|
-| TD-006 full resume completion | Reliability order item 3 (after Step 1) — **await authorization** |
+| TD-006 full resume completion | **Complete** — Reliability Step 2 (controlled pilot) |
 | Diagnostic allowlist + company-name removal + absence tests | Reliability order item 4 |
 | Unified typed capability pre-flight | Reliability order item 5 |
 | Inbound/offline XML safety limits | Reliability order item 6 (before untrusted voucher/import scope) |
@@ -453,17 +536,16 @@ Broad rewrites were intentionally deferred. Narrow later corrections are recomme
 
 ## 16. Explicit next-action gate
 
-**STOP — await authorization.**
+**STOP — await authorization for later reliability steps (order items 4–7).**
 
 | Allowed now | Not allowed without new authorization |
 |-------------|----------------------------------------|
-| Use this stage-update as connector 5B + reliability Steps 0–1 truth | Implement TD-006 full resume (order item 3) |
+| Use this stage-update as connector 5B + reliability Steps 0–2 truth | Diagnostic allowlist work (order item 4) |
 | Narrow doc corrections listed in §14 when separately authorized | Create 5C/5D or other product milestone specifications |
-| | Mark accepted control #2 fully complete |
 | | Expand MVP-1 scope or redesign approved architecture |
-| | Commit unless explicitly instructed |
+| | Mark unrestricted production readiness approved |
 
-**Next authorized code step (when approved):** order item 3 — TD-006 resume completion (explicitly deferred; not started).
+**Next authorized code step (when approved):** order item 4 — diagnostic allowlist and absence tests.
 
 ---
 
@@ -475,6 +557,7 @@ Broad rewrites were intentionally deferred. Narrow later corrections are recomme
 | Controlled pilot use | **Yes** |
 | Unrestricted production | **No** |
 | Reliability Step 0 (registration) | **Complete** |
-| Reliability Step 1 (atomic batch commit) | **Complete (uncommitted)** |
-| TD-006 full resume / later reliability steps | **Blocked pending explicit authorization** |
+| Reliability Step 1 (atomic batch commit) | **Complete** |
+| Reliability Step 2 (TD-006 restart lineage) | **Complete** |
+| Later reliability steps (4–7) | **Blocked pending explicit authorization** |
 | Next product milestone | **Unspecified** |

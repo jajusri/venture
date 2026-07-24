@@ -9,6 +9,8 @@ export interface CreateSyncRunInput {
   readonly syncType: 'full' | 'incremental';
   readonly connectorVersion: string;
   readonly schemaVersion: string;
+  /** When set, must reference an eligible interrupted predecessor for the same company and resource kind. */
+  readonly predecessorSyncRunId?: string | null;
 }
 
 export class SyncRunRepository {
@@ -31,6 +33,18 @@ export class SyncRunRepository {
         );
       }
 
+      const predecessorSyncRunId = input.predecessorSyncRunId ?? null;
+      let retryCount = 0;
+      if (predecessorSyncRunId) {
+        const predecessor = this.loadPredecessorForRetry(
+          db,
+          predecessorSyncRunId,
+          input.companyId,
+          input.resourceKind,
+        );
+        retryCount = predecessor.retryCount + 1;
+      }
+
       const now = new Date().toISOString();
       const record: LedgerSyncRunRecord = {
         syncRunId: randomUUID(),
@@ -48,7 +62,8 @@ export class SyncRunRepository {
         skipped: 0,
         failed: 0,
         lastProcessedId: null,
-        retryCount: 0,
+        predecessorSyncRunId,
+        retryCount,
         cancelRequested: false,
         failureCode: null,
         failureSummary: null,
@@ -59,11 +74,13 @@ export class SyncRunRepository {
         `INSERT INTO sync_runs (
           sync_run_id, company_id, resource_kind, sync_type, status, started_at, updated_at, completed_at,
           total_expected, processed, inserted, updated_count, skipped, failed, last_processed_id,
-          retry_count, cancel_requested, failure_code, failure_summary, connector_version, schema_version
+          predecessor_sync_run_id, retry_count, cancel_requested, failure_code, failure_summary,
+          connector_version, schema_version
         ) VALUES (
           @syncRunId, @companyId, @resourceKind, @syncType, @status, @startedAt, @updatedAt, @completedAt,
           @totalExpected, @processed, @inserted, @updated, @skipped, @failed, @lastProcessedId,
-          @retryCount, @cancelRequested, @failureCode, @failureSummary, @connectorVersion, @schemaVersion
+          @predecessorSyncRunId, @retryCount, @cancelRequested, @failureCode, @failureSummary,
+          @connectorVersion, @schemaVersion
         )`,
       ).run(toParams(record));
       db.exec('COMMIT');
@@ -72,6 +89,35 @@ export class SyncRunRepository {
       db.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  /**
+   * Returns the most recent interrupted run eligible as a retry predecessor:
+   * same company and resource kind, status interrupted, and not yet superseded by another run.
+   */
+  findRetryPredecessor(companyId: string, resourceKind: SyncResourceKind): LedgerSyncRunRecord | null {
+    const db = this.database.getDatabase();
+    const row = db
+      .prepare(
+        `SELECT sr.* FROM sync_runs sr
+         WHERE sr.company_id = ?
+           AND sr.resource_kind = ?
+           AND sr.status = 'interrupted'
+           AND NOT EXISTS (
+             SELECT 1 FROM sync_runs retry
+             WHERE retry.predecessor_sync_run_id = sr.sync_run_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM sync_runs newer
+             WHERE newer.company_id = sr.company_id
+               AND newer.resource_kind = sr.resource_kind
+               AND newer.started_at > sr.started_at
+           )
+         ORDER BY sr.started_at DESC
+         LIMIT 1`,
+      )
+      .get(companyId, resourceKind);
+    return row ? fromRow(row as unknown as SyncRunRow) : null;
   }
 
   updateRun(record: LedgerSyncRunRecord): void {
@@ -168,6 +214,35 @@ export class SyncRunRepository {
       .run(now, now);
     return Number(result.changes);
   }
+
+  private loadPredecessorForRetry(
+    db: ReturnType<SqliteDatabase['getDatabase']>,
+    predecessorSyncRunId: string,
+    companyId: string,
+    resourceKind: SyncResourceKind,
+  ): LedgerSyncRunRecord {
+    const row = db.prepare('SELECT * FROM sync_runs WHERE sync_run_id = ?').get(predecessorSyncRunId);
+    if (!row) {
+      throw new Error(`Retry predecessor sync run '${predecessorSyncRunId}' was not found.`);
+    }
+    const predecessor = fromRow(row as unknown as SyncRunRow);
+    if (predecessor.companyId !== companyId) {
+      throw new Error('Retry predecessor belongs to a different company.');
+    }
+    if (predecessor.resourceKind !== resourceKind) {
+      throw new Error('Retry predecessor belongs to a different resource kind.');
+    }
+    if (predecessor.status !== 'interrupted') {
+      throw new Error(`Retry predecessor must have status 'interrupted', got '${predecessor.status}'.`);
+    }
+    const superseded = db
+      .prepare('SELECT sync_run_id FROM sync_runs WHERE predecessor_sync_run_id = ? LIMIT 1')
+      .get(predecessorSyncRunId) as { sync_run_id: string } | undefined;
+    if (superseded) {
+      throw new Error('Retry predecessor has already been superseded by another run.');
+    }
+    return predecessor;
+  }
 }
 
 interface SyncRunRow {
@@ -186,6 +261,7 @@ interface SyncRunRow {
   skipped: number;
   failed: number;
   last_processed_id: string | null;
+  predecessor_sync_run_id: string | null;
   retry_count: number;
   cancel_requested: number;
   failure_code: string | null;
@@ -211,6 +287,7 @@ function fromRow(row: SyncRunRow): LedgerSyncRunRecord {
     skipped: row.skipped,
     failed: row.failed,
     lastProcessedId: row.last_processed_id,
+    predecessorSyncRunId: row.predecessor_sync_run_id ?? null,
     retryCount: row.retry_count,
     cancelRequested: row.cancel_requested === 1,
     failureCode: row.failure_code,
@@ -257,6 +334,7 @@ function toParams(record: LedgerSyncRunRecord) {
     skipped: record.skipped,
     failed: record.failed,
     lastProcessedId: record.lastProcessedId,
+    predecessorSyncRunId: record.predecessorSyncRunId,
     retryCount: record.retryCount,
     cancelRequested: record.cancelRequested ? 1 : 0,
     failureCode: record.failureCode,

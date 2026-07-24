@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { nodeSqlite } from '../../src/storage/sqlite/node-sqlite.js';
 import type { DatabaseSync } from '../../src/storage/sqlite/node-sqlite.js';
 import { SqliteDatabase } from '../../src/storage/sqlite/sqlite-database.js';
-import { MIGRATION_001, STORAGE_SCHEMA_VERSION } from '../../src/storage/sqlite/schema.js';
+import { MIGRATION_001, MIGRATION_002, MIGRATION_003, STORAGE_SCHEMA_VERSION } from '../../src/storage/sqlite/schema.js';
 
 const tempDirs: string[] = [];
 const openDbs: DatabaseSync[] = [];
@@ -144,5 +144,45 @@ describe('schema migration v1 to v2', () => {
       .get() as { version: number };
     expect(version.version).toBe(STORAGE_SCHEMA_VERSION);
     second.close();
+  });
+
+  it('adds predecessor_sync_run_id on v3 to v4 migration with null defaults', () => {
+    const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-migrate-v4-'));
+    tempDirs.push(basePath);
+    const databasePath = path.join(basePath, 'budcom-ledger.db');
+
+    const raw = new nodeSqlite.DatabaseSync(databasePath);
+    openDbs.push(raw);
+    raw.exec(MIGRATION_001);
+    raw.exec(MIGRATION_002);
+    raw.exec(MIGRATION_003);
+    raw.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(
+      3,
+      '2026-01-01T00:00:00.000Z',
+    );
+    raw.prepare(
+      `INSERT INTO sync_runs (
+        sync_run_id, company_id, resource_kind, sync_type, status, started_at, updated_at, completed_at,
+        total_expected, processed, inserted, updated_count, skipped, failed, last_processed_id,
+        retry_count, cancel_requested, failure_code, failure_summary, connector_version, schema_version
+      ) VALUES (?, ?, 'ledgers', 'full', 'interrupted', ?, ?, ?, 2, 2, 2, 0, 0, 0, 'bank', 0, 0, 'ABANDONED', 'x', '0.3.1', '3')`,
+    ).run('historical-run', 'co-a', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+    raw.close();
+    openDbs.pop();
+
+    const v4 = new SqliteDatabase({ databasePath });
+    v4.open();
+    const migrated = v4.getDatabase();
+    const version = migrated
+      .prepare('SELECT MAX(version) AS version FROM schema_migrations')
+      .get() as { version: number };
+    expect(version.version).toBe(STORAGE_SCHEMA_VERSION);
+
+    const run = migrated
+      .prepare('SELECT predecessor_sync_run_id, last_processed_id FROM sync_runs WHERE sync_run_id = ?')
+      .get('historical-run') as { predecessor_sync_run_id: string | null; last_processed_id: string | null };
+    expect(run.predecessor_sync_run_id).toBeNull();
+    expect(run.last_processed_id).toBe('bank');
+    v4.close();
   });
 });

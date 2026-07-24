@@ -5,7 +5,14 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import type { DatabaseSync } from './node-sqlite.js';
 import { nodeSqlite } from './node-sqlite.js';
-import { MIGRATION_001, MIGRATION_002, MIGRATION_003, STOCK_ITEM_COLUMN_UPGRADES, STORAGE_SCHEMA_VERSION } from './schema.js';
+import {
+  MIGRATION_001,
+  MIGRATION_002,
+  MIGRATION_003,
+  MIGRATION_004,
+  STOCK_ITEM_COLUMN_UPGRADES,
+  STORAGE_SCHEMA_VERSION,
+} from './schema.js';
 export interface SqliteDatabaseOptions {
   readonly databasePath: string;
   readonly readonly?: boolean;
@@ -192,6 +199,10 @@ export class SqliteDatabase {
         this.ensureStockItemColumns(db);
         db.exec(MIGRATION_003);
         db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(3, now);
+      }
+      if (currentVersion < 4) {
+        db.exec(MIGRATION_004);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(4, now);
       }
       db.exec('COMMIT;');
     } catch (error) {
