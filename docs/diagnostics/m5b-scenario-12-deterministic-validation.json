@@ -1,0 +1,83 @@
+{
+  "milestone": "5B-scenario-12-deterministic-validation",
+  "validatedAt": "2026-07-24T12:06:21.937Z",
+  "dataClassification": "operator-controlled-aggregate-redacted",
+  "supersededEvidence": "docs/diagnostics/m5b-operational-validation.json phase 5a1-scenario-12-during-sync",
+  "interpretation": "Original manual Scenario 12 could not prove Tally was stopped before response completion. Deterministic harness separates 12A (pre-body fault) and 12B (post-body local-only).",
+  "fullBufferBoundary": "Tally required only until extractWithRetry resolves; local persistence does not re-contact Tally.",
+  "productionDefectFound": false,
+  "transportCodeChanged": false,
+  "phases": [
+    {
+      "scenario": "12A",
+      "pass": true,
+      "expectedBehavior": "Transport fault before body complete: run failed, no domain/checkpoint mutation",
+      "observedBehavior": "run=failed processed=0",
+      "syncStatus": "failed",
+      "ledgerCountBefore": 0,
+      "ledgerCountAfter": 0,
+      "latestRunStatus": "failed",
+      "latestRunProcessed": 0,
+      "tallyRequestCount": 1,
+      "timings": [
+        {
+          "label": "server-create",
+          "monotonicMs": 1
+        },
+        {
+          "label": "fault-configured",
+          "monotonicMs": 19
+        },
+        {
+          "label": "request-dispatch",
+          "monotonicMs": 19
+        },
+        {
+          "label": "finalization",
+          "monotonicMs": 88
+        },
+        {
+          "label": "fault-injected-at-server-partial-body",
+          "monotonicMs": 88
+        }
+      ],
+      "correlationId": "scenario-12a-1784894781727"
+    },
+    {
+      "scenario": "12B",
+      "pass": true,
+      "expectedBehavior": "After full body receipt endpoint may close; local processing completes without further Tally requests",
+      "observedBehavior": "run=completed records=300 requests=1",
+      "syncStatus": "completed",
+      "ledgerCountBefore": 0,
+      "ledgerCountAfter": 300,
+      "latestRunStatus": "completed",
+      "latestRunProcessed": 300,
+      "tallyRequestCount": 1,
+      "timings": [
+        {
+          "label": "fault-configured-complete-body",
+          "monotonicMs": 3
+        },
+        {
+          "label": "request-dispatch",
+          "monotonicMs": 3
+        },
+        {
+          "label": "extraction-and-local-complete",
+          "monotonicMs": 120
+        },
+        {
+          "label": "endpoint-closed-after-body",
+          "monotonicMs": 120
+        },
+        {
+          "label": "finalization",
+          "monotonicMs": 120
+        }
+      ],
+      "correlationId": "scenario-12b-1784894781816"
+    }
+  ],
+  "overallPass": true
+}

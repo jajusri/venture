@@ -637,7 +637,7 @@ These principles do **not** expand MVP-1. Implementation occurs only when requir
 2. ~~TD-006 full resume behavior remains incomplete.~~ **Resolved for controlled-pilot restart safety by Reliability Step 2** (full restart with lineage; positional resume rejected).
 3. ~~Diagnostic `sessionSummary` may contain identifiable company names.~~ **Resolved for export/clipboard/summary surfaces by Reliability Step 3** (on-disk logs and normal UI remain unchanged).
 4. Existing progress and production-gate documents may be stale relative to Milestones 4x through 5B.
-5. Operational scenario 12 (mid-sync Tally unavailability) remains unresolved and is treated as a separate defect from batch atomicity.
+5. ~~Operational scenario 12 (mid-sync Tally unavailability) remains unresolved and is treated as a separate defect from batch atomicity.~~ **Scenario 12 Phase B (2026-07-24): deterministic transport tests prove no production defect; original manual `pass: false` reinterpreted as harness/timing ambiguity — see §19.**
 
 ### Approved implementation order
 
@@ -655,7 +655,7 @@ These principles do **not** expand MVP-1. Implementation occurs only when requir
 
 ## 13. Unresolved observations
 
-- Operational mid-sync Tally-down scenario remains failed (`m5b-operational-validation.json`).
+- ~~Operational mid-sync Tally-down scenario remains failed (`m5b-operational-validation.json`).~~ **Superseded for interpretation by deterministic Scenario 12A/12B evidence (`docs/diagnostics/m5b-scenario-12-deterministic-validation.json`); historical manual record preserved unchanged.**
 - Live identity limitation: default `List of Stock Items` export measured at 0% GUID/AlterID/BASEUNITS for the pilot company.
 - Whether a richer safe Tally collection export path can be validated without write capability or schema assumptions.
 - Exact next product milestone remains unspecified (no approved 5C/5D specification in repository).
@@ -689,7 +689,7 @@ Broad rewrites were intentionally deferred. Narrow later corrections are recomme
 | Stock groups / units as first-class masters | Future inventory-related milestone (when specified) |
 | Opening qty/rate/value decomposition | Future inventory-related milestone (when specified) |
 | Deletion reconciliation | Future approved sync policy |
-| Operational scenario 12 remediation | Separate defect track — do not conflate with batch atomicity |
+| Operational scenario 12 remediation | **Phase B complete — CORRECT VALIDATION ONLY** (deterministic harness + tests; no transport code change) |
 | Next product feature milestone (vouchers, inventory, etc.) | **Only after an explicit milestone specification exists** |
 
 ---
@@ -766,3 +766,94 @@ Broad rewrites were intentionally deferred. Narrow later corrections are recomme
 - Unrestricted production not approved
 
 **Verdict:** **SAFE TO COMMIT** subject to operator authorization. No commit performed.
+
+---
+
+## 19. Scenario 12 Phase B — deterministic transport validation (2026-07-24)
+
+**Status:** Complete
+
+**Type:** Validation-only — **not** a production transport change
+
+**Requirement addressed:** Reliability §1 transport completeness boundary; Phase A locked conclusions; Scenario 12 harness correction
+
+**Supersedes for interpretation:** `docs/diagnostics/m5b-operational-validation.json` → `phase 5a1-scenario-12-during-sync` (`pass: false` preserved; timing could not prove fault before body completion)
+
+**Evidence:** `docs/diagnostics/m5b-scenario-12-deterministic-validation.json`
+
+### Locked boundary (confirmed)
+
+Tally is required only until the complete HTTP response body is received and `extractWithRetry()` returns. Mapping, validation, migration, and SQLite persistence are local-only. Closing Tally or the loopback endpoint after body completion must not fail an otherwise valid sync. Periodic Tally liveness polling during local persistence is **rejected**.
+
+### Harness correction
+
+| Phase | Induced fault | Expected | Observed |
+|-------|---------------|----------|----------|
+| **12A** | Partial body / socket destroy before envelope complete | Run `failed`, processed=0, no domain/checkpoint mutation, safe retry | **PASS** — `failed`, 0 rows, 1 Tally request |
+| **12B** | Complete valid XML, endpoint closed after body receipt | Local processing continues, run `completed`, no further Tally requests | **PASS** — `completed`, 300 rows, 1 Tally request |
+
+Original manual expectation (“no completed run whenever sync UI is active”) was **invalid** — conflated UI activity with Tally transport dependency.
+
+### Deterministic test matrix
+
+| # | Scenario | Result |
+|---|----------|--------|
+| 1 | Reset before response headers | `failed`, 503, no mutation |
+| 2 | Socket destroy mid-body | `failed`, no extraction, no mutation |
+| 3 | Body-read stall / timeout | 504 typed timeout, no mutation |
+| 4 | Structurally truncated XML (200) | Parser failure → `failed`, no mutation |
+| 5 | Complete body, endpoint closes before mapping | `completed`, correct count |
+| 6 | Complete body, endpoint closes during SQLite batching | `completed`, 300 rows, no re-poll |
+| 7 | Connection refused before request | `failed`, no mutation |
+| 8 | Abort during body reception | `cancelled`, processed=0 |
+| 9 | Retry after transport failure | Second run `completed`, no duplicates; predecessor null (failed ≠ interrupted) |
+| 10 | Privacy-safe failure evidence | Allowlist sanitization PASS on all failure paths |
+| 11 | Well-formed XML with fewer entities | Ledgers: completes; stock: completes — documents current semantics |
+| 12 | Empty valid collection | Ledgers: `partial` quality, sync completes; stock: completes with 0 rows |
+
+### Content-Length investigation
+
+| Case | Node fetch/undici behavior |
+|------|------------------------------|
+| Declared Content-Length > bytes received | Does **not** reject immediately; stalls until timeout → **504** |
+| Chunked transfer ending prematurely | Transport rejects → **503** |
+| Correct Content-Length + full body | Normal completion |
+
+No manual Content-Length checker added — runtime does not silently accept truncated bodies as success.
+
+### Production defect
+
+**None proven.** `productionDefectFound: false`, `transportCodeChanged: false`.
+
+### Files changed
+
+| Area | Files |
+|------|-------|
+| Test helpers | `test/helpers/fault-injection-server.ts`, `test/helpers/sync-fault-helpers.ts` |
+| Integration tests | `test/integration/tally-transport-fault.test.ts`, `test/integration/scenario-12-sync-fault.test.ts` |
+| Validation harness | `scripts/scenario-12-validation.ts` |
+| Evidence | `docs/diagnostics/m5b-scenario-12-deterministic-validation.json` |
+| Stage-update | This section |
+
+**No production `src/` changes.**
+
+### Validation
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` | PASS (post Phase B) |
+| `npm run build` | PASS |
+| `npx vitest run test/integration/tally-transport-fault.test.ts test/integration/scenario-12-sync-fault.test.ts` | **25/25 PASS** |
+| `npx tsx scripts/scenario-12-validation.ts` | **PASS** (12A + 12B) |
+| `npx vitest run` (full connector) | **415/415 PASS** |
+| Architecture boundaries | **12/12 PASS** |
+| Desktop tests | Not run (no desktop changes) |
+
+### Remaining limitations
+
+- Semantic completeness (fewer entities / empty collection) documented as current behavior — no source-count contract enforced
+- Content-Length mismatch classified via timeout, not immediate rejection
+- Manual operational record in `m5b-operational-validation.json` unchanged; interpretation superseded here only
+- Live Tally mid-sync timing still not primary proof path — deterministic loopback harness is authoritative
+
+**Verdict:** **CORRECT VALIDATION ONLY** — safe to commit test/harness/docs; **not** `SAFE TO COMMIT TRANSPORT FIX` (no transport fix required).
