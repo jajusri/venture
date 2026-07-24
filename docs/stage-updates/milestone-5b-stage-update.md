@@ -1449,3 +1449,103 @@ Discovery for company selection performs one company-list request; sync reuses c
 - Session/API success responses still include company names by design (privacy allowlist applies to diagnostics/export surfaces).
 
 **Verdict:** **SAFE TO COMMIT NARROW PREFLIGHT FIX** — **Reliability Control #1 remains PARTIAL**; **unrestricted production not approved**.
+
+---
+
+## 25. Reliability Control #4 Phase B1 — on-disk privacy hardening (2026-07-24)
+
+**Status:** Complete — tests-first hardening applied; validation PASS (uncommitted)
+
+**Type:** Narrow persistent diagnostic sink privacy fixes (no retention, encryption, telemetry, or export redesign)
+
+### Phase A original persistence risks
+
+| Sink | Risk |
+|------|------|
+| `tally-request-audit.jsonl` | Blocklist-redacted request XML (`redactedXml`) + raw `errorMessage`; unbounded; enabled by default |
+| Connector `StructuredLogger` stdout | Arbitrary context serialized without sanitization |
+| HTTP 5xx error middleware | Logged raw `AppError.details` |
+| `sync_runs.failure_summary` | Stored raw `error.message` / Tally text |
+| Desktop `budcom-desktop.log` | Weaker message-level redaction than diagnostic export allowlist |
+
+**Unchanged (confirmed):** diagnostic export allowlist; domain SQLite operational data; no remote telemetry/crash upload.
+
+### Fix A — metadata-only Tally audit
+
+**Original shape:** `timestamp`, `correlationId`, `operationId`, `capability`, `policyDecision`, `collectionId`, `reportId`, `requestByteLength`, `requestHash`, `circuitStateBefore`, `outcome`, **`redactedXml`**, **`errorMessage`**
+
+**New shape:** same metadata fields + **`errorReasonCode`** (stable classification); **`redactedXml` and `errorMessage` removed**
+
+**Behavior:** audit remains enabled by default; XML input used only for hash computation; concurrent writes serialized via in-process write chain; JSONL format preserved.
+
+### Fix B — logger sink sanitization
+
+**Boundary:** `StructuredLogger.write()` sanitizes message + context before sink emission.
+
+**Model:** approved context key allowlist; sensitive key blocklist; safe primitives only; identifier keys (correlationId, operationId, etc.) skip pattern redaction; unknown keys dropped; errors/objects/arrays fail closed to `[REDACTED]`; message max length + control-character neutralization via shared `persistent-text-sanitizer`.
+
+**Call-site cleanup:** removed `companyName` from master-data/session logs; removed `databasePath` from storage startup log.
+
+### Fix C — HTTP 5xx logging
+
+**Behavior:** `AppError.details` passed through `sanitizeLogDetails()` before logging; message sanitized; unhandled errors log `INTERNAL_ERROR` code only (no stack/cause/raw message). **`AppError.toResponse()` unchanged** — API response compatibility preserved.
+
+### Fix D — sync failure normalization
+
+**Mapper:** `normalizeSyncFailure()` / `sanitizeSyncProgressError()` in `infrastructure/privacy/sync-failure-normalizer.ts`
+
+**Vocabulary:** `transport_unavailable`, `transport_timeout`, `response_too_large`, `response_parse_failed`, `response_contract_rejected`, `tally_reported_error`, `storage_failure`, `sync_cancelled`, `sync_conflict`, `validation_error`, `read_only_violation`, `unexpected_sync_failure`
+
+**Storage:** `sync_runs.failure_code` + `failure_summary` receive stable normalized values; progress `lastError` bounded normalized summary; **re-thrown API errors preserve original message** for non-`AppError` paths (TD-006 / atomicity tests).
+
+**Example (synthetic):**
+
+| Before | After |
+|--------|-------|
+| `failure_summary`: `Connection failed: ECONNREFUSED 127.0.0.1:9000` | `failure_code`: `SERVICE_UNAVAILABLE`, `failure_summary`: `transport_unavailable` |
+| `failure_summary`: `injected checkpoint failure` | `failure_code`: `SERVICE_UNAVAILABLE`, `failure_summary`: `storage_failure` |
+
+### Fix E — desktop file-log parity
+
+**Behavior:** export-grade `sanitizePersistentLogText()` applied on **file write only**; in-memory ring retains existing `redactString()` (diagnostic export still sanitizes at bundle boundary; source-entry mutation test preserved).
+
+**Unchanged:** 1 MB × 5 rotation; user clear; in-memory ring; diagnostic export allowlist.
+
+### Shared sanitizer
+
+`persistent-text-sanitizer.ts` shared by connector diagnostics allowlist, logger, sync failure, audit error normalization. Desktop copies patterns in `persistent-log-text.ts` (no cross-package import).
+
+### Tests added/changed
+
+| File | Coverage |
+|------|----------|
+| `test/unit/tally/tally-request-audit-privacy.test.ts` | Groups 1A–1D |
+| `test/unit/tally/tally-request-auditor.test.ts` | Metadata-only shape |
+| `test/unit/infrastructure/log-context-sanitizer.test.ts` | Group 2 |
+| `test/unit/infrastructure/error-handler-logging.test.ts` | Group 3 |
+| `test/unit/infrastructure/sync-failure-normalizer.test.ts` | Group 4 unit |
+| `test/integration/sync-failure-persistence.test.ts` | Group 4 integration |
+| `test/integration/sync-batch-atomicity.test.ts` | Normalized `lastError` expectation |
+| `test/unit/logger.test.ts` | Approved context key |
+| `apps/budcom_desktop/test/unit/file-log-sanitization.test.ts` | Group 5 |
+
+### Validation evidence
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` (connector) | PASS |
+| `npm run build` (connector) | PASS |
+| Focused privacy suites (8 files) | **46/46 PASS** |
+| Full connector vitest | **623/623 PASS** |
+| `test/architecture/module-boundaries.test.ts` | **12/12 PASS** |
+| Desktop lint + vitest | **97/97 PASS** |
+
+### Deferred Phase B2+
+
+Audit retention/rotation framework; diagnostic-export cleanup; backup cleanup; SQLite/log encryption; migration-path redaction; installer/uninstall cleanup; secure deletion; crash reporter; telemetry; remote support bundles; new diagnostics UI/config; schema redesign; domain-data redaction; stdout capture changes; production packaging.
+
+### RC#4 status
+
+**Reliability Control #4 remains PARTIAL** — on-disk sinks hardened for highest-risk paths; **unbounded audit/log file growth and encryption gaps remain** (Phase B2).
+
+**Verdict:** **SAFE TO COMMIT NARROW ON-DISK PRIVACY FIX** — **unrestricted production not approved**.

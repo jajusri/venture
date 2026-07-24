@@ -13,14 +13,14 @@ describe('StructuredLogger', () => {
 
     logger.debug('hidden');
     logger.info('hidden');
-    logger.warn('visible', { reason: 'test' });
+    logger.warn('visible', { reasonCode: 'test_reason' });
 
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       level: 'warn',
       message: 'visible',
       service: 'test',
-      context: { service: 'test', reason: 'test' },
+      context: { service: 'test', reasonCode: 'test_reason' },
     });
   });
 });

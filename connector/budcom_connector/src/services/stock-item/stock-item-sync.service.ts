@@ -1,6 +1,10 @@
 import type { ConnectorConfig } from '../../config/defaults.js';
 import type { Logger } from '../../infrastructure/logging/logger.js';
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
+import {
+  normalizeSyncFailure,
+  sanitizeSyncProgressError,
+} from '../../infrastructure/privacy/sync-failure-normalizer.js';
 import type { ServiceStatus } from '../../core/types.js';
 import type {
   StockItemChange,
@@ -313,13 +317,13 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
       if (error instanceof AppError && error.code === ErrorCodes.SYNC_CANCELLED) {
         return this.finalizeRun('cancelled', companyId, startedAt, changes, 0);
       }
-      const message = error instanceof Error ? error.message : String(error);
+      const normalizedFailure = normalizeSyncFailure(error);
       if (this.activeRun) {
         this.activeRun = {
           ...this.activeRun,
           status: 'failed',
-          failureCode: error instanceof AppError ? error.code : ErrorCodes.SERVICE_UNAVAILABLE,
-          failureSummary: message,
+          failureCode: normalizedFailure.failureCode,
+          failureSummary: normalizedFailure.failureSummary,
           updatedAt: new Date().toISOString(),
           completedAt: new Date().toISOString(),
         };
@@ -328,15 +332,24 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
       this.progress = {
         ...this.progress,
         status: 'failed',
-        lastError: message,
+        lastError: sanitizeSyncProgressError(error),
         completedAt: new Date().toISOString(),
         durationMs: Date.now() - startedAt,
       };
-      this.logger.error('stock_item_sync_failed', { component: 'stock-item-sync', message });
+      this.logger.error('stock_item_sync_failed', {
+        component: 'stock-item-sync',
+        code: normalizedFailure.failureCode,
+        reasonCode: normalizedFailure.failureSummary,
+      });
       this.activeRun = null;
       throw error instanceof AppError
         ? error
-        : new AppError(ErrorCodes.SERVICE_UNAVAILABLE, message, 503, { feature: 'stock-item-sync' });
+        : new AppError(
+            ErrorCodes.SERVICE_UNAVAILABLE,
+            error instanceof Error ? error.message : 'Stock item sync failed',
+            503,
+            { feature: 'stock-item-sync' },
+          );
     } finally {
       this.activeAbort = null;
     }

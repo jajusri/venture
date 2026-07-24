@@ -232,7 +232,7 @@ export class TallyRequestGuard {
       requestByteLength: Buffer.byteLength(context.xml, 'utf8'),
       circuitStateBefore: this.circuitBreaker.getState(),
       outcome,
-      errorMessage: error instanceof Error ? error.message : undefined,
+      error,
       xml: context.xml,
     });
   }

@@ -1,8 +1,16 @@
+import {
+  sanitizeLogContext,
+  sanitizeLogMessage,
+  type SafeLogContext,
+} from '../privacy/log-context-sanitizer.js';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface LogContext {
   readonly [key: string]: unknown;
 }
+
+export type SanitizedLogContext = SafeLogContext;
 
 export interface StructuredLogEntry {
   readonly timestamp: string;
@@ -75,12 +83,13 @@ export class StructuredLogger implements Logger {
       return;
     }
 
+    const mergedContext = { ...this.baseContext, ...context };
     const entry: StructuredLogEntry = {
       timestamp: new Date().toISOString(),
       level,
-      message,
+      message: sanitizeLogMessage(message),
       service: this.options.service,
-      context: { ...this.baseContext, ...context },
+      context: sanitizeLogContext(mergedContext),
     };
 
     const sink = this.options.sink ?? defaultSink;

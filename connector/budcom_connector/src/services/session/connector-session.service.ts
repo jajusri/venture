@@ -87,7 +87,6 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
       this.logger.info('Company selected for connector session', {
         sessionId: this.session.sessionId,
         companyId: this.session.selectedCompany?.id,
-        companyName: this.session.selectedCompany?.name,
       });
     }
 

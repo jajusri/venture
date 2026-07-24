@@ -1,6 +1,7 @@
 import type { DesktopLogLevel } from './desktop-config-schema.js';
 import { FileLogWriter } from './file-log-writer.js';
 import { redactString } from './log-redaction.js';
+import { sanitizePersistentLogText } from './persistent-log-text.js';
 import type { LogEntry, LogLevel } from './types.js';
 
 let sequence = 0;
@@ -42,11 +43,26 @@ function mapDesktopLevel(level: LogLevel): DesktopLogLevel {
   }
 }
 
-function sanitizeMetadata(metadata: StructuredLogMetadata): Record<string, string | number | boolean | null> {
+function sanitizeMetadataForMemory(
+  metadata: StructuredLogMetadata,
+): Record<string, string | number | boolean | null> {
   const output: Record<string, string | number | boolean | null> = {};
   for (const [key, value] of Object.entries(metadata)) {
     if (value !== undefined) {
-      output[key] = value;
+      output[key] = typeof value === 'string' ? redactString(value) : value;
+    }
+  }
+  return output;
+}
+
+function sanitizeMetadataForFile(
+  metadata: StructuredLogMetadata,
+): Record<string, string | number | boolean | null> {
+  const output: Record<string, string | number | boolean | null> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value !== undefined) {
+      output[key] =
+        typeof value === 'string' ? sanitizePersistentLogText(value) : value;
     }
   }
   return output;
@@ -86,7 +102,7 @@ export class LogService {
   appendStructured(input: StructuredLogInput): LogEntry {
     const sanitizedMessage = redactString(input.message);
     const desktopLevel = mapDesktopLevel(input.level);
-    const metadata = input.metadata ? sanitizeMetadata(input.metadata) : null;
+    const metadata = input.metadata ? sanitizeMetadataForMemory(input.metadata) : null;
 
     if (LOG_LEVEL_ORDER[desktopLevel] < LOG_LEVEL_ORDER[this.minimumLevel]) {
       return {
@@ -118,10 +134,10 @@ export class LogService {
     const filePayload = JSON.stringify({
       timestamp: entry.timestamp,
       level: mapDesktopLevel(entry.level),
-      event: entry.event,
-      component: entry.component,
-      message: entry.message,
-      metadata: entry.metadata,
+      event: input.event ? sanitizePersistentLogText(input.event, 120) : entry.event,
+      component: input.component ? sanitizePersistentLogText(input.component, 120) : entry.component,
+      message: sanitizePersistentLogText(input.message),
+      metadata: input.metadata ? sanitizeMetadataForFile(input.metadata) : entry.metadata,
     });
     this.fileWriter?.appendLine(filePayload);
 

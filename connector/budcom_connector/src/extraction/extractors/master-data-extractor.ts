@@ -203,7 +203,6 @@ export class MasterDataExtractor<T extends { id: string }> {
 
       this.logger.info('Master data extraction complete', {
         entityType: this.config.entityType,
-        companyName,
         itemCount: items.length,
         durationMs,
         byteLength: exchange.byteLength,
@@ -307,7 +306,7 @@ export class MasterDataExtractor<T extends { id: string }> {
     );
   }
 
-  private completeSuccess(started: number, companyName: string, items: T[], byteLength: number) {
+  private completeSuccess(started: number, _companyName: string, items: T[], byteLength: number) {
     const durationMs = Date.now() - started;
     this.diagnostics = {
       ...this.diagnostics,
@@ -320,7 +319,6 @@ export class MasterDataExtractor<T extends { id: string }> {
 
     this.logger.info('Master data extraction complete', {
       entityType: this.config.entityType,
-      companyName,
       itemCount: items.length,
       durationMs,
       byteLength,
@@ -333,15 +331,15 @@ export class MasterDataExtractor<T extends { id: string }> {
     };
   }
 
-  private failExtraction(error: unknown, companyName: string): never {
+  private failExtraction(error: unknown, _companyName: string): never {
     this.diagnostics.failedExtractions += 1;
     this.diagnostics.lastErrorAt = new Date().toISOString();
     this.diagnostics.lastErrorMessage = error instanceof Error ? error.message : String(error);
 
     this.logger.error('Master data extraction failed', {
       entityType: this.config.entityType,
-      companyName,
-      error: this.diagnostics.lastErrorMessage,
+      reasonCode: 'extraction_failed',
+      code: error instanceof AppError ? error.code : ErrorCodes.SERVICE_UNAVAILABLE,
     });
 
     throw error instanceof AppError

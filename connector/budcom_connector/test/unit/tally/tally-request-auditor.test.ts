@@ -8,7 +8,7 @@ import { createLogger } from '../../../src/infrastructure/logging/logger.js';
 import { TallyRequestAuditor } from '../../../src/tally/safety/tally-request-auditor.js';
 
 describe('TallyRequestAuditor', () => {
-  it('writes redacted XML to audit file', async () => {
+  it('writes metadata-only audit records with hashed request bytes', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'budcom-audit-'));
     const auditPath = join(dir, 'audit.jsonl');
     const auditor = new TallyRequestAuditor(
@@ -27,10 +27,15 @@ describe('TallyRequestAuditor', () => {
     });
 
     const contents = await readFile(auditPath, 'utf8');
-    const entry = JSON.parse(contents.trim()) as { redactedXml: string; correlationId: string };
+    const entry = JSON.parse(contents.trim()) as {
+      correlationId: string;
+      requestHash: string;
+      redactedXml?: string;
+    };
     expect(entry.correlationId).toBe('abc-123');
-    expect(entry.redactedXml).toContain('[REDACTED]');
-    expect(entry.redactedXml).not.toContain('ESTIMATION');
+    expect(entry.requestHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(entry.redactedXml).toBeUndefined();
+    expect(contents).not.toContain('ESTIMATION');
   });
 
   it('does not write when disabled', async () => {

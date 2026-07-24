@@ -477,7 +477,7 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
     await expect(service.syncStockItems()).rejects.toThrow();
     const progress = service.getSyncProgress();
     expect(progress.status).toBe('failed');
-    expect(progress.lastError).toMatch(/injected checkpoint failure/i);
+    expect(progress.lastError).toBe('storage_failure');
     const run = storage.getBundle().syncRunRepository.listRuns('estimation', 'stock-items')[0]!;
     expect(run.status).toBe('failed');
     expect(run.completedAt).toBeTruthy();

@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 import { dirname } from 'node:path';
 
 import type { Logger } from '../../infrastructure/logging/logger.js';
-import { redactTallyRequestXml } from './xml-request-validator.js';
+import {
+  normalizeAuditErrorReason,
+  type AuditErrorReasonCode,
+} from '../../infrastructure/privacy/audit-error-normalizer.js';
 
 export type TallyRequestOutcome = 'intent' | 'sent' | 'failed' | 'blocked';
 
@@ -20,11 +23,12 @@ export interface TallyRequestAuditEntry {
   readonly requestHash: string;
   readonly circuitStateBefore?: string;
   readonly outcome: TallyRequestOutcome;
-  readonly errorMessage?: string;
-  readonly redactedXml: string;
+  readonly errorReasonCode?: AuditErrorReasonCode;
 }
 
 export class TallyRequestAuditor {
+  private writeChain: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly auditPath: string,
     private readonly enabled: boolean,
@@ -32,7 +36,10 @@ export class TallyRequestAuditor {
   ) {}
 
   async record(
-    entry: Omit<TallyRequestAuditEntry, 'redactedXml' | 'requestHash'> & { readonly xml: string },
+    entry: Omit<TallyRequestAuditEntry, 'requestHash' | 'errorReasonCode'> & {
+      readonly xml: string;
+      readonly error?: unknown;
+    },
   ): Promise<void> {
     if (!this.enabled) return;
 
@@ -48,16 +55,21 @@ export class TallyRequestAuditor {
       requestHash: createHash('sha256').update(entry.xml, 'utf8').digest('hex'),
       circuitStateBefore: entry.circuitStateBefore,
       outcome: entry.outcome,
-      errorMessage: entry.errorMessage,
-      redactedXml: redactTallyRequestXml(entry.xml),
+      errorReasonCode: normalizeAuditErrorReason(entry.outcome, entry.error),
     };
 
+    this.writeChain = this.writeChain.then(() => this.writeRecord(record)).catch(() => undefined);
+    await this.writeChain;
+  }
+
+  private async writeRecord(record: TallyRequestAuditEntry): Promise<void> {
     try {
       await mkdir(dirname(this.auditPath), { recursive: true });
       await appendFile(this.auditPath, `${JSON.stringify(record)}\n`, 'utf8');
-    } catch (error) {
+    } catch {
       this.logger.warn('Failed to write Tally request audit record', {
-        error: error instanceof Error ? error.message : String(error),
+        component: 'tally-request-auditor',
+        code: 'AUDIT_WRITE_FAILED',
       });
     }
   }

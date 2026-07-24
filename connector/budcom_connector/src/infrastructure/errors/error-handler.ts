@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 
+import { sanitizeLogDetails, sanitizeLogMessage } from '../privacy/log-context-sanitizer.js';
 import type { Logger } from '../logging/logger.js';
 import { ErrorCodes, isAppError } from './app-error.js';
 
@@ -7,7 +8,12 @@ export function createErrorMiddleware(logger: Logger) {
   return (error: unknown, _req: Request, res: Response, _next: NextFunction): void => {
     if (isAppError(error)) {
       if (error.statusCode >= 500 && error.code !== ErrorCodes.NOT_IMPLEMENTED) {
-        logger.error(error.message, { code: error.code, details: error.details });
+        const safeDetails = sanitizeLogDetails(error.details);
+        logger.error(sanitizeLogMessage(error.message), {
+          code: error.code,
+          statusCode: error.statusCode,
+          ...(safeDetails ?? {}),
+        });
       }
       res.status(error.statusCode).json(error.toResponse());
       return;
@@ -15,7 +21,6 @@ export function createErrorMiddleware(logger: Logger) {
 
     logger.error('Unhandled error', {
       code: ErrorCodes.INTERNAL_ERROR,
-      error: error instanceof Error ? error.message : String(error),
     });
 
     res.status(500).json({

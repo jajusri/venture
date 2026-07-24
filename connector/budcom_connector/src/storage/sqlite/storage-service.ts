@@ -59,7 +59,6 @@ export class SqliteStorageService implements LocalDatabaseService {
     this.running = true;
     this.logger.info('sqlite_storage_started', {
       component: 'sqlite-storage',
-      databasePath,
       migrationStatus: migrationReport.status,
     });
   }
