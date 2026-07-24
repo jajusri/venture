@@ -1,0 +1,192 @@
+{
+  "milestone": "5B-operational-gate",
+  "baselineCommit": "f2a6b3ae0543f0af690d55ff64777fe879ae7725",
+  "dataClassification": "operator-controlled-aggregate-redacted",
+  "runAttempt": 4,
+  "phases": [
+    {
+      "phase": "pre-fault-healthy-state",
+      "recordedAt": "2026-07-23T13:44:17.458Z",
+      "tallyReachable": true,
+      "companyLabel": "[COMPANY-10]",
+      "aggregateStockItemCount": 1502,
+      "aggregateLedgerCount": 922,
+      "stockSyncStatus": "idle",
+      "ledgerSyncStatus": "idle",
+      "stockIntegrityOk": true,
+      "ledgerIntegrityOk": true
+    },
+    {
+      "phase": "5a1-scenario-12-during-sync",
+      "recordedAt": "2026-07-23T13:46:30.382Z",
+      "runAttempt": 2,
+      "operatorAction": "Stop Tally during active ledger+stock sync",
+      "expectedBehavior": "Tally down during sync; sync fails safely; counts unchanged; no completed run",
+      "observedBehavior": "completed",
+      "syncStatus": "completed",
+      "syncError": null,
+      "stockSyncStatus": "completed",
+      "stockSyncError": null,
+      "tallyDownDetected": false,
+      "durationMs": 132871,
+      "ledgerCountBefore": 922,
+      "ledgerCountAfter": 922,
+      "stockCountBefore": 1502,
+      "stockCountAfter": 1502,
+      "latestLedgerRunStatus": "completed",
+      "latestStockRunStatus": "completed",
+      "pass": false
+    },
+    {
+      "phase": "tally-unavailable",
+      "recordedAt": "2026-07-23T13:46:45.325Z",
+      "tallyPing": true,
+      "tallyReachableDiscovery": true,
+      "stockCountBefore": 1502,
+      "stockCountAfter": 1502,
+      "ledgerCountBefore": 922,
+      "ledgerCountAfter": 922,
+      "stockSyncAttemptStatus": "completed",
+      "stockSyncAttemptError": null,
+      "ledgerSyncAttemptStatus": "completed",
+      "ledgerSyncAttemptError": null,
+      "deletionSafetyPass": true,
+      "stockIntegrityOk": true,
+      "ledgerIntegrityOk": true
+    },
+    {
+      "phase": "recovery",
+      "recordedAt": "2026-07-23T13:47:03.976Z",
+      "tallyReachable": true,
+      "recoveryWaitMs": 1016,
+      "recoverySyncDurationMs": 17582,
+      "stockSyncStatus": "completed",
+      "ledgerSyncStatus": "completed",
+      "stockCountBefore": 1502,
+      "stockCountAfter": 1502,
+      "ledgerCountBefore": 922,
+      "ledgerCountAfter": 922,
+      "guidIdentityCount": 1502,
+      "guidIdentityPct": 100,
+      "repeatAdded": 0,
+      "repeatSkipped": 1502
+    },
+    {
+      "phase": "5a1-scenario-13-recovery-retry",
+      "recordedAt": "2026-07-23T13:47:03.977Z",
+      "operatorAction": "Tally restarted; retry ledger sync",
+      "expectedBehavior": "Ledger sync completes; counts stable; no duplicates",
+      "observedBehavior": "completed",
+      "ledgerCountBefore": 922,
+      "ledgerCountAfter": 922,
+      "pass": true
+    },
+    {
+      "phase": "5b-scenario-f-recovery",
+      "recordedAt": "2026-07-23T13:47:03.978Z",
+      "operatorAction": "Tally unavailable then recovery; stock sync succeeds idempotently",
+      "expectedBehavior": "Stock sync completed; GUID stable; repeat adds 0",
+      "observedBehavior": "completed",
+      "stockCountBefore": 1502,
+      "stockCountAfter": 1502,
+      "guidIdentityCount": 1502,
+      "repeatAdded": 0,
+      "pass": true
+    },
+    {
+      "phase": "5b-scenario-f-unavailable-only",
+      "recordedAt": "2026-07-23T13:55:13.146Z",
+      "attemptNumber": 4,
+      "tallyConfirmedUnavailableBeforeTest": true,
+      "availabilityProbe": {
+        "localhost9000Reachable": false,
+        "loopback9000Reachable": false,
+        "connectorTallyPing": false,
+        "healthTallyReachable": false,
+        "companiesProbeStatus": 503,
+        "companiesProbeErrorCode": "SERVICE_UNAVAILABLE",
+        "bindHost": "127.0.0.1",
+        "bindPort": 8080,
+        "tallyHost": "localhost",
+        "tallyPort": 9000
+      },
+      "prePersistence": {
+        "stockItemCount": 3005,
+        "ledgerCount": 1844,
+        "runCounts": {
+          "completed": 26,
+          "failed": 2,
+          "cancelled": 4,
+          "running": 0,
+          "interrupted": 0,
+          "other": 0
+        },
+        "latestStockRunStatus": "completed",
+        "latestLedgerRunStatus": "completed",
+        "integrityOk": true,
+        "foreignKeyViolations": 0
+      },
+      "companySelectionAttempt": {
+        "httpStatus": 400,
+        "selectionStatus": "INVALID_COMPANY",
+        "durationMs": 23
+      },
+      "stockItemUnavailableResult": {
+        "httpStatus": 400,
+        "errorCode": "VALIDATION_ERROR",
+        "safeErrorCategory": "VALIDATION_ERROR",
+        "durationMs": 10,
+        "finalRunStatus": "completed",
+        "failedRunDelta": 0,
+        "completedRunDelta": 0,
+        "runningRunDelta": 0,
+        "retryObserved": "none-detected"
+      },
+      "ledgerUnavailableResult": {
+        "httpStatus": 400,
+        "errorCode": "VALIDATION_ERROR",
+        "safeErrorCategory": "VALIDATION_ERROR",
+        "durationMs": 16,
+        "finalRunStatus": "completed",
+        "failedRunDelta": 0,
+        "completedRunDelta": 0,
+        "runningRunDelta": 0,
+        "retryObserved": "none-detected"
+      },
+      "postPersistence": {
+        "stockItemCount": 3005,
+        "ledgerCount": 1844,
+        "runCounts": {
+          "completed": 26,
+          "failed": 2,
+          "cancelled": 4,
+          "running": 0,
+          "interrupted": 0,
+          "other": 0
+        },
+        "latestStockRunStatus": "completed",
+        "latestLedgerRunStatus": "completed",
+        "integrityOk": true,
+        "foreignKeyViolations": 0
+      },
+      "deletionSafetyPass": true,
+      "duplicateCorruptionPass": true,
+      "processStability": {
+        "connectorAliveAfterSyncAttempts": true,
+        "healthRespondsAfterFailures": true,
+        "stockStatusEndpointOk": true,
+        "ledgerStatusEndpointOk": true,
+        "sessionEndpointOk": true,
+        "availabilityRecheckPing": false
+      },
+      "errorBodyPrivacy": {
+        "stockPass": true,
+        "ledgerPass": true,
+        "issues": []
+      },
+      "scenarioFUnavailableVerdict": "PASS",
+      "pass": true
+    }
+  ],
+  "lastUpdatedAt": "2026-07-23T13:55:13.146Z"
+}
