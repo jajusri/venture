@@ -1,4 +1,9 @@
 import type { ParsedXmlDocument, ParsedXmlNode, TallyXmlResponseParser } from '../../tally/xml/response-parser.js';
+import {
+  collectDirectEntityNodes,
+  findBodyDataCollections,
+  isPlaceholderEntityNode,
+} from '../../tally/contracts/master-data-envelope.js';
 import { resolveLedgerStableId } from '../core/ledger-identity.js';
 import { isCountMetadata, normalizeName, normalizeText, slugify } from '../normalization/strings.js';
 import { normalizeAmount } from '../normalization/amounts.js';
@@ -23,6 +28,8 @@ import { resolveStockItemStableId } from '../core/stock-item-identity.js';
 export interface CollectionParseOptions {
   readonly nodeName: string;
   readonly skipUnderCmpInfo?: boolean;
+  /** When true, read entity nodes only from ENVELOPE/BODY/DATA/COLLECTION direct children. */
+  readonly scopeToRequestedCollection?: boolean;
 }
 
 export class CollectionEntityParser {
@@ -33,8 +40,27 @@ export class CollectionEntityParser {
   }
 
   parseNodes(document: ParsedXmlDocument, options: CollectionParseOptions): ParsedXmlNode[] {
-    const nodes = this.parser.findAll(document, options.nodeName);
+    const nodes = options.scopeToRequestedCollection
+      ? this.collectScopedEntityNodes(document, options.nodeName)
+      : this.parser.findAll(document, options.nodeName);
+    return this.filterEntityNodes(nodes, options);
+  }
+
+  /** Raw entity nodes under DATA/COLLECTION including placeholders and unnamed candidates. */
+  collectScopedCandidateNodes(document: ParsedXmlDocument, nodeName: string): ParsedXmlNode[] {
+    return this.collectScopedEntityNodes(document, nodeName);
+  }
+
+  private collectScopedEntityNodes(document: ParsedXmlDocument, nodeName: string): ParsedXmlNode[] {
+    const collections = findBodyDataCollections(document);
+    return collectDirectEntityNodes(collections, nodeName);
+  }
+
+  private filterEntityNodes(nodes: readonly ParsedXmlNode[], options: CollectionParseOptions): ParsedXmlNode[] {
     return nodes.filter((node) => {
+      if (isPlaceholderEntityNode(node, options.nodeName)) {
+        return false;
+      }
       const name = resolveNodeName(this.parser, node);
       if (!name || name.toUpperCase() === options.nodeName || isCountMetadata(name)) {
         return false;

@@ -3,6 +3,23 @@
  * Shapes are illustrative unless noted as derived from committed operational fixtures.
  */
 
+export const SYNTHETIC_HEADER_STATUS_ZERO_ONLY_RESPONSE = `<ENVELOPE>
+  <HEADER>
+    <STATUS>0</STATUS>
+  </HEADER>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <LEDGER NAME="Status Only Ledger">
+          <NAME>Status Only Ledger</NAME>
+          <PARENT>Cash-in-Hand</PARENT>
+          <GUID TYPE="String">status-only-guid-000000000001</GUID>
+        </LEDGER>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
 export const SYNTHETIC_TALLY_LINEERROR_RESPONSE = `<ENVELOPE>
   <HEADER>
     <STATUS>0</STATUS>
@@ -138,6 +155,68 @@ export function buildDuplicateGuidLedgerEnvelope(): string {
           <PARENT>Sundry Debtors</PARENT>
           <GUID TYPE="String">${guid}</GUID>
         </LEDGER>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+}
+
+export const SYNTHETIC_UNRELATED_STOCKITEM_IN_SUBTREE = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <OTHERDATA>
+          <STOCKITEM NAME="Shadow Item">
+            <NAME>Shadow Item</NAME>
+            <GUID TYPE="String">shadow-stock-guid-000000000001</GUID>
+            <BASEUNITS>Nos</BASEUNITS>
+          </STOCKITEM>
+        </OTHERDATA>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const SYNTHETIC_MISSING_COLLECTION_RESPONSE = `<ENVELOPE><BODY><DATA></DATA></BODY></ENVELOPE>`;
+
+export const SYNTHETIC_NON_XML_RESPONSE = 'Connection refused';
+
+export function buildUnrelatedLedgerOutsideCollectionEnvelope(): string {
+  return `<ENVELOPE>
+  <BODY>
+    <DESC>
+      <UNRELATED>
+        <LEDGER NAME="Outside Collection">
+          <NAME>Outside Collection</NAME>
+          <GUID TYPE="String">outside-guid-000000000001</GUID>
+        </LEDGER>
+      </UNRELATED>
+    </DESC>
+    <DATA>
+      <COLLECTION></COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+}
+
+export function buildDualCollectionLedgerEnvelope(): string {
+  return `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <LEDGER NAME="In First Collection">
+          <NAME>In First Collection</NAME>
+          <PARENT>Cash-in-Hand</PARENT>
+          <GUID TYPE="String">first-collection-guid-001</GUID>
+        </LEDGER>
+      </COLLECTION>
+      <COLLECTION>
+        <OTHERDATA>
+          <LEDGER NAME="Shadow Ledger">
+            <NAME>Shadow Ledger</NAME>
+            <GUID TYPE="String">shadow-guid-000000000002</GUID>
+          </LEDGER>
+        </OTHERDATA>
       </COLLECTION>
     </DATA>
   </BODY>

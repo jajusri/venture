@@ -862,7 +862,7 @@ No manual Content-Length checker added — runtime does not silently accept trun
 
 ## 20. Reliability Control #3 Phase B — inbound XML and migration safety (2026-07-24)
 
-**Status:** Complete (uncommitted)
+**Status:** Complete (committed `6ff0c0e`)
 
 **Type:** Deterministic inbound characterization + **narrow migration-gate fix**
 
@@ -957,3 +957,133 @@ No manual Content-Length checker added — runtime does not silently accept trun
 - Reliability Control #3 **not fully complete**
 
 **Verdict:** **SAFE TO COMMIT MIGRATION SAFETY FIX** — migration gate + legacy coverage + tests/docs. Not unrestricted production approval.
+
+---
+
+## 21. Reliability Control #3 Phase C — operation-specific ledger/stock response contracts (2026-07-24)
+
+**Status:** Complete (uncommitted)
+
+**Type:** Operation-specific inbound response contracts + scoped collection extraction
+
+**Requirement addressed:** Reliability Control #3 — ledger and stock-item extraction bypass envelope assessment; explicit Tally errors silently become empty success; tree-wide entity lookup accepts unrelated subtrees
+
+### Valid response shapes identified (repository evidence)
+
+**Request path (both):** `ENVELOPE/HEADER` → `ENVELOPE/BODY/DESC/STATICVARIABLES` + TDL `COLLECTION[@ISMODIFY="Yes"]/ADD Fetch : …`
+
+**Ledger response:** `ENVELOPE/BODY/DATA/COLLECTION/LEDGER[*]` with `NAME`, `PARENT`, `GUID`, `ALTERID`, `MASTERID`, balances, `ISBILLWISEON`
+Evidence: `test/helpers/master-data-fixtures.ts` (`SAMPLE_LEDGERS_RESPONSE`), live validation referenced in milestone docs
+
+**Stock response:** `ENVELOPE/BODY/DATA/COLLECTION/STOCKITEM[*]` with `NAME`, `GUID`, `ALTERID`, `PARENT`, `BASEUNITS`, etc.
+Evidence: `SAMPLE_STOCK_ITEMS_RESPONSE`
+
+**Company/groups (existing, unchanged):** same outer envelope; entity nodes under `DATA/COLLECTION`
+
+### Real versus synthetic error evidence
+
+| Evidence | Source | Notes |
+|----------|--------|-------|
+| Valid rich ledger/stock envelopes | `master-data-fixtures.ts` | **Committed** operational-style fixtures |
+| `LINEERROR` | `inbound-xml-fixtures.ts` | **Synthetic** — explicit error classifier; drives blocking `TALLY_ERROR` |
+| `LINEERROR` + paired `HEADER/STATUS=0` | `SYNTHETIC_TALLY_LINEERROR_RESPONSE` | **Synthetic** — STATUS recorded as optional `associatedHeaderStatusZero` metadata only |
+| Standalone `HEADER/STATUS=0` | `SYNTHETIC_HEADER_STATUS_ZERO_ONLY_RESPONSE` | **Synthetic** — **not** treated as proven Tally failure |
+| Wrong root / missing envelope | `inbound-xml-fixtures.ts` | Synthetic drift fixtures |
+| Live Tally error shape catalog | — | **Not committed** — standalone STATUS semantics unverified |
+
+**Failure classifier rule:** only explicit `LINEERROR` drives blocking `TALLY_ERROR`. Standalone `HEADER/STATUS` values are never treated as universally proven failures. Raw status payloads are not exposed.
+
+### Operation-specific contract design
+
+| Module | Version | Scope |
+|--------|---------|-------|
+| `ledger-master-data-contract.ts` | `1` | Rich ledger master-data extraction |
+| `stock-item-master-data-contract.ts` | `1` | Rich stock-item master-data extraction |
+| `master-data-envelope.ts` | shared | Structural path helpers, LINEERROR detection |
+
+**Status categories:** `SUCCESS`, `EMPTY`, `INCOMPLETE`, `MALFORMED`, `TALLY_ERROR`, `COLLECTION_MISSING`, `ALL_UNMAPPABLE`
+
+**Reason codes (privacy-safe):** `envelope_drift`, `tally_line_error`, `collection_missing`, `collection_empty`, `placeholder_only`, `all_entities_unmappable`, `partial_entities_dropped`, `shallow_export` (ledger)
+
+Optional LINEERROR metadata (not a standalone classifier): `associatedHeaderStatusZero: true`
+
+### Collection scoping algorithm
+
+**Exact boundary:** `ENVELOPE → BODY → DATA → direct COLLECTION children → direct LEDGER/STOCKITEM children`
+
+1. Locate `ENVELOPE → BODY → DATA`
+2. Collect **all direct child** `COLLECTION` nodes under `DATA` (named collection identity is **not** independently proven when Tally provides no trustworthy collection marker)
+3. Read only **direct child** `LEDGER` / `STOCKITEM` nodes from those collections
+4. Ignore entity nodes in unrelated subtrees (`OTHERDATA`, `DESC`, nested non-entity wrappers)
+5. Filter placeholder/count-metadata entity nodes via `isCountMetadata` / `isPlaceholderEntityNode`
+
+Tree-wide `findAll` is **not** used for ledger/stock contract paths. Non-contract extractors unchanged.
+
+**Remaining scoping limitation:** operation/entity-type scoping is enforced; named collection identity is not independently proven where response metadata does not provide it.
+
+### Aggregate extraction metrics (privacy-safe)
+
+`candidateNodeCount`, `mappedRecordCount`, `droppedRecordCount`, `missingIdentityCount`, `duplicateIdentityCount`, `conflictingIdentityCount`, `collectionPresent`, `placeholderOnlyCollection`
+
+Attached to `ExtractionResult` for ledger/stock contract paths. No record values in metrics or typed errors.
+
+### Empty / missing / error policy
+
+| Condition | Ledger normal sync | Stock normal sync | Ledger migration |
+|-----------|-------------------|-------------------|------------------|
+| Valid empty collection | Complete, no deletion | Complete, no deletion | Existing non-empty/complete gates unchanged (`6ff0c0e`) |
+| Missing `DATA/COLLECTION` | Fail 502, no mutation | Fail 502, no mutation | Unchanged |
+| Explicit `LINEERROR` | Fail 502, no mutation | Fail 502, no mutation | Unchanged |
+| All entities unmappable / shallow | Fail 502, no mutation | Fail 502, no mutation | Unchanged |
+| Partial malformed subset | Accept INCOMPLETE + warnings | Accept INCOMPLETE + warnings | Unchanged |
+
+### Production files changed
+
+| File | Change |
+|------|--------|
+| `src/tally/contracts/master-data-envelope.ts` | Shared envelope path + LINEERROR helpers |
+| `src/tally/contracts/ledger-master-data-contract.ts` | Ledger operation contract |
+| `src/tally/contracts/stock-item-master-data-contract.ts` | Stock operation contract |
+| `src/extraction/parsers/master-data-extraction-metrics.ts` | Aggregate counters |
+| `src/extraction/parsers/entity-mappers.ts` | Scoped collection parsing option |
+| `src/extraction/core/types.ts` | Contract summary + metrics on `ExtractionResult` |
+| `src/extraction/extractors/master-data-extractor.ts` | Contract-aware extraction for ledger/stock |
+| `src/extraction/extractors/extractor-registry.ts` | Enable contracts on ledgers/stockItems |
+
+### Tests added
+
+| Suite | Count |
+|-------|-------|
+| `test/unit/tally/ledger-master-data-contract.test.ts` | 16 |
+| `test/unit/tally/stock-item-master-data-contract.test.ts` | 10 |
+| `test/unit/extraction/master-data-extractor-contract.test.ts` | 11 |
+| `test/integration/master-data-contract-sync.test.ts` | 5 |
+| `test/helpers/inbound-xml-fixtures.ts` | extended |
+
+Prior Phase B characterization tests retained (`master-data-response-contract.test.ts`) — document pre-contract behavior; do not claim production fixes.
+
+### Validation
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` | PASS |
+| `npm run build` | PASS |
+| New ledger/stock contract + extractor + sync suites | **42/42 PASS** |
+| Migration safety + identity | **16/16 PASS** |
+| TD-006 + atomicity + concurrency + diagnostics | **47/47 PASS** |
+| Architecture boundaries | **12/12 PASS** |
+| Full connector suite | **520/520 PASS** |
+
+### Remaining Reliability Control #3 limitations
+
+- Generic parser still accepts trailing junk; no node-depth/count limits
+- Standalone `HEADER/STATUS` semantics not live-confirmed; only `LINEERROR` is a blocking classifier
+- Named collection identity not independently proven when Tally omits trustworthy collection markers
+- Broader live Tally error-shape catalogue not committed
+- Global Tally semantic completeness cannot be proven
+- Renamed-ledger controlled remediation still manual before automatic migration
+- Stock full quality model not redesigned (minimum collection assessment only)
+- Non-contract extractor paths still lack aggregate drop accounting
+- Reliability Control #3 **not fully complete**
+
+**Verdict:** **SAFE TO COMMIT OPERATION CONTRACTS** — subject to live error-shape evidence for standalone STATUS semantics. Not unrestricted production approval.

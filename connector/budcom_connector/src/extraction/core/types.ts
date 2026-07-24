@@ -191,8 +191,27 @@ export interface ExtractorDiagnostics {
   readonly failedExtractions: number;
 }
 
+export interface MasterDataContractSummary {
+  readonly contractVersion: string;
+  readonly status: string;
+  readonly reasonCode?: string;
+  readonly blocking: boolean;
+  readonly dataQualityStatus?: DataQualityStatus;
+}
+
 export interface ExtractionResult<T> {
   readonly items: readonly T[];
   readonly durationMs: number;
   readonly rawByteLength: number;
+  readonly contract?: MasterDataContractSummary;
+  readonly extractionMetrics?: {
+    readonly candidateNodeCount: number;
+    readonly mappedRecordCount: number;
+    readonly droppedRecordCount: number;
+    readonly missingIdentityCount: number;
+    readonly duplicateIdentityCount: number;
+    readonly conflictingIdentityCount: number;
+    readonly collectionPresent: boolean;
+    readonly placeholderOnlyCollection: boolean;
+  };
 }

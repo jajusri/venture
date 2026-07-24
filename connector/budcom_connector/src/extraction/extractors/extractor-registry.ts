@@ -65,6 +65,7 @@ export function createMasterDataExtractorRegistry(deps: {
       operationId: ApprovedOperationId.Ledgers,
       nodeName: 'LEDGER',
       mapNode: mapLedger,
+      masterDataContract: 'ledger',
     }),
     stockGroups: create({
       entityType: MasterDataEntityType.StockGroup,
@@ -83,6 +84,7 @@ export function createMasterDataExtractorRegistry(deps: {
       operationId: ApprovedOperationId.StockItems,
       nodeName: 'STOCKITEM',
       mapNode: mapStockItem,
+      masterDataContract: 'stock-item',
     }),
     godowns: create({
       entityType: MasterDataEntityType.Godown,
