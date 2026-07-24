@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import { asyncHandler } from '../../infrastructure/errors/error-handler.js';
+import { sanitizeExtractorDiagnostics } from '../../diagnostics/diagnostic-allowlist.js';
 import { parsePaginationParams } from '../../extraction/core/pagination.js';
 import { MasterDataEntityType } from '../../extraction/core/types.js';
 import type { MasterDataService } from '../../services/extraction/master-data.service.js';
@@ -124,7 +125,10 @@ export function createMasterDataRouter(masterData: MasterDataService): Router {
     asyncHandler(async (req, res) => {
       const entityType = req.query.entityType as MasterDataEntityType | undefined;
       const diagnostics = masterData.getExtractorDiagnostics(entityType);
-      res.status(200).json({ schemaVersion: '1.0.0', extractors: diagnostics });
+      res.status(200).json({
+        schemaVersion: '1.0.0',
+        extractors: sanitizeExtractorDiagnostics(diagnostics),
+      });
     }),
   );
 

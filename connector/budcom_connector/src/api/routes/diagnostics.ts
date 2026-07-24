@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import { asyncHandler } from '../../infrastructure/errors/error-handler.js';
+import { sanitizeConnectionDiagnostic } from '../../diagnostics/diagnostic-allowlist.js';
 import type { TallyDiagnosticsService } from '../../services/interfaces/tally-diagnostics.js';
 
 export function createDiagnosticsRouter(tallyDiagnostics: TallyDiagnosticsService): Router {
@@ -12,7 +13,7 @@ export function createDiagnosticsRouter(tallyDiagnostics: TallyDiagnosticsServic
       const diagnostics = tallyDiagnostics.getConnectionDiagnostics();
       res.status(200).json({
         schemaVersion: '1.0.0',
-        connection: diagnostics,
+        connection: sanitizeConnectionDiagnostic(diagnostics),
       });
     }),
   );

@@ -30,7 +30,7 @@ The project accepts:
 - Pre-flight checks use configuration and capability probing rather than fixed assumptions about process name, port, release, or XML shape.
 - WAL mode can support SQLite operation but is not itself a crash-recovery design.
 - XML normalization must be deterministic and must never silently alter accounting meaning.
-- Diagnostics use an allowlist and exclude identifiable customer, company, voucher, tax, and financial data.
+- Diagnostics use an allowlist and exclude identifiable customer, company, voucher, tax, and financial data. **Reliability Step 3 (2026-07-24):** restored on current `main` from stash; desktop export/clipboard/summary and connector diagnostic API fields use explicit allowlist DTOs including a field-selected configuration mapper (`SafeDiagnosticConfigurationV1`); serialized absence and exact-key tests passing (21 desktop + 8 connector unit tests); on-disk logs and non-export UI remain a known partial gap. GUID-first ledger remediation at `dfb4720` is separate scope.
 - Company isolation is mandatory, but this decision does not prescribe a database-per-company topology.
 - Code signing is a release decision; EV signing must not block MVP progress.
 - Obfuscation is not a security boundary.

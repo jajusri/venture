@@ -300,9 +300,9 @@ export function renderDiagnostics(snapshot: DiagnosticsSnapshot, message?: strin
   setText('diag-pid', snapshot.connectorPid === null ? '—' : String(snapshot.connectorPid));
   setText('diag-health', `${snapshot.healthStatus} (reachable=${snapshot.healthReachable})`);
   setText('diag-last-health', snapshot.lastSuccessfulHealthCheck ?? '—');
-  setText('diag-session', snapshot.sessionSummary);
+  setText('diag-session', snapshot.sessionDisplayLabel);
   setText('diag-config-status', `${snapshot.configStatus} · ${snapshot.configSource}`);
-  setText('diag-log-file', snapshot.logFilePath ?? 'unavailable');
+  setText('diag-log-file', snapshot.logFile.available ? (snapshot.logFile.basename ?? 'available') : 'unavailable');
   renderLogList('diag-lifecycle-events', snapshot.recentLifecycleEvents);
   renderLogList('diag-recent-errors', snapshot.recentErrors);
   if (message) {

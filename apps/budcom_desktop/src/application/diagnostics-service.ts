@@ -6,13 +6,21 @@ import type { ConnectorLifecycleService } from './connector-lifecycle-service.js
 import type { DashboardService } from './dashboard-service.js';
 import type { DesktopConfigStore } from './desktop-config-store.js';
 import type { ResolvedDesktopConfig } from './desktop-config-resolver.js';
-import { sanitizeConfigForExport, stripEnvironmentVariables } from './log-redaction.js';
+import {
+  buildSafeDiagnosticBundle,
+  buildSafeSessionDisplay,
+  formatSafeDiagnosticSummary,
+  mapUnknownErrorToSafeDiagnostic,
+  sanitizeDiagnosticLogEntries,
+  sanitizeDiagnosticLogFileRef,
+  serializeSafeDiagnosticBundle,
+} from './diagnostic-allowlist.js';
 import {
   getConnectorNetworkExposure,
   getConnectorNetworkExposureWarning,
 } from './connector-network-binding.js';
 import type { LogService } from './log-service.js';
-import type { DiagnosticsExportResult, DiagnosticsSnapshot } from './types.js';
+import type { DiagnosticsExportResult, DiagnosticsSnapshot, SessionDisplayStatus } from './types.js';
 
 export interface DiagnosticsServiceOptions {
   readonly desktopVersion: string;
@@ -67,6 +75,13 @@ export class DiagnosticsService {
       : lifecycle.externalProcessDetected
         ? 'external'
         : 'none';
+    const selectedCompanyPresent =
+      dashboard.sessionStatus !== 'NO_COMPANY_SELECTED' && dashboard.companyName !== '—';
+    const session = buildSafeSessionDisplay(dashboard.sessionStatus, selectedCompanyPresent);
+    const logFile = sanitizeDiagnosticLogFileRef(
+      this.logService.getLogFilePath(),
+      this.logService.isFileLoggingAvailable(),
+    );
 
     return {
       generatedAt: new Date().toISOString(),
@@ -91,105 +106,102 @@ export class DiagnosticsService {
       healthReachable: dashboard.connectorReachable,
       lastSuccessfulHealthCheck: lifecycle.lastSuccessfulHealthCheck,
       tallyReachable: dashboard.connectorReachable ? dashboard.healthStatus.includes('ok') ? true : null : null,
-      sessionSummary: `${dashboard.sessionStatus} · ${dashboard.companyName}`,
+      sessionStatus: session.status as SessionDisplayStatus,
+      selectedCompanyPresent: session.selectedCompanyPresent,
+      sessionDisplayLabel: session.displayLabel,
       configSource: Object.keys(this.resolvedConfig.sources).length > 0 ? 'mixed' : 'persisted/default',
       configStatus: this.configStatus,
-      logFilePath: this.logService.getLogFilePath(),
-      fileLoggingAvailable: this.logService.isFileLoggingAvailable(),
-      recentLifecycleEvents: this.logService.getLifecycleEvents(),
-      recentErrors: this.logService.getRecentErrors(),
+      logFile,
+      fileLoggingAvailable: logFile.available,
+      recentLifecycleEvents: sanitizeDiagnosticLogEntries(this.logService.getLifecycleEvents()),
+      recentErrors: sanitizeDiagnosticLogEntries(this.logService.getRecentErrors()),
     };
   }
 
   formatSummary(snapshot: DiagnosticsSnapshot): string {
-    return [
-      'Budcom Desktop Diagnostics Summary',
-      `Generated: ${snapshot.generatedAt}`,
-      `Desktop: ${snapshot.desktopVersion}`,
-      `Connector: ${snapshot.connectorVersion ?? 'unavailable'}`,
-      `Electron: ${snapshot.electronVersion}`,
-      `Node: ${snapshot.nodeVersion}`,
-      `OS: ${snapshot.platform} ${snapshot.osRelease} (${snapshot.architecture})`,
-      `Uptime: ${snapshot.uptimeSeconds}s`,
-      `Connector URL: ${snapshot.connectorBaseUrl}`,
-      `Connector bind host: ${snapshot.connectorBindHost} (${snapshot.connectorNetworkExposure})`,
-      snapshot.connectorNetworkExposureWarning
-        ? `Security warning: ${snapshot.connectorNetworkExposureWarning}`
-        : 'Connector network exposure: loopback-only (secure default).',
-      `Process State: ${snapshot.connectorProcessState}`,
-      `Ownership: ${snapshot.connectorOwnership}`,
-      `PID: ${snapshot.connectorPid ?? 'n/a'}`,
-      `Health: ${snapshot.healthStatus} (reachable=${snapshot.healthReachable})`,
-      `Session: ${snapshot.sessionSummary}`,
-      `Config: ${snapshot.configStatus}`,
-      `Log file: ${snapshot.logFilePath ?? 'unavailable'}`,
-    ].join('\n');
+    const bundle = buildSafeDiagnosticBundle({
+      generatedAt: snapshot.generatedAt,
+      desktopVersion: snapshot.desktopVersion,
+      connectorVersion: snapshot.connectorVersion,
+      electronVersion: snapshot.electronVersion,
+      nodeVersion: snapshot.nodeVersion,
+      platform: snapshot.platform,
+      osRelease: snapshot.osRelease,
+      architecture: snapshot.architecture,
+      uptimeSeconds: snapshot.uptimeSeconds,
+      connectorBaseUrl: snapshot.connectorBaseUrl,
+      connectorBindHost: snapshot.connectorBindHost,
+      connectorNetworkExposure: snapshot.connectorNetworkExposure,
+      connectorNetworkExposureWarning: snapshot.connectorNetworkExposureWarning,
+      connectorProcessState: snapshot.connectorProcessState,
+      connectorOwnership: snapshot.connectorOwnership,
+      connectorPid: snapshot.connectorPid,
+      healthStatus: snapshot.healthStatus,
+      healthReachable: snapshot.healthReachable,
+      lastSuccessfulHealthCheck: snapshot.lastSuccessfulHealthCheck,
+      tallyReachable: snapshot.tallyReachable,
+      sessionStatus: snapshot.sessionStatus,
+      selectedCompanyPresent: snapshot.selectedCompanyPresent,
+      configuration: {
+        effective: this.resolvedConfig.effective,
+        sources: this.resolvedConfig.sources,
+        status: snapshot.configStatus,
+      },
+      environment: process.env,
+      recentLifecycleEvents: snapshot.recentLifecycleEvents,
+      recentErrors: snapshot.recentErrors,
+      logFilePath: snapshot.logFile.basename,
+      fileLoggingAvailable: snapshot.fileLoggingAvailable,
+    });
+    return formatSafeDiagnosticSummary(bundle, snapshot.logFile);
   }
 
   async exportBundle(targetDir?: string): Promise<DiagnosticsExportResult> {
     try {
       const snapshot = await this.getSnapshot();
-      const timestamp = snapshot.generatedAt.replace(/[:.]/g, '-');
-      const bundleDir = targetDir ?? path.join(this.exportDir, `budcom-diagnostics-${timestamp}`);
-      this.fsImpl.mkdirSync(bundleDir, { recursive: true });
-
-      const bundle = {
-        bundleVersion: 1,
+      const bundle = buildSafeDiagnosticBundle({
         generatedAt: snapshot.generatedAt,
-        versions: {
-          desktop: snapshot.desktopVersion,
-          connector: snapshot.connectorVersion,
-          electron: snapshot.electronVersion,
-          node: snapshot.nodeVersion,
-        },
-        runtime: {
-          platform: snapshot.platform,
-          osRelease: snapshot.osRelease,
-          architecture: snapshot.architecture,
-          uptimeSeconds: snapshot.uptimeSeconds,
-        },
-        connector: {
-          baseUrl: snapshot.connectorBaseUrl,
-          bindHost: snapshot.connectorBindHost,
-          networkExposure: snapshot.connectorNetworkExposure,
-          networkExposureWarning: snapshot.connectorNetworkExposureWarning,
-          processState: snapshot.connectorProcessState,
-          ownership: snapshot.connectorOwnership,
-          pid: snapshot.connectorPid,
-          healthStatus: snapshot.healthStatus,
-          healthReachable: snapshot.healthReachable,
-          lastSuccessfulHealthCheck: snapshot.lastSuccessfulHealthCheck,
-        },
-        session: {
-          summary: snapshot.sessionSummary,
-        },
-        configuration: sanitizeConfigForExport({
+        desktopVersion: snapshot.desktopVersion,
+        connectorVersion: snapshot.connectorVersion,
+        electronVersion: snapshot.electronVersion,
+        nodeVersion: snapshot.nodeVersion,
+        platform: snapshot.platform,
+        osRelease: snapshot.osRelease,
+        architecture: snapshot.architecture,
+        uptimeSeconds: snapshot.uptimeSeconds,
+        connectorBaseUrl: snapshot.connectorBaseUrl,
+        connectorBindHost: snapshot.connectorBindHost,
+        connectorNetworkExposure: snapshot.connectorNetworkExposure,
+        connectorNetworkExposureWarning: snapshot.connectorNetworkExposureWarning,
+        connectorProcessState: snapshot.connectorProcessState,
+        connectorOwnership: snapshot.connectorOwnership,
+        connectorPid: snapshot.connectorPid,
+        healthStatus: snapshot.healthStatus,
+        healthReachable: snapshot.healthReachable,
+        lastSuccessfulHealthCheck: snapshot.lastSuccessfulHealthCheck,
+        tallyReachable: snapshot.tallyReachable,
+        sessionStatus: snapshot.sessionStatus,
+        selectedCompanyPresent: snapshot.selectedCompanyPresent,
+        configuration: {
           effective: this.resolvedConfig.effective,
           sources: this.resolvedConfig.sources,
           status: snapshot.configStatus,
-        }),
-        environment: stripEnvironmentVariables(process.env),
-        logs: {
-          recentLifecycleEvents: snapshot.recentLifecycleEvents,
-          recentErrors: snapshot.recentErrors,
         },
-        exclusions: [
-          'passwords',
-          'tokens',
-          'license secrets',
-          'full tally xml payloads',
-          'customer ledger data',
-          'voucher data',
-          'personal or financial records',
-          'arbitrary environment variables',
-        ],
-      };
-
+        environment: process.env,
+        recentLifecycleEvents: snapshot.recentLifecycleEvents,
+        recentErrors: snapshot.recentErrors,
+        logFilePath: snapshot.logFile.basename,
+        fileLoggingAvailable: snapshot.fileLoggingAvailable,
+      });
+      const serialized = serializeSafeDiagnosticBundle(bundle);
+      const timestamp = snapshot.generatedAt.replace(/[:.]/g, '-');
+      const bundleDir = targetDir ?? path.join(this.exportDir, `budcom-diagnostics-${timestamp}`);
+      this.fsImpl.mkdirSync(bundleDir, { recursive: true });
       const bundlePath = path.join(bundleDir, 'diagnostics-bundle.json');
-      this.fsImpl.writeFileSync(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`, 'utf8');
+      this.fsImpl.writeFileSync(bundlePath, serialized.json, 'utf8');
       this.logService.appendStructured({
         level: 'information',
-        message: `Diagnostics bundle exported to ${bundlePath}`,
+        message: `Diagnostics bundle exported (${serialized.truncated ? 'truncated' : 'complete'})`,
         event: 'diagnostics_exported',
         component: 'diagnostics',
       });
@@ -200,16 +212,17 @@ export class DiagnosticsService {
         bundlePath,
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const safe = mapUnknownErrorToSafeDiagnostic(error, 'diagnostics_export');
       this.logService.appendStructured({
         level: 'error',
-        message: `Diagnostics export failed: ${message}`,
+        message: `Diagnostics export failed: ${safe.message}`,
         event: 'diagnostics_export_failed',
         component: 'diagnostics',
+        metadata: { errorCode: safe.code },
       });
       return {
         ok: false,
-        message,
+        message: safe.message,
         bundlePath: null,
       };
     }

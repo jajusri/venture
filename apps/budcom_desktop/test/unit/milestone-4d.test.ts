@@ -176,8 +176,13 @@ describe('diagnostics service', () => {
     });
     const result = await service.exportBundle();
     expect(result.ok).toBe(true);
-    const bundle = JSON.parse(fs.readFileSync(result.bundlePath!, 'utf8')) as { exclusions: string[] };
-    expect(bundle.exclusions.length).toBeGreaterThan(0);
+    const bundle = JSON.parse(fs.readFileSync(result.bundlePath!, 'utf8')) as {
+      privacyPolicy: { allowlistVersion: number };
+      session: { displayLabel: string; selectedCompanyPresent: boolean };
+    };
+    expect(bundle.privacyPolicy.allowlistVersion).toBe(1);
+    expect(bundle.session.displayLabel).toContain('no company selected');
+    expect(bundle.session.selectedCompanyPresent).toBe(false);
     expect(sanitizeConfigForExport({ token: 'secret' }).token).toBe('[REDACTED]');
   });
 });

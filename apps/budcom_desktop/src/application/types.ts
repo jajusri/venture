@@ -1,4 +1,6 @@
 /** Connector `/health` response subset used by the desktop shell. */
+import type { SafeDiagnosticLogEntry } from './diagnostic-allowlist.js';
+
 export interface HealthResponse {
   readonly status: 'ok' | 'degraded' | 'unavailable';
   readonly schemaVersion: string;
@@ -217,13 +219,20 @@ export interface DiagnosticsSnapshot {
   readonly healthReachable: boolean;
   readonly lastSuccessfulHealthCheck: string | null;
   readonly tallyReachable: boolean | null;
-  readonly sessionSummary: string;
+  readonly sessionStatus: SessionDisplayStatus;
+  readonly selectedCompanyPresent: boolean;
+  /** Privacy-safe session label without company names (e.g. "ACTIVE · company selected"). */
+  readonly sessionDisplayLabel: string;
   readonly configSource: string;
   readonly configStatus: string;
-  readonly logFilePath: string | null;
+  readonly logFile: {
+    readonly category: 'desktop-log';
+    readonly basename: string | null;
+    readonly available: boolean;
+  };
   readonly fileLoggingAvailable: boolean;
-  readonly recentLifecycleEvents: readonly LogEntry[];
-  readonly recentErrors: readonly LogEntry[];
+  readonly recentLifecycleEvents: readonly SafeDiagnosticLogEntry[];
+  readonly recentErrors: readonly SafeDiagnosticLogEntry[];
 }
 
 export interface DiagnosticsExportResult {
