@@ -16,7 +16,7 @@ const ALLOWED_SORT_FIELDS = new Set(['name', 'parentGroup', 'closingBalance', 's
 export class SqliteLedgerRepository implements LedgerRepositoryPort {
   constructor(private readonly database: SqliteDatabase) {}
 
-  upsertMany(companyId: string, ledgers: readonly LedgerDetails[]): Promise<void> {
+  async upsertMany(companyId: string, ledgers: readonly LedgerDetails[]): Promise<void> {
     const db = this.database.getDatabase();
     const now = new Date().toISOString();
     const stmt = db.prepare(`
@@ -53,17 +53,19 @@ export class SqliteLedgerRepository implements LedgerRepositoryPort {
         updated_at = excluded.updated_at
     `);
 
-    db.exec('BEGIN IMMEDIATE');
-    try {
+    const writeAll = (): void => {
       for (const ledger of ledgers) {
         stmt.run(toRow(companyId, ledger, now));
       }
-      db.exec('COMMIT');
-    } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
+    };
+
+    // Join ambient sync-batch transaction when present; otherwise own a short sync TX.
+    // Standalone callers (migration/tests) require synchronous completion.
+    if (this.database.isInTransaction()) {
+      writeAll();
+      return;
     }
-    return Promise.resolve();
+    this.database.runInTransactionSync(writeAll);
   }
 
   insert(companyId: string, ledger: LedgerDetails): Promise<void> {

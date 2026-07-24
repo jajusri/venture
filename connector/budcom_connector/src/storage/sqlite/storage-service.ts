@@ -83,6 +83,16 @@ export class SqliteStorageService implements LocalDatabaseService {
     return this.bundle;
   }
 
+  /**
+   * Runs work in one SQLite transaction on the shared connection used by
+   * ledger/stock repositories and SyncRunRepository.
+   * Used to commit domain upserts with their sync-run checkpoint atomically.
+   * Outermost callbacks are serialized; nested joins are ALS-scoped.
+   */
+  runInTransaction<T>(fn: () => T): Promise<T> {
+    return this.getBundle().database.runInTransaction(fn);
+  }
+
   getStorageStatus(): StorageStatus {
     if (!this.bundle) {
       return {

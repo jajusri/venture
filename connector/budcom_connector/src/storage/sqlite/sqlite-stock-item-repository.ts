@@ -16,7 +16,7 @@ const ALLOWED_SORT_FIELDS = new Set(['name', 'parentGroup', 'category', 'baseUni
 export class SqliteStockItemRepository implements StockItemRepositoryPort {
   constructor(private readonly database: SqliteDatabase) {}
 
-  upsertMany(companyId: string, items: readonly StockItemDetails[]): Promise<void> {
+  async upsertMany(companyId: string, items: readonly StockItemDetails[]): Promise<void> {
     const db = this.database.getDatabase();
     const now = new Date().toISOString();
     const stmt = db.prepare(`
@@ -55,17 +55,19 @@ export class SqliteStockItemRepository implements StockItemRepositoryPort {
         updated_at = excluded.updated_at
     `);
 
-    db.exec('BEGIN IMMEDIATE');
-    try {
+    const writeAll = (): void => {
       for (const item of items) {
         stmt.run(toRow(companyId, item, now));
       }
-      db.exec('COMMIT');
-    } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
+    };
+
+    // Join ambient sync-batch transaction when present; otherwise own a short sync TX.
+    // Standalone callers (tests) require synchronous completion.
+    if (this.database.isInTransaction()) {
+      writeAll();
+      return;
     }
-    return Promise.resolve();
+    this.database.runInTransactionSync(writeAll);
   }
 
   insert(companyId: string, item: StockItemDetails): Promise<void> {

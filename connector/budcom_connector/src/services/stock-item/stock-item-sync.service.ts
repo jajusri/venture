@@ -281,22 +281,31 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
           lastId = item.id;
         }
 
-        if (toUpsert.length > 0) {
-          await this.repository.upsertMany(companyId, toUpsert);
+        // Atomic batch: domain upserts + checkpoint counters commit together or roll back together.
+        // Run creation and terminal status updates remain outside this boundary (deliberate).
+        const currentRun = this.activeRun;
+        if (!currentRun) {
+          throw new AppError(ErrorCodes.INTERNAL_ERROR, 'Stock item sync run missing during batch commit.', 500);
         }
-
-        this.activeRun = {
-          ...this.activeRun!,
-          processed: this.activeRun!.processed + batch.length,
-          inserted: this.activeRun!.inserted + batchInserted,
-          updated: this.activeRun!.updated + batchUpdated,
-          skipped: this.activeRun!.skipped + batchSkipped,
+        const nextRun: StockItemSyncRunRecord = {
+          ...currentRun,
+          processed: currentRun.processed + batch.length,
+          inserted: currentRun.inserted + batchInserted,
+          updated: currentRun.updated + batchUpdated,
+          skipped: currentRun.skipped + batchSkipped,
           lastProcessedId: lastId,
           updatedAt: new Date().toISOString(),
         };
-        this.syncRuns.updateRun(this.activeRun);
+        await this.storage.runInTransaction(() => {
+          if (toUpsert.length > 0) {
+            // Joins ambient TX synchronously (SQLite adapter must not await inside the batch).
+            void this.repository.upsertMany(companyId, toUpsert);
+          }
+          this.syncRuns.updateRun(nextRun);
+        });
+        this.activeRun = nextRun;
         this.progress = toProgress(
-          this.activeRun,
+          nextRun,
           this.storage.getStorageStatus().migrationStatus,
           Date.now() - startedAt,
         );

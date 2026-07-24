@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import type { DatabaseSync } from './node-sqlite.js';
@@ -10,8 +11,24 @@ export interface SqliteDatabaseOptions {
   readonly readonly?: boolean;
 }
 
+interface TransactionStore {
+  readonly id: symbol;
+}
+
 export class SqliteDatabase {
   private db: DatabaseSync | null = null;
+  /**
+   * Outermost transaction callbacks on this connection are serialized via an
+   * async mutex. Nested joins are scoped with AsyncLocalStorage so unrelated
+   * async callers never observe another job's ambient transaction.
+   *
+   * The BEGIN/COMMIT body is synchronous: node:sqlite DatabaseSync does not
+   * allow awaiting between BEGIN and COMMIT on the same connection.
+   */
+  private static readonly transactionAls = new AsyncLocalStorage<TransactionStore>();
+  private transactionMutex: Promise<void> = Promise.resolve();
+  private mutexHeld = false;
+  private concurrencyTestHook: (() => Promise<void>) | null = null;
 
   constructor(private readonly options: SqliteDatabaseOptions) {}
 
@@ -56,6 +73,92 @@ export class SqliteDatabase {
 
   isOpen(): boolean {
     return this.db !== null;
+  }
+
+  /**
+   * Testing only: awaited after mutex acquisition and before BEGIN.
+   * Used to prove unrelated callers queue instead of joining.
+   */
+  setConcurrencyTestHook(hook: (() => Promise<void>) | null): void {
+    this.concurrencyTestHook = hook;
+  }
+
+  /**
+   * True only inside the current async execution's owning transaction callback.
+   * Unrelated concurrent callers must not see another job's transaction as active.
+   */
+  isInTransaction(): boolean {
+    return SqliteDatabase.transactionAls.getStore() !== undefined;
+  }
+
+  /**
+   * Runs work in a single BEGIN IMMEDIATE / COMMIT boundary.
+   * Outermost callbacks are serialized on this connection (async mutex).
+   * Nested calls from the same async context join the owner (no nested BEGIN).
+   * Unrelated async callers never join; they wait for the owner to finish.
+   *
+   * `fn` must be synchronous: DatabaseSync transactions cannot span awaits.
+   */
+  async runInTransaction<T>(fn: () => T): Promise<T> {
+    if (SqliteDatabase.transactionAls.getStore()) {
+      return fn();
+    }
+
+    let release!: () => void;
+    const previous = this.transactionMutex;
+    this.transactionMutex = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+
+    this.mutexHeld = true;
+    try {
+      if (this.concurrencyTestHook) {
+        await this.concurrencyTestHook();
+      }
+      return this.executeSynchronousTransaction(fn);
+    } finally {
+      this.mutexHeld = false;
+      release();
+    }
+  }
+
+  /**
+   * Synchronous transaction for standalone repository writes (e.g. migration).
+   * Joins an ambient ALS transaction when present.
+   * Refuses to start while an async transaction slot is held, so SQL cannot
+   * interleave on the shared DatabaseSync connection.
+   */
+  runInTransactionSync<T>(fn: () => T): T {
+    if (SqliteDatabase.transactionAls.getStore()) {
+      return fn();
+    }
+    if (this.mutexHeld) {
+      throw new Error(
+        'Cannot start a synchronous SQLite transaction while another async transaction holds this connection.',
+      );
+    }
+    return this.executeSynchronousTransaction(fn);
+  }
+
+  private executeSynchronousTransaction<T>(fn: () => T): T {
+    const db = this.getDatabase();
+    const store: TransactionStore = { id: Symbol('sqlite-tx') };
+    return SqliteDatabase.transactionAls.run(store, () => {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const result = fn();
+        db.exec('COMMIT');
+        return result;
+      } catch (error) {
+        try {
+          db.exec('ROLLBACK');
+        } catch {
+          // Connection may already be aborted.
+        }
+        throw error;
+      }
+    });
   }
 
   private runMigrations(): void {
