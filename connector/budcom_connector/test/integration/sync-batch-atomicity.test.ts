@@ -7,7 +7,7 @@ import type { CompanyResolver } from '../../src/services/extraction/company-reso
 import { LedgerSyncServiceImpl } from '../../src/services/ledger/ledger-sync.service.js';
 import { StockItemSyncServiceImpl } from '../../src/services/stock-item/stock-item-sync.service.js';
 import type { SyncRunRepository } from '../../src/storage/sqlite/sync-run-repository.js';
-import { sampleNormalizedLedger } from '../helpers/ledger-fixtures.js';
+import { sampleLedgerDetails, sampleNormalizedLedger } from '../helpers/ledger-fixtures.js';
 import { createPermissiveSessionMock } from '../helpers/session-mock.js';
 import { sampleNormalizedStockItem } from '../helpers/stock-item-fixtures.js';
 import {
@@ -67,15 +67,15 @@ function installCheckpointFault(syncRuns: SyncRunRepository): { arm: () => void 
   };
 }
 
+const CASH_LEDGER = sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' });
+const BANK_LEDGER = sampleNormalizedLedger({ name: 'Bank', normalizedName: 'bank' });
+
 describe('sync batch atomicity (Reliability Step 1)', () => {
   it('commits ledger data and checkpoint together on success', async () => {
     const { storage, basePath } = await createTestSqliteStorage();
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
-        items: [
-          sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' }),
-          sampleNormalizedLedger({ id: 'bank', name: 'Bank', normalizedName: 'bank' }),
-        ],
+        items: [CASH_LEDGER, BANK_LEDGER],
         durationMs: 1,
         rawByteLength: 100,
       })),
@@ -140,7 +140,7 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
 
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
-        items: [sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' })],
+        items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
         rawByteLength: 50,
       })),
@@ -203,7 +203,7 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
 
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
-        items: [sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' })],
+        items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
         rawByteLength: 50,
       })),
@@ -263,8 +263,8 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
     fault.arm();
 
     const items = [
-      sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' }),
-      sampleNormalizedLedger({ id: 'bank', name: 'Bank', normalizedName: 'bank' }),
+      sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' }),
+      sampleNormalizedLedger({ name: 'Bank', normalizedName: 'bank' }),
     ];
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({ items, durationMs: 1, rawByteLength: 100 })),
@@ -292,7 +292,7 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
     const { storage, basePath } = await createTestSqliteStorage();
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
-        items: [sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' })],
+        items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
         rawByteLength: 50,
       })),
@@ -313,8 +313,8 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
     fault.arm();
     vi.mocked(readPort.readLedgers).mockImplementation(async () => ({
       items: [
-        sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' }),
-        sampleNormalizedLedger({ id: 'bank', name: 'Bank', normalizedName: 'bank' }),
+        sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' }),
+        sampleNormalizedLedger({ name: 'Bank', normalizedName: 'bank' }),
       ],
       durationMs: 1,
       rawByteLength: 100,
@@ -322,29 +322,20 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
 
     await expect(service.syncLedgers()).rejects.toThrow();
     expect(await storage.getBundle().ledgerRepository.countByCompany('estimation')).toBe(1);
-    expect(await storage.getBundle().ledgerRepository.findById('estimation', 'cash')).toBeTruthy();
-    expect(await storage.getBundle().ledgerRepository.findById('estimation', 'bank')).toBeNull();
+    expect(await storage.getBundle().ledgerRepository.findById('estimation', CASH_LEDGER.id)).toBeTruthy();
+    expect(await storage.getBundle().ledgerRepository.findById('estimation', BANK_LEDGER.id)).toBeNull();
   });
 
   it('keeps company isolation when a checkpoint fault rolls back one company batch', async () => {
     const { storage, basePath } = await createTestSqliteStorage();
-    await storage.getBundle().ledgerRepository.upsertMany('other-co', [
-      {
-        id: 'other',
-        name: 'Other',
-        normalizedName: 'other',
-        status: 'active',
-        balanceNature: 'unknown',
-        isDeleted: false,
-        syncedAt: '2026-01-01T00:00:00.000Z',
-      },
-    ]);
+    await storage.getBundle().ledgerRepository.upsertMany('other-co', [sampleLedgerDetails({ name: 'Other', normalizedName: 'other', balanceNature: 'unknown' })]);
+    await storage.getBundle().ledgerRepository.markLedgerIdentityCurrent('other-co');
 
     const fault = installCheckpointFault(storage.getBundle().syncRunRepository);
     fault.arm();
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
-        items: [sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' })],
+        items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
         rawByteLength: 50,
       })),
@@ -391,7 +382,7 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
       createTestConnectorConfig(basePath),
       createReadPort({
         readLedgers: vi.fn(async () => ({
-          items: [sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' })],
+          items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
           durationMs: 1,
           rawByteLength: 50,
         })),

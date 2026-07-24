@@ -10,12 +10,14 @@ import {
 
 function sampleLedger(overrides: Partial<LedgerDetails> = {}): LedgerDetails {
   return {
-    id: 'cash',
+    id: 'name:cash',
     name: 'Cash',
     normalizedName: 'cash',
     parentGroup: 'Cash-in-Hand',
     status: 'active',
     balanceNature: 'debit',
+    identitySource: 'name',
+    dataQuality: 'complete',
     isDeleted: false,
     syncedAt: '2026-01-01T00:00:00.000Z',
     ...overrides,
@@ -30,6 +32,15 @@ describe('validateLedgerCollection', () => {
     ]);
     expect(result.ok).toBe(false);
     expect(result.issues.some((issue) => issue.code === 'DUPLICATE_NAME')).toBe(true);
+  });
+
+  it('detects duplicate resolved IDs', () => {
+    const result = validateLedgerCollection([
+      sampleLedger({ id: 'guid:shared-id', guid: 'shared-id' }),
+      sampleLedger({ id: 'guid:shared-id', name: 'Bank', guid: 'shared-id' }),
+    ]);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((issue) => issue.code === 'DUPLICATE_RESOLVED_ID')).toBe(true);
   });
 
   it('detects duplicate GUID and AlterID', () => {

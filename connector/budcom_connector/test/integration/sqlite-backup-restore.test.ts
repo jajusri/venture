@@ -11,6 +11,7 @@ import { STORAGE_SCHEMA_VERSION } from '../../src/storage/sqlite/schema.js';
 import { SqliteDatabase } from '../../src/storage/sqlite/sqlite-database.js';
 import { SqliteStockItemRepository } from '../../src/storage/sqlite/sqlite-stock-item-repository.js';
 import { SqliteStorageService } from '../../src/storage/sqlite/storage-service.js';
+import { sampleLedgerDetails } from '../helpers/ledger-fixtures.js';
 import { sampleNormalizedAmount, sampleStockItemDetails } from '../helpers/stock-item-fixtures.js';
 import {
   cleanupTestSqliteStorage,
@@ -23,16 +24,7 @@ afterEach(async () => {
 });
 
 function sampleLedger(id: string, name: string): LedgerDetails {
-  return {
-    id,
-    name,
-    normalizedName: name.toLowerCase(),
-    status: 'active',
-    balanceNature: 'debit',
-    isDeleted: false,
-    syncedAt: '2026-01-01T00:00:00.000Z',
-    metadata: { source: 'test' },
-  };
+  return sampleLedgerDetails({ id, name, normalizedName: name.toLowerCase(), identitySource: 'name', metadata: { source: 'test' } });
 }
 
 describe('SQLite backup and restore drill', () => {

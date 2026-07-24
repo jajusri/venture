@@ -11,6 +11,7 @@ import { SqliteDatabase } from '../../../src/storage/sqlite/sqlite-database.js';
 import { SyncRunRepository } from '../../../src/storage/sqlite/sync-run-repository.js';
 import type { CompanyResolver } from '../../../src/services/extraction/company-resolver.js';
 import { createPermissiveSessionMock } from '../../helpers/session-mock.js';
+import { sampleNormalizedLedger } from '../../helpers/ledger-fixtures.js';
 import {
   cleanupTestSqliteStorage,
   createTestConnectorConfig,
@@ -31,7 +32,7 @@ describe('Ledger sync audit regressions', () => {
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
       readLedgers: vi.fn(async () => ({
-        items: [{ id: 'cash', name: 'Cash', normalizedName: 'cash' }],
+        items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
         rawByteLength: 100,
       })),

@@ -1,4 +1,5 @@
 import type { ParsedXmlDocument, ParsedXmlNode, TallyXmlResponseParser } from '../../tally/xml/response-parser.js';
+import { resolveLedgerStableId } from '../core/ledger-identity.js';
 import { isCountMetadata, normalizeName, normalizeText, slugify } from '../normalization/strings.js';
 import { normalizeAmount } from '../normalization/amounts.js';
 import { normalizeDate } from '../normalization/dates.js';
@@ -146,8 +147,13 @@ export function mapLedger(parser: CollectionEntityParser, node: ParsedXmlNode): 
   const closingText = parser.getChildText(node, 'CLOSINGBALANCE');
   const openingBalance = normalizeAmount(openingText);
   const closingBalance = normalizeAmount(closingText);
+  const guid = parser.getChildText(node, 'GUID');
+  const alterId = parser.getChildText(node, 'ALTERID');
+  const masterId = parser.getChildText(node, 'MASTERID');
+  const identity = resolveLedgerStableId({ guid, name });
+  const billWiseRaw = parser.getLogical(node, 'ISBILLWISEON');
   return {
-    id: slugify(name),
+    id: identity.id,
     name,
     normalizedName: normalizeName(name),
     alias: parser.getChildText(node, 'ALIAS'),
@@ -161,8 +167,11 @@ export function mapLedger(parser: CollectionEntityParser, node: ParsedXmlNode): 
       openingBalance?.side,
     ),
     status: resolveLedgerStatus(parser, node),
-    guid: parser.getChildText(node, 'GUID'),
-    alterId: parser.getChildText(node, 'ALTERID'),
+    guid: identity.guid ?? guid?.trim(),
+    alterId,
+    masterId: masterId?.trim() || undefined,
+    identitySource: identity.identitySource,
+    isBillWiseOn: billWiseRaw === undefined ? undefined : billWiseRaw,
     reservedName: parser.getChildText(node, 'RESERVEDNAME'),
     mailingName: parser.getChildText(node, 'MAILINGNAME'),
     address: parser.getChildText(node, 'ADDRESS'),

@@ -34,4 +34,11 @@ describe('MasterDataTemplates', () => {
     expect(xml).toContain('Fetch : GUID, ALTERID, NAME, PARENT, BASEUNITS');
     expect(xml).not.toContain('<DESC>List of Stock Items</DESC>');
   });
+
+  it('enriches ledgers collection with embedded read-only FETCH fields', () => {
+    const xml = builder.build(MasterDataTemplates.ledgers('ESTIMATION'));
+    expect(xml).toContain('<COLLECTION NAME="List of Ledgers" ISMODIFY="Yes">');
+    expect(xml).toContain('Fetch : NAME, PARENT, GUID, ALTERID, MASTERID, OPENINGBALANCE, CLOSINGBALANCE, ISBILLWISEON');
+    expect(xml).not.toContain('<DESC>List of Ledgers</DESC>');
+  });
 });

@@ -21,7 +21,7 @@ describe('entity mappers', () => {
     expect(groups[0]).toMatchObject({ name: 'Sundry Debtors', parentName: 'Current Assets' });
   });
 
-  it('maps ledgers with normalized balances', () => {
+  it('maps ledgers with normalized balances and GUID-first identity', () => {
     const document = collectionParser.parseDocument(SAMPLE_LEDGERS_RESPONSE);
     const nodes = collectionParser.parseNodes(document, { nodeName: 'LEDGER' });
     const ledgers = nodes.map((n) => mapLedger(collectionParser, n)).filter(Boolean);
@@ -31,6 +31,10 @@ describe('entity mappers', () => {
       side: 'Dr',
     });
     expect(ledgers[1]?.closingBalance?.side).toBe('Cr');
+    expect(ledgers[0]?.id).toBe('guid:aaaaaaaa-bbbb-cccc-dddd-000000000001');
+    expect(ledgers[0]?.masterId).toBe('2001');
+    expect(ledgers[0]?.isBillWiseOn).toBe(false);
+    expect(ledgers[1]?.isBillWiseOn).toBe(true);
   });
 
   it('handles unicode ledger names', () => {

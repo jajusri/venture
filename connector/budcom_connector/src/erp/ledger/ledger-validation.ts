@@ -3,6 +3,7 @@ import type { LedgerDetails } from './ledger-domain.js';
 export type LedgerValidationCode =
   | 'DUPLICATE_NAME'
   | 'DUPLICATE_GUID'
+  | 'DUPLICATE_RESOLVED_ID'
   | 'DUPLICATE_ALTER_ID'
   | 'INVALID_PARENT'
   | 'CIRCULAR_REFERENCE'
@@ -42,10 +43,23 @@ export function validateLedgerCollection(ledgers: readonly LedgerDetails[]): Led
   const names = new Map<string, string>();
   const guids = new Map<string, string>();
   const alterIds = new Map<string, string>();
+  const resolvedIds = new Map<string, string>();
   const parentMap = new Map<string, string | undefined>();
 
   for (const ledger of ledgers) {
     parentMap.set(ledger.id, ledger.parentGroup);
+
+    if (resolvedIds.has(ledger.id)) {
+      issues.push({
+        code: 'DUPLICATE_RESOLVED_ID',
+        field: 'id',
+        message: `Duplicate resolved ledger identity "${ledger.id}".`,
+        ledgerId: ledger.id,
+        severity: 'error',
+      });
+    } else {
+      resolvedIds.set(ledger.id, ledger.name);
+    }
 
     const nameKey = normalizeKey(ledger.name);
     if (names.has(nameKey)) {

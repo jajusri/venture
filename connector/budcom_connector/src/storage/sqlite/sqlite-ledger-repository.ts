@@ -7,8 +7,13 @@ import type {
   LedgerStatistics,
   LedgerSummary,
 } from '../../erp/ledger/ledger-domain.js';
-import type { LedgerRepositoryPort } from '../../services/ledger/ledger-repository.interface.js';
+import { isLegacyLedgerId, LEDGER_IDENTITY_VERSION } from '../../extraction/core/ledger-identity.js';
+import {
+  ledgerIdentityMetaKey,
+  parseLedgerIdentityVersion,
+} from '../../services/ledger/ledger-cache-migration.js';
 import { computeLedgerFingerprint } from '../../services/ledger/ledger-fingerprint.js';
+import type { LedgerRepositoryPort } from '../../services/ledger/ledger-repository.interface.js';
 import type { SqliteDatabase } from './sqlite-database.js';
 
 const ALLOWED_SORT_FIELDS = new Set(['name', 'parentGroup', 'closingBalance', 'syncedAt']);
@@ -22,12 +27,14 @@ export class SqliteLedgerRepository implements LedgerRepositoryPort {
     const stmt = db.prepare(`
       INSERT INTO ledgers (
         company_id, ledger_id, name, normalized_name, alias, parent_group, status, balance_nature,
-        opening_balance_json, closing_balance_json, guid, alter_id, reserved_name,
+        opening_balance_json, closing_balance_json, guid, alter_id, master_id, identity_source,
+        data_quality, is_bill_wise_on, reserved_name,
         mailing_json, contact_json, gst_json, metadata_json, content_fingerprint,
         is_deleted, synced_at, updated_at
       ) VALUES (
         @companyId, @ledgerId, @name, @normalizedName, @alias, @parentGroup, @status, @balanceNature,
-        @openingBalanceJson, @closingBalanceJson, @guid, @alterId, @reservedName,
+        @openingBalanceJson, @closingBalanceJson, @guid, @alterId, @masterId, @identitySource,
+        @dataQuality, @isBillWiseOn, @reservedName,
         @mailingJson, @contactJson, @gstJson, @metadataJson, @fingerprint,
         @isDeleted, @syncedAt, @updatedAt
       )
@@ -42,6 +49,10 @@ export class SqliteLedgerRepository implements LedgerRepositoryPort {
         closing_balance_json = excluded.closing_balance_json,
         guid = excluded.guid,
         alter_id = excluded.alter_id,
+        master_id = excluded.master_id,
+        identity_source = excluded.identity_source,
+        data_quality = excluded.data_quality,
+        is_bill_wise_on = excluded.is_bill_wise_on,
         reserved_name = excluded.reserved_name,
         mailing_json = excluded.mailing_json,
         contact_json = excluded.contact_json,
@@ -221,6 +232,67 @@ export class SqliteLedgerRepository implements LedgerRepositoryPort {
       .get(companyId) as { total: number };
     return Promise.resolve(row.total);
   }
+
+  hasLegacyLedgerIds(companyId: string): Promise<boolean> {
+    const db = this.database.getDatabase();
+    const rows = db
+      .prepare('SELECT ledger_id FROM ledgers WHERE company_id = ?')
+      .all(companyId) as Array<{ ledger_id: string }>;
+    return Promise.resolve(rows.some((row) => isLegacyLedgerId(row.ledger_id)));
+  }
+
+  getLedgerIdentityVersion(companyId: string): Promise<number> {
+    const db = this.database.getDatabase();
+    const row = db
+      .prepare('SELECT value FROM storage_meta WHERE key = ?')
+      .get(ledgerIdentityMetaKey(companyId)) as { value: string } | undefined;
+    return Promise.resolve(parseLedgerIdentityVersion(row?.value));
+  }
+
+  replaceCompanyLedgersAtomically(companyId: string, ledgers: readonly LedgerDetails[]): Promise<void> {
+    const db = this.database.getDatabase();
+    const now = new Date().toISOString();
+    const stmt = db.prepare(`
+      INSERT INTO ledgers (
+        company_id, ledger_id, name, normalized_name, alias, parent_group, status, balance_nature,
+        opening_balance_json, closing_balance_json, guid, alter_id, master_id, identity_source,
+        data_quality, is_bill_wise_on, reserved_name,
+        mailing_json, contact_json, gst_json, metadata_json, content_fingerprint,
+        is_deleted, synced_at, updated_at
+      ) VALUES (
+        @companyId, @ledgerId, @name, @normalizedName, @alias, @parentGroup, @status, @balanceNature,
+        @openingBalanceJson, @closingBalanceJson, @guid, @alterId, @masterId, @identitySource,
+        @dataQuality, @isBillWiseOn, @reservedName,
+        @mailingJson, @contactJson, @gstJson, @metadataJson, @fingerprint,
+        @isDeleted, @syncedAt, @updatedAt
+      )
+    `);
+    const metaStmt = db.prepare('INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?)');
+
+    const writeAll = (): void => {
+      db.prepare('DELETE FROM ledgers WHERE company_id = ?').run(companyId);
+      for (const ledger of ledgers) {
+        stmt.run(toRow(companyId, ledger, now));
+      }
+      metaStmt.run(ledgerIdentityMetaKey(companyId), String(LEDGER_IDENTITY_VERSION));
+    };
+
+    if (this.database.isInTransaction()) {
+      writeAll();
+      return Promise.resolve();
+    }
+    this.database.runInTransactionSync(writeAll);
+    return Promise.resolve();
+  }
+
+  markLedgerIdentityCurrent(companyId: string): Promise<void> {
+    const db = this.database.getDatabase();
+    db.prepare('INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?)').run(
+      ledgerIdentityMetaKey(companyId),
+      String(LEDGER_IDENTITY_VERSION),
+    );
+    return Promise.resolve();
+  }
 }
 
 interface LedgerRow {
@@ -236,6 +308,10 @@ interface LedgerRow {
   closing_balance_json: string | null;
   guid: string | null;
   alter_id: string | null;
+  master_id: string | null;
+  identity_source: string;
+  data_quality: string;
+  is_bill_wise_on: number | null;
   reserved_name: string | null;
   mailing_json: string | null;
   contact_json: string | null;
@@ -261,6 +337,10 @@ function toRow(companyId: string, ledger: LedgerDetails, updatedAt: string) {
     closingBalanceJson: ledger.closingBalance ? JSON.stringify(ledger.closingBalance) : null,
     guid: ledger.guid ?? null,
     alterId: ledger.alterId ?? null,
+    masterId: ledger.masterId ?? null,
+    identitySource: ledger.identitySource,
+    dataQuality: ledger.dataQuality,
+    isBillWiseOn: ledger.isBillWiseOn === undefined ? null : ledger.isBillWiseOn ? 1 : 0,
     reservedName: ledger.reservedName ?? null,
     mailingJson: ledger.mailing ? JSON.stringify(ledger.mailing) : null,
     contactJson: ledger.contact ? JSON.stringify(ledger.contact) : null,
@@ -286,6 +366,10 @@ function fromRow(row: LedgerRow): LedgerDetails {
     closingBalance: parseJson(row.closing_balance_json),
     guid: row.guid ?? undefined,
     alterId: row.alter_id ?? undefined,
+    masterId: row.master_id ?? undefined,
+    identitySource: row.identity_source as LedgerDetails['identitySource'],
+    dataQuality: row.data_quality as LedgerDetails['dataQuality'],
+    isBillWiseOn: row.is_bill_wise_on === null ? undefined : row.is_bill_wise_on === 1,
     reservedName: row.reserved_name ?? undefined,
     mailing: parseJson(row.mailing_json),
     contact: parseJson(row.contact_json),

@@ -12,6 +12,8 @@ export function computeLedgerFingerprint(ledger: LedgerDetails): string {
     ledger.balanceNature,
     ledger.guid ?? '',
     ledger.alterId ?? '',
+    ledger.masterId ?? '',
+    ledger.isBillWiseOn === undefined ? '' : ledger.isBillWiseOn ? '1' : '0',
     ledger.openingBalance?.amount ?? '',
     ledger.openingBalance?.side ?? '',
     ledger.closingBalance?.amount ?? '',

@@ -81,6 +81,18 @@ export interface ApprovedOperation {
 const ADAPTER_VERSION = '0.4.0-security';
 const EVIDENCE_BUILD = 'TallyPrime (ESTIMATION, 2026-07-22 live evidence)';
 
+/**
+ * Operation-level response cap for TDL-FETCH-enriched master collections.
+ * Shared by ledgers and stock items — the repository convention for rich master export.
+ *
+ * Live evidence (controlled pilot): stock items ~963KB / 1502 rec; ledgers ~618KB / 923 rec.
+ * Larger companies may exceed this cap and require additional validation before raising.
+ */
+export const RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES = 1_048_576 as const;
+
+/** Pre-rich-FETCH shallow ledger export cap (superseded; retained for test reference). */
+export const LEGACY_SHALLOW_LEDGER_MAX_RESPONSE_BYTES = 524_288 as const;
+
 function collection(companyName: string | undefined, id: string): TallyXmlRequestSpec {
   return buildCollectionTemplate(id, companyName ? { companyName } : {});
 }
@@ -169,15 +181,23 @@ const REGISTRY: Readonly<Record<ApprovedOperationId, ApprovedOperation>> = Objec
     20_000,
     'live 28 rec',
   ),
-  [ApprovedOperationId.Ledgers]: masterCollection(
-    ApprovedOperationId.Ledgers,
-    TallyMasterDataCollections.Ledgers,
-    'VERIFIED_SAFE',
-    'MEDIUM',
-    524_288,
-    30_000,
-    'live 921 rec / 260KB / 134ms',
-  ),
+  [ApprovedOperationId.Ledgers]: {
+    ...masterCollection(
+      ApprovedOperationId.Ledgers,
+      TallyMasterDataCollections.Ledgers,
+      'VERIFIED_SAFE',
+      'MEDIUM',
+      RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+      45_000,
+      'live 922 rec / ~618KB rich FETCH / TallyPrime 3.0.1',
+    ),
+    render: (params) => {
+      if (!params.companyName) {
+        throw new Error(`Operation for ${TallyMasterDataCollections.Ledgers} requires a company context`);
+      }
+      return MasterDataTemplates.ledgers(params.companyName);
+    },
+  },
   [ApprovedOperationId.StockGroups]: masterCollection(
     ApprovedOperationId.StockGroups,
     TallyMasterDataCollections.StockGroups,
@@ -202,7 +222,7 @@ const REGISTRY: Readonly<Record<ApprovedOperationId, ApprovedOperation>> = Objec
       TallyMasterDataCollections.StockItems,
       'VERIFIED_SAFE',
       'MEDIUM',
-      1_048_576,
+      RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
       45_000,
       'live 1502 rec / 963KB / 192ms (TDL FETCH enrich)',
     ),

@@ -96,7 +96,23 @@ Engineering-tracked compromises, defects, and deferred work.
 | **Status** | **Resolved for controlled-pilot restart safety** (2026-07-24) |
 | **Introduced** | Milestone 5A (2026-07-23) |
 | **Resolution** | Reliability Step 2 — abandoned runs marked `interrupted`; retry creates a new linked run that re-extracts from the beginning and relies on idempotent upserts plus atomic batch checkpoints (`predecessor_sync_run_id`, `retry_count` lineage) |
-| **Accepted limitation** | Exact positional/source-cursor and AlterID/GUID watermark resume are intentionally unsupported unless a future proven Tally ordering, immutable cursor, or snapshot contract makes it safe. Tally export order is not guaranteed today, no snapshot identity exists, ledger ids are name-slugs. `lastProcessedId` is audit-only. Deletion reconciliation and ledger-rename stale rows remain unchanged. |
+| **Accepted limitation** | Exact positional/source-cursor and AlterID/GUID watermark resume are intentionally unsupported unless a future proven Tally ordering, immutable cursor, or snapshot contract makes it safe. Tally export order is not guaranteed today; no snapshot identity exists. Ledger stable IDs are `guid:` / `name:` prefixed (Reliability ledger-identity fix, 2026-07-24). `lastProcessedId` is audit-only. Deletion reconciliation remains disabled. |
+
+---
+
+## TD-011 — Ledger name-slug identity and shallow export contract
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-011 |
+| **Description** | Ledger sync used standard `List of Ledgers` (shallow NAME-only export) and name-slug upsert keys. Rename left stale rows; GUID/AlterID/MasterID were not part of identity; no shallow-export detection. |
+| **Impact** | High — incorrect ledger identity, rename duplication risk, insufficient extraction for balances/hierarchy |
+| **Priority** | P1 |
+| **Target milestone** | Reliability — ledger extraction contract remediation (controlled pilot) |
+| **Status** | **Resolved (controlled pilot — 2026-07-24, uncommitted)** |
+| **Evidence** | `docs/diagnostics/ledger-extraction-identity-evidence-tallyprime-3.0.1.md` |
+| **Resolution** | Embedded read-only TDL FETCH (8 approved fields); `GUID → name slug` identity; extraction quality gate; schema v5 metadata; controlled backup + atomic cache rebuild for legacy slug rows |
+| **Remaining limitation** | Evidence from one TallyPrime 3.0.1 company only; MasterID not in identity chain; name fallback rename risk when GUID absent; deletion reconciliation still disabled; `/ledgers/{id}` breaking change for slug consumers |
 
 ---
 
@@ -163,6 +179,22 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-010 — Diagnostic export privacy allowlist
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-010 |
+| **Description** | Desktop diagnostic `sessionSummary` and ad hoc bundle construction could expose company names, ledger names, paths, tokens, and raw error text in exported bundles |
+| **Impact** | Medium — support bundles could contain identifiable accounting/customer data |
+| **Priority** | P2 |
+| **Target milestone** | Reliability Step 3 (5B reliability order item 4) |
+| **Status** | **Resolved (export surfaces — controlled pilot)** (2026-07-24) |
+| **Introduced** | Milestone 4D diagnostics export |
+| **Resolution** | Explicit `SafeDiagnosticBundleV1` allowlist, session display without company name, serialized absence tests, connector diagnostic API sanitizers |
+| **Remaining limitation** | On-disk operational logs and normal dashboard/session UI may still contain company names; no unified connector diagnostic bundle exporter |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
@@ -176,3 +208,5 @@ Engineering-tracked compromises, defects, and deferred work.
 | TD-007 | Extraction-phase cancellation | P3 | **Resolved w/ limitation** | 5A-P |
 | TD-008 | Insecure default network binding | P2 | **Resolved** | 5A-P |
 | TD-009 | Authenticated LAN access | P2 | Open | 5B |
+| TD-010 | Diagnostic export privacy allowlist | P2 | **Resolved (export surfaces)** | Reliability Step 3 |
+| TD-011 | Ledger name-slug identity / shallow export | P1 | **Resolved (controlled pilot)** | Reliability ledger-identity |

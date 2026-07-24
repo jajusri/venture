@@ -25,13 +25,34 @@ export const SAMPLE_LEDGERS_RESPONSE = `<ENVELOPE>
         <LEDGER NAME="Cash">
           <NAME>Cash</NAME>
           <PARENT>Cash-in-Hand</PARENT>
+          <GUID TYPE="String">aaaaaaaa-bbbb-cccc-dddd-000000000001</GUID>
+          <ALTERID TYPE="Number">1001</ALTERID>
+          <MASTERID TYPE="Number">2001</MASTERID>
           <OPENINGBALANCE>1,000.00 Dr</OPENINGBALANCE>
           <CLOSINGBALANCE>2,500.50 Dr</CLOSINGBALANCE>
+          <ISBILLWISEON>No</ISBILLWISEON>
         </LEDGER>
         <LEDGER NAME="Acme Corp">
           <NAME>Acme Corp</NAME>
           <PARENT>Sundry Debtors</PARENT>
+          <GUID TYPE="String">aaaaaaaa-bbbb-cccc-dddd-000000000002</GUID>
+          <ALTERID TYPE="Number">1002</ALTERID>
+          <MASTERID TYPE="Number">2002</MASTERID>
           <CLOSINGBALANCE>500.00 Cr</CLOSINGBALANCE>
+          <ISBILLWISEON>Yes</ISBILLWISEON>
+        </LEDGER>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
+export const SAMPLE_SHALLOW_LEDGERS_RESPONSE = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <LEDGER NAME="Cash">
+          <NAME>Cash</NAME>
+          <RESERVEDNAME></RESERVEDNAME>
         </LEDGER>
       </COLLECTION>
     </DATA>

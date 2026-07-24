@@ -1,4 +1,7 @@
 import type { NormalizedAmount } from '../normalization/amounts.js';
+import type { LedgerIdentitySource } from './ledger-identity.js';
+
+export type NormalizedLedgerDataQuality = 'complete' | 'partial' | 'invalid';
 
 export const MasterDataEntityType = {
   CompanyInfo: 'company-info',
@@ -86,6 +89,10 @@ export interface NormalizedLedger {
   readonly status?: 'active' | 'inactive' | 'reserved' | 'unknown';
   readonly guid?: string;
   readonly alterId?: string;
+  readonly masterId?: string;
+  readonly identitySource?: LedgerIdentitySource;
+  readonly dataQuality?: NormalizedLedgerDataQuality;
+  readonly isBillWiseOn?: boolean;
   readonly reservedName?: string;
   readonly mailingName?: string;
   readonly address?: string;

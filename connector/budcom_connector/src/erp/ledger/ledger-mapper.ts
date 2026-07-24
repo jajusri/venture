@@ -1,6 +1,7 @@
 import type { NormalizedLedger } from '../../extraction/core/types.js';
-import type { BalanceNature, LedgerDetails, LedgerStatus } from './ledger-domain.js';
+import type { BalanceNature, LedgerDetails, LedgerIdentitySource, LedgerStatus } from './ledger-domain.js';
 import { LEDGER_DOMAIN_CONTRACT_VERSION } from './ledger-domain.js';
+import type { LedgerDataQuality } from './ledger-extraction-quality.js';
 
 function resolveBalanceNature(ledger: NormalizedLedger): BalanceNature {
   if (ledger.balanceNature) {
@@ -26,7 +27,9 @@ function resolveStatus(ledger: NormalizedLedger): LedgerStatus {
 export function mapNormalizedLedgerToDomain(
   ledger: NormalizedLedger,
   syncedAt = new Date().toISOString(),
+  dataQuality: LedgerDataQuality = ledger.dataQuality ?? 'complete',
 ): LedgerDetails {
+  const identitySource: LedgerIdentitySource = ledger.identitySource ?? (ledger.guid ? 'guid' : 'name');
   return {
     id: ledger.id,
     name: ledger.name,
@@ -39,6 +42,10 @@ export function mapNormalizedLedgerToDomain(
     balanceNature: resolveBalanceNature(ledger),
     guid: ledger.guid,
     alterId: ledger.alterId,
+    masterId: ledger.masterId,
+    identitySource,
+    dataQuality,
+    isBillWiseOn: ledger.isBillWiseOn,
     reservedName: ledger.reservedName,
     isDeleted: false,
     syncedAt,
@@ -67,6 +74,8 @@ export function mapNormalizedLedgerToDomain(
       : undefined,
     metadata: {
       contractVersion: LEDGER_DOMAIN_CONTRACT_VERSION,
+      identitySource,
+      dataQuality,
     },
   };
 }

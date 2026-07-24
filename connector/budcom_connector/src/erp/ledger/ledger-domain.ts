@@ -1,6 +1,9 @@
 import type { NormalizedAmount } from '../../extraction/normalization/amounts.js';
 
-export const LEDGER_DOMAIN_CONTRACT_VERSION = '1' as const;
+export const LEDGER_DOMAIN_CONTRACT_VERSION = '2' as const;
+
+export type LedgerDataQuality = 'complete' | 'partial' | 'invalid';
+export type LedgerIdentitySource = 'guid' | 'name';
 
 export type SyncResourceKind = 'ledgers' | 'stock-items';
 
@@ -50,6 +53,10 @@ export interface LedgerSummary {
   readonly balanceNature: BalanceNature;
   readonly guid?: string;
   readonly alterId?: string;
+  readonly masterId?: string;
+  readonly identitySource: LedgerIdentitySource;
+  readonly dataQuality: LedgerDataQuality;
+  readonly isBillWiseOn?: boolean;
   readonly isDeleted: boolean;
   readonly syncedAt: string;
 }

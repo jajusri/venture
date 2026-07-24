@@ -181,6 +181,30 @@ export class JsonLedgerRepository implements LedgerRepositoryPort {
     return Object.keys(store.ledgers).length;
   }
 
+  async hasLegacyLedgerIds(companyId: string): Promise<boolean> {
+    const store = await this.loadCompany(companyId);
+    return Object.values(store.ledgers).some(
+      (ledger) => !ledger.id.startsWith('guid:') && !ledger.id.startsWith('name:'),
+    );
+  }
+
+  async getLedgerIdentityVersion(_companyId: string): Promise<number> {
+    return 2;
+  }
+
+  async replaceCompanyLedgersAtomically(companyId: string, ledgers: readonly LedgerDetails[]): Promise<void> {
+    const store: CompanyLedgerStore = {
+      companyId,
+      ledgers: Object.fromEntries(ledgers.map((ledger) => [ledger.id, ledger])),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.persistCompany(store);
+  }
+
+  async markLedgerIdentityCurrent(_companyId: string): Promise<void> {
+    return Promise.resolve();
+  }
+
   private async loadCompany(companyId: string): Promise<CompanyLedgerStore> {
     const cached = this.cache.get(companyId);
     if (cached) {
@@ -226,6 +250,10 @@ function toSummary(ledger: LedgerDetails): LedgerSummary {
     balanceNature: ledger.balanceNature,
     guid: ledger.guid,
     alterId: ledger.alterId,
+    masterId: ledger.masterId,
+    identitySource: ledger.identitySource,
+    dataQuality: ledger.dataQuality,
+    isBillWiseOn: ledger.isBillWiseOn,
     isDeleted: ledger.isDeleted,
     syncedAt: ledger.syncedAt,
   };

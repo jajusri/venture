@@ -1,4 +1,4 @@
-export const STORAGE_SCHEMA_VERSION = 4;
+export const STORAGE_SCHEMA_VERSION = 5;
 
 export const MIGRATION_001 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -185,3 +185,16 @@ ALTER TABLE sync_runs ADD COLUMN predecessor_sync_run_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_sync_runs_predecessor
   ON sync_runs(predecessor_sync_run_id) WHERE predecessor_sync_run_id IS NOT NULL;
 `;
+
+/** Ledger GUID-first identity metadata columns. */
+export const MIGRATION_005 = `
+CREATE INDEX IF NOT EXISTS idx_ledgers_company_data_quality
+  ON ledgers(company_id, data_quality);
+`;
+
+export const LEDGER_COLUMN_UPGRADES: ReadonlyArray<{ readonly name: string; readonly ddl: string }> = [
+  { name: 'master_id', ddl: 'ALTER TABLE ledgers ADD COLUMN master_id TEXT' },
+  { name: 'identity_source', ddl: "ALTER TABLE ledgers ADD COLUMN identity_source TEXT NOT NULL DEFAULT 'name'" },
+  { name: 'data_quality', ddl: "ALTER TABLE ledgers ADD COLUMN data_quality TEXT NOT NULL DEFAULT 'complete'" },
+  { name: 'is_bill_wise_on', ddl: 'ALTER TABLE ledgers ADD COLUMN is_bill_wise_on INTEGER' },
+];

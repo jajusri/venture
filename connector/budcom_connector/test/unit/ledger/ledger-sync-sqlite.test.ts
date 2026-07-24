@@ -4,6 +4,7 @@ import type { ErpReadPort } from '../../../src/erp/ports/erp-read-port.js';
 import { createLogger } from '../../../src/infrastructure/logging/logger.js';
 import { LedgerSyncServiceImpl } from '../../../src/services/ledger/ledger-sync.service.js';
 import { createPermissiveSessionMock } from '../../helpers/session-mock.js';
+import { sampleNormalizedLedger } from '../../helpers/ledger-fixtures.js';
 import { cleanupTestSqliteStorage, createTestConnectorConfig, createTestSqliteStorage } from '../../helpers/sqlite-test-storage.js';
 import type { CompanyResolver } from '../../../src/services/extraction/company-resolver.js';
 
@@ -21,7 +22,7 @@ describe('LedgerSyncServiceImpl (SQLite)', () => {
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
       readLedgers: vi.fn(async () => ({
-        items: [{ id: 'cash', name: 'Cash', normalizedName: 'cash' }],
+        items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
         rawByteLength: 100,
       })),
@@ -65,7 +66,7 @@ describe('LedgerSyncServiceImpl (SQLite)', () => {
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
       readLedgers: vi.fn(async () => ({
-        items: [{ id: 'cash', name: 'Cash', normalizedName: 'cash' }],
+        items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
         rawByteLength: 100,
       })),

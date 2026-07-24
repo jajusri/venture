@@ -19,4 +19,8 @@ export interface LedgerRepositoryPort {
   getStatistics(companyId: string): Promise<LedgerStatistics>;
   clearCompany(companyId: string): Promise<void>;
   countByCompany(companyId: string): Promise<number>;
+  hasLegacyLedgerIds(companyId: string): Promise<boolean>;
+  getLedgerIdentityVersion(companyId: string): Promise<number>;
+  replaceCompanyLedgersAtomically(companyId: string, ledgers: readonly LedgerDetails[]): Promise<void>;
+  markLedgerIdentityCurrent(companyId: string): Promise<void>;
 }

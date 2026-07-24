@@ -5,8 +5,10 @@ import {
   findApprovedOperationByRequest,
   getApprovedOperation,
   listApprovedOperations,
+  RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
   toPolicyOperation,
 } from '../../../src/tally/registry/operation-registry.js';
+import { LEDGER_RICH_FETCH_FIELDS } from '../../../src/extraction/core/ledger-identity.js';
 import { isForbiddenOperation } from '../../../src/tally/registry/forbidden-registry.js';
 import { decidePolicy } from '../../../src/erp/policy/policy-engine.js';
 
@@ -32,6 +34,23 @@ describe('operation registry', () => {
     expect(spec.collectionModifyFetch).toContain('GUID');
     expect(spec.collectionModifyFetch).toContain('ALTERID');
     expect(spec.id).toBe('List of Stock Items');
+  });
+
+  it('enriches ledgers via TDL FETCH on the approved collection', () => {
+    const spec = getApprovedOperation(ApprovedOperationId.Ledgers).render({
+      companyName: 'ESTIMATION',
+    });
+    expect(spec.collectionModifyFetch).toEqual([...LEDGER_RICH_FETCH_FIELDS]);
+    expect(spec.id).toBe('List of Ledgers');
+  });
+
+  it('uses the shared rich master response cap for ledgers and stock items', () => {
+    expect(getApprovedOperation(ApprovedOperationId.Ledgers).maxResponseBytes).toBe(
+      RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+    );
+    expect(getApprovedOperation(ApprovedOperationId.StockItems).maxResponseBytes).toBe(
+      RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+    );
   });
 
   it('returns undefined for unregistered collections (UNKNOWN)', () => {

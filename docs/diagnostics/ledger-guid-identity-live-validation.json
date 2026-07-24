@@ -1,0 +1,158 @@
+{
+  "validatedAt": "2026-07-24T10:35:20.638Z",
+  "validationType": "ledger-guid-identity-live",
+  "connectorHost": "127.0.0.1",
+  "connectorPort": 8095,
+  "tallyHost": "127.0.0.1",
+  "tallyPort": 9000,
+  "testEnvironment": "win32",
+  "companyLabel": "[BUDCOM-TEST-01]",
+  "companySlug": "budcom-test-01",
+  "dataClassification": "operator-controlled-privacy-safe",
+  "connectorVersion": "0.3.1",
+  "tallyRelease": "TallyPrime 3.0.1",
+  "syntheticTestLedger": "BUDCOM TEST LEDGER A RENAMED",
+  "preMigration": {
+    "ledgerCount": 1,
+    "identityVersion": 1,
+    "hadLegacySlugIds": true,
+    "legacySlugCount": 1,
+    "guidPrefixedCount": 0,
+    "nameFallbackCount": 0,
+    "pilotLegacySeedInserted": true
+  },
+  "firstSync": {
+    "tallyRequestSucceeded": true,
+    "lineErrorDetected": false,
+    "extractionRecordCount": 923,
+    "extractionQuality": "complete",
+    "guidCoverageCount": 923,
+    "nameFallbackCount": 0,
+    "parentCoverageCount": 923,
+    "alterIdCoverageCount": 923,
+    "masterIdCoverageCount": 923,
+    "billWiseCoverageCount": 923,
+    "responseByteSize": 618411,
+    "approvedResponseByteCap": 1048576,
+    "legacyShallowCapBytes": 524288,
+    "capPolicy": "RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES shared with stock items",
+    "measuredHeadroomBytes": 430165,
+    "extractionDurationMs": 4936,
+    "syncDurationMs": 3290,
+    "backupCreated": true,
+    "backupFileCountDelta": 1,
+    "identityVersionAfter": 2,
+    "finalLedgerCount": 923,
+    "legacySlugCount": 0,
+    "guidPrefixedCount": 923,
+    "namePrefixedCount": 0,
+    "mixedIdentityState": false,
+    "duplicateResolvedIdentity": false,
+    "duplicateGuidWithinCompany": false,
+    "migrationPathUsed": true
+  },
+  "renameContinuity": {
+    "syntheticRenamedRowCount": 1,
+    "identitySourceIsGuid": true,
+    "idIsGuidPrefixed": true,
+    "redactedLedgerIdHash": "7b4e5868f063bdaa",
+    "staleOriginalNameRowCount": 0,
+    "staleSlugRowCount": 0,
+    "staleLegacySlugRowCount": 0
+  },
+  "apiValidation": {
+    "listReturnsPrefixedIds": true,
+    "detailLookupSucceeded": true,
+    "urlEncodingVerified": true,
+    "searchWorks": true,
+    "statisticsMatchCount": true,
+    "redactedDetailIdHash": "7b4e5868f063bdaa",
+    "syntheticRenamedDuplicateCount": 1,
+    "privacySafe404": true
+  },
+  "repeatSync": {
+    "status": "completed",
+    "durationMs": 3290,
+    "totalLedgerCountStable": true,
+    "guidCoverageStable": true,
+    "legacySlugCount": 0,
+    "mixedIdentityState": false,
+    "itemsAdded": 0,
+    "itemsUpdated": 0,
+    "itemsSkipped": 923,
+    "identityVersion": 2,
+    "backupFileCountDelta": 0,
+    "runCount": 2,
+    "latestRunHasPredecessor": false
+  },
+  "failureSafety": {
+    "liveDestructiveFailureSkipped": true,
+    "automatedEvidence": {
+      "shallowExtractionRejectedBeforeMutation": "ledger-identity-migration.test.ts",
+      "backupRequiredBeforeReplace": "ledger-identity-migration.test.ts",
+      "transactionRollbackPreservesCache": "sync-batch-atomicity.test.ts",
+      "invalidExtractionPreservesLegacyCache": "ledger-identity-migration.test.ts"
+    },
+    "note": "Live post-migration cache preserved; failure safety proven by automated integration tests."
+  },
+  "scenarios": [
+    {
+      "scenario": "Phase A — Tally reachable",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Phase A — backup path creatable",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Phase B — first sync and migration",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Phase C — synthetic rename continuity",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Phase D — API GUID-ID lookup",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Phase E — repeat sync idempotency",
+      "status": "PASS",
+      "detail": "Completed successfully."
+    },
+    {
+      "scenario": "Phase F — failure safety (automated reference)",
+      "status": "PASS",
+      "detail": "Automated integration tests referenced; live cache not damaged."
+    }
+  ],
+  "overallVerdict": "PASS",
+  "liveValidationNotes": {
+    "isolatedValidationDatabase": true,
+    "pilotLegacySeedForMigrationPath": true,
+    "registryFetchWiringCorrectedDuringValidation": true,
+    "initialRegistryDefect": "ApprovedOperationId.Ledgers render used shallow masterCollection instead of MasterDataTemplates.ledgers()",
+    "initialResponseCapFailure": "524288-byte shallow cap rejected 618411-byte rich FETCH response before registry wiring fix",
+    "finalApprovedResponseCapBytes": 1048576,
+    "responseCapRationale": "Aligns with existing stock-item rich FETCH convention (RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES); ~430KB headroom over measured 923-ledger export; large companies unvalidated",
+    "ledgerResponseByteCapRaisedTo1048576": true,
+    "automatedFailureSafetyTestsPass": true
+  },
+  "privacyReview": {
+    "rawXmlExcluded": true,
+    "rawGuidExcluded": true,
+    "rawMasterIdExcluded": true,
+    "rawAlterIdExcluded": true,
+    "balancesExcluded": true,
+    "realCompanyNameExcluded": true,
+    "syntheticTestLedgerNamed": true,
+    "idHashesUsed": true,
+    "reviewedAt": "2026-07-24T10:35:36.540Z"
+  }
+}

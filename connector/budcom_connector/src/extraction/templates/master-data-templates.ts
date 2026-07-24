@@ -74,7 +74,19 @@ export const MasterDataTemplates = {
   ledgerGroups: (companyName: string) =>
     buildCollectionTemplate(TallyMasterDataCollections.Groups, { companyName }),
   ledgers: (companyName: string) =>
-    buildCollectionTemplate(TallyMasterDataCollections.Ledgers, { companyName }),
+    buildCollectionTemplate(TallyMasterDataCollections.Ledgers, {
+      companyName,
+      collectionModifyFetch: [
+        'NAME',
+        'PARENT',
+        'GUID',
+        'ALTERID',
+        'MASTERID',
+        'OPENINGBALANCE',
+        'CLOSINGBALANCE',
+        'ISBILLWISEON',
+      ],
+    }),
   stockGroups: (companyName: string) =>
     buildCollectionTemplate(TallyMasterDataCollections.StockGroups, { companyName }),
   stockCategories: (companyName: string) =>

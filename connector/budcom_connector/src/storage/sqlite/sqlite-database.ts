@@ -6,10 +6,12 @@ import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import type { DatabaseSync } from './node-sqlite.js';
 import { nodeSqlite } from './node-sqlite.js';
 import {
+  LEDGER_COLUMN_UPGRADES,
   MIGRATION_001,
   MIGRATION_002,
   MIGRATION_003,
   MIGRATION_004,
+  MIGRATION_005,
   STOCK_ITEM_COLUMN_UPGRADES,
   STORAGE_SCHEMA_VERSION,
 } from './schema.js';
@@ -204,6 +206,11 @@ export class SqliteDatabase {
         db.exec(MIGRATION_004);
         db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(4, now);
       }
+      if (currentVersion < 5) {
+        this.ensureLedgerColumns(db);
+        db.exec(MIGRATION_005);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(5, now);
+      }
       db.exec('COMMIT;');
     } catch (error) {
       db.exec('ROLLBACK;');
@@ -213,6 +220,23 @@ export class SqliteDatabase {
         500,
         { cause: error instanceof Error ? error.message : String(error) },
       );
+    }
+  }
+
+  private ensureLedgerColumns(db: DatabaseSync): void {
+    const tableExists = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ledgers'")
+      .get() as { name: string } | undefined;
+    if (!tableExists) {
+      return;
+    }
+    const columns = new Set(
+      (db.prepare('PRAGMA table_info(ledgers)').all() as Array<{ name: string }>).map((row) => row.name),
+    );
+    for (const upgrade of LEDGER_COLUMN_UPGRADES) {
+      if (!columns.has(upgrade.name)) {
+        db.exec(upgrade.ddl);
+      }
     }
   }
 

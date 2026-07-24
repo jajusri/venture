@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { LedgerDetails } from '../../../src/erp/ledger/ledger-domain.js';
+import { sampleLedgerDetails } from '../../helpers/ledger-fixtures.js';
 import { JsonToSqliteMigrationService } from '../../../src/storage/sqlite/json-to-sqlite-migration.js';
 import { SqliteDatabase } from '../../../src/storage/sqlite/sqlite-database.js';
 import { SqliteLedgerRepository } from '../../../src/storage/sqlite/sqlite-ledger-repository.js';
@@ -28,16 +28,8 @@ afterEach(async () => {
   }
 });
 
-function sampleLedger(id: string, name: string): LedgerDetails {
-  return {
-    id,
-    name,
-    normalizedName: name.toLowerCase(),
-    status: 'active',
-    balanceNature: 'debit',
-    isDeleted: false,
-    syncedAt: '2026-01-01T00:00:00.000Z',
-  };
+function sampleLedger(id: string, name: string) {
+  return sampleLedgerDetails({ id, name, normalizedName: name.toLowerCase(), identitySource: 'name' });
 }
 
 function createMigrationFixture(): {

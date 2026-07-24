@@ -14,7 +14,14 @@ import type {
   StorageStatus,
 } from '../../erp/ledger/ledger-domain.js';
 import { mapNormalizedLedgerToDomain } from '../../erp/ledger/ledger-mapper.js';
+import { assessLedgerExtraction } from '../../erp/ledger/ledger-extraction-quality.js';
 import { validateLedgerCollection } from '../../erp/ledger/ledger-validation.js';
+import { LEDGER_IDENTITY_VERSION } from '../../extraction/core/ledger-identity.js';
+import type { NormalizedLedger } from '../../extraction/core/types.js';
+import {
+  assertLedgerRebuildPrecheck,
+  companyNeedsLedgerIdentityMigration,
+} from './ledger-cache-migration.js';
 import type { ErpReadPort } from '../../erp/ports/erp-read-port.js';
 import { computeLedgerFingerprint } from './ledger-fingerprint.js';
 import type { LedgerRepositoryPort } from './ledger-repository.interface.js';
@@ -222,9 +229,47 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
         return this.finalizeRun('cancelled', companyId, startedAt, changes, 0);
       }
 
+      const assessment = assessLedgerExtraction(extraction.items);
+      if (assessment.quality === 'invalid') {
+        throw new AppError(
+          ErrorCodes.VALIDATION_ERROR,
+          assessment.reason ?? 'Ledger extraction contract failure: shallow or unusable export.',
+          502,
+          { extractionQuality: assessment.quality },
+        );
+      }
+
       const syncedAt = new Date().toISOString();
-      const mapped = extraction.items.map((item) => mapNormalizedLedgerToDomain(item, syncedAt));
+      const mapped = mapExtractedLedgers(extraction.items, syncedAt, assessment.quality);
       const validation = validateLedgerCollection(mapped);
+
+      const identityVersion = await this.repository.getLedgerIdentityVersion(companyId);
+      const hasLegacyLedgerIds = await this.repository.hasLegacyLedgerIds(companyId);
+      const ledgerCount = await this.repository.countByCompany(companyId);
+      const needsIdentityMigration = companyNeedsLedgerIdentityMigration(
+        identityVersion,
+        hasLegacyLedgerIds,
+        ledgerCount,
+      );
+
+      if (needsIdentityMigration) {
+        return this.executeIdentityMigrationRebuild({
+          companyId,
+          startedAt,
+          changes,
+          assessment,
+          validation,
+          mapped,
+          signal,
+        });
+      }
+
+      if (!validation.ok) {
+        this.logger.warn('ledger_validation_issues', {
+          component: 'ledger-sync',
+          issueCount: validation.issues.length,
+        });
+      }
       this.activeRun = {
         ...this.activeRun,
         totalExpected: mapped.length,
@@ -291,7 +336,9 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
       }
 
       const finalStatus = signal.aborted ? 'cancelled' : 'completed';
-      return this.finalizeRun(finalStatus, companyId, startedAt, changes, validation.issues.length);
+      const result = await this.finalizeRun(finalStatus, companyId, startedAt, changes, validation.issues.length);
+      await this.markLedgerIdentityVersionIfNeeded(companyId, identityVersion);
+      return result;
     } catch (error) {
       if (error instanceof AppError && error.code === ErrorCodes.SYNC_CANCELLED) {
         return this.finalizeRun('cancelled', companyId, startedAt, changes, 0);
@@ -405,6 +452,105 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     }
     return snapshot.session.selectedCompany.id;
   }
+
+  private async executeIdentityMigrationRebuild(input: {
+    readonly companyId: string;
+    readonly startedAt: number;
+    readonly changes: LedgerChange[];
+    readonly assessment: ReturnType<typeof assessLedgerExtraction>;
+    readonly validation: ReturnType<typeof validateLedgerCollection>;
+    readonly mapped: LedgerDetails[];
+    readonly signal: AbortSignal;
+  }): Promise<LedgerSyncResult> {
+    const { companyId, startedAt, changes, assessment, validation, mapped, signal } = input;
+    if (signal.aborted) {
+      return this.finalizeRun('cancelled', companyId, startedAt, changes, 0);
+    }
+
+    const backup = await this.createBackup();
+    if (!backup.ok) {
+      throw new AppError(
+        ErrorCodes.SERVICE_UNAVAILABLE,
+        'Ledger identity migration requires a successful backup before cache replacement.',
+        503,
+      );
+    }
+
+    try {
+      assertLedgerRebuildPrecheck({ assessment, validation, ledgers: mapped });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, message, 422, {
+        extractionQuality: assessment.quality,
+      });
+    }
+
+    for (const ledger of mapped) {
+      changes.push({ ledgerId: ledger.id, changeType: 'added' });
+    }
+
+    const currentRun = this.activeRun;
+    if (!currentRun) {
+      throw new AppError(ErrorCodes.INTERNAL_ERROR, 'Ledger sync run missing during identity migration.', 500);
+    }
+    const nextRun: LedgerSyncRunRecord = {
+      ...currentRun,
+      totalExpected: mapped.length,
+      processed: mapped.length,
+      inserted: mapped.length,
+      updated: 0,
+      skipped: 0,
+      lastProcessedId: mapped.at(-1)?.id ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.storage.runInTransaction(() => {
+      void this.repository.replaceCompanyLedgersAtomically(companyId, mapped);
+      this.syncRuns.updateRun(nextRun);
+    });
+    this.activeRun = nextRun;
+    this.progress = toProgress(nextRun, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt);
+
+    this.logger.info('ledger_identity_migration_completed', {
+      component: 'ledger-sync',
+      companyId,
+      ledgerCount: mapped.length,
+      extractionQuality: assessment.quality,
+      backupPath: backup.backupPath,
+    });
+
+    return this.finalizeRun('completed', companyId, startedAt, changes, 0);
+  }
+
+  private async markLedgerIdentityVersionIfNeeded(companyId: string, currentVersion: number): Promise<void> {
+    if (currentVersion >= LEDGER_IDENTITY_VERSION) {
+      return;
+    }
+    const hasLegacyLedgerIds = await this.repository.hasLegacyLedgerIds(companyId);
+    if (hasLegacyLedgerIds) {
+      return;
+    }
+    const ledgerCount = await this.repository.countByCompany(companyId);
+    if (ledgerCount === 0) {
+      return;
+    }
+    await this.repository.markLedgerIdentityCurrent(companyId);
+  }
+}
+
+function mapExtractedLedgers(
+  items: readonly NormalizedLedger[],
+  syncedAt: string,
+  collectionQuality: 'complete' | 'partial',
+): LedgerDetails[] {
+  return items.map((item) => {
+    const itemQuality = item.guid?.trim()
+      ? collectionQuality === 'partial'
+        ? 'partial'
+        : 'complete'
+      : 'partial';
+    return mapNormalizedLedgerToDomain({ ...item, dataQuality: itemQuality }, syncedAt, itemQuality);
+  });
 }
 
 function createIdleProgress(): LedgerSyncProgress {

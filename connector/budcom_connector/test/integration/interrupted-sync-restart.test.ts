@@ -154,9 +154,9 @@ describe('TD-006 interrupted sync restart (ledger)', () => {
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
         items: [
-          sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' }),
-          sampleNormalizedLedger({ id: 'bank', name: 'Bank', normalizedName: 'bank' }),
-          sampleNormalizedLedger({ id: 'sales', name: 'Sales', normalizedName: 'sales' }),
+          sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' }),
+          sampleNormalizedLedger({ name: 'Bank', normalizedName: 'bank' }),
+          sampleNormalizedLedger({ name: 'Sales', normalizedName: 'sales' }),
         ],
         durationMs: 1,
         rawByteLength: 100,
@@ -182,8 +182,8 @@ describe('TD-006 interrupted sync restart (ledger)', () => {
     syncRuns.recoverAbandonedRuns(COMPANY, 'ledgers');
 
     const items = [
-      sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' }),
-      sampleNormalizedLedger({ id: 'bank', name: 'Bank', normalizedName: 'bank' }),
+      sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' }),
+      sampleNormalizedLedger({ name: 'Bank', normalizedName: 'bank' }),
     ];
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({ items, durationMs: 1, rawByteLength: 50 })),
@@ -215,21 +215,22 @@ describe('TD-006 interrupted sync restart (ledger)', () => {
     const syncedAt = '2026-01-01T00:00:00.000Z';
     await ledgerRepo.upsertMany(COMPANY, [
       mapNormalizedLedgerToDomain(
-        sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' }),
+        sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' }),
         syncedAt,
       ),
       mapNormalizedLedgerToDomain(
-        sampleNormalizedLedger({ id: 'bank', name: 'Bank', normalizedName: 'bank' }),
+        sampleNormalizedLedger({ name: 'Bank', normalizedName: 'bank' }),
         syncedAt,
       ),
     ]);
+    await ledgerRepo.markLedgerIdentityCurrent(COMPANY);
 
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
         items: [
-          sampleNormalizedLedger({ id: 'new-item', name: 'New Item', normalizedName: 'new item' }),
-          sampleNormalizedLedger({ id: 'bank', name: 'Bank', normalizedName: 'bank' }),
-          sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' }),
+          sampleNormalizedLedger({ name: 'New Item', normalizedName: 'new item' }),
+          sampleNormalizedLedger({ name: 'Bank', normalizedName: 'bank' }),
+          sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' }),
         ],
         durationMs: 1,
         rawByteLength: 120,
@@ -244,7 +245,7 @@ describe('TD-006 interrupted sync restart (ledger)', () => {
     expect(retry.processed).toBe(3);
     expect(retry.predecessorSyncRunId).toBe(interrupted.syncRunId);
     expect(interrupted.lastProcessedId).toBe('bank');
-    expect(retry.lastProcessedId).toBe('cash');
+    expect(retry.lastProcessedId).toBe(sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' }).id);
   });
 
   it('does not link retry to completed, failed, or unrelated interrupted runs', async () => {
@@ -276,7 +277,7 @@ describe('TD-006 interrupted sync restart (ledger)', () => {
 
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
-        items: [sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' })],
+        items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
         rawByteLength: 20,
       })),
@@ -301,7 +302,7 @@ describe('TD-006 interrupted sync restart (ledger)', () => {
 
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
-        items: [sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' })],
+        items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
         rawByteLength: 20,
       })),
@@ -326,16 +327,24 @@ describe('TD-006 interrupted sync restart (ledger)', () => {
     expect(syncRuns.findRetryPredecessor(COMPANY, 'ledgers')).toBeNull();
   });
 
-  it('retains stale ledger row on rename because deletion reconciliation is disabled', async () => {
+  it('updates renamed ledger in place when GUID is stable', async () => {
+    const guid = 'dddd-eeee-ffff-aaaa-000000000010';
     const { storage, basePath } = await createTestSqliteStorage();
     const syncRuns = storage.getBundle().syncRunRepository;
     const ledgerRepo = storage.getBundle().ledgerRepository;
-    seedAbandonedRun(syncRuns, { resourceKind: 'ledgers', lastProcessedId: 'cash' });
+    seedAbandonedRun(syncRuns, { resourceKind: 'ledgers', lastProcessedId: `guid:${guid}` });
     syncRuns.recoverAbandonedRuns(COMPANY, 'ledgers');
 
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({
-        items: [sampleNormalizedLedger({ id: 'petty-cash', name: 'Petty Cash', normalizedName: 'petty cash' })],
+        items: [
+          sampleNormalizedLedger({
+            guid,
+            id: `guid:${guid}`,
+            name: 'Petty Cash',
+            normalizedName: 'petty cash',
+          }),
+        ],
         durationMs: 1,
         rawByteLength: 20,
       })),
@@ -344,7 +353,7 @@ describe('TD-006 interrupted sync restart (ledger)', () => {
     await service.start();
     await service.syncLedgers();
 
-    expect(await ledgerRepo.findById(COMPANY, 'petty-cash')).not.toBeNull();
+    expect(await ledgerRepo.findById(COMPANY, `guid:${guid}`)).not.toBeNull();
     expect(await ledgerRepo.countByCompany(COMPANY)).toBe(1);
   });
 
@@ -355,8 +364,8 @@ describe('TD-006 interrupted sync restart (ledger)', () => {
     syncRuns.recoverAbandonedRuns(COMPANY, 'ledgers');
 
     const items = [
-      sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' }),
-      sampleNormalizedLedger({ id: 'bank', name: 'Bank', normalizedName: 'bank' }),
+      sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' }),
+      sampleNormalizedLedger({ name: 'Bank', normalizedName: 'bank' }),
     ];
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({ items, durationMs: 1, rawByteLength: 50 })),
@@ -441,7 +450,7 @@ describe('TD-006 rollback then retry', () => {
       return original(record);
     });
 
-    const items = [sampleNormalizedLedger({ id: 'cash', name: 'Cash', normalizedName: 'cash' })];
+    const items = [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })];
     const readPort = createReadPort({
       readLedgers: vi.fn(async () => ({ items, durationMs: 1, rawByteLength: 20 })),
     });

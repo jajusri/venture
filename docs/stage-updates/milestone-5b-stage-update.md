@@ -4,7 +4,8 @@
 **Last updated:** 2026-07-24  
 **Packages:** `@budcom/connector` v0.3.1 · `@budcom/desktop` v0.4.3  
 **Git commit (5B complete):** `f2a6b3a` on `main`  
-**Working tree:** Reliability Step 1 implemented (uncommitted)  
+**Working tree:** Reliability Step 3 + ledger extraction contract / GUID-first identity remediation (uncommitted)
+
 **Production readiness:** Controlled pilot — **not** unrestricted production
 
 ---
@@ -16,7 +17,8 @@
 | 2026-07-23 | Milestone 5B implementation, remediation gate, loopback live validation (A–E), commit `f2a6b3a` |
 | 2026-07-24 | Stage-update created; accepted reliability controls registered (Step 0 — documentation only) |
 | 2026-07-24 | **Reliability Step 1:** atomic data + checkpoint transactions for ledger and stock-item sync batches (uncommitted) |
-| 2026-07-24 | **Step 1 concurrency-safety verification:** ambient-depth hazard fixed with mutex + ALS; deterministic concurrency tests added (uncommitted) |
+| 2026-07-24 | **Reliability Step 3:** privacy-safe diagnostic allowlist, company-name removal from export surfaces, absence tests (uncommitted) |
+| 2026-07-24 | **Ledger extraction contract / GUID-first identity:** embedded FETCH, identity helper, quality gate, schema v5, controlled cache rebuild (uncommitted) |
 
 ---
 
@@ -180,8 +182,8 @@ Evidence: `docs/diagnostics/m5b-operational-validation.json` (baseline `f2a6b3a`
 
 - Connector remains **read-only toward Tally** (EXPORT-only egress, typed gateway, capability registry).
 - Desktop IPC allowlist, context isolation, and CSP from Milestone 4D remain in force.
-- Diagnostic / operational evidence uses aggregate and redacted company labels where recorded.
-- **Privacy gap:** desktop diagnostic `sessionSummary` may include identifiable company names — must be removed under accepted reliability control #4 (not marked complete).
+- Diagnostic export surfaces use an explicit allowlist DTO with sentinel absence tests (**Reliability Step 3**).
+- On-disk desktop log files may still contain company names from normal operational logging — only user-triggered export/clipboard/summary paths are hardened.
 - Non-loopback LAN mode remains unauthenticated (TD-009).
 - Code signing / EV certificate / authenticated updater are release decisions and must not block MVP validation.
 
@@ -455,6 +457,164 @@ Complete for ledger and stock-item sync paths (controlled pilot).
 
 ---
 
+## Reliability Step 3 — Privacy-safe diagnostic allowlist (2026-07-24)
+
+**Requirement addressed:** Control #4 — diagnostic bundles and summaries must be constructed through an explicit allowlist and must not expose identifiable company, customer, accounting, tax, credential, path, or raw XML data.
+
+**Previous exposure path:** Desktop `DiagnosticsService` built ad hoc JSON bundles and copied a `sessionSummary` string of the form `` `${sessionStatus} · ${companyName}` `` into IPC snapshots, clipboard summaries, UI (`#diag-session`), and exported bundles (`session.summary`). Recent lifecycle/error log lines could also carry company names, ledger names, GSTINs, XML snippets, tokens, and full Windows paths into exported bundles. Connector `/diagnostics/connection` and extraction diagnostics returned unsanitized `lastErrorMessage` free text.
+
+### Implementation status
+
+Complete for user-triggered diagnostic export surfaces on desktop and connector diagnostic API responses (controlled pilot). **Control #4 remains PARTIAL** because on-disk operational logs, normal dashboard/session APIs, and committed historical operational-validation evidence were intentionally not rewritten.
+
+### Allowlist design
+
+- **Build-only allowlist:** `SafeDiagnosticBundleV1` / `SafeDiagnosticLogEntry` / `SafeDiagnosticErrorEntry` / `SafeDiagnosticSession` (desktop) and `SafeConnectionDiagnostic` / `SafeExtractorDiagnostic` (connector) — fields are declared explicitly; internal session/domain objects are not passed to IPC or export code.
+- **No post-hoc blacklist:** bundles are assembled from approved inputs only; log/error free text passes through bounded sanitizers before inclusion.
+- **Company identity:** `sessionSummary` removed; replaced with `sessionStatus`, `selectedCompanyPresent`, and non-identifying `sessionDisplayLabel` (e.g. `ACTIVE · company selected`). Ephemeral per-bundle `correlationId` only — no stable cross-bundle customer identifier.
+- **Errors:** `mapUnknownErrorToSafeDiagnostic` / `mapUnknownConnectorError` emit typed codes and generic `"An unexpected error occurred."` — no raw `error.message`, nested `cause`, headers, or response bodies.
+- **Paths:** full paths replaced with safe log-file refs (`category`, optional basename, `available` boolean).
+- **Size limits:** `maxBundleBytes` 256 KB, `maxStringLength` 500, `maxLogEntries` 25, `maxStackFrames` 20, `maxArrayItems` 50, `maxRecursionDepth` 4; safe truncation suffix `… [truncated]`.
+
+### Allowed fields (desktop bundle v1)
+
+`bundleVersion`, `generatedAt`, `correlationId`, `truncated`, `versions` (desktop/connector/electron/node), `runtime` (platform/osRelease/architecture/uptimeSeconds), `connector` (baseUrl, bindHost, networkExposure, processState, ownership, pid, health flags, tallyReachable), `session` (status, selectedCompanyPresent, displayLabel), redacted `configuration`, allowlisted `environment` (`BUDCOM_*`, `NODE_ENV`, `ELECTRON_*` only), sanitized `logs.recentLifecycleEvents` / `logs.recentErrors`, `logFile` ref, `privacyPolicy.allowlistVersion`.
+
+### Prohibited-data handling
+
+Pattern-based redaction for GSTIN, XML tags, Windows/Unix paths, phones, amounts, legal company names, ledger labels, vouchers, bearer tokens, session-company log lines; generic unknown-error mapping; bundle-level byte cap with log-entry count cap.
+
+### Files changed
+
+| Path | Change |
+|------|--------|
+| `apps/budcom_desktop/src/application/diagnostic-allowlist.ts` | **Added** — allowlist DTO builder, sanitizers, limits, sentinel constants |
+| `apps/budcom_desktop/src/application/diagnostics-service.ts` | Route snapshot/export/summary through allowlist |
+| `apps/budcom_desktop/src/application/types.ts` | Replace `sessionSummary` / `logFilePath` with safe fields |
+| `apps/budcom_desktop/src/renderer/scripts/app.ts` | Render `sessionDisplayLabel` |
+| `apps/budcom_desktop/test/unit/diagnostic-privacy.test.ts` | **Added** — 10 serialized-output absence tests |
+| `apps/budcom_desktop/test/unit/milestone-4d.test.ts` | Expect `privacyPolicy.allowlistVersion` |
+| `apps/budcom_desktop/test/helpers/lifecycle-fixtures.ts` | Updated diagnostics fixture |
+| `connector/budcom_connector/src/diagnostics/diagnostic-allowlist.ts` | **Added** — connector sanitizers + safe DTOs |
+| `connector/budcom_connector/src/api/routes/diagnostics.ts` | Sanitize connection diagnostics |
+| `connector/budcom_connector/src/api/routes/master-data.ts` | Sanitize extraction diagnostics |
+| `connector/budcom_connector/test/unit/diagnostics/diagnostic-allowlist.test.ts` | **Added** — 4 absence tests |
+
+### Tests and sentinel evidence
+
+Sentinels: `JAJU SANITATIONS PRIVATE LIMITED`, `Sensitive Debtor Ledger`, GSTIN `29AABCU9603R1ZM`, voucher `VCH-2026-004821`, phone, email, amount, raw XML, `sk-live-diagnostic-leak-test-token`, Windows path with user/company segments, nested error cause with response body/headers.
+
+Desktop `diagnostic-privacy.test.ts` inspects **complete serialized** snapshot labels, exported bundle JSON, clipboard summary, error mapping, truncation, determinism, and non-mutation of source logs.
+
+### Validation commands and results (2026-07-24)
+
+| Command | Result |
+|---------|--------|
+| Desktop `npm run lint` | **PASS** |
+| Desktop `npm test` | **85/85 PASS** (20 files) |
+| Desktop `npm run build` | **PASS** |
+| Desktop `test/unit/diagnostic-privacy.test.ts` | **10/10 PASS** |
+| Connector `npm run lint` | **PASS** |
+| Connector `npm run build` | **PASS** |
+| Connector `npx vitest run` | **361/361 PASS** (69 files) |
+| Connector `test/unit/diagnostics/diagnostic-allowlist.test.ts` | **4/4 PASS** |
+| Architecture `module-boundaries.test.ts` | **12/12 PASS** (unchanged) |
+
+### Known limitations (unchanged / remaining)
+
+- On-disk desktop log files and normal dashboard/company-selection UI may still show company names — only diagnostic export/clipboard/summary paths are allowlisted.
+- No unified connector diagnostic **bundle** exporter; only connection/extraction diagnostic API fields are sanitized.
+- Committed `docs/diagnostics/m5b-operational-validation.json` not modified (no confirmed privacy defect in historical evidence).
+- Scenario 12, deletion reconciliation, pre-flight, XML hardening, signing, updater, LAN auth — **not started**.
+- Unrestricted production readiness **not** approved.
+
+### Control #4 wording after Step 3
+
+**Export and summary diagnostic surfaces on desktop and connector diagnostic APIs use an explicit allowlist with serialized absence tests. Control #4 remains PARTIAL until on-disk log redaction, unified connector bundle export, and broader operational-log privacy are addressed in a future approved step.**
+
+### Scenario 12
+
+**Not modified; remains unresolved** (`m5b-operational-validation.json` scenario 12 still `pass: false`).
+
+---
+
+## Reliability Step 3 — Privacy-safe diagnostic allowlist (2026-07-24)
+
+**Requirement addressed:** Control #4 — diagnostic bundles and summaries must be constructed through an explicit allowlist and must not expose identifiable company, customer, accounting, tax, credential, path, or raw XML data.
+
+**Previous exposure path:** Desktop `DiagnosticsService` built ad hoc JSON bundles and copied a `sessionSummary` string of the form `` `${sessionStatus} · ${companyName}` `` into IPC snapshots, clipboard summaries, UI (`#diag-session`), and exported bundles (`session.summary`). Recent lifecycle/error log lines could also carry company names, ledger names, GSTINs, XML snippets, tokens, and full Windows paths into exported bundles. Connector `/diagnostics/connection` and extraction diagnostics returned unsanitized `lastErrorMessage` free text.
+
+### Implementation status
+
+Complete for user-triggered diagnostic export surfaces on desktop and connector diagnostic API responses (controlled pilot). **Control #4 remains PARTIAL** because on-disk operational logs, normal dashboard/session APIs, and committed historical operational-validation evidence were intentionally not rewritten.
+
+### Allowlist design
+
+- **Build-only allowlist:** `SafeDiagnosticBundleV1` / `SafeDiagnosticLogEntry` / `SafeDiagnosticErrorEntry` / `SafeDiagnosticSession` (desktop) and `SafeConnectionDiagnostic` / `SafeExtractorDiagnostic` (connector) — fields are declared explicitly; internal session/domain objects are not passed to IPC or export code.
+- **No post-hoc blacklist:** bundles are assembled from approved inputs only; log/error free text passes through bounded sanitizers before inclusion.
+- **Company identity:** `sessionSummary` removed; replaced with `sessionStatus`, `selectedCompanyPresent`, and non-identifying `sessionDisplayLabel` (e.g. `ACTIVE · company selected`). Ephemeral per-bundle `correlationId` only — no stable cross-bundle customer identifier.
+- **Errors:** `mapUnknownErrorToSafeDiagnostic` / `mapUnknownConnectorError` emit typed codes and generic `"An unexpected error occurred."` — no raw `error.message`, nested `cause`, headers, or response bodies.
+- **Paths:** full paths replaced with safe log-file refs (`category`, optional basename, `available` boolean).
+- **Size limits:** `maxBundleBytes` 256 KB, `maxStringLength` 500, `maxLogEntries` 25, `maxStackFrames` 20, `maxArrayItems` 50, `maxRecursionDepth` 4; safe truncation suffix `… [truncated]`.
+
+### Allowed fields (desktop bundle v1)
+
+`bundleVersion`, `generatedAt`, `correlationId`, `truncated`, `versions` (desktop/connector/electron/node), `runtime` (platform/osRelease/architecture/uptimeSeconds), `connector` (baseUrl, bindHost, networkExposure, processState, ownership, pid, health flags, tallyReachable), `session` (status, selectedCompanyPresent, displayLabel), redacted `configuration`, allowlisted `environment` (`BUDCOM_*`, `NODE_ENV`, `ELECTRON_*` only), sanitized `logs.recentLifecycleEvents` / `logs.recentErrors`, `logFile` ref, `privacyPolicy.allowlistVersion`.
+
+### Prohibited-data handling
+
+Pattern-based redaction for GSTIN, XML tags, Windows/Unix paths, phones, amounts, legal company names, ledger labels, vouchers, bearer tokens, session-company log lines; generic unknown-error mapping; bundle-level byte cap with log-entry count cap.
+
+### Files changed
+
+| Path | Change |
+|------|--------|
+| `apps/budcom_desktop/src/application/diagnostic-allowlist.ts` | **Added** — allowlist DTO builder, sanitizers, limits, sentinel constants |
+| `apps/budcom_desktop/src/application/diagnostics-service.ts` | Route snapshot/export/summary through allowlist |
+| `apps/budcom_desktop/src/application/types.ts` | Replace `sessionSummary` / `logFilePath` with safe fields |
+| `apps/budcom_desktop/src/renderer/scripts/app.ts` | Render `sessionDisplayLabel` |
+| `apps/budcom_desktop/test/unit/diagnostic-privacy.test.ts` | **Added** — 10 serialized-output absence tests |
+| `apps/budcom_desktop/test/unit/milestone-4d.test.ts` | Expect `privacyPolicy.allowlistVersion` |
+| `apps/budcom_desktop/test/helpers/lifecycle-fixtures.ts` | Updated diagnostics fixture |
+| `connector/budcom_connector/src/diagnostics/diagnostic-allowlist.ts` | **Added** — connector sanitizers + safe DTOs |
+| `connector/budcom_connector/src/api/routes/diagnostics.ts` | Sanitize connection diagnostics |
+| `connector/budcom_connector/src/api/routes/master-data.ts` | Sanitize extraction diagnostics |
+| `connector/budcom_connector/test/unit/diagnostics/diagnostic-allowlist.test.ts` | **Added** — 4 absence tests |
+
+### Tests and sentinel evidence
+
+Sentinels: `JAJU SANITATIONS PRIVATE LIMITED`, `Sensitive Debtor Ledger`, GSTIN `29AABCU9603R1ZM`, voucher `VCH-2026-004821`, phone, email, amount, raw XML, `sk-live-diagnostic-leak-test-token`, Windows path with user/company segments, nested error cause with response body/headers.
+
+Desktop `diagnostic-privacy.test.ts` inspects **complete serialized** snapshot labels, exported bundle JSON, clipboard summary, error mapping, truncation, determinism, and non-mutation of source logs.
+
+### Validation commands and results (2026-07-24)
+
+| Command | Result |
+|---------|--------|
+| Desktop `npm run lint` | **PASS** |
+| Desktop `npm test` | **85/85 PASS** (20 files) |
+| Desktop `npm run build` | **PASS** |
+| Desktop `test/unit/diagnostic-privacy.test.ts` | **10/10 PASS** |
+| Connector `npm run lint` | **PASS** |
+| Connector `npm run build` | **PASS** |
+| Connector `npx vitest run` | **361/361 PASS** (69 files) |
+| Connector `test/unit/diagnostics/diagnostic-allowlist.test.ts` | **4/4 PASS** |
+| Architecture `module-boundaries.test.ts` | **12/12 PASS** (unchanged) |
+
+### Known limitations (unchanged / remaining)
+
+- On-disk desktop log files and normal dashboard/company-selection UI may still show company names — only diagnostic export/clipboard/summary paths are allowlisted.
+- No unified connector diagnostic **bundle** exporter; only connection/extraction diagnostic API fields are sanitized.
+- Committed `docs/diagnostics/m5b-operational-validation.json` not modified (no confirmed privacy defect in historical evidence).
+- Scenario 12, deletion reconciliation, pre-flight, XML hardening, signing, updater, LAN auth — **not started**.
+- Unrestricted production readiness **not** approved.
+
+### Control #4 wording after Step 3
+
+**Export and summary diagnostic surfaces on desktop and connector diagnostic APIs use an explicit allowlist with serialized absence tests. Control #4 remains PARTIAL until on-disk log redaction, unified connector bundle export, and broader operational-log privacy are addressed in a future approved step.**
+
+---
+
 ## 12. Accepted Reliability Controls Registration
 
 **Authority:** `.cursor/rules/budcom-tally-connector-reliability.mdc` · `docs/architecture/accepted-reliability-hardening.md`  
@@ -468,14 +628,14 @@ These principles do **not** expand MVP-1. Implementation occurs only when requir
 | 1 | Capability-based Tally pre-flight | **PARTIAL** | Configurable probing and typed discovery/session outcomes exist; no unified typed pre-flight capability matrix; must not assume `tally.exe`, fixed port, one release, or one XML schema |
 | 2 | Atomic SQLite data plus checkpoint and crash recovery | **COMPLETE (controlled pilot)** | **Atomic batch commit and controlled-pilot interrupted-run restart safety are complete for existing ledger and stock-item paths. More advanced positional/source-watermark resume is intentionally not part of the approved design.** |
 | 3 | Strict XML boundary validation | **PARTIAL** | Egress EXPORT validation strong; inbound/offline depth, encoding ambiguity, XXE/entity, and size/nesting limits incomplete |
-| 4 | Privacy-safe diagnostics | **PARTIAL, identifiable company-name exposure must be removed** | Bundle exclusions exist; not a hard allowlist with absence proofs; `sessionSummary` may carry company names |
+| 4 | Privacy-safe diagnostics | **PARTIAL (export surfaces hardened — Step 3)** | Explicit allowlist DTO + serialized absence tests for desktop export/clipboard/summary and connector diagnostic APIs; on-disk operational logs and normal UI session APIs still may contain company names |
 | 5 | Electron and Windows production hardening | **PARTIAL, release signing/updater/AV work deferred** | Core isolation / CSP / IPC allowlist exist (4A–4D); signing, authenticated updates, and antivirus compatibility are deferred to an explicit production-readiness milestone |
 
 ### Current reliability defects (registered)
 
 1. ~~Ledger and stock-item data writes commit separately from `sync_runs` checkpoint/status updates.~~ **Resolved for sync batches by Reliability Step 1** (terminal/create/cancel updates remain outside batch TX by design).
 2. ~~TD-006 full resume behavior remains incomplete.~~ **Resolved for controlled-pilot restart safety by Reliability Step 2** (full restart with lineage; positional resume rejected).
-3. Diagnostic `sessionSummary` may contain identifiable company names.
+3. ~~Diagnostic `sessionSummary` may contain identifiable company names.~~ **Resolved for export/clipboard/summary surfaces by Reliability Step 3** (on-disk logs and normal UI remain unchanged).
 4. Existing progress and production-gate documents may be stale relative to Milestones 4x through 5B.
 5. Operational scenario 12 (mid-sync Tally unavailability) remains unresolved and is treated as a separate defect from batch atomicity.
 
@@ -484,12 +644,12 @@ These principles do **not** expand MVP-1. Implementation occurs only when requir
 1. Stage-update and reliability registration ← **Step 0 complete**
 2. Atomic data plus checkpoint transactions for existing ledger and stock-item sync ← **Reliability Step 1 complete (this update)**
 3. TD-006 resume completion ← **Reliability Step 2 complete (2026-07-24)**
-4. Diagnostic allowlist and absence tests
+4. Diagnostic allowlist and absence tests ← **Reliability Step 3 complete (2026-07-24)**
 5. Unified typed capability pre-flight
 6. Inbound/offline XML safety limits
 7. Production release signing, authenticated updates, and antivirus compatibility
 
-**Do not proceed to TD-006 full resume (order item 3) without explicit authorization.**
+**Do not proceed to order item 5 (pre-flight) without explicit authorization.**
 
 ---
 
@@ -522,7 +682,7 @@ Broad rewrites were intentionally deferred. Narrow later corrections are recomme
 | Item | Deferred to |
 |------|-------------|
 | TD-006 full resume completion | **Complete** — Reliability Step 2 (controlled pilot) |
-| Diagnostic allowlist + company-name removal + absence tests | Reliability order item 4 |
+| Diagnostic allowlist + company-name removal + absence tests | **Complete (Step 3 — export surfaces)** |
 | Unified typed capability pre-flight | Reliability order item 5 |
 | Inbound/offline XML safety limits | Reliability order item 6 (before untrusted voucher/import scope) |
 | Signing / authenticated updates / AV compatibility | Explicit production-readiness milestone |
@@ -536,16 +696,16 @@ Broad rewrites were intentionally deferred. Narrow later corrections are recomme
 
 ## 16. Explicit next-action gate
 
-**STOP — await authorization for later reliability steps (order items 4–7).**
+**STOP — await authorization for later reliability steps (order items 5–7).**
 
 | Allowed now | Not allowed without new authorization |
 |-------------|----------------------------------------|
-| Use this stage-update as connector 5B + reliability Steps 0–2 truth | Diagnostic allowlist work (order item 4) |
+| Use this stage-update as connector 5B + reliability Steps 0–3 truth | Unified capability pre-flight (order item 5) |
 | Narrow doc corrections listed in §14 when separately authorized | Create 5C/5D or other product milestone specifications |
 | | Expand MVP-1 scope or redesign approved architecture |
 | | Mark unrestricted production readiness approved |
 
-**Next authorized code step (when approved):** order item 4 — diagnostic allowlist and absence tests.
+**Next authorized code step (when approved):** order item 5 — unified typed capability pre-flight.
 
 ---
 
@@ -559,5 +719,50 @@ Broad rewrites were intentionally deferred. Narrow later corrections are recomme
 | Reliability Step 0 (registration) | **Complete** |
 | Reliability Step 1 (atomic batch commit) | **Complete** |
 | Reliability Step 2 (TD-006 restart lineage) | **Complete** |
-| Later reliability steps (4–7) | **Blocked pending explicit authorization** |
+| Reliability Step 3 (diagnostic allowlist) | **Complete (export surfaces — Control #4 partial)** |
+| Ledger extraction contract / GUID-first identity (TD-011) | **Complete (controlled pilot — uncommitted)** |
+| Later reliability steps (5–7) | **Blocked pending explicit authorization** |
 | Next product milestone | **Unspecified** |
+
+---
+
+## 18. Ledger extraction contract and GUID-first identity (2026-07-24)
+
+**Status:** Complete in working tree (uncommitted)
+
+**Type:** Reliability / extraction-correctness defect fix — **not** a new product feature
+
+**Evidence:** `docs/diagnostics/ledger-extraction-identity-evidence-tallyprime-3.0.1.md`
+
+**Technical debt:** TD-011 resolved (controlled pilot)
+
+### Summary
+
+| Item | Detail |
+|------|--------|
+| Extraction | Embedded read-only FETCH on `List of Ledgers` (8 fields) |
+| Identity | `guid:{normalised}` → `name:{slug}`; AlterID/MasterID excluded from identity |
+| Quality | `complete` / `partial` / `invalid`; shallow export fails sync |
+| Schema | v5 — `master_id`, `identity_source`, `data_quality`, `is_bill_wise_on` |
+| Migration | Backup → validate → atomic replace; old cache preserved on failure |
+| Response cap | `RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES` (1,048,576) — shared with stock-item rich FETCH; legacy 524,288 shallow cap superseded |
+| Scaling limitation | Large-company responses unvalidated; may exceed 1 MiB |
+
+### Validation
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` | PASS |
+| `npm run build` | PASS |
+| `npx vitest run` | **376/376 PASS** |
+| Architecture boundaries | **12/12 PASS** |
+
+### Remaining limitations
+
+- Single TallyPrime 3.0.1 controlled evidence — not universal compatibility
+- MasterID metadata only; backup/restore stability unproven
+- Name fallback rename risk when GUID absent
+- Deletion reconciliation still disabled
+- Unrestricted production not approved
+
+**Verdict:** **SAFE TO COMMIT** subject to operator authorization. No commit performed.

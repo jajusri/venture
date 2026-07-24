@@ -1,7 +1,8 @@
 import type { CollectionEntityParser } from '../../extraction/parsers/entity-mappers.js';
 import type { ParsedXmlNode } from '../xml/response-parser.js';
+import { resolveLedgerStableId } from '../../extraction/core/ledger-identity.js';
 import { normalizeAmount } from '../../extraction/normalization/amounts.js';
-import { normalizeName, normalizeText, slugify } from '../../extraction/normalization/strings.js';
+import { normalizeName, normalizeText } from '../../extraction/normalization/strings.js';
 import type {
   BalanceNature,
   LedgerDetails,
@@ -41,9 +42,11 @@ export function mapTallyLedgerToDomain(
   const closingText = parser.getChildText(node, 'CLOSINGBALANCE');
   const openingBalance = normalizeAmount(openingText);
   const closingBalance = normalizeAmount(closingText);
+  const guid = parser.getChildText(node, 'GUID');
+  const identity = resolveLedgerStableId({ guid, name });
 
   return {
-    id: slugify(name),
+    id: identity.id,
     name,
     normalizedName: normalizeName(name),
     alias: parser.getChildText(node, 'ALIAS'),
@@ -52,8 +55,11 @@ export function mapTallyLedgerToDomain(
     openingBalance,
     closingBalance,
     balanceNature: resolveBalanceNature(closingText ?? openingText, closingBalance?.side ?? openingBalance?.side),
-    guid: parser.getChildText(node, 'GUID'),
+    guid: identity.guid ?? guid?.trim(),
     alterId: parser.getChildText(node, 'ALTERID'),
+    masterId: parser.getChildText(node, 'MASTERID')?.trim() || undefined,
+    identitySource: identity.identitySource,
+    dataQuality: identity.guid ? 'complete' : 'partial',
     reservedName: parser.getChildText(node, 'RESERVEDNAME'),
     isDeleted: false,
     syncedAt,

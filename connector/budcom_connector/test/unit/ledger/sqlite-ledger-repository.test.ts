@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { LedgerDetails } from '../../../src/erp/ledger/ledger-domain.js';
 import { SqliteLedgerRepository } from '../../../src/storage/sqlite/sqlite-ledger-repository.js';
+import { sampleLedgerDetails } from '../../helpers/ledger-fixtures.js';
 import { cleanupTestSqliteStorage, createTestSqliteStorage } from '../../helpers/sqlite-test-storage.js';
 
 afterEach(async () => {
@@ -9,15 +10,7 @@ afterEach(async () => {
 });
 
 function sampleLedger(id: string, name: string): LedgerDetails {
-  return {
-    id,
-    name,
-    normalizedName: name.toLowerCase(),
-    status: 'active',
-    balanceNature: 'debit',
-    isDeleted: false,
-    syncedAt: '2026-01-01T00:00:00.000Z',
-  };
+  return sampleLedgerDetails({ id, name, normalizedName: name.toLowerCase(), identitySource: 'name' });
 }
 
 describe('SqliteLedgerRepository', () => {
