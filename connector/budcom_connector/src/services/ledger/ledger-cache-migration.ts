@@ -34,10 +34,27 @@ export interface LedgerRebuildPrecheckInput {
   readonly ledgers: readonly LedgerDetails[];
 }
 
-export function assertLedgerRebuildPrecheck(input: LedgerRebuildPrecheckInput): void {
+export function assertLedgerMigrationQuality(input: Pick<LedgerRebuildPrecheckInput, 'assessment'>): void {
+  if (input.assessment.totalRecords === 0) {
+    throw new Error(
+      'Ledger identity migration rejected: empty extraction cannot authorize destructive cache replacement.',
+    );
+  }
   if (input.assessment.quality === 'invalid') {
     throw new Error(input.assessment.reason ?? 'Invalid ledger extraction for cache rebuild.');
   }
+  if (input.assessment.quality === 'partial') {
+    throw new Error(
+      input.assessment.reason ??
+        'Partial ledger extraction cannot authorize destructive cache replacement.',
+    );
+  }
+  if (input.assessment.quality !== 'complete') {
+    throw new Error('Ledger identity migration requires complete extraction quality.');
+  }
+}
+
+export function assertLedgerMigrationValidation(input: Pick<LedgerRebuildPrecheckInput, 'validation' | 'ledgers'>): void {
   if (!input.validation.ok) {
     throw new Error('Ledger collection validation failed; cache rebuild aborted.');
   }
@@ -48,4 +65,9 @@ export function assertLedgerRebuildPrecheck(input: LedgerRebuildPrecheckInput): 
     }
     duplicateIds.add(ledger.id);
   }
+}
+
+export function assertLedgerRebuildPrecheck(input: LedgerRebuildPrecheckInput): void {
+  assertLedgerMigrationQuality(input);
+  assertLedgerMigrationValidation(input);
 }

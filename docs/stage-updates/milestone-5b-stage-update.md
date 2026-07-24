@@ -627,7 +627,7 @@ These principles do **not** expand MVP-1. Implementation occurs only when requir
 |---|---------|--------|-------|
 | 1 | Capability-based Tally pre-flight | **PARTIAL** | Configurable probing and typed discovery/session outcomes exist; no unified typed pre-flight capability matrix; must not assume `tally.exe`, fixed port, one release, or one XML schema |
 | 2 | Atomic SQLite data plus checkpoint and crash recovery | **COMPLETE (controlled pilot)** | **Atomic batch commit and controlled-pilot interrupted-run restart safety are complete for existing ledger and stock-item paths. More advanced positional/source-watermark resume is intentionally not part of the approved design.** |
-| 3 | Strict XML boundary validation | **PARTIAL** | Egress EXPORT validation strong; inbound/offline depth, encoding ambiguity, XXE/entity, and size/nesting limits incomplete |
+| 3 | Strict XML boundary validation | **PARTIAL (Phase B — migration gate + characterization tests)** | Egress EXPORT validation strong; inbound envelope asymmetry, parser limits, and subset migration policy remain open — see §20 |
 | 4 | Privacy-safe diagnostics | **PARTIAL (export surfaces hardened — Step 3)** | Explicit allowlist DTO + serialized absence tests for desktop export/clipboard/summary and connector diagnostic APIs; on-disk operational logs and normal UI session APIs still may contain company names |
 | 5 | Electron and Windows production hardening | **PARTIAL, release signing/updater/AV work deferred** | Core isolation / CSP / IPC allowlist exist (4A–4D); signing, authenticated updates, and antivirus compatibility are deferred to an explicit production-readiness milestone |
 
@@ -857,3 +857,103 @@ No manual Content-Length checker added — runtime does not silently accept trun
 - Live Tally mid-sync timing still not primary proof path — deterministic loopback harness is authoritative
 
 **Verdict:** **CORRECT VALIDATION ONLY** — safe to commit test/harness/docs; **not** `SAFE TO COMMIT TRANSPORT FIX` (no transport fix required).
+
+---
+
+## 20. Reliability Control #3 Phase B — inbound XML and migration safety (2026-07-24)
+
+**Status:** Complete (uncommitted)
+
+**Type:** Deterministic inbound characterization + **narrow migration-gate fix**
+
+**Requirement addressed:** Reliability Control #3 — strict inbound XML boundary and collection-quality investigation
+
+### Phase A conclusions (locked)
+
+- Companies/groups have envelope assessment; ledgers/stock bypass it.
+- Custom parser is fail-fast but accepts trailing junk, has no nesting/node limits, and does not classify Tally error envelopes.
+- Unnamed entities are silently dropped without counters.
+- Normal sync is upsert-only (no stale-row deletion).
+- Identity migration uses atomic full-cache replacement.
+- Semantic completeness cannot be inferred from prior counts, byte size, ordering, or ID continuity.
+
+### Migration safety (proven + corrected)
+
+| Test | Finding | Action |
+|------|---------|--------|
+| **1A** empty extraction during migration | **Reproduced:** partial empty extraction could authorize destructive replace | **Fixed:** quality gate rejects empty extraction |
+| **1B** partial GUID coverage | **Reproduced:** partial quality allowed replace | **Fixed:** quality gate rejects `partial` quality |
+| **1C** GUID-complete subset (2 of 5 legacy rows) | **Reproduced:** subset could replace full cache | **Fixed:** legacy coverage gate blocks unmatched legacy rows |
+| **1D–1E** valid migration / TX rollback | PASS | unchanged |
+| **1F** full legacy coverage + incoming extras | PASS — 3 legacy → 5 GUID rows | **Allowed by design** |
+| **1G–1I** ambiguous incoming, duplicate legacy keys, rename | PASS — blocked, cache preserved | **Fixed:** coverage gate |
+| **1J–1K** exact correspondence / rollback after coverage | PASS | unchanged |
+
+**Migration correspondence rule (implemented):** destructive replacement requires non-empty, `complete` extraction, validation success, GUID-first incoming rows, and **one-to-one canonical name coverage of every existing legacy row** using `normalizeName(name)`. Incoming extras are allowed. Renamed or ambiguously matched legacy rows defer automatic migration. This prevents local cache loss but **does not prove global Tally semantic completeness**.
+
+**Rename limitation:** Tally renames before migration leave legacy `normalizeName(oldName)` unmatched — automatic migration is deferred; no AlterID/MasterID inference.
+
+### Parser characterization (no production change)
+
+- Trailing junk after root: accepted (compatibility limitation)
+- BOM: stripped by `trim()`, parses successfully
+- Comments/CDATA/DOCTYPE: rejected (malformed)
+- No nesting/node-count limits (documented gap)
+- Parser errors privacy-safe (no raw XML in messages)
+
+### Response-contract characterization (no production change)
+
+- Ledgers/stock: no pre-parse `assessEnvelope` on extract path
+- Synthetic `LINEERROR` envelope parses but yields zero entities — no dedicated error classifier
+- Tree-wide `findAll` can match unrelated subtrees
+- Empty collection: ledger `partial`, stock no collection assessor
+
+### Normal sync empty/partial (no production change)
+
+- Empty/partial ledger or stock sync with populated cache: **upsert-only, no deletion**
+- Invalid (`invalid`) ledger extraction: **no mutation**
+
+### Production files changed
+
+| File | Change |
+|------|--------|
+| `src/services/ledger/ledger-cache-migration.ts` | Split quality/validation gates; reject empty and partial extraction |
+| `src/services/ledger/ledger-migration-coverage.ts` | Legacy-to-incoming canonical coverage assessment |
+| `src/services/ledger/ledger-sync.service.ts` | Migration path: quality → coverage → validation → atomic replace |
+
+### Tests added
+
+| Suite | Count |
+|-------|-------|
+| `test/integration/ledger-migration-safety.test.ts` | 12 |
+| `test/unit/services/ledger-cache-migration.test.ts` | 3 |
+| `test/unit/services/ledger-migration-coverage.test.ts` | 5 |
+| `test/unit/tally/response-parser-boundary.test.ts` | 13 |
+| `test/unit/tally/master-data-response-contract.test.ts` | 16 |
+| `test/unit/extraction/entity-mapping-counters.test.ts` | 9 |
+| `test/integration/inbound-sync-empty-partial.test.ts` | 5 |
+| Helpers: `inbound-xml-fixtures.ts`, `ledger-migration-test-helpers.ts` | — |
+
+### Validation
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` | PASS |
+| `npm run build` | PASS |
+| Migration safety + coverage + identity migration | **21/21 PASS** |
+| Focused Control #3 suites | **57/57 PASS** |
+| TD-006 + atomicity + concurrency + diagnostics | **50/50 PASS** |
+| Architecture boundaries | **12/12 PASS** |
+| Full connector suite | **478/478 PASS** |
+
+### Remaining limitations
+
+- No ledger/stock envelope assessment on extract path
+- No Tally explicit-error envelope classifier
+- Parser nesting/node limits not enforced
+- Silent unnamed-entity drops without counters
+- Stock has no collection-level quality assessor
+- Renamed ledgers require manual/controlled remediation before automatic migration
+- Reliability Control #3 **not fully complete**
+
+**Verdict:** **SAFE TO COMMIT MIGRATION SAFETY FIX** — migration gate + legacy coverage + tests/docs. Not unrestricted production approval.

@@ -16,12 +16,18 @@ import type {
 import { mapNormalizedLedgerToDomain } from '../../erp/ledger/ledger-mapper.js';
 import { assessLedgerExtraction } from '../../erp/ledger/ledger-extraction-quality.js';
 import { validateLedgerCollection } from '../../erp/ledger/ledger-validation.js';
-import { LEDGER_IDENTITY_VERSION } from '../../extraction/core/ledger-identity.js';
-import type { NormalizedLedger } from '../../extraction/core/types.js';
 import {
-  assertLedgerRebuildPrecheck,
+  assertLedgerMigrationQuality,
+  assertLedgerMigrationValidation,
   companyNeedsLedgerIdentityMigration,
 } from './ledger-cache-migration.js';
+import { isLegacyLedgerId, LEDGER_IDENTITY_VERSION } from '../../extraction/core/ledger-identity.js';
+import type { NormalizedLedger } from '../../extraction/core/types.js';
+import {
+  assessLegacyMigrationCoverage,
+  toLegacyMigrationRow,
+  toPrivacySafeMigrationCoverage,
+} from './ledger-migration-coverage.js';
 import type { ErpReadPort } from '../../erp/ports/erp-read-port.js';
 import { computeLedgerFingerprint } from './ledger-fingerprint.js';
 import type { LedgerRepositoryPort } from './ledger-repository.interface.js';
@@ -477,11 +483,40 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     }
 
     try {
-      assertLedgerRebuildPrecheck({ assessment, validation, ledgers: mapped });
+      assertLedgerMigrationQuality({ assessment });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new AppError(ErrorCodes.VALIDATION_ERROR, message, 422, {
         extractionQuality: assessment.quality,
+      });
+    }
+
+    const legacyRows = await this.loadLegacyMigrationRows(companyId);
+    const coverage = assessLegacyMigrationCoverage(legacyRows, mapped);
+    if (!coverage.safeToReplace) {
+      throw new AppError(
+        ErrorCodes.VALIDATION_ERROR,
+        coverage.message ?? 'Ledger identity migration coverage check failed.',
+        422,
+        {
+          extractionQuality: assessment.quality,
+          migrationCoverage: toPrivacySafeMigrationCoverage(coverage),
+        },
+      );
+    }
+    this.logger.info('ledger_identity_migration_coverage', {
+      component: 'ledger-sync',
+      companyId,
+      ...toPrivacySafeMigrationCoverage(coverage),
+    });
+
+    try {
+      assertLedgerMigrationValidation({ validation, ledgers: mapped });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, message, 422, {
+        extractionQuality: assessment.quality,
+        migrationCoverage: toPrivacySafeMigrationCoverage(coverage),
       });
     }
 
@@ -520,6 +555,15 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     });
 
     return this.finalizeRun('completed', companyId, startedAt, changes, 0);
+  }
+
+  private async loadLegacyMigrationRows(companyId: string) {
+    const pageSize = 10_000;
+    const result = await this.repository.search(companyId, { page: 1, pageSize });
+    return result.items
+      .filter((item) => isLegacyLedgerId(item.id))
+      .map((item) => toLegacyMigrationRow(item))
+      .filter((row): row is NonNullable<typeof row> => row !== null);
   }
 
   private async markLedgerIdentityVersionIfNeeded(companyId: string, currentVersion: number): Promise<void> {
