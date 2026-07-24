@@ -30,6 +30,8 @@ function mapSessionValidationToHttpStatus(status: SessionValidationStatus): numb
       return 404;
     case 'COMPANY_NOT_ACCESSIBLE':
       return 403;
+    case 'COMPANY_DISCOVERY_UNAVAILABLE':
+      return 503;
     case 'SESSION_EXPIRED':
       return 410;
     case 'SUCCESS':
@@ -45,6 +47,8 @@ function sessionValidationMessage(status: SessionValidationStatus): string {
       return 'Selected company was not found';
     case 'COMPANY_NOT_ACCESSIBLE':
       return 'Selected company is not accessible';
+    case 'COMPANY_DISCOVERY_UNAVAILABLE':
+      return 'Company discovery is unavailable';
     case 'SESSION_INVALID':
       return 'Connector session is invalid';
     case 'SESSION_EXPIRED':

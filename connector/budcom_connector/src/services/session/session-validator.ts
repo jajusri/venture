@@ -23,6 +23,7 @@ export interface SessionValidatorInput {
   readonly requestedCompanyId?: string;
   readonly discoveredCompanies: readonly DiscoveredCompanyRef[];
   readonly tallyReachable: boolean;
+  readonly discoveryAvailable: boolean;
   readonly connectorConnected: boolean;
   readonly sessionTtlMs: number;
   readonly nowMs: number;
@@ -33,6 +34,7 @@ export interface CompanySelectionInput {
   readonly companyId: string;
   readonly discoveredCompanies: readonly DiscoveredCompanyRef[];
   readonly tallyReachable: boolean;
+  readonly discoveryAvailable: boolean;
   readonly connectorConnected: boolean;
   readonly nowMs: number;
 }
@@ -118,6 +120,14 @@ export function selectCompany(input: CompanySelectionInput): CompanySelectionRes
     };
   }
 
+  if (!input.discoveryAvailable) {
+    return {
+      status: 'INVALID_COMPANY',
+      session: input.session,
+      reason: 'Company discovery is unavailable; reachability alone cannot establish company context',
+    };
+  }
+
   const company = findDiscoveredCompany(input.discoveredCompanies, trimmedId);
   if (!company) {
     if (!input.tallyReachable) {
@@ -168,6 +178,22 @@ export function validateSession(input: SessionValidatorInput): SessionValidation
 
   if (!input.connectorConnected) {
     return invalidSession(session, 'Connector is not connected');
+  }
+
+  if (!input.discoveryAvailable) {
+    if (session.selectedCompany || input.requestedCompanyId?.trim()) {
+      return {
+        status: 'COMPANY_DISCOVERY_UNAVAILABLE',
+        session,
+        reason:
+          'Company discovery is unavailable; reachability alone cannot establish company context',
+      };
+    }
+    return {
+      status: 'COMPANY_DISCOVERY_UNAVAILABLE',
+      session,
+      reason: 'Company discovery is unavailable',
+    };
   }
 
   if (isSessionExpired(session, input.sessionTtlMs, input.nowMs)) {
@@ -305,6 +331,8 @@ export function mapValidationStatusToHttpStatus(status: SessionValidationStatus)
       return 404;
     case 'COMPANY_NOT_ACCESSIBLE':
       return 403;
+    case 'COMPANY_DISCOVERY_UNAVAILABLE':
+      return 503;
     case 'SESSION_EXPIRED':
       return 410;
     default: {

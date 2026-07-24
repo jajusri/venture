@@ -70,12 +70,14 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
 
   async selectCompany(companyId: string): Promise<CompanySelectionResult> {
     this.assertRunning();
+    this.companyResolver.invalidateCache();
     const context = await this.loadSelectionContext();
     const result = selectCompany({
       session: this.session,
       companyId,
       discoveredCompanies: context.companies,
       tallyReachable: context.tallyReachable,
+      discoveryAvailable: context.discoveryAvailable,
       connectorConnected: context.connectorConnected,
       nowMs: Date.now(),
     });
@@ -95,6 +97,7 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
   clearSelection(): ConnectorSessionSnapshot {
     this.assertRunning();
     this.session = withClearedSelection(this.session);
+    this.companyResolver.invalidateCache();
     this.logger.info('Connector session company selection cleared', {
       sessionId: this.session.sessionId,
     });
@@ -133,6 +136,7 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
       requestedCompanyId,
       discoveredCompanies: context.companies,
       tallyReachable: context.tallyReachable,
+      discoveryAvailable: context.discoveryAvailable,
       connectorConnected: context.connectorConnected,
       sessionTtlMs: this.config.sessionTtlMs,
       nowMs: Date.now(),
@@ -148,6 +152,7 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
   private async loadSelectionContext(): Promise<{
     readonly companies: readonly DiscoveredCompanyRef[];
     readonly tallyReachable: boolean;
+    readonly discoveryAvailable: boolean;
     readonly connectorConnected: boolean;
     readonly connectionStatus: ConnectorSession['connectionStatus'];
   }> {
@@ -159,14 +164,17 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
       return {
         companies: discovery.companies,
         tallyReachable: discovery.tallyReachable,
+        discoveryAvailable: true,
         connectorConnected,
         connectionStatus,
       };
     } catch {
+      this.companyResolver.invalidateCache();
       const pingOk = await this.tallyConnection.ping().catch(() => false);
       return {
         companies: [],
         tallyReachable: pingOk,
+        discoveryAvailable: false,
         connectorConnected,
         connectionStatus,
       };

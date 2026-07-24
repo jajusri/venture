@@ -27,6 +27,7 @@ describe('session validator', () => {
       companyId: '   ',
       discoveredCompanies: BASE_COMPANIES,
       tallyReachable: true,
+      discoveryAvailable: true,
       connectorConnected: true,
       nowMs: Date.now(),
     });
@@ -47,6 +48,7 @@ describe('session validator', () => {
       companyId: 'missing-co',
       discoveredCompanies: BASE_COMPANIES,
       tallyReachable: true,
+      discoveryAvailable: true,
       connectorConnected: true,
       nowMs: Date.now(),
     });
@@ -72,6 +74,7 @@ describe('session validator', () => {
       companyId: 'estimation',
       discoveredCompanies: BASE_COMPANIES,
       tallyReachable: true,
+      discoveryAvailable: true,
       connectorConnected: true,
       nowMs,
     });
@@ -92,6 +95,7 @@ describe('session validator', () => {
       companyId: 'estimation',
       discoveredCompanies: BASE_COMPANIES,
       tallyReachable: true,
+      discoveryAvailable: true,
       connectorConnected: true,
       nowMs: Date.now(),
     });
@@ -115,6 +119,7 @@ describe('session validator', () => {
       session,
       discoveredCompanies: BASE_COMPANIES,
       tallyReachable: true,
+      discoveryAvailable: true,
       connectorConnected: true,
       sessionTtlMs: 60_000,
       nowMs: Date.now(),
@@ -141,6 +146,7 @@ describe('session validator', () => {
       requestedCompanyId: 'learn',
       discoveredCompanies: BASE_COMPANIES,
       tallyReachable: true,
+      discoveryAvailable: true,
       connectorConnected: true,
       sessionTtlMs: 60_000,
       nowMs,
@@ -166,6 +172,7 @@ describe('session validator', () => {
       session,
       discoveredCompanies: BASE_COMPANIES,
       tallyReachable: true,
+      discoveryAvailable: true,
       connectorConnected: true,
       sessionTtlMs: 1_000,
       nowMs: selectedAtMs + 5_000,
@@ -191,6 +198,7 @@ describe('session validator', () => {
       session,
       discoveredCompanies: [],
       tallyReachable: true,
+      discoveryAvailable: true,
       connectorConnected: true,
       sessionTtlMs: 60_000,
       nowMs,
@@ -217,6 +225,7 @@ describe('session validator', () => {
       requestedCompanyId: 'estimation',
       discoveredCompanies: BASE_COMPANIES,
       tallyReachable: true,
+      discoveryAvailable: true,
       connectorConnected: true,
       sessionTtlMs: 60_000,
       nowMs: nowMs + 1_000,
@@ -224,5 +233,54 @@ describe('session validator', () => {
 
     expect(result.status).toBe('SUCCESS');
     expect(result.session.lastValidatedAt).not.toBe(session.lastValidatedAt);
+  });
+
+  it('returns COMPANY_DISCOVERY_UNAVAILABLE when discovery is unavailable with selected company', () => {
+    const nowMs = Date.now();
+    const session = withSelectedCompany(
+      createEmptySession({
+        connectorVersion: '0.3.1',
+        erpType: ERP_TYPE_TALLY,
+        connectionStatus: 'connected',
+        nowMs,
+      }),
+      { id: 'estimation', name: 'ESTIMATION' },
+      nowMs,
+    );
+
+    const result = validateSession({
+      session,
+      discoveredCompanies: [],
+      tallyReachable: true,
+      discoveryAvailable: false,
+      connectorConnected: true,
+      sessionTtlMs: 60_000,
+      nowMs,
+    });
+
+    expect(result.status).toBe('COMPANY_DISCOVERY_UNAVAILABLE');
+    expect(result.reason).toContain('reachability alone');
+  });
+
+  it('rejects company selection when discovery is unavailable even if Tally is reachable', () => {
+    const session = createEmptySession({
+      connectorVersion: '0.3.1',
+      erpType: ERP_TYPE_TALLY,
+      connectionStatus: 'connected',
+      nowMs: Date.now(),
+    });
+
+    const result = selectCompany({
+      session,
+      companyId: 'estimation',
+      discoveredCompanies: BASE_COMPANIES,
+      tallyReachable: true,
+      discoveryAvailable: false,
+      connectorConnected: true,
+      nowMs: Date.now(),
+    });
+
+    expect(result.status).toBe('INVALID_COMPANY');
+    expect(result.reason).toContain('Company discovery is unavailable');
   });
 });

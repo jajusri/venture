@@ -2,6 +2,8 @@ import type { CompanyDiscoveryService } from '../interfaces/company-discovery.js
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import { slugify } from '../../extraction/normalization/strings.js';
 
+export const COMPANY_DISCOVERY_CACHE_TTL_MS = 60_000;
+
 export interface DiscoveredCompanyRef {
   readonly id: string;
   readonly name: string;
@@ -12,15 +14,28 @@ export interface CompanyDiscoverySnapshot {
   readonly tallyReachable: boolean;
 }
 
+export interface CompanyResolverOptions {
+  readonly nowMs?: () => number;
+  readonly cacheTtlMs?: number;
+}
+
 export class CompanyResolver {
   private cache: {
     expiresAt: number;
     map: Map<string, string>;
     snapshot: CompanyDiscoverySnapshot;
   } | null = null;
-  private readonly cacheTtlMs = 60_000;
+  private inFlightRefresh: Promise<Map<string, string>> | null = null;
+  private readonly nowMs: () => number;
+  private readonly cacheTtlMs: number;
 
-  constructor(private readonly companyDiscovery: CompanyDiscoveryService) {}
+  constructor(
+    private readonly companyDiscovery: CompanyDiscoveryService,
+    options: CompanyResolverOptions = {},
+  ) {
+    this.nowMs = options.nowMs ?? (() => Date.now());
+    this.cacheTtlMs = options.cacheTtlMs ?? COMPANY_DISCOVERY_CACHE_TTL_MS;
+  }
 
   async resolveName(companyId: string): Promise<string> {
     const map = await this.getCompanyMap();
@@ -45,29 +60,51 @@ export class CompanyResolver {
     this.cache = null;
   }
 
+  getCacheAgeMs(): number | null {
+    if (!this.cache) {
+      return null;
+    }
+    return Math.max(0, this.cacheTtlMs - (this.cache.expiresAt - this.nowMs()));
+  }
+
   private async getCompanyMap(): Promise<Map<string, string>> {
-    const now = Date.now();
+    const now = this.nowMs();
     if (this.cache && this.cache.expiresAt > now) {
       return this.cache.map;
     }
 
-    const result = await this.companyDiscovery.discoverCompanies();
-    const map = new Map<string, string>();
-    const companies: DiscoveredCompanyRef[] = [];
-    for (const company of result.items) {
-      map.set(company.id, company.name);
-      map.set(slugify(company.name), company.name);
-      companies.push({ id: company.id, name: company.name });
+    if (!this.inFlightRefresh) {
+      this.inFlightRefresh = this.refreshCompanyMap(now).finally(() => {
+        this.inFlightRefresh = null;
+      });
     }
 
-    this.cache = {
-      expiresAt: now + this.cacheTtlMs,
-      map,
-      snapshot: {
-        companies,
-        tallyReachable: result.tallyReachable,
-      },
-    };
-    return map;
+    return this.inFlightRefresh;
+  }
+
+  private async refreshCompanyMap(now: number): Promise<Map<string, string>> {
+    try {
+      const result = await this.companyDiscovery.discoverCompanies();
+      const map = new Map<string, string>();
+      const companies: DiscoveredCompanyRef[] = [];
+      for (const company of result.items) {
+        map.set(company.id, company.name);
+        map.set(slugify(company.name), company.name);
+        companies.push({ id: company.id, name: company.name });
+      }
+
+      this.cache = {
+        expiresAt: now + this.cacheTtlMs,
+        map,
+        snapshot: {
+          companies,
+          tallyReachable: result.tallyReachable,
+        },
+      };
+      return map;
+    } catch (error) {
+      this.invalidateCache();
+      throw error;
+    }
   }
 }

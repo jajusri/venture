@@ -625,7 +625,7 @@ These principles do **not** expand MVP-1. Implementation occurs only when requir
 
 | # | Control | Status | Notes |
 |---|---------|--------|-------|
-| 1 | Capability-based Tally pre-flight | **PARTIAL** | Configurable probing and typed discovery/session outcomes exist; no unified typed pre-flight capability matrix; must not assume `tally.exe`, fixed port, one release, or one XML schema |
+| 1 | Capability-based Tally pre-flight | **PARTIAL (Phase B — session/resolver fail-closed + cache)** | Phase B tests + narrow fixes: `COMPANY_DISCOVERY_UNAVAILABLE`, cache invalidation/coalescing; no orchestrator; no rich capability cache; see §24 |
 | 2 | Atomic SQLite data plus checkpoint and crash recovery | **COMPLETE (controlled pilot)** | **Atomic batch commit and controlled-pilot interrupted-run restart safety are complete for existing ledger and stock-item paths. More advanced positional/source-watermark resume is intentionally not part of the approved design.** |
 | 3 | Strict XML boundary validation | **PARTIAL (Phase B — migration gate + characterization tests)** | Egress EXPORT validation strong; inbound envelope asymmetry, parser limits, and subset migration policy remain open — see §20 |
 | 4 | Privacy-safe diagnostics | **PARTIAL (export surfaces hardened — Step 3)** | Explicit allowlist DTO + serialized absence tests for desktop export/clipboard/summary and connector diagnostic APIs; on-disk operational logs and normal UI session APIs still may contain company names |
@@ -1371,3 +1371,81 @@ E5 does **not** prove the **final** production contract surfaces SUCCESS for GRO
 No production defect **proven** for approved ledger or stock read paths (E1, E2, E6). E3 is an unresolved Tally limitation, not a contract bug. E5 reveals a **latent structure-stage gap** under intentional mis-scope; full extractor mitigates to EMPTY and does not affect normal ledger operation wiring.
 
 **Verdict:** **EVIDENCE SUPPORTS CURRENT CONTRACTS** for approved read operations — Phase E evidence committed; **Reliability Control #3 not fully complete**; **unrestricted production not approved** (structure-stage scope gap documented; LINEERROR live shape still unobserved).
+
+---
+
+## 24. Reliability Control #1 Phase B — capability preflight tests and narrow fixes (2026-07-24)
+
+**Status:** Complete — deterministic tests added; narrow production fixes applied; validation PASS (uncommitted)
+
+**Type:** Test-first capability preflight hardening (no orchestrator framework; no rich capability cache)
+
+### Phase A inspection summary (call order)
+
+**Ledger sync:** `POST /sync/ledgers` → `LedgerSyncServiceImpl.syncLedgers()` → `requireCompanyId()` (session `validateForOperation`) → `executeSync()` → `companyResolver.resolveName()` → `syncRuns.createRun()` → `readPort.readLedgers()` → extractor/guard/transport/contracts.
+
+**Stock sync:** identical ordering via `StockItemSyncServiceImpl`.
+
+**Sync-run creation:** occurs **after** session validation and company name resolution; **before** Tally extraction.
+
+### Production changes (narrow, evidence-proven)
+
+| Fix | Change | Proven by |
+|-----|--------|-----------|
+| **A — fail-closed company context** | `loadSelectionContext()` sets `discoveryAvailable: false` on discovery failure; `validateSession` / `selectCompany` return `COMPANY_DISCOVERY_UNAVAILABLE` / `INVALID_COMPANY` — reachability alone cannot authorize company-scoped ops | Tests 3C, 3D, 3D API |
+| **B — cache invalidation** | `invalidateCache()` on discovery failure catch, `clearSelection()`, and **before** `selectCompany()` (fresh discovery for selection) | Tests 4C, 4D, 4E |
+| **C — sync boundary** | Confirmed existing: `requireCompanyId()` before `createRun()` — no move required | Tests 5A, 5B |
+| **D — request coalescing** | In-flight promise on concurrent cache miss in `CompanyResolver` | Test 4G |
+
+**Not implemented:** `CapabilityPreflightService` orchestrator; rich ledger/stock capability cache; separate health probes before sync; registry/guard/policy changes.
+
+### New session status
+
+- `COMPANY_DISCOVERY_UNAVAILABLE` (HTTP 503) — discovery could not establish company context; distinct from `COMPANY_NOT_FOUND` (discovery succeeded, company absent).
+
+### Cache contract (documented)
+
+| Property | Value |
+|----------|-------|
+| TTL | `COMPANY_DISCOVERY_CACHE_TTL_MS` = 60_000 ms |
+| Invalidation triggers | explicit `invalidateCache()`; discovery failure; `clearSelection()`; start of `selectCompany()` |
+| Runtime host/port change | **Not supported** — config loaded at process start; no hook added |
+| Concurrent miss | coalesced via in-flight refresh promise |
+
+### Minimum probe findings (integration)
+
+| Scenario | Tally requests on sync |
+|----------|-------------------------|
+| Warm cache after selection | 1× ledger (or stock) export only |
+| Discovery unavailable on sync | 0× export; blocked at session validation |
+
+Discovery for company selection performs one company-list request; sync reuses cache within TTL.
+
+### Tests added
+
+| File | Coverage |
+|------|----------|
+| `test/unit/tally/capability-preflight-policy.test.ts` | Groups 1A–1C, 2A–2C |
+| `test/unit/session/capability-preflight-session.test.ts` | Groups 3A–3F, 4D API |
+| `test/unit/extraction/company-resolver-cache.test.ts` | Groups 4A–4C, 4E, 4G |
+| `test/integration/capability-preflight-sync.test.ts` | Groups 5A–5D, 6A–6D, 7 |
+| `test/helpers/capability-preflight-helpers.ts` | Request classification + privacy assertions |
+
+**New tests:** 40 (603 total suite, was 572).
+
+### Capability-preflight model decision
+
+1. **`CapabilityPreflightService` not required** for this phase.
+2. **Sufficient:** tightened session validation + company resolver cache/invalidation + existing sync entry ordering.
+3. **Orchestrator would add a layer** without removing guard/transport/contract responsibilities.
+4. **Check placement:** session/company resolution before sync-run creation; policy/XML/circuit in request guard; response contracts after receipt.
+
+### Remaining RC#1 limitations
+
+- `isReady()` still means connection-manager running only (documented, not renamed).
+- No typed cross-operation capability matrix or Tally version probing.
+- Tally selected-company vs `SVCURRENTCOMPANY` mismatch not detectable from response shape (Phase E E3).
+- Runtime config hot-reload not supported.
+- Session/API success responses still include company names by design (privacy allowlist applies to diagnostics/export surfaces).
+
+**Verdict:** **SAFE TO COMMIT NARROW PREFLIGHT FIX** — **Reliability Control #1 remains PARTIAL**; **unrestricted production not approved**.
