@@ -4,18 +4,13 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { createLogger } from '../../../src/infrastructure/logging/logger.js';
-import { TallyRequestAuditor } from '../../../src/tally/safety/tally-request-auditor.js';
+import { createTestTallyRequestAuditor } from '../../helpers/tally-audit-test-helpers.js';
 
 describe('TallyRequestAuditor', () => {
   it('writes metadata-only audit records with hashed request bytes', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'budcom-audit-'));
     const auditPath = join(dir, 'audit.jsonl');
-    const auditor = new TallyRequestAuditor(
-      auditPath,
-      true,
-      createLogger({ service: 'test', level: 'error' }),
-    );
+    const auditor = createTestTallyRequestAuditor(auditPath);
 
     await auditor.record({
       timestamp: '2026-07-22T00:00:00.000Z',
@@ -41,11 +36,7 @@ describe('TallyRequestAuditor', () => {
   it('does not write when disabled', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'budcom-audit-'));
     const auditPath = join(dir, 'audit.jsonl');
-    const auditor = new TallyRequestAuditor(
-      auditPath,
-      false,
-      createLogger({ service: 'test', level: 'error' }),
-    );
+    const auditor = createTestTallyRequestAuditor(auditPath, { enabled: false });
 
     await auditor.record({
       timestamp: '2026-07-22T00:00:00.000Z',

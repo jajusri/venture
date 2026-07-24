@@ -36,6 +36,8 @@ export function createTestConnectorConfig(basePath: string): ConnectorConfig {
     tallyCircuitBreakerCooldownMs: 1000,
     tallyRequestAuditEnabled: false,
     tallyRequestAuditPath: './audit.jsonl',
+    tallyRequestAuditMaxBytes: 10 * 1024 * 1024,
+    tallyRequestAuditMaxFiles: 5,
     databasePath: basePath,
     gracefulShutdownMs: 1000,
     connectorVersion: '0.3.1',

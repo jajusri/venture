@@ -1546,6 +1546,96 @@ Audit retention/rotation framework; diagnostic-export cleanup; backup cleanup; S
 
 ### RC#4 status
 
-**Reliability Control #4 remains PARTIAL** — on-disk sinks hardened for highest-risk paths; **unbounded audit/log file growth and encryption gaps remain** (Phase B2).
+**Reliability Control #4 remains PARTIAL** — on-disk sinks hardened for highest-risk paths (Phase B1 metadata-only audit; Phase B2a bounded audit rotation). Diagnostic-export cleanup, sync-run pruning, encryption, and broader retention work remain deferred (Phase B2b+).
 
-**Verdict:** **SAFE TO COMMIT NARROW ON-DISK PRIVACY FIX** — **unrestricted production not approved**.
+**Verdict (Phase B1):** **SAFE TO COMMIT NARROW ON-DISK PRIVACY FIX** — **unrestricted production not approved**.
+
+---
+
+## §25 — RC#4 Phase B2a: bounded Tally request audit rotation (2026-07-24)
+
+### Requirement addressed
+
+Reliability Control #4 Phase B2a — count- and size-bounded rotation for the metadata-only persistent Tally request audit file (`tally-request-audit.jsonl`) only.
+
+### Prior defect
+
+The audit append-only file grew without maximum size or rotated-file count. No production component reads historical audit files; they are support/forensic metadata only.
+
+### Implementation status
+
+**COMPLETE (connector scope)** — bounded rotation inside the existing serialized write chain; no diagnostic-export, sync-run, backup, encryption, or desktop changes.
+
+### Configuration
+
+| Field | Env | Default | Bounds |
+|-------|-----|---------|--------|
+| `tallyRequestAuditMaxBytes` | `BUDCOM_TALLY_REQUEST_AUDIT_MAX_BYTES` | **10 MiB** | 64 KiB – 100 MiB |
+| `tallyRequestAuditMaxFiles` | `BUDCOM_TALLY_REQUEST_AUDIT_MAX_FILES` | **5** rotated archives | 1 – 20 |
+
+Zero does not mean unlimited. Disabled audit creates no file or directory.
+
+### Rotation semantics
+
+Before each append (inside the write chain):
+
+1. Serialize and sanitize the metadata-only audit record.
+2. Compute complete-line byte size including newline.
+3. Rotate only when `currentSize > 0 && currentSize + newLineBytes > maxBytes`.
+4. Never rotate an empty file; never split a JSON line across files.
+5. Deterministic descending rotation: delete `.maxFiles`, rename `.(n-1)` → `.n` … `.1` → `.2`, rename base → `.1`, append to fresh base file.
+6. A single record larger than `maxBytes` is written once to the current file (no infinite rotation loop); temporary size-bound breach allowed when rotation fails.
+
+Approximate maximum footprint: current file + `maxFiles` archives (~60 MiB at defaults).
+
+### Failure behavior
+
+Audit lifecycle failures never block approved Tally requests. Stable sanitized lifecycle codes only (`audit_stat_failed`, `audit_rotation_delete_failed`, `audit_rotation_rename_failed`, `audit_append_failed`, `audit_directory_create_failed`); no path, username, or raw filesystem message leakage. Failed append does not permanently block later writes.
+
+### Privacy
+
+Rotation applies equally to current and numbered archive files: metadata-only schema, no request/response XML, no raw errors, no company/entity names, stable `errorReasonCode`.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `src/tally/safety/audit-file-rotator.ts` | **New** — narrow rotation helper with injectable filesystem seam |
+| `src/tally/safety/tally-request-auditor.ts` | Options object; rotator integration; lifecycle logging |
+| `src/config/defaults.ts` | Audit max bytes/files defaults and bounds constants |
+| `src/config/index.ts` | Env parsing and post-merge validation |
+| `src/tally/tally-module.ts` | Pass rotation config to auditor |
+| `test/helpers/tally-audit-test-helpers.ts` | **New** — test auditor factory |
+| `test/helpers/sqlite-test-storage.ts` | Test config fields |
+| `test/unit/tally/tally-request-audit-config.test.ts` | **New** |
+| `test/unit/tally/tally-request-audit-rotation.test.ts` | **New** |
+| `test/unit/tally/tally-request-auditor.test.ts` | Updated constructor helper |
+| `test/unit/tally/tally-request-audit-privacy.test.ts` | Updated constructor helper |
+| `test/unit/tally/tally-request-audit-recovery.test.ts` | Updated constructor helper |
+| `test/unit/tally/audit-intent.test.ts` | Guard + rotation-failure integration |
+
+### Tests added or changed
+
+Focused B2a suites cover configuration validation, rotation threshold and count cap, concurrency/ordering, filesystem failure recovery, privacy on rotated files, and request-guard non-blocking behavior when rotation fails.
+
+### Validation evidence
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` (connector) | **PASS** |
+| `npm run build` (connector) | **PASS** |
+| Focused audit suites (config, rotation, privacy, recovery, intent, auditor) | **51/51 PASS** |
+| `test/architecture/module-boundaries.test.ts` | **12/12 PASS** |
+| `test/unit/diagnostics/diagnostic-allowlist.test.ts` | **8/8 PASS** |
+| `test/unit/tally/tally-request-guard.test.ts` | **2/2 PASS** |
+| Full connector vitest | **656/656 PASS** (625 prior + 31 new B2a tests) |
+
+### Deferred (not B2a)
+
+Diagnostic-export cleanup (B2b); sync-run pruning (B2c); backup deletion; migration cleanup; temporary-file cleanup; encryption; installer cleanup; telemetry; remote logging; packaging changes; generic retention framework.
+
+**Reliability Control #4 remains PARTIAL** — audit file growth bounded for `tally-request-audit.jsonl`; diagnostic-export cleanup, sync-run pruning, encryption, and broader retention gaps remain.
+
+**Verdict (Phase B2a):** **SAFE TO COMMIT BOUNDED AUDIT ROTATION**
+
+**Unrestricted production remains unapproved.**

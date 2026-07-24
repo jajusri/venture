@@ -43,11 +43,13 @@ export function createTallyModule(options: TallyModuleOptions): TallyModule {
   const responseParser = new TallyXmlResponseParser();
   const companyDiscoveryParser = new CompanyDiscoveryParser(responseParser);
   const groupsParser = new GroupsParser(responseParser);
-  const requestAuditor = new TallyRequestAuditor(
-    options.config.tallyRequestAuditPath,
-    options.config.tallyRequestAuditEnabled,
-    logger.child({ component: 'request-audit' }),
-  );
+  const requestAuditor = new TallyRequestAuditor({
+    auditPath: options.config.tallyRequestAuditPath,
+    enabled: options.config.tallyRequestAuditEnabled,
+    maxBytes: options.config.tallyRequestAuditMaxBytes,
+    maxFiles: options.config.tallyRequestAuditMaxFiles,
+    logger: logger.child({ component: 'request-audit' }),
+  });
   const connectionManager = new TallyConnectionManager({
     config: options.config,
     logger: logger.child({ component: 'connection-manager' }),

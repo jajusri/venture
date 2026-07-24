@@ -32,6 +32,8 @@ export interface ConnectorConfig {
   readonly tallyCircuitBreakerCooldownMs: number;
   readonly tallyRequestAuditEnabled: boolean;
   readonly tallyRequestAuditPath: string;
+  readonly tallyRequestAuditMaxBytes: number;
+  readonly tallyRequestAuditMaxFiles: number;
   readonly databasePath: string;
   readonly gracefulShutdownMs: number;
   readonly connectorVersion: string;
@@ -39,6 +41,13 @@ export interface ConnectorConfig {
   /** Maximum age of a connector session selection before SESSION_EXPIRED. */
   readonly sessionTtlMs: number;
 }
+
+export const TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
+export const TALLY_REQUEST_AUDIT_MAX_FILES_DEFAULT = 5;
+export const TALLY_REQUEST_AUDIT_MAX_BYTES_MIN = 64 * 1024;
+export const TALLY_REQUEST_AUDIT_MAX_BYTES_LIMIT = 100 * 1024 * 1024;
+export const TALLY_REQUEST_AUDIT_MAX_FILES_MIN = 1;
+export const TALLY_REQUEST_AUDIT_MAX_FILES_LIMIT = 20;
 
 export const defaultConfig: ConnectorConfig = {
   env: 'development',
@@ -67,6 +76,8 @@ export const defaultConfig: ConnectorConfig = {
   tallyCircuitBreakerCooldownMs: 60_000,
   tallyRequestAuditEnabled: true,
   tallyRequestAuditPath: './diagnostics/tally-request-audit.jsonl',
+  tallyRequestAuditMaxBytes: TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT,
+  tallyRequestAuditMaxFiles: TALLY_REQUEST_AUDIT_MAX_FILES_DEFAULT,
   databasePath: './data/budcom-connector.db',
   gracefulShutdownMs: 10_000,
   connectorVersion: CONNECTOR_VERSION,

@@ -1,4 +1,11 @@
-import { defaultConfig, type ConnectorConfig } from './defaults.js';
+import {
+  defaultConfig,
+  TALLY_REQUEST_AUDIT_MAX_BYTES_LIMIT,
+  TALLY_REQUEST_AUDIT_MAX_BYTES_MIN,
+  TALLY_REQUEST_AUDIT_MAX_FILES_LIMIT,
+  TALLY_REQUEST_AUDIT_MAX_FILES_MIN,
+  type ConnectorConfig,
+} from './defaults.js';
 import {
   getNetworkExposureWarning,
   isLanModePolicySatisfied,
@@ -13,6 +20,21 @@ function parsePort(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
     throw new Error(`Invalid port value: ${value}`);
+  }
+  return parsed;
+}
+
+function parseBoundedInt(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  label: string,
+): number {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`Invalid ${label}: ${value}`);
   }
   return parsed;
 }
@@ -142,6 +164,20 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
     ),
     tallyRequestAuditPath:
       process.env.BUDCOM_TALLY_REQUEST_AUDIT_PATH ?? defaultConfig.tallyRequestAuditPath,
+    tallyRequestAuditMaxBytes: parseBoundedInt(
+      process.env.BUDCOM_TALLY_REQUEST_AUDIT_MAX_BYTES,
+      defaultConfig.tallyRequestAuditMaxBytes,
+      TALLY_REQUEST_AUDIT_MAX_BYTES_MIN,
+      TALLY_REQUEST_AUDIT_MAX_BYTES_LIMIT,
+      'tally request audit max bytes',
+    ),
+    tallyRequestAuditMaxFiles: parseBoundedInt(
+      process.env.BUDCOM_TALLY_REQUEST_AUDIT_MAX_FILES,
+      defaultConfig.tallyRequestAuditMaxFiles,
+      TALLY_REQUEST_AUDIT_MAX_FILES_MIN,
+      TALLY_REQUEST_AUDIT_MAX_FILES_LIMIT,
+      'tally request audit max files',
+    ),
     databasePath: process.env.BUDCOM_DATABASE_PATH ?? defaultConfig.databasePath,
     gracefulShutdownMs: parsePositiveInt(
       process.env.BUDCOM_SHUTDOWN_MS,
@@ -178,6 +214,21 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
     throw new Error(
       'Non-loopback connector bind requires BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED=true in production.',
     );
+  }
+
+  if (
+    !Number.isInteger(resolved.tallyRequestAuditMaxBytes)
+    || resolved.tallyRequestAuditMaxBytes < TALLY_REQUEST_AUDIT_MAX_BYTES_MIN
+    || resolved.tallyRequestAuditMaxBytes > TALLY_REQUEST_AUDIT_MAX_BYTES_LIMIT
+  ) {
+    throw new Error(`Invalid tally request audit max bytes: ${resolved.tallyRequestAuditMaxBytes}`);
+  }
+  if (
+    !Number.isInteger(resolved.tallyRequestAuditMaxFiles)
+    || resolved.tallyRequestAuditMaxFiles < TALLY_REQUEST_AUDIT_MAX_FILES_MIN
+    || resolved.tallyRequestAuditMaxFiles > TALLY_REQUEST_AUDIT_MAX_FILES_LIMIT
+  ) {
+    throw new Error(`Invalid tally request audit max files: ${resolved.tallyRequestAuditMaxFiles}`);
   }
 
   return resolved;

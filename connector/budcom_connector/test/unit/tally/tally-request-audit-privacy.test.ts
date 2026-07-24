@@ -4,9 +4,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { createLogger } from '../../../src/infrastructure/logging/logger.js';
 import { AppError, ErrorCodes } from '../../../src/infrastructure/errors/app-error.js';
-import { TallyRequestAuditor } from '../../../src/tally/safety/tally-request-auditor.js';
+import { createTestTallyRequestAuditor } from '../../helpers/tally-audit-test-helpers.js';
 
 const SAMPLE_REQUEST_XML = [
   '<ENVELOPE>',
@@ -44,11 +43,7 @@ describe('Tally request audit privacy (1A-1D)', () => {
   it('1A persists metadata only without request XML or tags', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'budcom-audit-privacy-'));
     const auditPath = join(dir, 'audit.jsonl');
-    const auditor = new TallyRequestAuditor(
-      auditPath,
-      true,
-      createLogger({ service: 'test', level: 'error' }),
-    );
+    const auditor = createTestTallyRequestAuditor(auditPath);
 
     await auditor.record({
       timestamp: '2026-07-24T00:00:00.000Z',
@@ -74,11 +69,7 @@ describe('Tally request audit privacy (1A-1D)', () => {
   it('1B normalizes failure reason codes without raw exception text', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'budcom-audit-failure-'));
     const auditPath = join(dir, 'audit.jsonl');
-    const auditor = new TallyRequestAuditor(
-      auditPath,
-      true,
-      createLogger({ service: 'test', level: 'error' }),
-    );
+    const auditor = createTestTallyRequestAuditor(auditPath);
 
     await auditor.record({
       timestamp: '2026-07-24T00:00:01.000Z',
@@ -103,11 +94,7 @@ describe('Tally request audit privacy (1A-1D)', () => {
   it('1C remains enabled for metadata-only auditing', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'budcom-audit-enabled-'));
     const auditPath = join(dir, 'audit.jsonl');
-    const auditor = new TallyRequestAuditor(
-      auditPath,
-      true,
-      createLogger({ service: 'test', level: 'error' }),
-    );
+    const auditor = createTestTallyRequestAuditor(auditPath);
 
     await auditor.record({
       timestamp: '2026-07-24T00:00:02.000Z',
@@ -125,11 +112,7 @@ describe('Tally request audit privacy (1A-1D)', () => {
   it('1D coalesces concurrent writes into complete JSONL lines', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'budcom-audit-concurrent-'));
     const auditPath = join(dir, 'audit.jsonl');
-    const auditor = new TallyRequestAuditor(
-      auditPath,
-      true,
-      createLogger({ service: 'test', level: 'error' }),
-    );
+    const auditor = createTestTallyRequestAuditor(auditPath, { maxBytes: 512_000, maxFiles: 3 });
 
     await Promise.all(
       Array.from({ length: 20 }, (_, index) =>

@@ -20,8 +20,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
-import { createLogger } from '../../../src/infrastructure/logging/logger.js';
-import { TallyRequestAuditor } from '../../../src/tally/safety/tally-request-auditor.js';
+import { createTestTallyRequestAuditor } from '../../helpers/tally-audit-test-helpers.js';
 
 describe('Tally request audit write recovery (1E)', () => {
   beforeEach(() => {
@@ -32,11 +31,7 @@ describe('Tally request audit write recovery (1E)', () => {
     failNextAppend = true;
     const dir = await mkdtemp(join(tmpdir(), 'budcom-audit-recover-'));
     const auditPath = join(dir, 'audit-recover.jsonl');
-    const auditor = new TallyRequestAuditor(
-      auditPath,
-      true,
-      createLogger({ service: 'test', level: 'error' }),
-    );
+    const auditor = createTestTallyRequestAuditor(auditPath);
 
     await auditor.record({
       timestamp: '2026-07-24T00:00:03.000Z',

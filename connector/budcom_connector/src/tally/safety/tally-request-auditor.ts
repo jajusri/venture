@@ -1,12 +1,16 @@
-import { appendFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { dirname } from 'node:path';
 
 import type { Logger } from '../../infrastructure/logging/logger.js';
 import {
   normalizeAuditErrorReason,
   type AuditErrorReasonCode,
 } from '../../infrastructure/privacy/audit-error-normalizer.js';
+import {
+  AuditFileRotator,
+  createNodeAuditFileOperations,
+  type AuditFileOperations,
+  type AuditLifecycleCode,
+} from './audit-file-rotator.js';
 
 export type TallyRequestOutcome = 'intent' | 'sent' | 'failed' | 'blocked';
 
@@ -26,14 +30,37 @@ export interface TallyRequestAuditEntry {
   readonly errorReasonCode?: AuditErrorReasonCode;
 }
 
+export interface TallyRequestAuditorOptions {
+  readonly auditPath: string;
+  readonly enabled: boolean;
+  readonly maxBytes: number;
+  readonly maxFiles: number;
+  readonly logger: Logger;
+  readonly fs?: AuditFileOperations;
+}
+
 export class TallyRequestAuditor {
   private writeChain: Promise<void> = Promise.resolve();
+  private readonly rotator: AuditFileRotator | null;
+  private rotatorPromise: Promise<AuditFileRotator> | null = null;
 
-  constructor(
-    private readonly auditPath: string,
-    private readonly enabled: boolean,
-    private readonly logger: Logger,
-  ) {}
+  constructor(private readonly options: TallyRequestAuditorOptions) {
+    if (options.fs) {
+      this.rotator = options.enabled
+        ? new AuditFileRotator(
+            {
+              basePath: options.auditPath,
+              maxBytes: options.maxBytes,
+              maxFiles: options.maxFiles,
+            },
+            options.fs,
+            (code) => this.logLifecycleIssue(code),
+          )
+        : null;
+    } else {
+      this.rotator = null;
+    }
+  }
 
   async record(
     entry: Omit<TallyRequestAuditEntry, 'requestHash' | 'errorReasonCode'> & {
@@ -41,7 +68,7 @@ export class TallyRequestAuditor {
       readonly error?: unknown;
     },
   ): Promise<void> {
-    if (!this.enabled) return;
+    if (!this.options.enabled) return;
 
     const record: TallyRequestAuditEntry = {
       timestamp: entry.timestamp,
@@ -62,15 +89,36 @@ export class TallyRequestAuditor {
     await this.writeChain;
   }
 
-  private async writeRecord(record: TallyRequestAuditEntry): Promise<void> {
-    try {
-      await mkdir(dirname(this.auditPath), { recursive: true });
-      await appendFile(this.auditPath, `${JSON.stringify(record)}\n`, 'utf8');
-    } catch {
-      this.logger.warn('Failed to write Tally request audit record', {
-        component: 'tally-request-auditor',
-        code: 'AUDIT_WRITE_FAILED',
-      });
+  private async getRotator(): Promise<AuditFileRotator> {
+    if (this.rotator) {
+      return this.rotator;
     }
+    if (!this.rotatorPromise) {
+      this.rotatorPromise = createNodeAuditFileOperations().then(
+        (fs) =>
+          new AuditFileRotator(
+            {
+              basePath: this.options.auditPath,
+              maxBytes: this.options.maxBytes,
+              maxFiles: this.options.maxFiles,
+            },
+            fs,
+            (code) => this.logLifecycleIssue(code),
+          ),
+      );
+    }
+    return this.rotatorPromise;
+  }
+
+  private async writeRecord(record: TallyRequestAuditEntry): Promise<void> {
+    const rotator = await this.getRotator();
+    await rotator.appendLine(`${JSON.stringify(record)}\n`);
+  }
+
+  private logLifecycleIssue(code: AuditLifecycleCode): void {
+    this.options.logger.warn('tally_request_audit_lifecycle', {
+      component: 'tally-request-auditor',
+      reasonCode: code,
+    });
   }
 }
