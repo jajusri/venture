@@ -55,6 +55,12 @@ connector/budcom_connector/test-data/
 connector/budcom_connector/docs/
 /connector/budcom_connector/diagnostics/
 /connector/budcom_connector/test-output.txt
+
+# Local Tally validation artifacts
+/budcom-ledgers-*.xml
+/Tally-Test-Backups/
+connector/budcom_connector/live-validation-output.json
+
 # TypeScript emit artifacts (tests run via vitest on .ts source)
 connector/budcom_connector/test/**/*.js
 connector/budcom_connector/test/**/*.js.map
