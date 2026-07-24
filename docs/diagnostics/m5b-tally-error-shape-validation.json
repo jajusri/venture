@@ -1,0 +1,515 @@
+{
+  "validatedAt": "2026-07-24T14:33:16.890Z",
+  "validationType": "m5b-tally-error-shape-live",
+  "evidenceStatus": "committed-candidate",
+  "connectorHost": "127.0.0.1",
+  "connectorPort": 8096,
+  "tallyHost": "127.0.0.1",
+  "tallyPort": 9000,
+  "testEnvironment": "win32",
+  "companyLabel": "[REDACTED]",
+  "runContext": {
+    "requestedCompanyContextSupplied": true,
+    "requestedCompanyContextBracketNormalized": false,
+    "requestedCompanyContextCharLength": 14,
+    "doesNotVerifyTallySelectedCompany": true
+  },
+  "populatedCompanyGate": {
+    "e1Sanity": {
+      "scenarioId": "E1",
+      "responseByteLength": 618430,
+      "requestedEntityNodeCount": 923,
+      "collectionPresent": true,
+      "parserOutcome": "accepted",
+      "contractStatus": "SUCCESS"
+    },
+    "e2Sanity": {
+      "scenarioId": "E2",
+      "responseByteLength": 963364,
+      "requestedEntityNodeCount": 1503,
+      "collectionPresent": true,
+      "parserOutcome": "accepted",
+      "contractStatus": "SUCCESS"
+    },
+    "populatedCompanyGatePassed": true,
+    "minimumRequestedEntityNodeCount": 1,
+    "validCompanyPreflight": {
+      "passed": true,
+      "status": "PASS",
+      "reasons": [],
+      "likelyTallyModalBlocking": false
+    }
+  },
+  "dataClassification": "operator-controlled-privacy-safe",
+  "connectorVersion": "0.3.1",
+  "tallyReleaseScope": "TallyPrime (operator-recorded localhost scope)",
+  "repeatRunPolicy": "E1/E2 preflight first; disruptive E4 excluded unless explicitly flagged.",
+  "evidenceLimitations": [
+    "Requested company context is supplied via XML only; harness cannot verify which company Tally has open.",
+    "E4 invalid-report validation excluded from default and evidence-writing runs.",
+    "Single localhost Tally instance; not a cross-version catalogue.",
+    "E6 uses port 9001 with no listener — transport-equivalent to closed HTTP endpoint."
+  ],
+  "scenarios": [
+    {
+      "scenarioId": "E1",
+      "description": "Valid rich ledger request against dedicated test company.",
+      "runs": [
+        {
+          "runIndex": 1,
+          "result": {
+            "scenarioId": "E1",
+            "correlationId": "7321cab0-8238-4572-b1df-0c60a721152b",
+            "requestKind": "approved-rich-ledgers",
+            "transportStatus": 200,
+            "responseByteLength": 618430,
+            "durationMs": 149,
+            "envelopePresent": true,
+            "headerPresent": true,
+            "headerStatusPresent": true,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": true,
+            "dataPresent": true,
+            "collectionPresent": true,
+            "collectionCount": 1,
+            "requestedEntityNodeCount": 923,
+            "unexpectedEntityNodeCount": 0,
+            "parserOutcome": "accepted",
+            "overallPass": true,
+            "rootElement": "ENVELOPE",
+            "headerStatusClassifiedValue": "1",
+            "collectionMetadata": {
+              "collectionCount": 1,
+              "collectionAttributeKeySets": [
+                [
+                  "ISMSTDEPTYPE",
+                  "MSTDEPTYPE"
+                ]
+              ],
+              "hasCollectionNameAttribute": false,
+              "hasCollectionTypeAttribute": false,
+              "directChildElementCounts": {
+                "LEDGER": 923
+              }
+            },
+            "contractStatus": "SUCCESS",
+            "contractBlocking": false
+          }
+        },
+        {
+          "runIndex": 2,
+          "result": {
+            "scenarioId": "E1",
+            "correlationId": "15476ddb-7c0e-454c-a1e5-a4ffe97bbeac",
+            "requestKind": "approved-rich-ledgers",
+            "transportStatus": 200,
+            "responseByteLength": 618430,
+            "durationMs": 66,
+            "envelopePresent": true,
+            "headerPresent": true,
+            "headerStatusPresent": true,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": true,
+            "dataPresent": true,
+            "collectionPresent": true,
+            "collectionCount": 1,
+            "requestedEntityNodeCount": 923,
+            "unexpectedEntityNodeCount": 0,
+            "parserOutcome": "accepted",
+            "overallPass": true,
+            "rootElement": "ENVELOPE",
+            "headerStatusClassifiedValue": "1",
+            "collectionMetadata": {
+              "collectionCount": 1,
+              "collectionAttributeKeySets": [
+                [
+                  "ISMSTDEPTYPE",
+                  "MSTDEPTYPE"
+                ]
+              ],
+              "hasCollectionNameAttribute": false,
+              "hasCollectionTypeAttribute": false,
+              "directChildElementCounts": {
+                "LEDGER": 923
+              }
+            },
+            "contractStatus": "SUCCESS",
+            "contractBlocking": false
+          }
+        }
+      ],
+      "repeatStable": true,
+      "repeatDifferences": [],
+      "expectedOutcome": "Parser accepts; envelope/body/data/collection present; ledger contract SUCCESS/EMPTY/INCOMPLETE without LINEERROR.",
+      "observedOutcome": "transport=200; bytes=618430; parser=accepted; lineError=false; headerStatus=1; collection=true; contract=SUCCESS",
+      "contractCorrectForScenario": true
+    },
+    {
+      "scenarioId": "E2",
+      "description": "Valid rich stock-item request against dedicated test company.",
+      "runs": [
+        {
+          "runIndex": 1,
+          "result": {
+            "scenarioId": "E2",
+            "correlationId": "93661de0-5abe-4529-b65d-1196ea14c931",
+            "requestKind": "approved-rich-stock-items",
+            "transportStatus": 200,
+            "responseByteLength": 963364,
+            "durationMs": 136,
+            "envelopePresent": true,
+            "headerPresent": true,
+            "headerStatusPresent": true,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": true,
+            "dataPresent": true,
+            "collectionPresent": true,
+            "collectionCount": 1,
+            "requestedEntityNodeCount": 1503,
+            "unexpectedEntityNodeCount": 0,
+            "parserOutcome": "accepted",
+            "overallPass": true,
+            "rootElement": "ENVELOPE",
+            "headerStatusClassifiedValue": "1",
+            "collectionMetadata": {
+              "collectionCount": 1,
+              "collectionAttributeKeySets": [
+                [
+                  "ISMSTDEPTYPE",
+                  "MSTDEPTYPE"
+                ]
+              ],
+              "hasCollectionNameAttribute": false,
+              "hasCollectionTypeAttribute": false,
+              "directChildElementCounts": {
+                "STOCKITEM": 1503
+              }
+            },
+            "contractStatus": "SUCCESS",
+            "contractBlocking": false
+          }
+        },
+        {
+          "runIndex": 2,
+          "result": {
+            "scenarioId": "E2",
+            "correlationId": "9ce0b3c5-4557-4b80-bbd6-6ba7f4aec558",
+            "requestKind": "approved-rich-stock-items",
+            "transportStatus": 200,
+            "responseByteLength": 963364,
+            "durationMs": 110,
+            "envelopePresent": true,
+            "headerPresent": true,
+            "headerStatusPresent": true,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": true,
+            "dataPresent": true,
+            "collectionPresent": true,
+            "collectionCount": 1,
+            "requestedEntityNodeCount": 1503,
+            "unexpectedEntityNodeCount": 0,
+            "parserOutcome": "accepted",
+            "overallPass": true,
+            "rootElement": "ENVELOPE",
+            "headerStatusClassifiedValue": "1",
+            "collectionMetadata": {
+              "collectionCount": 1,
+              "collectionAttributeKeySets": [
+                [
+                  "ISMSTDEPTYPE",
+                  "MSTDEPTYPE"
+                ]
+              ],
+              "hasCollectionNameAttribute": false,
+              "hasCollectionTypeAttribute": false,
+              "directChildElementCounts": {
+                "STOCKITEM": 1503
+              }
+            },
+            "contractStatus": "SUCCESS",
+            "contractBlocking": false
+          }
+        }
+      ],
+      "repeatStable": true,
+      "repeatDifferences": [],
+      "expectedOutcome": "Parser accepts; stock contract SUCCESS/EMPTY/INCOMPLETE without LINEERROR.",
+      "observedOutcome": "transport=200; bytes=963364; parser=accepted; lineError=false; headerStatus=1; collection=true; contract=SUCCESS",
+      "contractCorrectForScenario": true
+    },
+    {
+      "scenarioId": "E3",
+      "description": "Ledger request with synthetic nonexistent company name.",
+      "runs": [
+        {
+          "runIndex": 1,
+          "result": {
+            "scenarioId": "E3",
+            "correlationId": "ef973a20-52ce-4492-8bb9-c4af2683a10f",
+            "requestKind": "approved-ledgers-nonexistent-company",
+            "transportStatus": 200,
+            "responseByteLength": 1497,
+            "durationMs": 10,
+            "envelopePresent": true,
+            "headerPresent": true,
+            "headerStatusPresent": true,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": true,
+            "dataPresent": true,
+            "collectionPresent": true,
+            "collectionCount": 1,
+            "requestedEntityNodeCount": 0,
+            "unexpectedEntityNodeCount": 0,
+            "parserOutcome": "accepted",
+            "overallPass": true,
+            "rootElement": "ENVELOPE",
+            "headerStatusClassifiedValue": "1",
+            "collectionMetadata": {
+              "collectionCount": 1,
+              "collectionAttributeKeySets": [
+                [
+                  "ISMSTDEPTYPE",
+                  "MSTDEPTYPE"
+                ]
+              ],
+              "hasCollectionNameAttribute": false,
+              "hasCollectionTypeAttribute": false,
+              "directChildElementCounts": {}
+            },
+            "contractStatus": "SUCCESS",
+            "contractBlocking": false
+          }
+        },
+        {
+          "runIndex": 2,
+          "result": {
+            "scenarioId": "E3",
+            "correlationId": "23139539-c4f0-499a-a1c6-358b81498e5b",
+            "requestKind": "approved-ledgers-nonexistent-company",
+            "transportStatus": 200,
+            "responseByteLength": 1497,
+            "durationMs": 2010,
+            "envelopePresent": true,
+            "headerPresent": true,
+            "headerStatusPresent": true,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": true,
+            "dataPresent": true,
+            "collectionPresent": true,
+            "collectionCount": 1,
+            "requestedEntityNodeCount": 0,
+            "unexpectedEntityNodeCount": 0,
+            "parserOutcome": "accepted",
+            "overallPass": true,
+            "rootElement": "ENVELOPE",
+            "headerStatusClassifiedValue": "1",
+            "collectionMetadata": {
+              "collectionCount": 1,
+              "collectionAttributeKeySets": [
+                [
+                  "ISMSTDEPTYPE",
+                  "MSTDEPTYPE"
+                ]
+              ],
+              "hasCollectionNameAttribute": false,
+              "hasCollectionTypeAttribute": false,
+              "directChildElementCounts": {}
+            },
+            "contractStatus": "SUCCESS",
+            "contractBlocking": false
+          }
+        }
+      ],
+      "repeatStable": true,
+      "repeatDifferences": [],
+      "expectedOutcome": "Observe real Tally error shape; contract should block if LINEERROR or missing collection.",
+      "observedOutcome": "transport=200; bytes=1497; parser=accepted; lineError=false; headerStatus=1; collection=true; contract=SUCCESS",
+      "contractCorrectForScenario": false
+    },
+    {
+      "scenarioId": "E5",
+      "description": "Valid ledger-groups response classified by ledger contract (wrong entity scope).",
+      "runs": [
+        {
+          "runIndex": 1,
+          "result": {
+            "scenarioId": "E5",
+            "correlationId": "45d857f1-2b19-490b-a6c0-6369980f380d",
+            "requestKind": "approved-ledger-groups",
+            "transportStatus": 200,
+            "responseByteLength": 17964,
+            "durationMs": 2028,
+            "envelopePresent": true,
+            "headerPresent": true,
+            "headerStatusPresent": true,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": true,
+            "dataPresent": true,
+            "collectionPresent": true,
+            "collectionCount": 1,
+            "requestedEntityNodeCount": 0,
+            "unexpectedEntityNodeCount": 28,
+            "parserOutcome": "accepted",
+            "overallPass": true,
+            "rootElement": "ENVELOPE",
+            "headerStatusClassifiedValue": "1",
+            "collectionMetadata": {
+              "collectionCount": 1,
+              "collectionAttributeKeySets": [
+                [
+                  "ISMSTDEPTYPE",
+                  "MSTDEPTYPE"
+                ]
+              ],
+              "hasCollectionNameAttribute": false,
+              "hasCollectionTypeAttribute": false,
+              "directChildElementCounts": {
+                "GROUP": 28
+              }
+            },
+            "contractStatus": "SUCCESS",
+            "contractBlocking": false
+          }
+        },
+        {
+          "runIndex": 2,
+          "result": {
+            "scenarioId": "E5",
+            "correlationId": "51f5122f-d2a5-4e90-a449-5b3e0bfeab2c",
+            "requestKind": "approved-ledger-groups",
+            "transportStatus": 200,
+            "responseByteLength": 17964,
+            "durationMs": 2025,
+            "envelopePresent": true,
+            "headerPresent": true,
+            "headerStatusPresent": true,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": true,
+            "dataPresent": true,
+            "collectionPresent": true,
+            "collectionCount": 1,
+            "requestedEntityNodeCount": 0,
+            "unexpectedEntityNodeCount": 28,
+            "parserOutcome": "accepted",
+            "overallPass": true,
+            "rootElement": "ENVELOPE",
+            "headerStatusClassifiedValue": "1",
+            "collectionMetadata": {
+              "collectionCount": 1,
+              "collectionAttributeKeySets": [
+                [
+                  "ISMSTDEPTYPE",
+                  "MSTDEPTYPE"
+                ]
+              ],
+              "hasCollectionNameAttribute": false,
+              "hasCollectionTypeAttribute": false,
+              "directChildElementCounts": {
+                "GROUP": 28
+              }
+            },
+            "contractStatus": "SUCCESS",
+            "contractBlocking": false
+          }
+        }
+      ],
+      "repeatStable": true,
+      "repeatDifferences": [],
+      "expectedOutcome": "Ledger contract must not false-success on GROUP-only collection.",
+      "observedOutcome": "transport=200; bytes=17964; parser=accepted; lineError=false; headerStatus=1; collection=true; contract=SUCCESS",
+      "contractCorrectForScenario": false
+    },
+    {
+      "scenarioId": "E6",
+      "description": "Transport unavailable before XML (no listener on probe port 9001).",
+      "runs": [
+        {
+          "runIndex": 1,
+          "result": {
+            "scenarioId": "E6",
+            "correlationId": "91f140ac-d75e-4d65-8a98-6e6fd3072b6e",
+            "requestKind": "transport-unavailable-probe",
+            "transportStatus": null,
+            "responseByteLength": 0,
+            "durationMs": 2,
+            "envelopePresent": false,
+            "headerPresent": false,
+            "headerStatusPresent": false,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": false,
+            "dataPresent": false,
+            "collectionPresent": false,
+            "collectionCount": 0,
+            "requestedEntityNodeCount": 0,
+            "unexpectedEntityNodeCount": 0,
+            "parserOutcome": "not_applicable",
+            "transportErrorCode": "CONNECTION_REFUSED_OR_TIMEOUT",
+            "transportErrorMessage": "fetch failed",
+            "overallPass": true,
+            "classificationNotes": "Transport failure before XML body; contract classification not applicable."
+          }
+        },
+        {
+          "runIndex": 2,
+          "result": {
+            "scenarioId": "E6",
+            "correlationId": "f308ac69-bf04-4457-96fb-376c2e9742b7",
+            "requestKind": "transport-unavailable-probe",
+            "transportStatus": null,
+            "responseByteLength": 0,
+            "durationMs": 1,
+            "envelopePresent": false,
+            "headerPresent": false,
+            "headerStatusPresent": false,
+            "lineErrorPresent": false,
+            "associatedHeaderStatusZero": false,
+            "bodyPresent": false,
+            "dataPresent": false,
+            "collectionPresent": false,
+            "collectionCount": 0,
+            "requestedEntityNodeCount": 0,
+            "unexpectedEntityNodeCount": 0,
+            "parserOutcome": "not_applicable",
+            "transportErrorCode": "CONNECTION_REFUSED_OR_TIMEOUT",
+            "transportErrorMessage": "fetch failed",
+            "overallPass": true,
+            "classificationNotes": "Transport failure before XML body; contract classification not applicable."
+          }
+        }
+      ],
+      "repeatStable": true,
+      "repeatDifferences": [],
+      "expectedOutcome": "Connection failure; no XML; no contract classification.",
+      "observedOutcome": "transport=none; bytes=0; parser=not_applicable; lineError=false; headerStatus=absent; collection=false; contract=n/a",
+      "contractCorrectForScenario": true
+    }
+  ],
+  "privacyReview": {
+    "rawXmlExcluded": true,
+    "businessNamesExcluded": true,
+    "ledgerOrItemNamesExcluded": true,
+    "guidAndBalanceExcluded": true,
+    "onlyStructuralMarkersReported": true
+  },
+  "summary": {
+    "scenariosCompleted": 5,
+    "allRepeatStable": true,
+    "includesDisruptiveE4": false,
+    "lineErrorObservedIn": [],
+    "headerStatusObservedIn": [
+      "E1",
+      "E2",
+      "E3",
+      "E5"
+    ]
+  }
+}

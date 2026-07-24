@@ -1179,3 +1179,195 @@ Unsupported constructs remain unsupported (DOCTYPE, comments, CDATA, external en
 - Reliability Control #3 **not fully complete**
 
 **Verdict:** **SAFE TO COMMIT PARSER BOUNDARY HARDENING** — not unrestricted production approval.
+
+---
+
+## 23. Reliability Control #3 Phase E — live Tally error-shape evidence (2026-07-24)
+
+**Status:** Complete — controlled live evidence captured; privacy validation PASS; harness and evidence committed (no production code changes)
+
+**Type:** Privacy-safe live localhost error-shape capture and current-contract verification
+
+**Requirement addressed:** Reliability Control #3 — synthetic-only LINEERROR/STATUS evidence; live structural error-shape catalogue
+
+**Evidence file:** `docs/diagnostics/m5b-tally-error-shape-validation.json` (`validatedAt`: 2026-07-24T14:33:16.890Z)
+
+### Harness (uncommitted)
+
+| Component | Path |
+|-----------|------|
+| Structural scanner | `test/helpers/tally-error-shape-scanner.ts` |
+| Run plan / preflight | `test/helpers/tally-error-shape-run-plan.ts` |
+| Company context helper | `test/helpers/tally-error-shape-company-context.ts` |
+| Live runner | `scripts/live-tally-error-shape-validation.ts` |
+| Evidence validator | `test/helpers/tally-error-shape-evidence-validation.ts` |
+| Unit tests | `test/unit/diagnostics/tally-error-shape-evidence.test.ts`, `tally-error-shape-run-plan.test.ts` |
+
+Scanner contract assessment uses the same production functions as structure-stage evaluation: `assessLedgerMasterDataEnvelope` → `assessLedgerMasterDataStructure` (ledger) and stock equivalents. It does **not** run extraction-stage assessment (`assessLedgerMasterDataExtraction`).
+
+### Provisional runs invalidated (do not use)
+
+Initial localhost runs were non-authoritative due to wrong company open, E4 modal disruption, and subsequent zero-byte E1/E2. Harness corrected: E4 excluded by default; E1/E2 populated-company preflight gate.
+
+### Controlled rerun summary
+
+| Gate | Result |
+|------|--------|
+| `populatedCompanyGatePassed` | true |
+| E1 sanity | 923 entities, 618430 bytes, SUCCESS |
+| E2 sanity | 1503 entities, 963364 bytes, SUCCESS |
+| `validCompanyPreflight` | PASS |
+| `likelyTallyModalBlocking` | false |
+| E4 included | false |
+| Scenarios completed | 5 (E1, E2, E3, E5, E6) |
+| All repeat-stable | true |
+| `--validate-evidence` | PASS |
+
+### Per-scenario analysis (structure-stage contract; 2 runs each)
+
+#### E1 — valid rich ledger
+
+| Field | Run 1 / Run 2 |
+|-------|---------------|
+| Transport | HTTP 200 |
+| Response bytes | 618430 |
+| ENVELOPE / HEADER / BODY / DATA / COLLECTION | all present |
+| HEADER STATUS | present, classified `1` |
+| LINEERROR | absent |
+| Requested (LEDGER) count | 923 |
+| Unrelated entity count | 0 |
+| Parser | accepted |
+| Contract (structure) | SUCCESS, non-blocking |
+| Correct for scenario | yes |
+| Repeat stability | stable (identical bytes, counts, contract) |
+
+#### E2 — valid rich stock
+
+| Field | Run 1 / Run 2 |
+|-------|---------------|
+| Transport | HTTP 200 |
+| Response bytes | 963364 |
+| ENVELOPE / HEADER / BODY / DATA / COLLECTION | all present |
+| HEADER STATUS | present, classified `1` |
+| LINEERROR | absent |
+| Requested (STOCKITEM) count | 1503 |
+| Unrelated entity count | 0 |
+| Parser | accepted |
+| Contract (structure) | SUCCESS, non-blocking |
+| Correct for scenario | yes |
+| Repeat stability | stable |
+
+#### E3 — nonexistent company name in request
+
+| Field | Run 1 / Run 2 |
+|-------|---------------|
+| Transport | HTTP 200 |
+| Response bytes | 1497 |
+| ENVELOPE / HEADER / BODY / DATA / COLLECTION | all present |
+| HEADER STATUS | present, classified `1` |
+| LINEERROR | absent |
+| Requested (LEDGER) count | 0 |
+| Unrelated entity count | 0 |
+| Parser | accepted |
+| Contract (structure) | SUCCESS, non-blocking |
+| Harness `contractCorrectForScenario` | false (expects blocking without LINEERROR) |
+| Repeat stability | stable |
+
+**E3 decision:** Not proven misclassified by structure-stage contract alone.
+
+Evidence distinguishes these hypotheses:
+
+| Hypothesis | Supported? |
+|------------|------------|
+| Tally accepted company context and returned valid empty collection shell (~1.5 KiB, COLLECTION present, zero LEDGER) | **Yes** — shape matches prior wrong-company empty responses; no LINEERROR |
+| Tally ignored nonexistent name and returned currently selected populated company | **No** — E1 returned 923 LEDGER / 618430 bytes; E3 returned 0 LEDGER / 1497 bytes |
+| Tally returned error-like structure without LINEERROR | **Partial** — empty collection with STATUS=`1`, not a blocking error envelope |
+| Other | No stronger marker observed |
+
+**No reliable response marker** in captured evidence proves the nonexistent company name was rejected (no LINEERROR, no STATUS=`0` association, no company-rejection element, no named-collection identity attribute). Empty collection + STATUS=`1` is **not** treated as error without stronger evidence.
+
+**Classification:** Unresolved **Tally company-context limitation** — connector cannot verify which company Tally applied (`doesNotVerifyTallySelectedCompany: true` in evidence). Production extraction path would yield **EMPTY** (`collection_empty`, non-blocking) for zero LEDGER nodes; that is consistent with current contract design and does not warrant automatic contract change from E3 alone.
+
+#### E5 — ledger-groups response evaluated by ledger contract
+
+| Field | Run 1 / Run 2 |
+|-------|---------------|
+| Transport | HTTP 200 |
+| Response bytes | 17964 |
+| ENVELOPE / HEADER / BODY / DATA / COLLECTION | all present |
+| HEADER STATUS | present, classified `1` |
+| LINEERROR | absent |
+| Requested (LEDGER) count | 0 |
+| Unrelated (GROUP) count | 28 |
+| Parser | accepted |
+| Contract (structure) | SUCCESS, non-blocking |
+| Harness `contractCorrectForScenario` | false (expects non-SUCCESS when unrelated-only) |
+| Repeat stability | stable |
+
+**E5 decision:** Proves **structure-stage** ledger assessment returns SUCCESS when a COLLECTION exists under BODY/DATA regardless of LEDGER node presence. Scanner and `assessLedgerMasterDataStructure` use **identical logic** — confirmed.
+
+Distinctions:
+
+| Case | Structure contract | Full production extractor (structure + extraction) |
+|------|-------------------|-----------------------------------------------------|
+| Valid empty ledger collection (0 LEDGER, 0 unrelated) | SUCCESS | EMPTY (`collection_empty`, non-blocking) |
+| GROUP-only collection (0 LEDGER, 28 GROUP) — E5 | SUCCESS | EMPTY (`collection_empty`, non-blocking) — conflates with legit empty |
+| Populated ledger (E1) | SUCCESS | SUCCESS |
+
+E5 does **not** prove the **final** production contract surfaces SUCCESS for GROUP-only misapplication — `MasterDataExtractor` reports extraction-stage status (EMPTY here). Approved ledger sync uses the ledger operation and returned LEDGER nodes (E1); E5 is an intentional mis-scope probe, not the production read path.
+
+**Smallest deferred correction (not implemented):** If entity-scope enforcement at structure stage is desired, extend `assessLedgerMasterDataStructure` to return `COLLECTION_MISSING` or a scope-mismatch reason when direct COLLECTION children contain unrelated entity types but zero scoped LEDGER nodes — distinguishing E5 from E3-style legit empty. Optional extraction-stage enhancement could treat unrelated-only collections as blocking scope drift.
+
+#### E6 — transport unavailable
+
+| Field | Run 1 / Run 2 |
+|-------|---------------|
+| Transport | failure (`CONNECTION_REFUSED_OR_TIMEOUT`, status null) |
+| Response bytes | 0 |
+| XML structure | not present |
+| HEADER STATUS / LINEERROR | n/a |
+| Parser | not_applicable |
+| Contract | n/a (transport before XML) |
+| Correct for scenario | yes |
+| Repeat stability | stable |
+
+### Live-proven (this localhost TallyPrime scope)
+
+- Populated ledger response: ENVELOPE → BODY → DATA → COLLECTION with 923 direct LEDGER children; ~618 KiB; parser accepted; structure SUCCESS; STATUS=`1`; no LINEERROR.
+- Populated stock response: 1503 direct STOCKITEM children; ~963 KiB; same envelope shape; structure SUCCESS; STATUS=`1`; no LINEERROR.
+- Collection metadata: single COLLECTION; attributes `ISMSTDEPTYPE`, `MSTDEPTYPE` only; **no** collection name/type identity attributes observed.
+- STATUS=`1` on successful populated reads; no LINEERROR on any completed scenario.
+- E3: ~1.5 KiB empty-collection shell; STATUS=`1`; no LINEERROR; not populated-company data.
+- E5: GROUP-only collection (28 nodes); structure SUCCESS; no LINEERROR.
+- E6: connection refused on probe port 9001 before XML; repeatable transport failure classification.
+
+### Not proven
+
+- Universal HEADER STATUS semantics (`1` vs `0`) across operations and Tally versions.
+- Real live LINEERROR structure (not observed in completed safe scenarios; E4 excluded).
+- Invalid-report E4 XML response shape.
+- Cross-version / cross-edition consistency.
+- Explicit nonexistent-company rejection marker.
+- Global semantic completeness of structure-only vs extraction-stage contract boundaries.
+- Named collection identity attributes for request/response correlation.
+
+### Deferred observation
+
+- E5 structure-stage unrelated-collection distinction may be refined later; no production correction is required for approved ledger/stock paths now.
+
+### Evidence consistency review
+
+| Check | Result |
+|-------|--------|
+| Reflects successful controlled rerun | yes (`validatedAt` 2026-07-24; populated gate passed) |
+| E1/E2 counts match populated test company | yes (923 / 1503; consistent with prior identity-validation scale) |
+| Raw XML / business identifiers stored | no (`privacyReview` all true; `companyLabel`: `[REDACTED]`) |
+| E4 absent | yes (`includesDisruptiveE4`: false) |
+| Scenario count / repeat summaries | 5 scenarios, all `repeatStable: true` |
+| Validation-only rerun leaves evidence unchanged | yes (read-only validator; no live re-run in this phase) |
+
+### Production defect determination
+
+No production defect **proven** for approved ledger or stock read paths (E1, E2, E6). E3 is an unresolved Tally limitation, not a contract bug. E5 reveals a **latent structure-stage gap** under intentional mis-scope; full extractor mitigates to EMPTY and does not affect normal ledger operation wiring.
+
+**Verdict:** **EVIDENCE SUPPORTS CURRENT CONTRACTS** for approved read operations — Phase E evidence committed; **Reliability Control #3 not fully complete**; **unrestricted production not approved** (structure-stage scope gap documented; LINEERROR live shape still unobserved).
