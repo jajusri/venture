@@ -1,3 +1,17 @@
+import {
+  resolveXmlParserLimits,
+  type XmlParserOptions,
+} from './response-parser-limits.js';
+import { XmlParseError } from './response-parser-errors.js';
+
+export { XmlParseError, toPrivacySafeXmlParseDetails } from './response-parser-errors.js';
+export {
+  DEFAULT_XML_PARSER_MAX_DEPTH,
+  DEFAULT_XML_PARSER_MAX_NODE_COUNT,
+  type XmlParserLimits,
+  type XmlParserOptions,
+} from './response-parser-limits.js';
+
 /** Parsed XML node — generic tree for framework consumers; not a domain entity. */
 export interface ParsedXmlNode {
   readonly name: string;
@@ -20,6 +34,12 @@ interface MutableParsedXmlNode {
   children: MutableParsedXmlNode[];
 }
 
+interface ParseContext {
+  nodeCount: number;
+  readonly maxDepth: number;
+  readonly maxNodeCount: number;
+}
+
 /**
  * Framework parser for Tally XML envelopes.
  * Performs structural parsing only — business data mappers register handlers separately.
@@ -34,10 +54,32 @@ export class TallyXmlResponseParser {
     this.handlers.set(normalized, list);
   }
 
-  parse(rawXml: string): ParsedXmlDocument {
-    const root = parseXmlTree(rawXml);
-    const document: ParsedXmlDocument = { root, rawXml };
-    this.walk(root, document);
+  parse(rawXml: string, options?: XmlParserOptions): ParsedXmlDocument {
+    const limits = resolveXmlParserLimits(options);
+    const ctx: ParseContext = {
+      nodeCount: 0,
+      maxDepth: limits.maxDepth,
+      maxNodeCount: limits.maxNodeCount,
+    };
+    const trimmed = rawXml.trim();
+    if (!trimmed.startsWith('<')) {
+      throw new XmlParseError('xml_malformed', 'Invalid XML: document does not start with a tag');
+    }
+
+    const result = parseElement(trimmed, 0, ctx, 0);
+    if (!result.node) {
+      throw new XmlParseError('xml_malformed', 'Invalid XML: unable to parse root element');
+    }
+
+    const trailing = trimmed.slice(result.nextIndex);
+    if (trailing.trim().length > 0) {
+      throw new XmlParseError('xml_trailing_content', 'Invalid XML: trailing content after root element', {
+        trailingLength: trailing.trim().length,
+      });
+    }
+
+    const document: ParsedXmlDocument = { root: result.node, rawXml };
+    this.walk(result.node, document);
     return document;
   }
 
@@ -88,19 +130,12 @@ export class TallyXmlResponseParser {
   }
 }
 
-function parseXmlTree(rawXml: string): ParsedXmlNode {
-  const trimmed = rawXml.trim();
-  if (!trimmed.startsWith('<')) {
-    throw new Error('Invalid XML: document does not start with a tag');
-  }
-  const root = parseElement(trimmed, 0);
-  if (!root.node) {
-    throw new Error('Invalid XML: unable to parse root element');
-  }
-  return root.node;
-}
-
-function parseElement(xml: string, startIndex: number): { node?: ParsedXmlNode; nextIndex: number } {
+function parseElement(
+  xml: string,
+  startIndex: number,
+  ctx: ParseContext,
+  parentDepth: number,
+): { node?: ParsedXmlNode; nextIndex: number } {
   const openStart = xml.indexOf('<', startIndex);
   if (openStart === -1) {
     return { nextIndex: xml.length };
@@ -108,18 +143,29 @@ function parseElement(xml: string, startIndex: number): { node?: ParsedXmlNode; 
 
   if (xml.startsWith('<?', openStart)) {
     const close = xml.indexOf('?>', openStart);
-    return parseElement(xml, close === -1 ? xml.length : close + 2);
+    return parseElement(xml, close === -1 ? xml.length : close + 2, ctx, parentDepth);
   }
 
   const openEnd = xml.indexOf('>', openStart);
   if (openEnd === -1) {
-    throw new Error('Invalid XML: unclosed tag');
+    throw new XmlParseError('xml_malformed', 'Invalid XML: unclosed tag');
   }
 
   const openTagContent = xml.slice(openStart + 1, openEnd).trim();
   if (openTagContent.startsWith('/')) {
     return { nextIndex: openEnd + 1 };
   }
+
+  const elementDepth = parentDepth + 1;
+  if (elementDepth > ctx.maxDepth) {
+    throw new XmlParseError('xml_max_depth_exceeded', 'Invalid XML: maximum nesting depth exceeded', {
+      maxDepth: ctx.maxDepth,
+      observedDepth: elementDepth,
+    });
+  }
+
+  allocateElementNode(ctx);
+
   if (openTagContent.endsWith('/')) {
     const selfClosing = parseTagName(openTagContent.slice(0, -1));
     return {
@@ -143,7 +189,7 @@ function parseElement(xml: string, startIndex: number): { node?: ParsedXmlNode; 
   const closeTag = `</${tagName}>`;
   const closeIndex = xml.toUpperCase().indexOf(closeTag.toUpperCase(), openEnd + 1);
   if (closeIndex === -1) {
-    throw new Error(`Invalid XML: missing closing tag for ${tagName}`);
+    throw new XmlParseError('xml_malformed', 'Invalid XML: missing closing tag');
   }
 
   const inner = xml.slice(openEnd + 1, closeIndex);
@@ -155,7 +201,7 @@ function parseElement(xml: string, startIndex: number): { node?: ParsedXmlNode; 
 
   let cursor = openEnd + 1;
   while (cursor < closeIndex) {
-    const parsed = parseElement(xml, cursor);
+    const parsed = parseElement(xml, cursor, ctx, elementDepth);
     if (parsed.node) {
       node.children.push(parsed.node as MutableParsedXmlNode);
     }
@@ -166,6 +212,16 @@ function parseElement(xml: string, startIndex: number): { node?: ParsedXmlNode; 
   }
 
   return { node, nextIndex: closeIndex + closeTag.length };
+}
+
+function allocateElementNode(ctx: ParseContext): void {
+  ctx.nodeCount += 1;
+  if (ctx.nodeCount > ctx.maxNodeCount) {
+    throw new XmlParseError('xml_max_node_count_exceeded', 'Invalid XML: maximum node count exceeded', {
+      maxNodeCount: ctx.maxNodeCount,
+      observedNodeCount: ctx.nodeCount,
+    });
+  }
 }
 
 function parseTagName(raw: string): string {
@@ -196,4 +252,17 @@ function decodeXmlEntities(value: string): string {
     .replaceAll('&apos;', "'")
     .replaceAll('&amp;', '&')
     .trim();
+}
+
+/** Test and diagnostic helper — maximum element depth (root depth = 1). */
+export function measureParsedXmlMaxDepth(node: ParsedXmlNode, depth = 1): number {
+  if (node.children.length === 0) {
+    return depth;
+  }
+  return Math.max(...node.children.map((child) => measureParsedXmlMaxDepth(child, depth + 1)));
+}
+
+/** Test and diagnostic helper — total allocated element nodes. */
+export function countParsedXmlNodes(node: ParsedXmlNode): number {
+  return 1 + node.children.reduce((sum, child) => sum + countParsedXmlNodes(child), 0);
 }

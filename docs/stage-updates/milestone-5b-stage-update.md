@@ -1076,7 +1076,6 @@ Prior Phase B characterization tests retained (`master-data-response-contract.te
 
 ### Remaining Reliability Control #3 limitations
 
-- Generic parser still accepts trailing junk; no node-depth/count limits
 - Standalone `HEADER/STATUS` semantics not live-confirmed; only `LINEERROR` is a blocking classifier
 - Named collection identity not independently proven when Tally omits trustworthy collection markers
 - Broader live Tally error-shape catalogue not committed
@@ -1087,3 +1086,96 @@ Prior Phase B characterization tests retained (`master-data-response-contract.te
 - Reliability Control #3 **not fully complete**
 
 **Verdict:** **SAFE TO COMMIT OPERATION CONTRACTS** — subject to live error-shape evidence for standalone STATUS semantics. Not unrestricted production approval.
+
+---
+
+## 22. Reliability Control #3 Phase D — bounded XML parser hardening (2026-07-24)
+
+**Status:** Complete (committed)
+
+**Type:** Narrow parser boundary protections — trailing content, depth limit, node-count limit, parser-option validation
+
+**Requirement addressed:** Reliability Control #3 — custom parser accepted trailing content and had no recursion/allocation bounds
+
+### Evidence-based limits
+
+| Metric | Committed/live evidence | Production default |
+|--------|-------------------------|-------------------|
+| Max element depth | Rich ledger/stock/company fixtures: **6**; groups fixture: **6** | **64** (root depth = 1) |
+| Node count (2-ledger fixture) | **21** element nodes | — |
+| Node count (922 rich ledgers, synthetic) | **8,302** element nodes | — |
+| Node count (1502 rich stock, synthetic) | **10,518** element nodes | — |
+| Max node count default | ~3× live stock node total headroom | **32,768** |
+| Transport byte cap (unchanged) | 1 MiB rich master collections | Complementary protection |
+
+### Parser protections implemented
+
+1. **Trailing content:** after single root closes, whitespace allowed; non-whitespace rejected (`xml_trailing_content`)
+2. **Nesting depth:** per-parse context counts element depth; reject before exceeding `maxDepth` (`xml_max_depth_exceeded`)
+3. **Node count:** increment once per element node; reject before exceeding `maxNodeCount` (`xml_max_node_count_exceeded`)
+4. **Context isolation:** limits stored in per-parse context — no global mutable counters
+5. **Parser option validation:** optional `maxDepth` / `maxNodeCount` overrides normalized through `resolveXmlParserLimits()` — omitted values use safe defaults; valid positive integers at or below the approved maximum are accepted; zero, negative, fractional, non-finite, or excessive values reject with `xml_invalid_parser_limit` (metadata: option name, approved maximum, finite `providedValue` when applicable). Production callers do not pass overrides today; limits cannot be disabled or raised above the approved maximum.
+
+### Approved parser maximums
+
+| Option | Safe default | Approved maximum (hard cap) |
+|--------|--------------|----------------------------|
+| `maxDepth` | **64** | **64** |
+| `maxNodeCount` | **32,768** | **32,768** |
+
+Tests may use **lower** bounded values for compact boundary cases. Values above the approved maximum are rejected — tests must not require overrides above production caps.
+
+### Compatibility preserved
+
+Leading/trailing whitespace, XML declaration before root, case normalization, five named entities, rich ledger/stock/company/groups fixtures, operation contracts from `18f7ff0`.
+
+Unsupported constructs remain unsupported (DOCTYPE, comments, CDATA, external entities, multiple roots).
+
+### Relationship to other layers
+
+- **Transport byte limits** bound response size (unchanged)
+- **Parser depth/node limits** bound recursion and tree allocation
+- **Operation contracts** validate business structure (unchanged from `18f7ff0`)
+
+### Production files changed
+
+| File | Change |
+|------|--------|
+| `src/tally/xml/response-parser.ts` | Trailing-content rejection, bounded parse context |
+| `src/tally/xml/response-parser-limits.ts` | Centralized default limits + evidence notes |
+| `src/tally/xml/response-parser-errors.ts` | Typed `XmlParseError` reason codes |
+
+### Tests added/changed
+
+| Suite | Count |
+|-------|-------|
+| `test/unit/tally/response-parser-limits.test.ts` | 39 (new + option validation) |
+| `test/unit/tally/response-parser-boundary.test.ts` | 13 (updated for Phase D behavior) |
+
+### Validation
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` | PASS |
+| `npm run build` | PASS |
+| Parser limits + boundary + response-parser | **22/22 PASS** |
+| Operation contracts + extractor + sync | **42/42 PASS** |
+| Migration safety + identity | **16/16 PASS** |
+| Scenario 12 + transport | **25/25 PASS** |
+| TD-006 + atomicity + concurrency + diagnostics | **47/47 PASS** |
+| Architecture boundaries | **12/12 PASS** |
+| Full connector suite | **536/536 PASS** |
+
+### Remaining Reliability Control #3 limitations
+
+- Standalone `HEADER/STATUS` semantics not live-confirmed
+- Named collection identity not independently proven
+- Broader live Tally error-shape catalogue not committed
+- Global semantic completeness cannot be proven
+- Renamed-ledger controlled remediation still manual
+- Stock full quality model not redesigned
+- Non-contract extractor paths still lack aggregate drop accounting
+- Unsupported XML constructs (comments, CDATA, DOCTYPE) still fail generically — not expanded
+- Reliability Control #3 **not fully complete**
+
+**Verdict:** **SAFE TO COMMIT PARSER BOUNDARY HARDENING** — not unrestricted production approval.

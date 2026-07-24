@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { TallyXmlResponseParser } from '../../../src/tally/xml/response-parser.js';
+import { TallyXmlResponseParser, XmlParseError } from '../../../src/tally/xml/response-parser.js';
+import { DEFAULT_XML_PARSER_MAX_DEPTH } from '../../../src/tally/xml/response-parser-limits.js';
 import { SAMPLE_LEDGERS_RESPONSE } from '../../helpers/master-data-fixtures.js';
 
 function deepNest(depth: number): string {
@@ -22,15 +23,14 @@ describe('TallyXmlResponseParser inbound boundary characterization', () => {
     expect(() => parser.parse('<ENVELOPE><BODY><DATA>')).toThrow(/unclosed|Invalid XML/i);
   });
 
-  it('2. accepts trailing junk after a valid root without error', () => {
-    const document = parser.parse(`${SAMPLE_LEDGERS_RESPONSE}<JUNK>ignored</JUNK>`);
-    expect(parser.findAll(document, 'LEDGER').length).toBe(2);
+  it('2. rejects trailing junk after a valid root (Phase D hardening)', () => {
+    expect(() => parser.parse(`${SAMPLE_LEDGERS_RESPONSE}<JUNK>ignored</JUNK>`)).toThrow(XmlParseError);
   });
 
-  it('3. parses only the first root when duplicate envelope-like content is appended', () => {
-    const duplicate = `${SAMPLE_LEDGERS_RESPONSE}${SAMPLE_LEDGERS_RESPONSE}`;
-    const document = parser.parse(duplicate);
-    expect(parser.findAll(document, 'LEDGER').length).toBe(2);
+  it('3. rejects duplicate envelope-like content appended after the first root', () => {
+    expect(() => parser.parse(`${SAMPLE_LEDGERS_RESPONSE}${SAMPLE_LEDGERS_RESPONSE}`)).toThrow(
+      /trailing content/i,
+    );
   });
 
   it('4. accepts BOM-prefixed XML because trim removes the UTF-8 BOM before parsing', () => {
@@ -61,12 +61,15 @@ describe('TallyXmlResponseParser inbound boundary characterization', () => {
     expect(() => parser.parse('<!DOCTYPE html><ENVELOPE><BODY/></ENVELOPE>')).toThrow(/Invalid XML/i);
   });
 
-  it('10. parses deeply nested XML without an explicit depth limit', () => {
-    const document = parser.parse(`<ENVELOPE>${deepNest(200)}</ENVELOPE>`);
+  it('10. rejects deeply nested XML beyond the configured depth limit', () => {
+    expect(() => parser.parse(`<ENVELOPE>${deepNest(DEFAULT_XML_PARSER_MAX_DEPTH - 1)}</ENVELOPE>`)).toThrow(
+      /maximum nesting depth/i,
+    );
+    const document = parser.parse(`<ENVELOPE>${deepNest(DEFAULT_XML_PARSER_MAX_DEPTH - 2)}</ENVELOPE>`);
     expect(document.root.name).toBe('ENVELOPE');
   });
 
-  it('11. parses wide trees without an explicit node-count limit', () => {
+  it('11. parses wide trees within the default node-count limit', () => {
     const document = parser.parse(wideTree(500));
     expect(parser.findAll(document, 'NODE0').length).toBe(1);
   });
