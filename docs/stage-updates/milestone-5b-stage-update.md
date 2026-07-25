@@ -1891,3 +1891,120 @@ Safety: `lstat` (no symlink follow); never delete backup, corrupt archives, prim
 | Tracked `apps/budcom_desktop/dist/**` after build | **Restored — no modified generated artifacts** |
 
 **Unrestricted production remains unapproved.**
+
+---
+
+## §29 — RC#4 Enterprise Security and Local Data Protection Closure (2026-07-25)
+
+### Requirement addressed
+
+Repository-provable security hardening for controlled commercial pilot expansion: IPC/preload boundaries, local API request limits, path containment, XML byte caps, backup target validation, company-isolation test parity, dependency audit baseline, and explicit security decision records.
+
+No Tally behaviour, sync semantics, retention, or backup auto-deletion changes.
+
+### Gate evidence
+
+No contradictory next-gate label exists in repository docs after §28 local-lifecycle closure. RC#4 remains **PARTIAL** with encryption, LAN auth (TD-009), and installer lifecycle explicitly deferred. This gate executes the user-authorized **Enterprise Security and Local Data Protection Closure** scope aligned with Accepted Control #5 and existing security audits.
+
+### Implementation status
+
+**COMPLETE (non-architectural hardening + documentation)** — encryption, LAN authentication platform, signing, and updater trust remain decision-record blockers only.
+
+### Controls verified (pre-existing)
+
+| Surface | Control |
+|---------|---------|
+| Electron | `contextIsolation`, `nodeIntegration: false`, `sandbox`, CSP, navigation/window-open blocked |
+| IPC | Channel allowlist; typed preload bridge; main-process validation |
+| Tally egress | Fail-closed policy; IMPORT/EXECUTE denied; forbidden registry; security-guard tests |
+| SQL | Parameterized queries; sort allowlist; company-scoped sync-run lookup |
+| XML | Custom parser (no external entities); DOCTYPE/CDATA rejected; depth/node limits |
+| Network | Loopback default; `0.0.0.0` rejected; production LAN requires acknowledgement |
+| Privacy | Diagnostic allowlist; log sanitization; audit metadata-only |
+
+### Controls added
+
+| Area | Change |
+|------|--------|
+| Desktop IPC | `assertBoundedIpcPayload`; `validateSyncOptions`; export path containment under owned diagnostics root; query length cap |
+| Connector API | `express.json({ limit: '64kb' })`; JSON content-type middleware; 413 handler |
+| Paths | `createBackup()` target must remain within `databasePath` |
+| XML | `maxBytes` limit (1 MiB default) at parser entry |
+| Tooling | `npm run audit` / `audit:prod` scripts (connector + desktop) |
+| Documentation | `docs/security/security-decision-matrix.md` |
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `apps/budcom_desktop/src/application/ipc-allowlist.ts` | Payload/query/sync/export hardening |
+| `apps/budcom_desktop/src/main/main.ts` | Bounded IPC + export root wiring |
+| `apps/budcom_desktop/test/unit/ipc-allowlist-security.test.ts` | **New** |
+| `connector/.../api/middleware/request-security.ts` | **New** |
+| `connector/.../api/server.ts` | Body limit + content-type middleware |
+| `connector/.../infrastructure/errors/error-handler.ts` | 413 handling |
+| `connector/.../storage/sqlite/storage-service.ts` | Backup path containment |
+| `connector/.../tally/xml/response-parser-limits.ts` | `maxBytes` |
+| `connector/.../tally/xml/response-parser.ts` | Byte cap enforcement |
+| `connector/.../test/integration/api-request-security.test.ts` | **New** |
+| `connector/.../test/integration/ledger-api-negative.test.ts` | **New** |
+| `docs/security/security-decision-matrix.md` | **New** |
+
+### Explicit exclusions (owner authorization required)
+
+- SQLite / log / backup encryption at rest
+- TD-009 LAN authentication
+- Code signing and auto-update trust
+- Installer/uninstall automation
+- Telemetry / crash reporting
+- Inbound offline XML envelope unification (reliability order item 6)
+
+### RC#4 status (post-enterprise security closure)
+
+**Reliability Control #4 remains PARTIAL** — local lifecycle (B2) and non-architectural security hardening complete; encryption, LAN auth, signing, and installer lifecycle remain open.
+
+### Validation evidence (§29)
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` (connector) | **PASS** |
+| `npm run build` (connector) | **PASS** |
+| Full connector vitest | **711/711 PASS** (698 prior + 13 new security tests) |
+| Architecture tests | **12/12 PASS** |
+| `npm run audit:prod` (connector) | **0 vulnerabilities** |
+| `npm run lint` (desktop) | **PASS** |
+| `npm run build` (desktop) | **PASS** |
+| Desktop vitest | **161/161 PASS** (148 prior + 13 new security tests) |
+| `npm run audit:prod` (desktop) | **0 vulnerabilities** |
+| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — no modified generated artifacts** |
+
+**Unrestricted production remains unapproved.**
+
+### Pre-commit security-gate corrections (2026-07-25)
+
+Addressed provisional review findings without removing size protection or breaking supported workflows.
+
+| Finding | Resolution |
+|---------|------------|
+| Global 1 MiB XML cap | Confirmed against `operation-registry.ts`: rich master collections use `RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES` (1 MiB); gateway enforces per-operation caps before parse; parser default imports same constant; parse call sites pass operation-specific `maxBytes` |
+| Diagnostic export containment | Verified: preload/UI export takes no custom path — automatic exports only; IPC `targetDir` is internal-only and must remain under `{userData}/diagnostics-exports`; no user-selected export dialog exists yet |
+| Symlink/junction escape | Added `path-containment.ts` (desktop + connector): prefix check → `realpath` root → `lstat` walk rejecting symlinks/junctions → parent-chain verify for non-existing targets |
+| Protected overwrite | Backup rejects targets matching live DB, WAL, SHM via `assertNotProtectedWriteTarget`; timestamped backup filenames prevent live DB collision |
+| Content-Type/body detection | `rejectMalformedContentLength` pre-parser; mutation middleware detects chunked TE, malformed Content-Length, and parsed non-empty bodies |
+| Large valid XML tests | Near-cap padded envelope fixtures (~900 KiB+) prove sub-1 MiB legitimate responses parse; oversize rejection unchanged |
+
+### Validation evidence (pre-commit corrections)
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` (connector) | **PASS** |
+| `npm run build` (connector) | **PASS** |
+| Full connector vitest | **727/727 PASS** |
+| Architecture tests (`test/architecture/module-boundaries.test.ts`) | **12/12 PASS** |
+| Contract tests (`tests/contract`) | **5/5 PASS** |
+| `npm run audit:prod` (connector) | **0 vulnerabilities** |
+| `npm run lint` (desktop) | **PASS** |
+| `npm run build` (desktop) | **PASS** |
+| Desktop vitest | **168/168 PASS** |
+| `npm run audit:prod` (desktop) | **0 vulnerabilities** |
+| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — clean** |

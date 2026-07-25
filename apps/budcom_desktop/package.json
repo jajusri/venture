@@ -10,6 +10,8 @@
     "start": "npm run build && electron .",
     "test": "vitest run",
     "lint": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && vitest run --passWithNoTests false",
+    "audit": "npm audit",
+    "audit:prod": "npm audit --omit=dev",
     "screenshot": "npm run build && electron dist/scripts/capture-screenshot.js"
   },
   "engines": {

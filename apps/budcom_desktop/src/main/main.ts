@@ -18,11 +18,13 @@ import { DashboardService, DESKTOP_WINDOW_TITLE } from '../application/dashboard
 import { FileLogWriter } from '../application/file-log-writer.js';
 import {
   assertAllowedIpcChannel,
+  assertBoundedIpcPayload,
   validateCompanyId,
   validateExportDirectory,
   validateLedgerQuery,
   validateStockItemQuery,
   validateSettingsInput,
+  validateSyncOptions,
 } from '../application/ipc-allowlist.js';
 import { LogService } from '../application/log-service.js';
 import { NodeProcessSpawner } from '../application/node-process-spawner.js';
@@ -262,7 +264,10 @@ function registerIpcHandler<T extends unknown[], R>(
   handler: (...args: T) => Promise<R> | R,
 ): void {
   assertAllowedIpcChannel(channel);
-  ipcMain.handle(channel, async (_event, ...args: T) => handler(...args));
+  ipcMain.handle(channel, async (_event, ...args: T) => {
+    assertBoundedIpcPayload(args);
+    return handler(...args);
+  });
 }
 
 function registerIpcHandlers(): void {
@@ -313,11 +318,7 @@ function registerIpcHandlers(): void {
     return ledgerService.getPageState(input.query, input.page, input.pageSize);
   });
   registerIpcHandler('desktop:sync-ledgers', async (payload: unknown) => {
-    const incremental = Boolean(
-      payload && typeof payload === 'object' && !Array.isArray(payload)
-        ? (payload as { incremental?: boolean }).incremental
-        : false,
-    );
+    const { incremental } = validateSyncOptions(payload);
     const result = await ledgerService.syncLedgers(incremental);
     notifyRenderer();
     return result;
@@ -338,11 +339,7 @@ function registerIpcHandlers(): void {
     return stockItemService.getPageState(input.query, input.page, input.pageSize);
   });
   registerIpcHandler('desktop:sync-stock-items', async (payload: unknown) => {
-    const incremental = Boolean(
-      payload && typeof payload === 'object' && !Array.isArray(payload)
-        ? (payload as { incremental?: boolean }).incremental
-        : false,
-    );
+    const { incremental } = validateSyncOptions(payload);
     const result = await stockItemService.syncStockItems(incremental);
     notifyRenderer();
     return result;
@@ -365,7 +362,7 @@ function registerIpcHandlers(): void {
     return diagnosticsService.formatSummary(snapshot);
   });
   registerIpcHandler('desktop:export-diagnostics-bundle', async (targetDir?: unknown) => {
-    return diagnosticsService.exportBundle(validateExportDirectory(targetDir));
+    return diagnosticsService.exportBundle(validateExportDirectory(targetDir, configPaths.diagnosticsExportDir));
   });
   registerIpcHandler('desktop:open-logs-folder', async () => {
     const result = await shell.openPath(configPaths.logsDir);

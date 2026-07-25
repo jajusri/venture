@@ -134,4 +134,31 @@ describe('JsonToSqliteMigrationService', () => {
     expect(report.companies.some((company) => company.status === 'failed')).toBe(true);
     expect(fs.existsSync(path.join(fixture.legacyPath, 'bad-co.json'))).toBe(true);
   });
+
+  it('ignores legacy JSON filenames with traversal or unsafe characters', () => {
+    const fixture = createMigrationFixture();
+    fs.writeFileSync(path.join(fixture.legacyPath, '..escape.json'), '{}');
+    fs.writeFileSync(
+      path.join(fixture.legacyPath, 'safe-co.json'),
+      JSON.stringify({
+        companyId: 'safe-co',
+        ledgers: {
+          cash: sampleLedger('cash', 'Cash'),
+        },
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    const db = new SqliteDatabase({ databasePath: fixture.dbPath });
+    openDatabases.push(db);
+    const repository = new SqliteLedgerRepository(db);
+    const migration = new JsonToSqliteMigrationService(
+      db,
+      repository,
+      fixture.legacyPath,
+      fixture.backupPath,
+    );
+    const report = migration.migrateIfNeeded();
+    expect(report.companies.some((company) => company.companyId.includes('escape'))).toBe(false);
+    expect(report.companies.some((company) => company.companyId === 'safe-co')).toBe(true);
+  });
 });

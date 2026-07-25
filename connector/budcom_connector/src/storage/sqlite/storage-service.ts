@@ -16,6 +16,11 @@ import { SqliteDatabase } from './sqlite-database.js';
 import { SyncRunRepository } from './sync-run-repository.js';
 import { SyncRunRetentionService } from './sync-run-retention-service.js';
 import { STORAGE_SCHEMA_VERSION } from './schema.js';
+import {
+  assertNotProtectedWriteTarget,
+  assertWriteTargetContained,
+  toPlatformComparablePath,
+} from '../../infrastructure/security/path-containment.js';
 
 export interface LedgerStorageBundle {
   readonly database: SqliteDatabase;
@@ -157,12 +162,25 @@ export class SqliteStorageService implements LocalDatabaseService {
       return { ok: false, backupPath: null, message: 'Storage is not running.' };
     }
     try {
+      const containedTargetDir = assertWriteTargetContained({
+        candidatePath: targetDir,
+        rootPath: this.config.databasePath,
+      });
+      const source = path.join(this.config.databasePath, 'budcom-ledger.db');
+      const protectedPaths = [
+        source,
+        `${source}-wal`,
+        `${source}-shm`,
+      ];
       const db = this.bundle.database.getDatabase();
       db.exec('PRAGMA wal_checkpoint(FULL)');
-      fs.mkdirSync(targetDir, { recursive: true });
-      const source = path.join(this.config.databasePath, 'budcom-ledger.db');
+      fs.mkdirSync(containedTargetDir, { recursive: true });
       const backupFileName = `budcom-ledger-${Date.now()}.db`;
-      const backupPath = path.join(targetDir, backupFileName);
+      const backupPath = path.join(containedTargetDir, backupFileName);
+      assertNotProtectedWriteTarget(backupPath, protectedPaths);
+      if (toPlatformComparablePath(backupPath) === toPlatformComparablePath(source)) {
+        throw new Error('Backup target would overwrite the live database.');
+      }
       fs.copyFileSync(source, backupPath);
       const probe = new nodeSqlite.DatabaseSync(backupPath, { readOnly: true });
       try {

@@ -56,6 +56,11 @@ export class TallyXmlResponseParser {
 
   parse(rawXml: string, options?: XmlParserOptions): ParsedXmlDocument {
     const limits = resolveXmlParserLimits(options);
+    if (rawXml.length > limits.maxBytes) {
+      throw new XmlParseError('xml_oversized', 'Invalid XML: document exceeds the allowed byte limit.', {
+        maxBytes: limits.maxBytes,
+      });
+    }
     const ctx: ParseContext = {
       nodeCount: 0,
       maxDepth: limits.maxDepth,

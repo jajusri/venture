@@ -1,3 +1,11 @@
+import {
+  assertWriteTargetContained,
+  rejectPathWithNullBytes,
+} from './path-containment.js';
+
+export const MAX_IPC_QUERY_LENGTH = 256;
+export const MAX_IPC_PAYLOAD_BYTES = 64 * 1024;
+
 export const ALLOWED_IPC_CHANNELS = [
   'desktop:get-dashboard',
   'desktop:get-logs',
@@ -64,6 +72,46 @@ export function validateSettingsInput(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+export { isPathContainedInRoot } from './path-containment.js';
+
+export function validateExportDirectory(value: unknown, ownedExportRoot: string): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error('Export directory must be a non-empty string.');
+  }
+  rejectPathWithNullBytes(value);
+  return assertWriteTargetContained({
+    candidatePath: value.trim(),
+    rootPath: ownedExportRoot,
+  });
+}
+
+export function assertBoundedIpcPayload(
+  args: readonly unknown[],
+  maxBytes: number = MAX_IPC_PAYLOAD_BYTES,
+): void {
+  const serialized = JSON.stringify(args);
+  if (serialized.length > maxBytes) {
+    throw new Error('IPC payload exceeds the allowed size limit.');
+  }
+}
+
+export function validateSyncOptions(value: unknown): { incremental: boolean } {
+  if (value === undefined || value === null) {
+    return { incremental: false };
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Sync options must be an object.');
+  }
+  const input = value as Record<string, unknown>;
+  if ('incremental' in input && typeof input.incremental !== 'boolean') {
+    throw new Error('Sync incremental flag must be a boolean.');
+  }
+  return { incremental: input.incremental === true };
+}
+
 export function validateLedgerQuery(value: unknown): { query: string; page: number; pageSize: number } {
   if (value === undefined || value === null) {
     return { query: '', page: 1, pageSize: 25 };
@@ -72,7 +120,7 @@ export function validateLedgerQuery(value: unknown): { query: string; page: numb
     throw new Error('Ledger query payload must be an object.');
   }
   const input = value as Record<string, unknown>;
-  const query = typeof input.query === 'string' ? input.query : '';
+  const query = typeof input.query === 'string' ? input.query.slice(0, MAX_IPC_QUERY_LENGTH) : '';
   const page = Math.max(1, Number.parseInt(String(input.page ?? '1'), 10) || 1);
   const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(input.pageSize ?? '25'), 10) || 25));
   return { query, page, pageSize };
@@ -80,14 +128,4 @@ export function validateLedgerQuery(value: unknown): { query: string; page: numb
 
 export function validateStockItemQuery(value: unknown): { query: string; page: number; pageSize: number } {
   return validateLedgerQuery(value);
-}
-
-export function validateExportDirectory(value: unknown): string | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error('Export directory must be a non-empty string.');
-  }
-  return value.trim();
 }

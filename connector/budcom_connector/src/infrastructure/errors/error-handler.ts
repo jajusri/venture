@@ -6,6 +6,19 @@ import { ErrorCodes, isAppError } from './app-error.js';
 
 export function createErrorMiddleware(logger: Logger) {
   return (error: unknown, _req: Request, res: Response, _next: NextFunction): void => {
+    if (
+      typeof error === 'object'
+      && error !== null
+      && 'type' in error
+      && (error as { type?: string }).type === 'entity.too.large'
+    ) {
+      res.status(413).json({
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Request body exceeds the allowed size limit.',
+      });
+      return;
+    }
+
     if (isAppError(error)) {
       if (error.statusCode >= 500 && error.code !== ErrorCodes.NOT_IMPLEMENTED) {
         const safeDetails = sanitizeLogDetails(error.details);

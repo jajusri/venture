@@ -3,7 +3,8 @@ export type XmlParseFailureReason =
   | 'xml_trailing_content'
   | 'xml_max_depth_exceeded'
   | 'xml_max_node_count_exceeded'
-  | 'xml_invalid_parser_limit';
+  | 'xml_invalid_parser_limit'
+  | 'xml_oversized';
 
 export class XmlParseError extends Error {
   readonly reason: XmlParseFailureReason;

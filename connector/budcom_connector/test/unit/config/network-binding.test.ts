@@ -68,4 +68,20 @@ describe('loadConfig network binding', () => {
       }),
     ).toThrow(/0\.0\.0\.0/);
   });
+
+  it('rejects production LAN bind without explicit acknowledgement', () => {
+    expect(() =>
+      loadConfig({
+        env: 'production',
+        host: '192.168.1.50',
+        lanModeAcknowledged: false,
+        port: 8080,
+        tallyMinRequestIntervalMs: 0,
+        tallySafeMode: false,
+        tallyPoolMaxConnections: 1,
+        tallyRetryMaxAttempts: 1,
+        tallyCircuitBreakerEnabled: false,
+      }),
+    ).toThrow(/LAN_MODE_ACKNOWLEDGED/);
+  });
 });

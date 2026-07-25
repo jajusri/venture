@@ -28,4 +28,15 @@ Local-trust connector on LAN; primary threats: malicious local process, malforme
 
 ## Dependency audit
 
-`npm audit --omit=dev`: **0 vulnerabilities**
+`npm audit --omit=dev` (2026-07-25): **0 vulnerabilities** (connector and desktop).
+
+## RC#4 enterprise security closure (2026-07-25)
+
+Additional hardening without Tally/sync/retention changes:
+
+- Desktop IPC payload bounds, sync-option validation, owned export-path containment
+- Connector JSON body limit (64 KiB), content-type enforcement, 413 handling
+- Backup target path containment; XML parser byte cap (1 MiB)
+- Ledger API negative/isolation test parity; security decision matrix documented
+
+See `docs/security/security-decision-matrix.md` and milestone-5b stage-update §29.

@@ -61,6 +61,17 @@ describe('TallyXmlResponseParser inbound boundary characterization', () => {
     expect(() => parser.parse('<!DOCTYPE html><ENVELOPE><BODY/></ENVELOPE>')).toThrow(/Invalid XML/i);
   });
 
+  it('9b. rejects DOCTYPE payloads with internal entity declarations', () => {
+    const entityPayload =
+      '<!DOCTYPE foo [ <!ENTITY x "boom"> ]><ENVELOPE><BODY/></ENVELOPE>';
+    expect(() => parser.parse(entityPayload)).toThrow(/Invalid XML/i);
+  });
+
+  it('9c. rejects oversized raw XML before tree parsing', () => {
+    const oversized = `<ENVELOPE>${'x'.repeat(1_048_577)}</ENVELOPE>`;
+    expect(() => parser.parse(oversized)).toThrow(/byte limit/i);
+  });
+
   it('10. rejects deeply nested XML beyond the configured depth limit', () => {
     expect(() => parser.parse(`<ENVELOPE>${deepNest(DEFAULT_XML_PARSER_MAX_DEPTH - 1)}</ENVELOPE>`)).toThrow(
       /maximum nesting depth/i,

@@ -10,9 +10,16 @@ import {
   APPROVED_XML_PARSER_MAX_DEPTH,
   APPROVED_XML_PARSER_MAX_NODE_COUNT,
   DEFAULT_XML_PARSER_MAX_DEPTH,
+  DEFAULT_XML_PARSER_MAX_BYTES,
   DEFAULT_XML_PARSER_MAX_NODE_COUNT,
   resolveXmlParserLimits,
+  resolveXmlParserMaxBytesForOperation,
+  resolveXmlParserOptionsForOperation,
 } from '../../../src/tally/xml/response-parser-limits.js';
+import {
+  ApprovedOperationId,
+  RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+} from '../../../src/tally/registry/operation-registry.js';
 import {
   SAMPLE_COMPANY_INFO_RESPONSE,
   SAMPLE_EMPTY_COLLECTION_RESPONSE,
@@ -148,6 +155,61 @@ describe('TallyXmlResponseParser bounded limits', () => {
     expect(countParsedXmlNodes(document.root)).toBeLessThanOrEqual(DEFAULT_XML_PARSER_MAX_NODE_COUNT);
   });
 
+  it('accepts live-scale stock export below rich cap with operation limit', () => {
+    const xml = richStockExport(1502);
+    const byteLength = Buffer.byteLength(xml, 'utf8');
+    expect(byteLength).toBeGreaterThan(250_000);
+    expect(byteLength).toBeLessThan(RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES);
+    expect(() =>
+      parser.parse(xml, resolveXmlParserOptionsForOperation(ApprovedOperationId.StockItems)),
+    ).not.toThrow();
+  });
+
+  it('accepts a synthetically padded valid envelope immediately below the rich cap', () => {
+    const header = '<ENVELOPE><BODY><DATA><COLLECTION><STOCKITEM NAME="S0"><NAME>S0</NAME></STOCKITEM>';
+    const footer = '</COLLECTION></DATA></BODY></ENVELOPE>';
+    const targetBytes = RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES - 128;
+    const padLen = Math.max(0, targetBytes - Buffer.byteLength(header + footer, 'utf8'));
+    const xml = `${header}<NOTES>${'N'.repeat(padLen)}</NOTES>${footer}`;
+    const byteLength = Buffer.byteLength(xml, 'utf8');
+    expect(byteLength).toBeGreaterThan(900_000);
+    expect(byteLength).toBeLessThan(RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES);
+    expect(() =>
+      parser.parse(xml, resolveXmlParserOptionsForOperation(ApprovedOperationId.StockItems)),
+    ).not.toThrow();
+  });
+
+  it('accepts a synthetically padded ledger envelope above legacy cap with operation limit', () => {
+    const header = '<ENVELOPE><BODY><DATA><COLLECTION><LEDGER NAME="L0"><NAME>L0</NAME></LEDGER>';
+    const footer = '</COLLECTION></DATA></BODY></ENVELOPE>';
+    const targetBytes = RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES - 256;
+    const padLen = Math.max(0, targetBytes - Buffer.byteLength(header + footer, 'utf8'));
+    const xml = `${header}<NOTES>${'L'.repeat(padLen)}</NOTES>${footer}`;
+    const byteLength = Buffer.byteLength(xml, 'utf8');
+    expect(byteLength).toBeGreaterThan(600_000);
+    expect(byteLength).toBeLessThan(RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES);
+    expect(() =>
+      parser.parse(xml, resolveXmlParserOptionsForOperation(ApprovedOperationId.Ledgers)),
+    ).not.toThrow();
+  });
+
+  it('rejects payloads above the operation-specific byte cap even when below transport default', () => {
+    const overCap = 'x'.repeat(RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES + 1);
+    const xml = `<ENVELOPE><BODY>${overCap}</BODY></ENVELOPE>`;
+    expect(() =>
+      parser.parse(xml, resolveXmlParserOptionsForOperation(ApprovedOperationId.StockItems)),
+    ).toThrow(XmlParseError);
+  });
+
+  it('mirrors operation registry caps through resolveXmlParserMaxBytesForOperation', () => {
+    expect(resolveXmlParserMaxBytesForOperation(ApprovedOperationId.StockItems)).toBe(
+      RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+    );
+    expect(resolveXmlParserMaxBytesForOperation(ApprovedOperationId.CompanyList)).toBe(262_144);
+    expect(resolveXmlParserMaxBytesForOperation(ApprovedOperationId.HealthCheck)).toBe(65_536);
+    expect(DEFAULT_XML_PARSER_MAX_BYTES).toBe(RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES);
+  });
+
   it('rejects excessive wide collection beyond configured node limit', () => {
     expect(() => parser.parse(wideTree(20), { maxNodeCount: 10 })).toThrow(XmlParseError);
   });
@@ -251,6 +313,7 @@ describe('TallyXmlResponseParser limit option validation', () => {
     expect(resolveXmlParserLimits({ maxDepth: 8, maxNodeCount: 5 })).toEqual({
       maxDepth: 8,
       maxNodeCount: 5,
+      maxBytes: DEFAULT_XML_PARSER_MAX_BYTES,
     });
   });
 
@@ -258,6 +321,7 @@ describe('TallyXmlResponseParser limit option validation', () => {
     expect(resolveXmlParserLimits()).toEqual({
       maxDepth: DEFAULT_XML_PARSER_MAX_DEPTH,
       maxNodeCount: DEFAULT_XML_PARSER_MAX_NODE_COUNT,
+      maxBytes: DEFAULT_XML_PARSER_MAX_BYTES,
     });
     expect(() => parser.parse(validXml)).not.toThrow();
   });

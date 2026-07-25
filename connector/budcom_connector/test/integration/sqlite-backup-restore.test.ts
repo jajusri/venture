@@ -114,6 +114,28 @@ describe('SQLite backup and restore drill', () => {
     restored.close();
   });
 
+  it('rejects backup target directories outside database path', async () => {
+    const { storage } = await createTestSqliteStorage();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-outside-backup-'));
+    const result = storage.createBackup(outside);
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/within the approved root/i);
+  });
+
+  it('rejects backup targets that traverse a symlink beneath database path', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+    const { storage, basePath } = await createTestSqliteStorage();
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-outside-backup-'));
+    const linkPath = path.join(basePath, 'linked-backups');
+    fs.symlinkSync(outside, linkPath, 'dir');
+    const result = storage.createBackup(linkPath);
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/symbolic link or junction|approved root/i);
+    await storage.stop();
+  });
+
   it('never reports success when backup fails', async () => {
     const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-backup-fail-'));
     const config = createTestConnectorConfig(basePath);

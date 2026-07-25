@@ -13,6 +13,8 @@
     "test:unit": "vitest run test/unit",
     "test:integration": "vitest run test/integration",
     "lint": "eslint src test && tsc -p tsconfig.json --noEmit",
+    "audit": "npm audit",
+    "audit:prod": "npm audit --omit=dev",
     "format": "prettier --check .",
     "format:fix": "prettier --write ."
   },

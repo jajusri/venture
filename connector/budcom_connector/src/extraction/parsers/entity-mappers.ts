@@ -1,4 +1,5 @@
 import type { ParsedXmlDocument, ParsedXmlNode, TallyXmlResponseParser } from '../../tally/xml/response-parser.js';
+import type { XmlParserOptions } from '../../tally/xml/response-parser-limits.js';
 import {
   collectDirectEntityNodes,
   findBodyDataCollections,
@@ -35,8 +36,8 @@ export interface CollectionParseOptions {
 export class CollectionEntityParser {
   constructor(private readonly parser: TallyXmlResponseParser) {}
 
-  parseDocument(rawXml: string) {
-    return this.parser.parse(rawXml);
+  parseDocument(rawXml: string, parserOptions?: XmlParserOptions) {
+    return this.parser.parse(rawXml, parserOptions);
   }
 
   parseNodes(document: ParsedXmlDocument, options: CollectionParseOptions): ParsedXmlNode[] {

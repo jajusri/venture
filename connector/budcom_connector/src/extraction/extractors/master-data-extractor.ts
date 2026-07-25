@@ -2,6 +2,7 @@ import type { Logger } from '../../infrastructure/logging/logger.js';
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import type { TallyReadGateway } from '../../tally/gateway/tally-read-gateway.js';
 import type { ApprovedOperationId } from '../../tally/registry/operation-registry.js';
+import { resolveXmlParserOptionsForOperation } from '../../tally/xml/response-parser-limits.js';
 import type { TallyXmlResponseParser } from '../../tally/xml/response-parser.js';
 import {
   assessLedgerMasterDataEnvelope,
@@ -103,7 +104,8 @@ export class MasterDataExtractor<T extends { id: string }> {
         signal: options.signal,
       });
 
-      const document = this.collectionParser.parseDocument(exchange.rawXml);
+      const parserOptions = resolveXmlParserOptionsForOperation(this.config.operationId);
+      const document = this.collectionParser.parseDocument(exchange.rawXml, parserOptions);
       const nodes = this.collectionParser.parseNodes(document, {
         nodeName: this.config.nodeName,
       });
@@ -137,6 +139,8 @@ export class MasterDataExtractor<T extends { id: string }> {
         signal: options.signal,
       });
 
+      const parserOptions = resolveXmlParserOptionsForOperation(this.config.operationId);
+
       const preAssessment = this.assessEnvelope(exchange.rawXml);
       if (preAssessment?.blocking) {
         throw this.toContractError(preAssessment, undefined, exchange.rawXml);
@@ -144,7 +148,7 @@ export class MasterDataExtractor<T extends { id: string }> {
 
       let document;
       try {
-        document = this.collectionParser.parseDocument(exchange.rawXml);
+        document = this.collectionParser.parseDocument(exchange.rawXml, parserOptions);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Invalid master-data XML';
         throw new AppError(ErrorCodes.VALIDATION_ERROR, message, 502, {

@@ -19,6 +19,7 @@ import type { CompanyDiscoveryParser } from '../discovery/company-discovery-pars
 import type { GroupsParser } from '../groups/groups-parser.js';
 import type { TallyReadGateway } from '../gateway/tally-read-gateway.js';
 import { ApprovedOperationId } from '../registry/operation-registry.js';
+import { resolveXmlParserOptionsForOperation } from '../xml/response-parser-limits.js';
 import type { TallyXmlResponseParser } from '../xml/response-parser.js';
 import type { ErpReadPort } from '../../erp/ports/erp-read-port.js';
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
@@ -104,7 +105,10 @@ export class TallyReadAdapter implements ErpReadPort {
 
       let document;
       try {
-        document = this.responseParser.parse(exchange.rawXml);
+        document = this.responseParser.parse(
+          exchange.rawXml,
+          resolveXmlParserOptionsForOperation(ApprovedOperationId.CompanyList),
+        );
       } catch (error) {
         return {
           contractVersion: COMPANY_DISCOVERY_CONTRACT_VERSION,
@@ -176,7 +180,10 @@ export class TallyReadAdapter implements ErpReadPort {
 
       let document;
       try {
-        document = this.responseParser.parse(exchange.rawXml);
+        document = this.responseParser.parse(
+          exchange.rawXml,
+          resolveXmlParserOptionsForOperation(ApprovedOperationId.LedgerGroups),
+        );
       } catch (error) {
         return {
           contractVersion: GROUPS_CONTRACT_VERSION,
@@ -214,7 +221,10 @@ export class TallyReadAdapter implements ErpReadPort {
       operationId: ApprovedOperationId.CompanyInfo,
       companyName,
     });
-    const document = this.companyInfoParser.parseDocument(exchange.rawXml);
+    const document = this.companyInfoParser.parseDocument(
+      exchange.rawXml,
+      resolveXmlParserOptionsForOperation(ApprovedOperationId.CompanyInfo),
+    );
     return mapCompanyInfo(this.companyInfoParser, document, companyId);
   }
 

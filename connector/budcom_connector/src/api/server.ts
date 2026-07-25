@@ -12,6 +12,7 @@ import type { StockItemSyncService } from '../services/stock-item/stock-item-syn
 import { createLedgersRouter } from './routes/ledgers.js';
 import { createStockItemsRouter } from './routes/stock-items.js';
 import { readOnlyMiddleware } from './middleware/read-only.js';
+import { JSON_BODY_LIMIT, rejectMalformedContentLength, requireJsonContentTypeForMutation } from './middleware/request-security.js';
 import { createApiStubsRouter } from './routes/api-stubs.js';
 import { createCompaniesRouter } from './routes/companies.js';
 import { createDeviceRouter } from './routes/device.js';
@@ -34,7 +35,9 @@ export interface ExpressAppDeps {
 export function createExpressApp(deps: ExpressAppDeps): Express {
   const app = express();
 
-  app.use(express.json());
+  app.use(rejectMalformedContentLength);
+  app.use(express.json({ limit: JSON_BODY_LIMIT }));
+  app.use(requireJsonContentTypeForMutation);
   app.use(readOnlyMiddleware);
   app.use(createHealthRouter(deps.healthService));
   app.use(createDiagnosticsRouter(deps.tallyDiagnostics));
