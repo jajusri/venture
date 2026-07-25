@@ -138,8 +138,8 @@ async function main() {
     step('connector-test', () => run('npm test', connectorRoot));
     step('connector-architecture', () => run('npx vitest run test/architecture', connectorRoot));
     step('connector-audit', () => run('npm run audit:prod', connectorRoot));
-    step('desktop-lint', () => run('npm run lint', desktopRoot));
     step('desktop-build', () => run('npm run build', desktopRoot));
+    step('desktop-lint', () => run('npm run lint', desktopRoot));
     step('desktop-test', () => run('npm test', desktopRoot));
     step('desktop-audit', () => run('npm run audit:prod', desktopRoot));
     step('contract-test', () => run('npm test', path.join(repoRoot, 'tests/contract')));
@@ -151,10 +151,14 @@ async function main() {
     }
 
     step('nsis-installer', () => {
-      run('npm run dist:win', desktopRoot, {
-        ...process.env,
-        BUDCOM_RELEASE_MODE: 'controlled_pilot',
-      });
+      run(
+        'node ../../scripts/release/prepare-connector-packaging.mjs && node ../../scripts/release/prepare-node-runtime.mjs && npx electron-builder --win --config electron-builder.yml',
+        desktopRoot,
+        {
+          ...process.env,
+          BUDCOM_RELEASE_MODE: 'controlled_pilot',
+        },
+      );
     });
 
     const endProvenanceSnapshot = captureReleaseProvenanceSnapshot(gitRunner);
