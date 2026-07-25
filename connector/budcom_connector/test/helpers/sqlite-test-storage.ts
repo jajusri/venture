@@ -45,6 +45,7 @@ export function createTestConnectorConfig(basePath: string): ConnectorConfig {
     sessionTtlMs: 86_400_000,
     syncRunHistoryMaxCount: 100,
     syncRunHistoryMaxAgeDays: 90,
+    startupCorrelationId: null,
   };
 }
 
