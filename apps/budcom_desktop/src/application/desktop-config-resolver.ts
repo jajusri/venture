@@ -49,12 +49,14 @@ export function applyEnvironmentOverrides(
   let config: DesktopConfigV1 = { ...base };
 
   const envUrl = process.env.BUDCOM_CONNECTOR_URL;
+  let urlDerivedPort: number | undefined;
   if (envUrl) {
     const parsed = parseConnectorHostPort(envUrl);
     if (parsed) {
       config = { ...config, connectorHost: parsed.host, connectorPort: parsed.port };
       sources.connectorHost = 'environment';
       sources.connectorPort = 'environment';
+      urlDerivedPort = parsed.port;
     }
   }
 
@@ -65,7 +67,7 @@ export function applyEnvironmentOverrides(
   }
 
   const envPort = readEnvNumber('BUDCOM_CONNECTOR_PORT');
-  if (envPort !== undefined) {
+  if (envPort !== undefined && urlDerivedPort === undefined) {
     config = { ...config, connectorPort: envPort };
     sources.connectorPort = 'environment';
   }

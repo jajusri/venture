@@ -1,6 +1,11 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import {
+  resolvePackagedConnectorNodeRuntime,
+  tryResolvePackagedConnectorNodeRuntime,
+} from './packaged-node-runtime.js';
+
 export interface PackagedConnectorPaths {
   readonly connectorEntryScript: string;
   readonly connectorResourceRoot: string;
@@ -53,9 +58,49 @@ export const CONNECTOR_CHILD_ENV_ALLOWLIST = [
   'BUDCOM_DATABASE_PATH',
   'BUDCOM_CONNECTOR_PORT',
   'BUDCOM_CONNECTOR_HOST',
+  'BUDCOM_STARTUP_CORRELATION_ID',
   'BUDCOM_LOG_LEVEL',
   'NODE_ENV',
+  'ELECTRON_RUN_AS_NODE',
 ] as const;
+
+export function shouldSpawnConnectorViaElectronNode(connectorExecutable: string): boolean {
+  const base = path.basename(connectorExecutable).toLowerCase();
+  if (base === 'node.exe' || base === 'node') {
+    return false;
+  }
+  // Electron-as-Node embeds an older Node runtime without built-in node:sqlite.
+  return false;
+}
+
+export interface ResolveConnectorHostExecutableInput {
+  readonly isPackaged: boolean;
+  readonly resourcesPath?: string;
+  readonly overrideExecutable?: string;
+  readonly validateSqlite?: boolean;
+}
+
+export function resolveConnectorHostExecutable(input: ResolveConnectorHostExecutableInput): string {
+  if (input.overrideExecutable?.trim()) {
+    return input.overrideExecutable;
+  }
+
+  if (input.isPackaged) {
+    if (!input.resourcesPath) {
+      throw new Error('resourcesPath is required for packaged connector host runtime resolution');
+    }
+    return resolvePackagedConnectorNodeRuntime(input.resourcesPath, input.validateSqlite ?? true);
+  }
+
+  const currentBase = path.basename(process.execPath).toLowerCase();
+  if (currentBase === 'node.exe' || currentBase === 'node') {
+    return process.execPath;
+  }
+
+  throw new Error('Development connector host runtime must be launched via Node or BUDCOM_CONNECTOR_EXECUTABLE');
+}
+
+export { nodeSupportsBuiltinSqlite, resolvePackagedConnectorNodeRuntime, tryResolvePackagedConnectorNodeRuntime } from './packaged-node-runtime.js';
 
 export function buildConnectorChildEnvironment(
   baseEnv: NodeJS.ProcessEnv,
@@ -63,6 +108,9 @@ export function buildConnectorChildEnvironment(
 ): Readonly<Record<string, string | undefined>> {
   const env: NodeJS.ProcessEnv = {};
   for (const key of CONNECTOR_CHILD_ENV_ALLOWLIST) {
+    if (key === 'ELECTRON_RUN_AS_NODE' && !(key in overrides)) {
+      continue;
+    }
     const value = overrides[key] ?? baseEnv[key];
     if (value !== undefined) {
       env[key] = value;

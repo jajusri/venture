@@ -6,13 +6,13 @@
   "main": "dist/main/main.js",
   "type": "commonjs",
   "scripts": {
-    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json && node scripts/copy-renderer-assets.mjs && node ../../scripts/release/generate-build-info.mjs dist/main/build-info.json",
+    "build": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json && tsc -p tsconfig.renderer.json && tsc -p tsconfig.main.json && node scripts/copy-renderer-assets.mjs && node ../../scripts/release/generate-build-info.mjs dist/main/build-info.json",
     "start": "npm run build && electron .",
     "test": "vitest run",
     "lint": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && vitest run --passWithNoTests false",
     "audit": "npm audit",
     "audit:prod": "npm audit --omit=dev",
-    "dist:win": "npm run build && electron-builder --win --config electron-builder.yml",
+    "dist:win": "npm run build && node ../../scripts/release/prepare-connector-packaging.mjs && node ../../scripts/release/prepare-node-runtime.mjs && electron-builder --win --config electron-builder.yml",
     "release:controlled-pilot": "node ../../scripts/release/controlled-pilot-release.mjs",
     "screenshot": "npm run build && electron dist/scripts/capture-screenshot.js"
   },

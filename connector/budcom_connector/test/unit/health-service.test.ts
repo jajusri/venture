@@ -19,6 +19,21 @@ describe('HealthService', () => {
     expect(report.tallyReachable).toBe(false);
     expect(report.services.some((service) => service.name === 'TallyConnection')).toBe(true);
   });
+
+  it('includes startup correlation id from config in health diagnostics', async () => {
+    const { fetchImpl } = createTallyMockFetch({ pingOk: false });
+    const context = createTestContext({
+      fetchImpl,
+      tallyRetryMaxAttempts: 1,
+      startupCorrelationId: 'probe-correlation-123',
+    });
+    await startTestServices(context);
+    const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
+
+    const report = await healthService.getReport();
+
+    expect(report.startupCorrelationId).toBe('probe-correlation-123');
+  });
 });
 
 describe('registerServices', () => {

@@ -59,6 +59,11 @@ describe('packaging boundary inspection', () => {
     expect(inspectPackageBoundary(root, fs).ok).toBe(false);
   });
 
+  it('allows third-party dependency test directories inside node_modules', () => {
+    const root = makeRoot({ 'resources/connector/node_modules/express/test/index.js': 'ok();' });
+    expect(inspectPackageBoundary(root, fs).ok).toBe(true);
+  });
+
   it('rejects private key material', () => {
     const root = makeRoot({ 'certs/code-sign.key': 'private' });
     expect(inspectPackageBoundary(root, fs).ok).toBe(false);

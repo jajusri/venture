@@ -36,6 +36,9 @@ export function inspectPackageBoundary(rootDir, options = {}) {
         if (rule.allowWhenApproved && includeSourceMaps && rule.id === 'source-map') {
           continue;
         }
+        if (shouldSkipForbiddenRule(rule.id, rel)) {
+          continue;
+        }
         if (rule.pattern.test(rel) || rule.pattern.test(entry.name)) {
           violations.push({ path: rel, rule: rule.id, reason: rule.reason });
         }
@@ -56,6 +59,17 @@ export function assertPathTraversalSafe(entryPath) {
     throw new Error(`Path traversal rejected: ${entryPath}`);
   }
   return normalized;
+}
+
+function isThirdPartyDependencyPath(relativePath) {
+  return /(^|\/)node_modules\//i.test(relativePath.replace(/\\/g, '/'));
+}
+
+function shouldSkipForbiddenRule(ruleId, relativePath) {
+  if (ruleId !== 'test-file' && ruleId !== 'fixture') {
+    return false;
+  }
+  return isThirdPartyDependencyPath(relativePath);
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {

@@ -23,6 +23,7 @@ export function createHealthRouter(healthService: HealthService): Router {
         networkPolicySatisfied: report.networkPolicySatisfied,
         authenticatedLanAccessEnabled: report.authenticatedLanAccessEnabled,
         services: report.services,
+        startupCorrelationId: report.startupCorrelationId ?? null,
       });
     }),
   );

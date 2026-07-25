@@ -32,6 +32,8 @@ export interface ConnectorLifecycleConfig {
   readonly connectorArgs: readonly string[];
   readonly connectorCwd: string;
   readonly childEnv?: Readonly<Record<string, string | undefined>>;
+  readonly isPackaged?: boolean;
+  readonly packagedRuntimeIntegrityCategory?: string | null;
   readonly autoStart: boolean;
   readonly healthPollIntervalMs: number;
   readonly startupTimeoutMs: number;
@@ -39,6 +41,7 @@ export interface ConnectorLifecycleConfig {
   readonly maxRestartAttempts: number;
   readonly reconnectBaseDelayMs: number;
   readonly staleHealthThresholdMs: number;
+  readonly startupCorrelationId?: string | null;
 }
 
 export interface ConnectorLifecycleStatus {
@@ -73,6 +76,14 @@ export interface ProcessSpawner {
   spawn(spec: SpawnSpec): ManagedProcess;
 }
 
+export interface HealthCheckDetails {
+  readonly ready: boolean;
+  readonly owned: boolean;
+  readonly bindPort?: number;
+  readonly startupCorrelationId?: string | null;
+}
+
 export interface HealthChecker {
   checkHealth(): Promise<boolean>;
+  checkHealthDetails(): Promise<HealthCheckDetails>;
 }

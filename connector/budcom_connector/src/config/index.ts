@@ -207,6 +207,7 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
       SYNC_RUN_HISTORY_MAX_AGE_DAYS_LIMIT,
       'sync run history max age days',
     ),
+    startupCorrelationId: process.env.BUDCOM_STARTUP_CORRELATION_ID?.trim() || null,
     ...overrides,
   };
 

@@ -25,4 +25,6 @@ export interface HealthReport {
   /** Reserved for future authenticated LAN access; always false today. */
   readonly authenticatedLanAccessEnabled: false;
   readonly services: readonly ServiceStatus[];
+  /** Present when desktop supervisor supplied BUDCOM_STARTUP_CORRELATION_ID for this launch. */
+  readonly startupCorrelationId?: string | null;
 }

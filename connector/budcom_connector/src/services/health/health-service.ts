@@ -73,6 +73,7 @@ export class HealthService {
       networkPolicySatisfied,
       authenticatedLanAccessEnabled: false,
       services,
+      startupCorrelationId: this.deps.config.startupCorrelationId,
     };
   }
 }

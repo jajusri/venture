@@ -7,6 +7,8 @@ export interface HealthResponse {
   readonly connectorVersion: string;
   readonly tallyReachable: boolean;
   readonly readOnly: boolean;
+  readonly bindPort?: number;
+  readonly startupCorrelationId?: string | null;
   readonly services: readonly ServiceStatusDto[];
 }
 

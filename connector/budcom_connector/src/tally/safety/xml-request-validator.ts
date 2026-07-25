@@ -4,6 +4,10 @@ import {
   FORBIDDEN_REQUEST_TOKENS,
   ONLY_ALLOWED_TALLY_REQUEST,
 } from '../security/capabilities.js';
+import {
+  assertXmlContainsNoProhibitedMutationConstructs,
+  ProhibitedMutationConstructError,
+} from './prohibited-mutation-xml.js';
 
 function containsInvalidControlCharacters(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
@@ -71,6 +75,15 @@ export function validateTallyRequestXml(xml: string, maxBytes: number): XmlValid
       'Tally XML request must be a single ENVELOPE document',
       400,
     );
+  }
+
+  try {
+    assertXmlContainsNoProhibitedMutationConstructs(trimmed, { requireExportRequest: true });
+  } catch (error) {
+    if (error instanceof ProhibitedMutationConstructError) {
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, error.message, 400);
+    }
+    throw error;
   }
 
   const tallyRequest = extractTagValue(trimmed, 'TALLYREQUEST')?.toUpperCase();

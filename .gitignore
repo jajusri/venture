@@ -57,7 +57,8 @@ apps/budcom_desktop/dist/
 connector/budcom_connector/dist/
 connector/budcom_connector/data/
 connector/budcom_connector/test-data/
-connector/budcom_connector/docs/
+connector/budcom_connector/.packaged/
+apps/budcom_desktop/.packaged-node/
 /connector/budcom_connector/diagnostics/
 /connector/budcom_connector/test-output.txt
 

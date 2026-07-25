@@ -272,16 +272,47 @@ export function renderLifecycle(status: ConnectorLifecycleStatus): void {
   }
 }
 
+export const HOSTILE_HTML_SAMPLES = [
+  '<img src=x onerror=alert(1)>',
+  '<script>window.__xss = true</script>',
+  '"><svg onload=alert(1)>',
+  '& < > " \'',
+];
+
+function clearElement(element: HTMLElement): void {
+  element.replaceChildren();
+}
+
+function appendTextElement(parent: HTMLElement, tagName: string, className: string, text: string): HTMLElement {
+  const element = document.createElement(tagName);
+  element.className = className;
+  element.textContent = text;
+  parent.appendChild(element);
+  return element;
+}
+
 function renderLogList(containerId: string, entries: readonly LogEntry[]): void {
   const container = document.getElementById(containerId);
   if (!container) {
     return;
   }
-  container.innerHTML = entries.length === 0
-    ? '<p class="empty-state">No entries.</p>'
-    : entries.map((entry) =>
-      `<div class="log-entry log-${entry.level}"><span class="log-time">[${entry.timestamp}]</span> <span class="log-level">${entry.level.toUpperCase()}</span> ${entry.message}</div>`,
-    ).join('');
+  clearElement(container);
+  if (entries.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'No entries.';
+    container.appendChild(empty);
+    return;
+  }
+  for (const entry of entries) {
+    const row = document.createElement('div');
+    row.className = `log-entry log-${entry.level}`;
+    appendTextElement(row, 'span', 'log-time', `[${entry.timestamp}]`);
+    row.append(document.createTextNode(' '));
+    appendTextElement(row, 'span', 'log-level', entry.level.toUpperCase());
+    row.append(document.createTextNode(` ${entry.message}`));
+    container.appendChild(row);
+  }
 }
 
 export function renderLogs(entries: readonly LogEntry[]): void {
@@ -325,16 +356,26 @@ export function renderCompanyList(
   }
 
   if (companies.length === 0) {
-    container.innerHTML = '<p class="empty-state">No companies available.</p>';
+    clearElement(container);
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'No companies available.';
+    container.appendChild(empty);
     return;
   }
 
-  container.innerHTML = companies
-    .map((company) => {
-      const selected = company.id === selectedCompanyId ? ' selected' : '';
-      return `<button type="button" class="company-item${selected}" data-company-id="${company.id}" role="option" aria-selected="${company.id === selectedCompanyId}"><span class="company-name">${company.name}</span><span class="company-id">${company.id}</span></button>`;
-    })
-    .join('');
+  clearElement(container);
+  for (const company of companies) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `company-item${company.id === selectedCompanyId ? ' selected' : ''}`;
+    button.dataset.companyId = company.id;
+    button.setAttribute('role', 'option');
+    button.setAttribute('aria-selected', String(company.id === selectedCompanyId));
+    appendTextElement(button, 'span', 'company-name', company.name);
+    appendTextElement(button, 'span', 'company-id', company.id);
+    container.appendChild(button);
+  }
 }
 
 export function activateView(view: DesktopView): void {
@@ -660,21 +701,21 @@ export function renderLedgers(state: LedgerPageState): void {
 
   if (!state.ok || !state.list) {
     meta.textContent = state.userMessage ?? 'Unable to load ledgers.';
-    list.innerHTML = '';
+    clearElement(list);
     return;
   }
 
   meta.textContent = `${state.list.pagination.totalItems} ledgers · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
-  list.innerHTML = state.list.items
-    .map(
-      (ledger) => `
-        <div class="ledger-row" role="row">
-          <div class="ledger-name" role="cell">${ledger.name}</div>
-          <div class="ledger-meta" role="cell">${ledger.parentGroup ?? '—'}</div>
-          <div class="ledger-meta" role="cell">${ledger.status}</div>
-        </div>`,
-    )
-    .join('');
+  clearElement(list);
+  for (const ledger of state.list.items) {
+    const row = document.createElement('div');
+    row.className = 'ledger-row';
+    row.setAttribute('role', 'row');
+    appendTextElement(row, 'div', 'ledger-name', ledger.name).setAttribute('role', 'cell');
+    appendTextElement(row, 'div', 'ledger-meta', ledger.parentGroup ?? '—').setAttribute('role', 'cell');
+    appendTextElement(row, 'div', 'ledger-meta', ledger.status).setAttribute('role', 'cell');
+    list.appendChild(row);
+  }
 
   setText('ledger-page-label', `Page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`);
 }
@@ -810,21 +851,21 @@ export function renderStockItems(state: StockItemPageState): void {
 
   if (!state.ok || !state.list) {
     meta.textContent = state.userMessage ?? 'Unable to load stock items.';
-    list.innerHTML = '';
+    clearElement(list);
     return;
   }
 
   meta.textContent = `${state.list.pagination.totalItems} stock items · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
-  list.innerHTML = state.list.items
-    .map(
-      (item) => `
-        <div class="ledger-row" role="row">
-          <div class="ledger-name" role="cell">${item.name}</div>
-          <div class="ledger-meta" role="cell">${item.parentGroup ?? '—'}</div>
-          <div class="ledger-meta" role="cell">${item.baseUnit ?? item.dataQuality}</div>
-        </div>`,
-    )
-    .join('');
+  clearElement(list);
+  for (const item of state.list.items) {
+    const row = document.createElement('div');
+    row.className = 'ledger-row';
+    row.setAttribute('role', 'row');
+    appendTextElement(row, 'div', 'ledger-name', item.name).setAttribute('role', 'cell');
+    appendTextElement(row, 'div', 'ledger-meta', item.parentGroup ?? '—').setAttribute('role', 'cell');
+    appendTextElement(row, 'div', 'ledger-meta', item.baseUnit ?? item.dataQuality).setAttribute('role', 'cell');
+    list.appendChild(row);
+  }
 
   setText('stock-item-page-label', `Page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`);
 }

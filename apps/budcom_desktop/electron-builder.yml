@@ -18,10 +18,18 @@ extraResources:
       - "**/*"
       - "!**/*.map"
       - "!**/test/**"
+  - from: ../../connector/budcom_connector/.packaged/node_modules
+    to: connector/node_modules
+    filter:
+      - "**/*"
   - from: ../../connector/budcom_connector/package.json
     to: connector/package.json
   - from: build/VERSION.txt
     to: connector/VERSION.txt
+  - from: .packaged-node
+    to: node
+    filter:
+      - "**/*"
 asar: true
 win:
   target:

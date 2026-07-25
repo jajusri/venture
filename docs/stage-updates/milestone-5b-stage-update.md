@@ -2149,3 +2149,231 @@ After this gate is committed and pushed, the release pipeline **must be rerun fr
 Do not distribute the pre-commit gate-evidence installer to pilot participants.
 
 **Unrestricted production remains unapproved.**
+
+---
+
+## §32 — RC#4 Controlled-Pilot Installation and Lifecycle Validation Gate (2026-07-25)
+
+### Requirement addressed
+
+Real-Windows controlled-pilot installer lifecycle: integrity preflight, per-user install, first-run identity, packaged connector ownership, AppData layout, same-version reinstall, schema-upgrade fixture, uninstall retention, reinstall recovery, bounded cleanup, lifecycle harness, and security matrix update.
+
+No Tally write capability. No commit/push/publish. No unrestricted production approval.
+
+### Implementation status
+
+**COMPLETE (lifecycle harness + real Windows proof + unit tests)** — connector `/health` readiness within gate timeout and second-instance UI focus remain partially observed; genuine prior-version installer upgrade not available (schema v7 fixture used).
+
+### Evidence classes
+
+| Proof type | Status |
+|------------|--------|
+| Config-level (`electron-builder.yml`, NSIS flags) | **Proven** (§31) |
+| Automated unit/integration tests | **Proven** — lifecycle-gate (25), upgrade-safety, release-engineering |
+| Real Windows install | **Proven** — exit 0, per-user scope, no UAC |
+| Real Windows uninstall retention | **Proven** — binaries removed; `%APPDATA%/@budcom/desktop/` and markers retained |
+| Real Windows reinstall-after-uninstall | **Proven** — markers preserved; connector packaged path present |
+| SmartScreen unsigned behaviour | **Documented** — not disabled; silent install used for harness |
+| Second-instance focus | **Framework only** |
+| Connector health within 35s | **Not proven** on gate host — process spawned but `/health` not ready |
+
+### Candidate verified
+
+| Field | Value |
+|-------|-------|
+| Installer | `BudcomDesktop-0.4.3-x64-setup.exe` |
+| SHA-256 | `911422191ea977558f73fc756b6eb32dd701e01b16fb6626fc030da6e6480bdd` |
+| Git commit | `a9595af857546de3c65f1457775f3f65eb78ae77` |
+| `dirtyTree` | `false` |
+| Release mode | `controlled_pilot` |
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `apps/budcom_desktop/src/application/lifecycle/lifecycle-gate.ts` | **New** — fail-closed lifecycle validators |
+| `apps/budcom_desktop/test/unit/lifecycle-gate.test.ts` | **New** — 25 lifecycle gate tests |
+| `scripts/lifecycle/candidate-integrity.mjs` | **New** — candidate SHA/manifest/commit preflight |
+| `scripts/lifecycle/create-schema-v7-fixture.mjs` | **New** — isolated schema v7 fixture |
+| `scripts/lifecycle/lifecycle-gate-runner.mjs` | **New** — Windows lifecycle harness |
+| `docs/operations/controlled-pilot-installation-runbook.md` | Lifecycle harness; corrected `userData` path |
+| `docs/operations/controlled-pilot-release-checklist.md` | Lifecycle gate checklist |
+| `docs/architecture/controlled-pilot-release.md` | Corrected `userData` path |
+| `docs/security/security-decision-matrix.md` | Lifecycle gate controls |
+| `release/controlled-pilot/0.4.3/reports/lifecycle-gate-report.json` | **Generated evidence** |
+
+### RC#4 status (post §32)
+
+**Reliability Control #4 remains PARTIAL** — controlled-pilot lifecycle proven on real Windows for uninstall retention and reinstall recovery; signing, authenticated updates, and unrestricted production remain blocked.
+
+### Validation evidence (§32)
+
+| Command | Result |
+|---------|--------|
+| `node scripts/lifecycle/candidate-integrity.mjs` | **PASS** |
+| `node scripts/lifecycle/lifecycle-gate-runner.mjs --execute-windows` | **PASS** |
+| Desktop lint/build/tests | **245/245 PASS** (+25 lifecycle) |
+| Connector lint/build/tests | **794/794 PASS** |
+| Architecture tests | **12/12 PASS** |
+| Contract tests | **5/5 PASS** |
+| Connector `audit:prod` | **0 vulnerabilities** |
+| Desktop `audit:prod` | **0 vulnerabilities** |
+| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — clean** |
+
+**Unrestricted production remains unapproved.**
+
+---
+
+## §33 — Installed desktop startup + packaged Node runtime closure (2026-07-25)
+
+Focused closure of blockers **A** (installed desktop exit) and **B** (packaged Node 22+ connector runtime).
+
+**Root cause:** inherited `ELECTRON_RUN_AS_NODE=1` caused Electron to run as Node (immediate exit 0, no window/logs); probe `--user-data-dir` flag rejected by packaged Chromium.
+
+**Validation:** `installed-first-launch-probe.mjs` **PASS** — installer SHA `5e9105b175809b551bed47ff7dc4aa923902bbde1248ae5051d449b0c3f102f2`; packaged Node 22.16.0 at `resources/node/node.exe`; `/health` 200 with `tallyReachable:false`; orphan count 0 after cleanup.
+
+**Focused gate:** **PASS**. Full lifecycle gate not rerun in this slice.
+
+---
+
+## §34 — Post-audit critical remediation gate (2026-07-25)
+
+Addresses adjudicated audit defects **F-02** (probe false positives), **F-03** (egress XML asymmetry), and **F-06** (renderer XSS). No feature scope added. Tally remained closed.
+
+### Requirement addressed
+
+1. Deterministic installed-probe ownership contract (ephemeral port, correlation ID, spawn diagnostics, PID-scoped cleanup, single-instance + second-instance checks).
+2. Fail-closed outbound XML prohibited-construct scan at final egress.
+3. Renderer safe DOM construction replacing dynamic HTML interpolation.
+
+### Implementation status
+
+**COMPLETE (remediation + focused validation)** — evidence-only dirty-tree installer rebuilt; official candidate SHA unchanged; lifecycle gate remains **PARTIAL**; no commit/push/distribution.
+
+### Files changed
+
+| Area | Files |
+|------|-------|
+| Probe ownership | `scripts/lifecycle/installed-first-launch-probe.mjs` |
+| Desktop lifecycle | `apps/budcom_desktop/src/application/connector-lifecycle-service.ts`, `connector-lifecycle-config.ts`, `connector-lifecycle-types.ts`, `desktop-config-resolver.ts`, `main/main.ts`, `types.ts`, `release/connector-packaged-paths.ts` |
+| Connector correlation | `connector/.../config/defaults.ts`, `config/index.ts`, `core/types.ts`, `services/health/health-service.ts`, `api/routes/health.ts` |
+| Egress XML safety | `connector/.../tally/safety/prohibited-mutation-xml.ts`, `xml-request-validator.ts`, `ingestion/inbound-xml-prohibited-constructs.ts`, `tally/security/capabilities.ts` |
+| Renderer XSS | `apps/budcom_desktop/src/renderer/scripts/app.ts` |
+| Tests | `egress-prohibited-constructs.test.ts`, `health-service.test.ts`, `server.test.ts`, `connector-lifecycle-service.test.ts`, `xss-safe-render.test.ts` |
+
+### Tests added or changed
+
+- Connector egress prohibited constructs (16 cases: headers, body, nested, namespace, whitespace obfuscation, valid EXPORT retained)
+- Connector `/health` startupCorrelationId (unit + integration)
+- Desktop lifecycle unowned-health rejection
+- Renderer XSS-safe render (hostile HTML samples)
+
+### Validation evidence
+
+| Command | Result |
+|---------|--------|
+| `npm run test:unit` (connector) | **585/585 PASS** |
+| `vitest test/unit/connector-lifecycle-service.test.ts test/renderer/xss-safe-render.test.ts` | **14/14 PASS** |
+| `node scripts/lifecycle/installed-first-launch-probe.mjs` (evidence installer) | **PASS** — SHA `b00d13ee0b4cd532119be4a61e755aaca71cc9625c9306977a124a47a534d328`; ephemeral port + correlation ownership; second-instance denied; orphan count 0 |
+
+Report: `release/controlled-pilot/0.4.3/reports/post-audit-remediation-report.json`
+
+### Known defects / limitations
+
+- Evidence installer is not official RC (`911422191ea977558f73fc756b6eb32dd701e01b16fb6626fc030da6e6480bdd` remains canonical in `candidate-integrity.mjs`).
+- Full lifecycle gate not rerun.
+- `capture-screenshot.ts` dev helper still uses static innerHTML (non-shipped path).
+
+### Production-readiness level
+
+**Controlled-pilot remediation evidence only** — suitable for commit decision review; not for distribution.
+
+---
+
+## §35 — Final pre-commit hardening controls A/B/C (2026-07-25)
+
+Addresses commit-hold items **A** (packaged Node SHA-256 verification at spawn), **B** (probe-only `BUDCOM_USER_DATA_DIR`), and **C** (hard loopback confinement for packaged connector startup). No feature scope added. Tally remained closed. No commit/push/distribution.
+
+### Requirement addressed
+
+1. **A** — Verify installed `node.exe` against `{resourcesPath}/node/node-runtime.manifest.json` before connector spawn; fail closed with privacy-safe `packaged_runtime_integrity_failure` diagnostic; process-level verification cache (no rehash on health poll).
+2. **B** — Honour `BUDCOM_USER_DATA_DIR` / `--user-data-dir` only when `BUDCOM_INSTALLED_PROBE_MODE=1`; restrict probe overrides to absolute paths under `os.tmpdir()` and reject install/resources/system paths.
+3. **C** — Force packaged desktop-managed connector bind host to `127.0.0.1` regardless of hostile `BUDCOM_CONNECTOR_URL` / `BUDCOM_CONNECTOR_HOST` env; propagate loopback host to child env.
+
+### Implementation status
+
+**COMPLETE (implementation + focused unit validation)** — full lifecycle gate not rerun; evidence installer not rebuilt in this slice.
+
+### Files changed
+
+| Area | Files |
+|------|-------|
+| Runtime integrity | `apps/budcom_desktop/src/application/release/packaged-node-runtime.ts` |
+| Probe user-data gating | `apps/budcom_desktop/src/application/release/startup-environment.ts` |
+| Loopback confinement | `apps/budcom_desktop/src/application/release/packaged-connector-network.ts` |
+| Lifecycle integration | `connector-lifecycle-config.ts`, `connector-lifecycle-service.ts`, `connector-lifecycle-types.ts`, `release/startup-diagnostics.ts`, `main/main.ts` |
+| Build/probe scripts | `scripts/release/prepare-node-runtime.mjs`, `scripts/lifecycle/installed-first-launch-probe.mjs` |
+| Tests | `packaged-node-runtime.test.ts`, `startup-environment.test.ts`, `packaged-connector-network.test.ts`, `connector-lifecycle-config.test.ts`, `connector-lifecycle-service.test.ts` |
+
+### Tests added or changed
+
+- Packaged Node runtime integrity (15 cases: valid hash, missing/malformed manifest, schema/version/arch/SHA/path failures, hash mismatch, unreadable exe, cache behaviour, no system-Node fallback)
+- Probe-only user-data override gating (7 cases)
+- Packaged loopback host resolution (3 cases)
+- Lifecycle integrity failure blocks spawn/reconnect; packaged loopback child env (6 cases combined)
+
+### Validation evidence
+
+| Command | Result |
+|---------|--------|
+| `npm test -- test/unit/packaged-node-runtime.test.ts test/unit/startup-environment.test.ts test/unit/packaged-connector-network.test.ts test/unit/connector-lifecycle-config.test.ts test/unit/connector-lifecycle-service.test.ts` | **42/42 PASS** |
+
+### Known defects / limitations
+
+- Evidence installer must be rebuilt before re-running installed probe against new runtime manifest schema field (`manifestSchemaVersion: 1`).
+- Full lifecycle gate not rerun.
+- Symlink/junction escape detection relies on existing path-containment utilities; not exercised against real junction targets in this slice.
+
+### Production-readiness level
+
+**Pre-commit hardening complete for A/B/C** — commit decision may proceed once authorized; distribution still blocked.
+
+---
+
+## §36 — Pre-commit hardening installed evidence gate (2026-07-25)
+
+Rebuilds evidence-only dirty-tree installer and verifies controls **A/B/C** in packaged/installed form. No commit/push/distribution. Tally remained closed.
+
+### Evidence output
+
+| Field | Value |
+|-------|-------|
+| Directory | `release/controlled-pilot/0.4.3/artifacts-precommit-hardening-20260725-235500/` |
+| Installer SHA-256 | `3ae8fb5f932f19d050ead5333fd71e6cb7bf08d8216c0d34933c8c61f53f457f` |
+| Size | 104,708,293 bytes |
+| `dirtyTree` | `true` |
+| `distributable` | `false` |
+| Official RC SHA (unchanged) | `911422191ea977558f73fc756b6eb32dd701e01b16fb6626fc030da6e6480bdd` |
+
+### Installed verification
+
+| Check | Result |
+|-------|--------|
+| Package boundary | PASS |
+| Packaged runtime contract | PASS |
+| Packaged connector dependencies | PASS |
+| Control A — manifest + node.exe SHA-256 | PASS |
+| Control B — probe user-data override | PASS (installed probe applied temp override) |
+| Control C — loopback bind (`127.0.0.1`) | PASS (`networkExposure: loopback`) |
+| Installed first-launch probe | **PASS** |
+| `packaged_runtime_integrity_failure` diagnostic | absent |
+
+Report: `release/controlled-pilot/0.4.3/reports/precommit-hardening-installed-evidence-gate-report.json`
+
+### Validation evidence
+
+| Command | Result |
+|---------|--------|
+| `node scripts/lifecycle/precommit-hardening-packaged-verify.mjs …/win-unpacked` | PASS |
+| `node scripts/lifecycle/installed-first-launch-probe.mjs …/BudcomDesktop-0.4.3-x64-setup.exe` | **PASS** |
+| `node scripts/lifecycle/candidate-integrity.mjs` | FAIL on evidence SHA (expected — official RC path not replaced) |

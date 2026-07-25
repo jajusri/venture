@@ -1,4 +1,5 @@
-import { FORBIDDEN_REQUEST_TOKENS } from '../tally/security/capabilities.js';
+import { ONLY_ALLOWED_TALLY_REQUEST } from '../tally/security/capabilities.js';
+import { assertXmlContainsNoProhibitedMutationConstructs } from '../tally/safety/prohibited-mutation-xml.js';
 import { InboundXmlReasonCode } from './inbound-xml-reason-codes.js';
 
 export function assertInboundXmlProhibitedConstructs(rawXml: string): void {
@@ -7,50 +8,22 @@ export function assertInboundXmlProhibitedConstructs(rawXml: string): void {
     throw prohibitedError(InboundXmlReasonCode.EmptyPayload, 'Inbound XML payload is empty.');
   }
 
-  if (/<!DOCTYPE/i.test(trimmed)) {
+  try {
+    assertXmlContainsNoProhibitedMutationConstructs(trimmed, { requireExportRequest: false });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Inbound XML contains a prohibited construct.';
+    const reasonCode = /DOCTYPE|entity declaration/i.test(message)
+      ? InboundXmlReasonCode.ProhibitedConstruct
+      : InboundXmlReasonCode.MutationInstruction;
+    throw prohibitedError(reasonCode, message);
+  }
+
+  const tallyRequest = extractTagValue(trimmed, 'TALLYREQUEST')?.toUpperCase();
+  if (tallyRequest && tallyRequest !== ONLY_ALLOWED_TALLY_REQUEST) {
     throw prohibitedError(
-      InboundXmlReasonCode.ProhibitedConstruct,
-      'Inbound XML contains a prohibited DOCTYPE declaration.',
+      InboundXmlReasonCode.MutationInstruction,
+      'Inbound XML contains an unsupported Tally request instruction.',
     );
-  }
-
-  if (/<!ENTITY/i.test(trimmed)) {
-    throw prohibitedError(
-      InboundXmlReasonCode.ProhibitedConstruct,
-      'Inbound XML contains a prohibited entity declaration.',
-    );
-  }
-
-  assertNoMutationInstructions(trimmed);
-}
-
-function assertNoMutationInstructions(rawXml: string): void {
-  const tallyRequest = extractTagValue(rawXml, 'TALLYREQUEST')?.toUpperCase();
-  if (tallyRequest) {
-    for (const token of FORBIDDEN_REQUEST_TOKENS) {
-      if (tallyRequest.includes(token)) {
-        throw prohibitedError(
-          InboundXmlReasonCode.MutationInstruction,
-          'Inbound XML contains a prohibited mutation instruction.',
-        );
-      }
-    }
-    if (tallyRequest !== 'EXPORT') {
-      throw prohibitedError(
-        InboundXmlReasonCode.MutationInstruction,
-        'Inbound XML contains an unsupported Tally request instruction.',
-      );
-    }
-  }
-
-  const upper = rawXml.toUpperCase();
-  for (const token of ['<IMPORT ', '<EXECUTE', '<FUNCTION ']) {
-    if (upper.includes(token)) {
-      throw prohibitedError(
-        InboundXmlReasonCode.MutationInstruction,
-        'Inbound XML contains a prohibited mutation instruction.',
-      );
-    }
   }
 }
 

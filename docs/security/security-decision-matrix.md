@@ -22,7 +22,7 @@ This matrix records unresolved or partially resolved security decisions that req
 | Inbound offline XML envelope hardening | Malicious imported XML files | Unified envelope boundary (`InboundXmlEnvelopeService`); import-attempt history; domain upsert deferred | Medium for import modes | Offline domain persistence + desktop import UI | Implemented in RC#4 §30; commercial pilot after domain upsert | Commercial pilot |
 | Controlled-pilot release engineering | Tampered artifacts; packaging leaks; unsafe upgrade | Release mode contract; build metadata; packaging boundary inspection; SHA-256 manifest; NSIS config with `deleteAppDataOnUninstall: false`; manual upgrade only | Medium — unsigned pilot distribution | EV/OV signing; authenticated updater | Checksum-verified manual distribution for controlled pilot | Controlled pilot distribution |
 | Release-mode enforcement | Production capabilities in pilot | Typed `BUDCOM_RELEASE_MODE`; fail-closed unknown values; diagnostics expose mode | Medium if misconfigured | Build-time injection | Implemented §31 | Controlled pilot |
-| Upgrade schema safety | Corrupted DB on downgrade/future schema | Future schema fails closed; migration transactional; downgrade blocked | High | Automatic rollback scripts (rejected — data risk) | Fail closed + operator backup restore | Controlled pilot |
+| Controlled-pilot lifecycle gate (§32) | Installer substitution; orphan connector; AppData deletion on uninstall; cleanup path escape | SHA-256 preflight; real Windows install/reinstall/uninstall/reinstall harness; `deleteAppDataOnUninstall: false` proven; marker-guarded cleanup; lifecycle unit tests | Medium — unsigned SmartScreen friction; health timeout on slow hosts | VM/Sandbox isolation; signed installer | Checksum-verified lifecycle gate before pilot handoff | Controlled pilot distribution |
 
 ## Controlled pilot status
 
@@ -36,7 +36,8 @@ Approved with documented limitations:
 - Local lifecycle documentation without backup auto-deletion
 - **Manual controlled-pilot distribution with SHA-256 checksum verification**
 - **Unsigned installer/portable builds with explicit SmartScreen guidance**
-- **No automatic update channel**
+- **Real Windows uninstall-retention proof (§32)** — NSIS uninstall removes binaries; `%APPDATA%/@budcom/desktop/` retained
+- **Lifecycle validation harness** — `scripts/lifecycle/*` with fail-closed integrity checks
 
 ## Commercial pilot blockers
 
@@ -51,9 +52,11 @@ All commercial pilot blockers, plus:
 
 - Encryption at rest policy for SQLite, logs, and backups
 - Installer/uninstall lifecycle automation with explicit data ownership
-- Auto-update trust chain
 - Crash reporting policy (if desired)
-- Residual offline domain persistence from validated inbound envelopes (ledger/stock upsert)
+- Auto-update trust chain
+- Second-instance focus behaviour on real Windows (harness documents policy only)
+- Connector `/health` readiness within fixed gate timeout on all hosts
+- Genuine earlier signed pilot installer upgrade path (schema fixture used instead)
 
 ## Related documents
 

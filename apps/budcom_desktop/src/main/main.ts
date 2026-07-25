@@ -1,6 +1,11 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import crypto from 'node:crypto';
 import path from 'node:path';
 
+import {
+  applyUserDataDirOverride,
+  sanitizeDesktopProcessEnvironment,
+} from '../application/release/startup-environment.js';
 import { CompanyService } from '../application/company-service.js';
 import { LedgerService } from '../application/ledger-service.js';
 import { StockItemService } from '../application/stock-item-service.js';
@@ -34,14 +39,78 @@ import { ensureAppDataDirectories, resolveAppDataLayout } from '../application/r
 import { loadBuildInfo, formatBuildInfoForDiagnostics } from '../application/release/build-info.js';
 import { resolveReleaseMode, ReleaseMode } from '../application/release/release-mode.js';
 import { bindSecondInstanceFocus, requestDesktopSingleInstance } from '../application/release/single-instance.js';
+import { StartupDiagnostics } from '../application/release/startup-diagnostics.js';
+
+sanitizeDesktopProcessEnvironment();
+
+if (!process.env.BUDCOM_STARTUP_CORRELATION_ID?.trim()) {
+  process.env.BUDCOM_STARTUP_CORRELATION_ID = crypto.randomUUID();
+}
+const startupCorrelationId = process.env.BUDCOM_STARTUP_CORRELATION_ID.trim();
 
 const skipSingleInstance = process.env.VITEST === 'true' || process.env.BUDCOM_SKIP_SINGLE_INSTANCE === 'true';
+
+function startupLog(stage: string, detail?: string): void {
+  const suffix = detail ? ` — ${detail}` : '';
+  console.error(`[budcom-desktop:startup] ${stage}${suffix}`);
+}
+
+function createStartupDiagnostics(): StartupDiagnostics {
+  const logsDir = path.join(app.getPath('userData'), 'logs');
+  return new StartupDiagnostics({ logsDir });
+}
+
+const userDataOverride = applyUserDataDirOverride(process.env, app, process.argv, {
+  installRoot: app.isPackaged ? path.dirname(process.execPath) : null,
+  resourcesPath: process.resourcesPath ?? null,
+});
+const startupDiagnostics = createStartupDiagnostics();
+
+process.on('uncaughtException', (error) => {
+  startupDiagnostics.record('uncaught_exception', {
+    message: error.message,
+    name: error.name,
+  });
+  startupLog('uncaughtException', error.stack ?? error.message);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const detail = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
+  startupDiagnostics.record('unhandled_rejection', { detail });
+  startupLog('unhandledRejection', detail);
+});
+
+startupDiagnostics.record('process_start', {
+  pid: process.pid,
+  execPath: process.execPath,
+  packaged: app.isPackaged,
+  platform: process.platform,
+  arch: process.arch,
+  electronVersion: process.versions.electron ?? null,
+  nodeVersion: process.versions.node,
+  resourcesPath: process.resourcesPath ?? null,
+  userDataPath: app.getPath('userData'),
+  userDataOverride: userDataOverride,
+  electronRunAsNodeStripped: process.env.ELECTRON_RUN_AS_NODE === undefined,
+  startupCorrelationId,
+});
+
 if (!skipSingleInstance) {
   const singleInstance = requestDesktopSingleInstance(app);
+  startupDiagnostics.record('single_instance_lock', {
+    acquired: singleInstance.acquired,
+    shouldQuit: singleInstance.shouldQuit,
+  });
   if (singleInstance.shouldQuit) {
+    startupDiagnostics.record('single_instance_denied_exit', { exitCode: 0 });
+    startupDiagnostics.flush();
     process.exit(0);
   }
 }
+
+startupDiagnostics.record('main_module_loaded', {
+  requireMainIsModule: require.main === module,
+});
 
 const buildInfo = loadBuildInfo();
 const releaseMode = resolveReleaseMode({
@@ -53,26 +122,15 @@ const isDevelopment = releaseMode === ReleaseMode.Development;
 let mainWindow: BrowserWindow | null = null;
 let pollTimer: NodeJS.Timeout | null = null;
 
-function startupLog(stage: string, detail?: string): void {
-  const suffix = detail ? ` — ${detail}` : '';
-  console.error(`[budcom-desktop:startup] ${stage}${suffix}`);
-}
-
 startupLog('main module loaded', `require.main === module: ${require.main === module}`);
-
-process.on('uncaughtException', (error) => {
-  startupLog('uncaughtException', error.stack ?? error.message);
-});
-
-process.on('unhandledRejection', (reason) => {
-  const detail = reason instanceof Error ? reason.stack ?? reason.message : String(reason);
-  startupLog('unhandledRejection', detail);
-});
 
 const startedAt = Date.now();
 
-startupLog('release mode', releaseMode);
-startupLog('build identity', JSON.stringify(formatBuildInfoForDiagnostics(buildInfo)));
+startupDiagnostics.record('release_mode_resolved', {
+  releaseMode,
+  isDevelopment,
+  appVersion: app.getVersion(),
+});
 
 const appDataLayout = resolveAppDataLayout({
   userDataDir: app.getPath('userData'),
@@ -80,6 +138,11 @@ const appDataLayout = resolveAppDataLayout({
   installRoot: app.isPackaged ? path.dirname(app.getPath('exe')) : null,
 });
 ensureAppDataDirectories(appDataLayout);
+startupDiagnostics.record('app_data_ready', {
+  userDataRoot: appDataLayout.userDataRoot,
+  logsDir: appDataLayout.logsDir,
+  connectorDataDir: appDataLayout.connectorDataDir,
+});
 
 const configPaths = resolveDesktopConfigPaths(appDataLayout.userDataRoot);
 const fileLogWriter = new FileLogWriter({ logsDir: configPaths.logsDir });
@@ -177,8 +240,14 @@ function createLifecycleService(config: ReturnType<typeof settingsService.getRes
   const service = new ConnectorLifecycleService({
     config,
     processSpawner: new NodeProcessSpawner(),
-    healthChecker: new HttpHealthChecker(config.connectorBaseUrl),
+    healthChecker: new HttpHealthChecker(config.connectorBaseUrl, undefined, {
+      expectedPort: config.connectorPort,
+      expectedCorrelationId: config.startupCorrelationId,
+    }),
     logService,
+    onDiagnostic: (stage, detail) => {
+      startupDiagnostics.record(stage, detail);
+    },
   });
   service.setStatusListener(() => {
     notifyRenderer();
@@ -223,12 +292,15 @@ function notifyRenderer(): void {
 }
 
 export function createMainWindow(): BrowserWindow {
+  startupDiagnostics.record('window_creation_start');
   startupLog('BrowserWindow creation started');
 
   const preloadPath = path.join(__dirname, '../preload/preload.js');
   const rendererPath = path.join(__dirname, '../renderer/index.html');
-  startupLog('preload resolved', preloadPath);
-  startupLog('renderer path resolved', rendererPath);
+  startupDiagnostics.record('renderer_path_selected', {
+    preloadPath,
+    rendererPath,
+  });
 
   const window = new BrowserWindow({
     width: 1200,
@@ -259,14 +331,35 @@ export function createMainWindow(): BrowserWindow {
     event.preventDefault();
   });
 
+  startupDiagnostics.record('window_created', { windowId: window.id });
   startupLog('BrowserWindow created', `id=${window.id}`);
 
+  window.on('closed', () => {
+    startupDiagnostics.record('window_closed', { windowId: window.id });
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+  });
+
   window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    startupDiagnostics.record('did_fail_load', {
+      errorCode,
+      errorDescription,
+      validatedURL,
+    });
     startupLog('did-fail-load', `${errorCode} ${errorDescription} url=${validatedURL}`);
   });
 
   window.webContents.on('render-process-gone', (_event, details) => {
+    startupDiagnostics.record('render_process_gone', {
+      reason: details.reason,
+      exitCode: details.exitCode,
+    });
     startupLog('render-process-gone', `${details.reason} exitCode=${details.exitCode}`);
+  });
+
+  window.webContents.on('did-finish-load', () => {
+    startupDiagnostics.record('renderer_loaded', { rendererPath });
   });
 
   app.on('child-process-gone', (_event, details) => {
@@ -274,6 +367,7 @@ export function createMainWindow(): BrowserWindow {
   });
 
   window.once('ready-to-show', () => {
+    startupDiagnostics.record('ready_to_show', { windowId: window.id });
     startupLog('ready-to-show');
     window.show();
     startupLog('window shown');
@@ -455,6 +549,7 @@ export function bootstrapApp(): void {
   });
 
   app.whenReady().then(() => {
+    startupDiagnostics.record('app_ready');
     startupLog('app ready');
     mainWindow = createMainWindow();
     startPolling(resolved.effective.healthPollIntervalMs);
@@ -468,20 +563,29 @@ export function bootstrapApp(): void {
     });
   }).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
+    startupDiagnostics.record('bootstrap_error', { message });
     startupLog('app.whenReady rejected', message);
   });
 
   app.on('window-all-closed', () => {
+    startupDiagnostics.record('window_all_closed', { platform: process.platform });
     if (process.platform !== 'darwin') {
+      startupDiagnostics.record('explicit_app_quit', { reason: 'window-all-closed' });
       app.quit();
     }
   });
 
   app.on('before-quit', () => {
+    startupDiagnostics.record('before_quit');
     if (pollTimer) {
       clearInterval(pollTimer);
     }
     void lifecycleService.shutdown();
+  });
+
+  app.on('will-quit', () => {
+    startupDiagnostics.record('will_quit');
+    startupDiagnostics.flush();
   });
 }
 

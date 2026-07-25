@@ -37,11 +37,20 @@ Use before distributing a controlled-pilot build.
 ## Behaviour
 
 - [ ] Upgrade path tested on representative machine
-- [ ] Uninstall retains `%APPDATA%/budcom-desktop/` data by default
+- [ ] Uninstall retains `%APPDATA%/@budcom/desktop/` data by default
 - [ ] Migration failure blocks normal startup
 - [ ] Future schema version fails closed
 - [ ] Single desktop instance enforced
 - [ ] Connector ownership verified
+
+## Lifecycle gate (RC#4 §32)
+
+- [ ] Candidate SHA-256 verified before install (`node scripts/lifecycle/candidate-integrity.mjs`)
+- [ ] Real Windows lifecycle harness executed (`node scripts/lifecycle/lifecycle-gate-runner.mjs --execute-windows`)
+- [ ] Uninstall-retention proven on real Windows (binaries removed; AppData retained)
+- [ ] Reinstall-after-uninstall reconnects to retained data
+- [ ] Lifecycle unit tests pass (`apps/budcom_desktop/test/unit/lifecycle-gate.test.ts`)
+- [ ] Lifecycle report archived under `release/controlled-pilot/<version>/reports/lifecycle-gate-report.json`
 
 ## Validation
 

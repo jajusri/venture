@@ -54,6 +54,9 @@ export const FORBIDDEN_REQUEST_TOKENS: readonly string[] = [
   'SAVE',
   'MODIFY',
   'REMOVE',
+  'CANCEL',
+  'REWRITE',
+  'SET',
 ];
 
 export function isAllowedCapability(capability: string): capability is TallyCapability {

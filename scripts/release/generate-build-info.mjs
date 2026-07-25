@@ -2,7 +2,7 @@
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { resolveDirtyTreeFromProvenance } from './release-provenance.mjs';
 
@@ -77,7 +77,8 @@ export function generateBuildInfo(options = {}) {
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}`) {
+if (import.meta.url === pathToFileURL(path.resolve(process.argv[1] ?? '')).href
+  || import.meta.url === pathToFileURL(fileURLToPath(import.meta.url)).href) {
   const outputPath = process.argv[2];
   if (!outputPath) {
     console.error('Usage: node generate-build-info.mjs <output-path>');

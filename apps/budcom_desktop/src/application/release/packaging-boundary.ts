@@ -38,6 +38,17 @@ export function assertPathTraversalSafe(entryPath: string): string {
   return normalized;
 }
 
+function isThirdPartyDependencyPath(relativePath: string): boolean {
+  return /(^|\/)node_modules\//i.test(relativePath.replace(/\\/g, '/'));
+}
+
+function shouldSkipForbiddenRule(ruleId: string, relativePath: string): boolean {
+  if (ruleId !== 'test-file' && ruleId !== 'fixture') {
+    return false;
+  }
+  return isThirdPartyDependencyPath(relativePath);
+}
+
 export function inspectPackageBoundary(
   rootDir: string,
   fsImpl: PackageBoundaryFs,
@@ -58,6 +69,9 @@ export function inspectPackageBoundary(
       files.push(rel.replace(/\\/g, '/'));
       for (const rule of FORBIDDEN_PATTERNS) {
         if ('allowWhenApproved' in rule && rule.allowWhenApproved && includeSourceMaps && rule.id === 'source-map') {
+          continue;
+        }
+        if (shouldSkipForbiddenRule(rule.id, rel)) {
           continue;
         }
         if (rule.pattern.test(rel) || rule.pattern.test(entry.name)) {

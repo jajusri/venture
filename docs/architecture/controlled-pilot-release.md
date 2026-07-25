@@ -40,7 +40,7 @@ Includes desktop version, connector version, storage schema version, git commit,
 
 ## Application data layout
 
-Immutable install binaries are separate from mutable data under Electron `userData`:
+Immutable install binaries are separate from mutable data under Electron `userData` (`%APPDATA%/@budcom/desktop/` for package `@budcom/desktop`):
 
 | Category | Location |
 |----------|----------|

@@ -22,6 +22,16 @@ describe('GET /health', () => {
     });
     expect(Array.isArray(response.body.services)).toBe(true);
     expect(response.body.services.length).toBeGreaterThan(0);
+    expect(response.body.startupCorrelationId).toBeNull();
+  });
+
+  it('exposes startup correlation id from config in health diagnostics', async () => {
+    const context = createTestContext({ startupCorrelationId: 'probe-correlation-123' });
+    await startTestServices(context);
+
+    const response = await request(createTestApp(context)).get('/health');
+    expect(response.status).toBe(200);
+    expect(response.body.startupCorrelationId).toBe('probe-correlation-123');
   });
 
   it('reports tallyReachable when mock Tally responds', async () => {

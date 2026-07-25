@@ -192,6 +192,17 @@ async function main() {
       }
     });
 
+    step('packaged-runtime-contract', async () => {
+      const { inspectPackagedRuntime } = await import('./packaged-runtime-inspection.mjs');
+      const inspectionRoot = resolveUnpackedInspectionRoot(artifactsDir);
+      await inspectPackagedRuntime(inspectionRoot);
+    });
+
+    step('packaged-connector-dependencies', () => {
+      const inspectionRoot = resolveUnpackedInspectionRoot(artifactsDir);
+      run(`node "${path.join(repoRoot, 'scripts/release/packaged-connector-dependency-inspection.mjs')}" "${inspectionRoot}"`, repoRoot);
+    });
+
     const manifestEntries = [{
       filename: installerFilename,
       classification: ArtifactClassification.NsisInstaller,

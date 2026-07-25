@@ -44,6 +44,8 @@ export interface ConnectorConfig {
   readonly syncRunHistoryMaxCount: number;
   /** Maximum age in days for non-protected terminal sync-run rows outside the count window. */
   readonly syncRunHistoryMaxAgeDays: number;
+  /** Bounded per-launch identifier exposed in /health diagnostics when set by desktop supervisor. */
+  readonly startupCorrelationId: string | null;
 }
 
 export const TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
@@ -96,4 +98,5 @@ export const defaultConfig: ConnectorConfig = {
   sessionTtlMs: 8 * 60 * 60 * 1000,
   syncRunHistoryMaxCount: SYNC_RUN_HISTORY_MAX_COUNT_DEFAULT,
   syncRunHistoryMaxAgeDays: SYNC_RUN_HISTORY_MAX_AGE_DAYS_DEFAULT,
+  startupCorrelationId: null,
 };

@@ -1,7 +1,7 @@
 # Controlled-pilot installation runbook
 
 **Status:** Controlled pilot — unsigned builds permitted with explicit limitation  
-**Last updated:** 2026-07-25
+**Last updated:** 2026-07-25 (lifecycle gate §32)
 
 ## Supported environment
 
@@ -54,8 +54,8 @@ NSIS installer (when produced on Windows):
 
 ## First start
 
-1. Application data is created under `%APPDATA%/budcom-desktop/`.
-2. Connector data is stored under `%APPDATA%/budcom-desktop/connector-data/`.
+1. Application data is created under `%APPDATA%/@budcom/desktop/` (Electron `userData` for package `@budcom/desktop`).
+2. Connector data is stored under `%APPDATA%/@budcom/desktop/connector-data/`.
 3. Confirm release mode in startup logs or diagnostics export: `controlled_pilot`.
 4. Confirm desktop and connector versions in diagnostics metadata.
 5. Connector starts on loopback only.
@@ -65,8 +65,8 @@ NSIS installer (when produced on Windows):
 Before upgrading:
 
 1. Export diagnostics if support needs context.
-2. Copy `%APPDATA%/budcom-desktop/connector-data/` including `budcom-ledger.db` and any `backups/` directory.
-3. Copy `%APPDATA%/budcom-desktop/desktop-config.json`.
+2. Copy `%APPDATA%/@budcom/desktop/connector-data/` including `budcom-ledger.db` and any `backups/` directory.
+3. Copy `%APPDATA%/@budcom/desktop/desktop-config.json`.
 
 ## Manual upgrade
 
@@ -80,7 +80,7 @@ Automatic update is disabled in controlled pilot.
 ## Uninstall
 
 - Uninstall removes application binaries only.
-- Configuration, SQLite database, logs, diagnostic exports, and backups remain under `%APPDATA%/budcom-desktop/` unless the operator deletes them manually.
+- Configuration, SQLite database, logs, diagnostic exports, and backups remain under `%APPDATA%/@budcom/desktop/` unless the operator deletes them manually.
 - No destructive data-delete option is provided in controlled pilot.
 
 ## Diagnostics and privacy
@@ -92,6 +92,34 @@ Automatic update is disabled in controlled pilot.
 ## Rollback limitation
 
 Downgrading to an older application against a newer database schema is blocked at connector startup. Restore from backup instead of forcing downgrade.
+
+## Lifecycle validation harness (operators and release engineers)
+
+Preflight integrity (no install):
+
+```powershell
+node scripts/lifecycle/candidate-integrity.mjs
+```
+
+Dry-run report skeleton:
+
+```powershell
+node scripts/lifecycle/lifecycle-gate-runner.mjs
+```
+
+Real Windows lifecycle gate (isolated profile or first-install session only):
+
+```powershell
+node scripts/lifecycle/lifecycle-gate-runner.mjs --execute-windows
+```
+
+Bounded cleanup of gate-created data (marker-guarded):
+
+```powershell
+node scripts/lifecycle/lifecycle-gate-runner.mjs --cleanup-only
+```
+
+Report output: `release/controlled-pilot/<version>/reports/lifecycle-gate-report.json`
 
 ## Escalation
 

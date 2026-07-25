@@ -31,10 +31,12 @@ class MockProcessSpawner implements ProcessSpawner {
 
 class MockHealthChecker implements HealthChecker {
   checkHealth = vi.fn(async () => false);
+  checkHealthDetails = vi.fn(async () => ({ ready: false, owned: false }));
 }
 
 const baseConfig: ConnectorLifecycleConfig = {
   connectorBaseUrl: 'http://localhost:8080',
+  connectorHost: '127.0.0.1',
   connectorPort: 8080,
   connectorExecutable: process.execPath,
   connectorArgs: [process.execPath],
@@ -83,7 +85,7 @@ describe('ConnectorLifecycleService', () => {
 
   it('detects an already running connector and avoids duplicate launch', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth.mockResolvedValue(true);
+    healthChecker.checkHealthDetails.mockResolvedValue({ ready: true, owned: true });
     const { service, processSpawner } = createService({ healthChecker });
 
     const status = await service.ensureConnectorRunning();
@@ -96,10 +98,10 @@ describe('ConnectorLifecycleService', () => {
 
   it('starts managed connector when health is unavailable', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+    healthChecker.checkHealthDetails
+      .mockResolvedValueOnce({ ready: false, owned: false })
+      .mockResolvedValueOnce({ ready: false, owned: false })
+      .mockResolvedValueOnce({ ready: true, owned: true });
     const { service, processSpawner } = createService({ healthChecker });
 
     const status = await service.ensureConnectorRunning();
@@ -109,12 +111,26 @@ describe('ConnectorLifecycleService', () => {
     expect(status.state).toBe('connected');
   });
 
+  it('ignores unrelated connector health on a different ownership contract', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails
+      .mockResolvedValueOnce({ ready: true, owned: false, bindPort: 8080, startupCorrelationId: 'other' })
+      .mockResolvedValueOnce({ ready: false, owned: false })
+      .mockResolvedValueOnce({ ready: true, owned: true });
+    const { service, processSpawner } = createService({ healthChecker });
+
+    const status = await service.ensureConnectorRunning();
+
+    expect(processSpawner.spawn).toHaveBeenCalledTimes(1);
+    expect(status.managedByDesktop).toBe(true);
+  });
+
   it('prevents duplicate launch while managed process exists', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
+    healthChecker.checkHealthDetails
+      .mockResolvedValueOnce({ ready: false, owned: false })
+      .mockResolvedValueOnce({ ready: true, owned: true })
+      .mockResolvedValueOnce({ ready: true, owned: true });
     const { service, processSpawner } = createService({ healthChecker });
 
     await service.ensureConnectorRunning();
@@ -125,7 +141,7 @@ describe('ConnectorLifecycleService', () => {
 
   it('handles startup timeout', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth.mockResolvedValue(false);
+    healthChecker.checkHealthDetails.mockResolvedValue({ ready: false, owned: false });
     const { service } = createService({
       healthChecker,
       config: { startupTimeoutMs: 500 },
@@ -140,11 +156,11 @@ describe('ConnectorLifecycleService', () => {
 
   it('restarts after crash with exponential backoff', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+    healthChecker.checkHealthDetails
+      .mockResolvedValueOnce({ ready: false, owned: false })
+      .mockResolvedValueOnce({ ready: true, owned: true })
+      .mockResolvedValueOnce({ ready: false, owned: false })
+      .mockResolvedValueOnce({ ready: true, owned: true });
     const process = new MockManagedProcess();
     const processSpawner = new MockProcessSpawner();
     processSpawner.spawn.mockReturnValue(process);
@@ -160,7 +176,10 @@ describe('ConnectorLifecycleService', () => {
 
   it('stops managed connector gracefully', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    healthChecker.checkHealthDetails
+      .mockResolvedValueOnce({ ready: false, owned: false })
+      .mockResolvedValueOnce({ ready: true, owned: true })
+      .mockResolvedValueOnce({ ready: false, owned: false });
     const process = new MockManagedProcess();
     const processSpawner = new MockProcessSpawner();
     processSpawner.spawn.mockReturnValue(process);
@@ -176,7 +195,7 @@ describe('ConnectorLifecycleService', () => {
 
   it('records health transitions in structured logs', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth.mockResolvedValue(true);
+    healthChecker.checkHealthDetails.mockResolvedValue({ ready: true, owned: true });
     const { service, logService } = createService({ healthChecker });
 
     await service.ensureConnectorRunning();
@@ -185,9 +204,53 @@ describe('ConnectorLifecycleService', () => {
     expect(entries.some((message) => message.includes('[lifecycle:health_transition]'))).toBe(true);
   });
 
+  it('blocks connector spawn when packaged runtime integrity failed', async () => {
+    const onDiagnostic = vi.fn();
+    const healthChecker = new MockHealthChecker();
+    const processSpawner = new MockProcessSpawner();
+    const logService = new LogService();
+    const service = new ConnectorLifecycleService({
+      config: {
+        ...baseConfig,
+        connectorExecutable: '',
+        packagedRuntimeIntegrityCategory: 'hash_mismatch',
+      },
+      processSpawner,
+      healthChecker,
+      logService,
+      sleep: async () => undefined,
+      onDiagnostic,
+    });
+
+    const status = await service.ensureConnectorRunning();
+
+    expect(status.state).toBe('failed');
+    expect(status.lastError).toContain('integrity verification');
+    expect(processSpawner.spawn).not.toHaveBeenCalled();
+    expect(onDiagnostic).toHaveBeenCalledWith('packaged_runtime_integrity_failure', { category: 'hash_mismatch' });
+  });
+
+  it('does not retry reconnect when runtime integrity is blocked', async () => {
+    const processSpawner = new MockProcessSpawner();
+    const { service } = createService({
+      processSpawner,
+      config: {
+        connectorExecutable: '',
+        packagedRuntimeIntegrityCategory: 'missing_manifest',
+        autoStart: true,
+      },
+    });
+
+    await service.initialize();
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(processSpawner.spawn).not.toHaveBeenCalled();
+    expect(service.getStatus().state).toBe('failed');
+  });
+
   it('fails after max restart attempts', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth.mockResolvedValue(false);
+    healthChecker.checkHealthDetails.mockResolvedValue({ ready: false, owned: false });
     const process = new MockManagedProcess();
     const processSpawner = new MockProcessSpawner();
     processSpawner.spawn.mockReturnValue(process);
@@ -217,7 +280,7 @@ describe('ConnectorLifecycleService health monitoring', () => {
 
   it('transitions to disconnected when health fails and auto start is disabled', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth.mockResolvedValue(false);
+    healthChecker.checkHealthDetails.mockResolvedValue({ ready: false, owned: false });
     const { service } = createService({ healthChecker, config: { autoStart: false } });
 
     await service.initialize();
@@ -227,7 +290,9 @@ describe('ConnectorLifecycleService health monitoring', () => {
 
   it('updates last successful health check timestamp', async () => {
     const healthChecker = new MockHealthChecker();
-    healthChecker.checkHealth.mockResolvedValue(true);
+    healthChecker.checkHealthDetails
+      .mockResolvedValueOnce({ ready: true, owned: true })
+      .mockResolvedValue({ ready: true, owned: true });
     const { service } = createService({ healthChecker });
 
     await service.ensureConnectorRunning();
