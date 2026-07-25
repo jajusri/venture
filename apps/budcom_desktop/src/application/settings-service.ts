@@ -5,7 +5,7 @@ import {
   validateSettingsPatch,
 } from './desktop-config-schema.js';
 import type { DesktopConfigStore } from './desktop-config-store.js';
-import { mergeSettingsPatch, resolveDesktopConfig, type ResolvedDesktopConfig } from './desktop-config-resolver.js';
+import { mergeSettingsPatch, resolveDesktopConfig, type ResolvedDesktopConfig, type ResolveDesktopConfigOptions } from './desktop-config-resolver.js';
 import { getEnvironmentDefaults } from './desktop-config-defaults.js';
 import type { LogService } from './log-service.js';
 import type { SettingsSaveResult, SettingsState, SettingsValidationResult } from './types.js';
@@ -16,6 +16,7 @@ export interface SettingsServiceOptions {
   readonly logService: LogService;
   readonly isDevelopment?: boolean;
   readonly connectorExecutable: string;
+  readonly lifecycleContext?: ResolveDesktopConfigOptions;
 }
 
 export class SettingsService {
@@ -25,6 +26,7 @@ export class SettingsService {
   private readonly connectorExecutable: string;
   private resolved: ResolvedDesktopConfig;
   private configStatus: string;
+  private readonly lifecycleContext: ResolveDesktopConfigOptions;
   private pendingDraft: Partial<DesktopConfigV1> | null = null;
 
   constructor(options: SettingsServiceOptions) {
@@ -32,9 +34,14 @@ export class SettingsService {
     this.logService = options.logService;
     this.isDevelopment = options.isDevelopment ?? process.env.NODE_ENV !== 'production';
     this.connectorExecutable = options.connectorExecutable;
+    this.lifecycleContext = options.lifecycleContext ?? {};
     const loadResult = this.configStore.loadFromDisk();
     this.configStatus = loadResult.status;
-    this.resolved = resolveDesktopConfig(loadResult.config, getEnvironmentDefaults(this.isDevelopment));
+    this.resolved = resolveDesktopConfig(
+      loadResult.config,
+      getEnvironmentDefaults(this.isDevelopment),
+      this.lifecycleContext,
+    );
   }
 
   getResolvedConfig(): ResolvedDesktopConfig {
@@ -52,13 +59,13 @@ export class SettingsService {
   reload(): ResolvedDesktopConfig {
     const loadResult = this.configStore.loadFromDisk();
     this.configStatus = loadResult.status;
-    this.resolved = resolveDesktopConfig(loadResult.config, getEnvironmentDefaults(this.isDevelopment));
+    this.resolved = resolveDesktopConfig(loadResult.config, getEnvironmentDefaults(this.isDevelopment), this.lifecycleContext);
     this.pendingDraft = null;
     return this.resolved;
   }
 
   applyPersistedConfig(config: DesktopConfigV1): ResolvedDesktopConfig {
-    this.resolved = resolveDesktopConfig(config, getEnvironmentDefaults(this.isDevelopment));
+    this.resolved = resolveDesktopConfig(config, getEnvironmentDefaults(this.isDevelopment), this.lifecycleContext);
     return this.resolved;
   }
 
@@ -105,7 +112,7 @@ export class SettingsService {
     }
     this.pendingDraft = validation.config;
     const preview = validation.config;
-    const previewResolved = resolveDesktopConfig(preview, getEnvironmentDefaults(this.isDevelopment));
+    const previewResolved = resolveDesktopConfig(preview, getEnvironmentDefaults(this.isDevelopment), this.lifecycleContext);
     return {
       ...this.getSettingsState(),
       connectorUrl: previewResolved.connectorBaseUrl,
@@ -160,7 +167,7 @@ export class SettingsService {
     }
 
     this.configStatus = 'loaded';
-    this.resolved = resolveDesktopConfig(validated.config, getEnvironmentDefaults(this.isDevelopment));
+    this.resolved = resolveDesktopConfig(validated.config, getEnvironmentDefaults(this.isDevelopment), this.lifecycleContext);
     this.pendingDraft = null;
     this.logService.appendStructured({
       level: 'information',
@@ -183,7 +190,7 @@ export class SettingsService {
   restoreDefaults(): SettingsSaveResult {
     const defaults = this.configStore.restoreDefaults();
     this.configStatus = 'defaults';
-    this.resolved = resolveDesktopConfig(defaults, getEnvironmentDefaults(this.isDevelopment));
+    this.resolved = resolveDesktopConfig(defaults, getEnvironmentDefaults(this.isDevelopment), this.lifecycleContext);
     this.pendingDraft = null;
     this.logService.appendStructured({
       level: 'information',

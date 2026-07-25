@@ -1,0 +1,42 @@
+name: Release validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'apps/budcom_desktop/**'
+      - 'connector/budcom_connector/**'
+      - 'scripts/release/**'
+      - '.github/workflows/release-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  release-validation:
+    name: Controlled-pilot release validation
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            connector/budcom_connector/package-lock.json
+            apps/budcom_desktop/package-lock.json
+            tests/contract/package-lock.json
+      - name: Install connector dependencies
+        working-directory: connector/budcom_connector
+        run: npm ci
+      - name: Install desktop dependencies
+        working-directory: apps/budcom_desktop
+        run: npm ci
+      - name: Install contract test dependencies
+        working-directory: tests/contract
+        run: npm ci
+      - name: Run controlled-pilot release command
+        working-directory: apps/budcom_desktop
+        env:
+          BUDCOM_RELEASE_MODE: controlled_pilot
+        run: npm run release:controlled-pilot

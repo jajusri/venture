@@ -31,6 +31,7 @@ export interface ConnectorLifecycleConfig {
   readonly connectorExecutable: string;
   readonly connectorArgs: readonly string[];
   readonly connectorCwd: string;
+  readonly childEnv?: Readonly<Record<string, string | undefined>>;
   readonly autoStart: boolean;
   readonly healthPollIntervalMs: number;
   readonly startupTimeoutMs: number;

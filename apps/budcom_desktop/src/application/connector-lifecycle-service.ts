@@ -220,6 +220,7 @@ export class ConnectorLifecycleService {
         args: this.config.connectorArgs,
         cwd: this.config.connectorCwd,
         env: {
+          ...(this.config.childEnv ?? {}),
           BUDCOM_CONNECTOR_HOST: this.config.connectorHost,
           BUDCOM_CONNECTOR_PORT: String(this.config.connectorPort),
         },

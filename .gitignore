@@ -4,6 +4,8 @@ node_modules/
 .pub-cache/
 .pub/
 build/
+!apps/budcom_desktop/build/
+!apps/budcom_desktop/build/VERSION.txt
 .dart_tool/
 
 # Flutter
@@ -44,6 +46,9 @@ docs/spec.zip
 # Test & coverage
 coverage/
 .nyc_output/
+
+# Release output (generated — never commit customer data)
+/release/
 
 # Desktop build output
 apps/budcom_desktop/dist/

@@ -20,6 +20,9 @@ This matrix records unresolved or partially resolved security decisions that req
 | Remote support access | Support without on-site visit | Diagnostics export only (allowlisted) | Low with export policy | Remote bundle upload; screen share | Manual export remains approved path | Controlled pilot OK |
 | LAN API authentication (TD-009) | Unauthenticated connector on LAN | Loopback default; LAN requires acknowledgement; no authN | High if LAN enabled carelessly | Local token; mTLS; VPN-only | Keep loopback default; document firewall requirement | Commercial pilot if LAN required |
 | Inbound offline XML envelope hardening | Malicious imported XML files | Unified envelope boundary (`InboundXmlEnvelopeService`); import-attempt history; domain upsert deferred | Medium for import modes | Offline domain persistence + desktop import UI | Implemented in RC#4 §30; commercial pilot after domain upsert | Commercial pilot |
+| Controlled-pilot release engineering | Tampered artifacts; packaging leaks; unsafe upgrade | Release mode contract; build metadata; packaging boundary inspection; SHA-256 manifest; NSIS config with `deleteAppDataOnUninstall: false`; manual upgrade only | Medium — unsigned pilot distribution | EV/OV signing; authenticated updater | Checksum-verified manual distribution for controlled pilot | Controlled pilot distribution |
+| Release-mode enforcement | Production capabilities in pilot | Typed `BUDCOM_RELEASE_MODE`; fail-closed unknown values; diagnostics expose mode | Medium if misconfigured | Build-time injection | Implemented §31 | Controlled pilot |
+| Upgrade schema safety | Corrupted DB on downgrade/future schema | Future schema fails closed; migration transactional; downgrade blocked | High | Automatic rollback scripts (rejected — data risk) | Fail closed + operator backup restore | Controlled pilot |
 
 ## Controlled pilot status
 
@@ -31,6 +34,9 @@ Approved with documented limitations:
 - Parameterized SQL + company-scoped API negative tests
 - Privacy-safe diagnostics and log sanitization
 - Local lifecycle documentation without backup auto-deletion
+- **Manual controlled-pilot distribution with SHA-256 checksum verification**
+- **Unsigned installer/portable builds with explicit SmartScreen guidance**
+- **No automatic update channel**
 
 ## Commercial pilot blockers
 

@@ -33,9 +33,10 @@ export class NodeProcessSpawner implements ProcessSpawner {
   spawn(spec: SpawnSpec): ManagedProcess {
     const child = spawn(spec.command, [...spec.args], {
       cwd: spec.cwd,
-      env: { ...process.env, ...spec.env },
+      env: spec.env ?? {},
       stdio: 'ignore',
       windowsHide: true,
+      shell: false,
     });
     return new NodeManagedProcess(child);
   }

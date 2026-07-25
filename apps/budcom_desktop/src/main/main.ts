@@ -30,9 +30,25 @@ import { LogService } from '../application/log-service.js';
 import { NodeProcessSpawner } from '../application/node-process-spawner.js';
 import { RecoveryService } from '../application/recovery-service.js';
 import { SettingsService } from '../application/settings-service.js';
+import { ensureAppDataDirectories, resolveAppDataLayout } from '../application/release/app-data-layout.js';
+import { loadBuildInfo, formatBuildInfoForDiagnostics } from '../application/release/build-info.js';
+import { resolveReleaseMode, ReleaseMode } from '../application/release/release-mode.js';
+import { bindSecondInstanceFocus, requestDesktopSingleInstance } from '../application/release/single-instance.js';
 
-const startedAt = Date.now();
-const isDevelopment = process.env.NODE_ENV !== 'production';
+const skipSingleInstance = process.env.VITEST === 'true' || process.env.BUDCOM_SKIP_SINGLE_INSTANCE === 'true';
+if (!skipSingleInstance) {
+  const singleInstance = requestDesktopSingleInstance(app);
+  if (singleInstance.shouldQuit) {
+    process.exit(0);
+  }
+}
+
+const buildInfo = loadBuildInfo();
+const releaseMode = resolveReleaseMode({
+  buildInfoMode: buildInfo.releaseMode,
+  isPackaged: app.isPackaged,
+});
+const isDevelopment = releaseMode === ReleaseMode.Development;
 
 let mainWindow: BrowserWindow | null = null;
 let pollTimer: NodeJS.Timeout | null = null;
@@ -53,7 +69,19 @@ process.on('unhandledRejection', (reason) => {
   startupLog('unhandledRejection', detail);
 });
 
-const configPaths = resolveDesktopConfigPaths(app.getPath('userData'));
+const startedAt = Date.now();
+
+startupLog('release mode', releaseMode);
+startupLog('build identity', JSON.stringify(formatBuildInfoForDiagnostics(buildInfo)));
+
+const appDataLayout = resolveAppDataLayout({
+  userDataDir: app.getPath('userData'),
+  isPackaged: app.isPackaged,
+  installRoot: app.isPackaged ? path.dirname(app.getPath('exe')) : null,
+});
+ensureAppDataDirectories(appDataLayout);
+
+const configPaths = resolveDesktopConfigPaths(appDataLayout.userDataRoot);
 const fileLogWriter = new FileLogWriter({ logsDir: configPaths.logsDir });
 const logService = new LogService({
   fileWriter: fileLogWriter,
@@ -87,6 +115,11 @@ const settingsService = new SettingsService({
   logService,
   isDevelopment,
   connectorExecutable: process.env.BUDCOM_CONNECTOR_EXECUTABLE ?? process.execPath,
+  lifecycleContext: {
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    connectorDatabaseDir: appDataLayout.connectorDatabaseDir,
+  },
 });
 settingsService.setConfigStatus(configLoadResult.status);
 
@@ -412,6 +445,14 @@ function startPolling(intervalMs: number): void {
 export function bootstrapApp(): void {
   startupLog('bootstrapApp invoked');
   registerIpcHandlers();
+  bindSecondInstanceFocus(app, () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.focus();
+    }
+  });
 
   app.whenReady().then(() => {
     startupLog('app ready');

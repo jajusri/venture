@@ -18,6 +18,7 @@ import {
   STOCK_ITEM_COLUMN_UPGRADES,
   STORAGE_SCHEMA_VERSION,
 } from './schema.js';
+import { assessUpgradeSafety, migrationFailureMessage } from '../../release/upgrade-safety.js';
 export interface SqliteDatabaseOptions {
   readonly databasePath: string;
   readonly readonly?: boolean;
@@ -63,6 +64,9 @@ export class SqliteDatabase {
       this.runMigrations();
       return this.db;
     } catch (error) {
+      if (error instanceof AppError) {
+        throw error;
+      }
       throw new AppError(
         ErrorCodes.SERVICE_UNAVAILABLE,
         'Unable to open local SQLite database. The storage file may be corrupted or inaccessible.',
@@ -185,7 +189,20 @@ export class SqliteDatabase {
       currentVersion = 0;
     }
 
-    if (currentVersion >= STORAGE_SCHEMA_VERSION) {
+    const safety = assessUpgradeSafety(currentVersion, STORAGE_SCHEMA_VERSION);
+    if (safety.kind === 'future_schema' || safety.kind === 'downgrade_blocked') {
+      throw new AppError(
+        ErrorCodes.SERVICE_UNAVAILABLE,
+        migrationFailureMessage(safety),
+        503,
+        {
+          appliedSchemaVersion: currentVersion,
+          expectedSchemaVersion: STORAGE_SCHEMA_VERSION,
+          reasonCode: safety.kind,
+        },
+      );
+    }
+    if (safety.kind === 'current') {
       return;
     }
 

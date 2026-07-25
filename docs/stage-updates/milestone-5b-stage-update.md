@@ -2085,3 +2085,67 @@ Addressed provisional review findings without removing size protection or breaki
 | Tracked `apps/budcom_desktop/dist/**` after build | **Restored — clean** |
 
 **Unrestricted production remains unapproved.**
+
+---
+
+## §31 — RC#4 Controlled Pilot Release Engineering Gate (2026-07-25)
+
+### Requirement addressed
+
+Controlled-pilot-ready release pipeline and packaging boundary for Windows desktop + bundled connector: release-mode contract, build identity, packaging allowlist, application-data layout, installer/uninstall safety policy, upgrade schema safety, artifact integrity (SHA-256 manifest), single-instance ownership, connector packaged path resolution, release command, CI validation workflow, runbook, and acceptance checklist.
+
+No Tally write capability. No unrestricted production approval. No automatic update channel. No code signing fabrication.
+
+### Implementation status
+
+**COMPLETE (controlled-pilot release engineering — framework + validation)** — commercial code signing and authenticated auto-update remain production blockers.
+
+### Production blockers (unchanged)
+
+- EV/OV code signing infrastructure
+- Authenticated auto-update trust chain
+- Unrestricted production release approval
+
+### RC#4 status (post §31)
+
+**Reliability Control #4 remains PARTIAL** — controlled-pilot release engineering added; signing, authenticated updates, and unrestricted production remain blocked.
+
+### Validation evidence (§31)
+
+Pre-commit gate run (2026-07-25, Windows):
+
+| Check | Result |
+|-------|--------|
+| Full controlled-pilot release pipeline | **PASS** (15/15 steps, one uninterrupted run) |
+| Real NSIS installer produced | `BudcomDesktop-0.4.3-x64-setup.exe` (81,969,281 bytes) |
+| SHA-256 | `66104969f6808128659f060f5897622597531d0731f7270a9f421330ac1c7b7a` |
+| Manifest + checksum verification | **PASS** |
+| Package boundary (`win-unpacked`) | **PASS** |
+| Connector tests | 794/794 PASS |
+| Desktop tests | 206/206 PASS |
+| Architecture tests | 12/12 PASS |
+| Contract tests | 5/5 PASS |
+| Connector `audit:prod` | 0 vulnerabilities |
+| Desktop `audit:prod` | 0 vulnerabilities |
+| Tracked `apps/budcom_desktop/dist/**` after cleanup | **Restored — clean** |
+
+### Pre-commit gate artifact classification
+
+The installer produced during this gate run is **successful pre-commit gate evidence only**, not the final pilot-distribution artifact:
+
+| Field | Gate-evidence value |
+|-------|---------------------|
+| Git commit recorded | `5e6d85f0fff6907e52c0059d2850b21d2c65aca4` (parent of uncommitted release work) |
+| `dirtyTree` | `true` (uncommitted source changes present at build time) |
+| Classification | Pre-commit validation evidence |
+| Distributable for pilot handoff | **No** — must not be distributed |
+
+After this gate is committed and pushed, the release pipeline **must be rerun from a clean tree** to produce the actual controlled-pilot distributable installer with:
+
+- `dirtyTree=false`
+- committed Git identity matching the release commit
+- new verified SHA-256 checksum and manifest
+
+Do not distribute the pre-commit gate-evidence installer to pilot participants.
+
+**Unrestricted production remains unapproved.**

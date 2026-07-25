@@ -1,0 +1,40 @@
+appId: com.budcom.desktop
+productName: Budcom Desktop
+copyright: Copyright © Budcom
+directories:
+  output: ../../release/controlled-pilot/${version}/artifacts
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.test.*"
+  - "!**/test/**"
+  - "!**/.env*"
+extraResources:
+  - from: ../../connector/budcom_connector/dist
+    to: connector/dist
+    filter:
+      - "**/*"
+      - "!**/*.map"
+      - "!**/test/**"
+  - from: ../../connector/budcom_connector/package.json
+    to: connector/package.json
+  - from: build/VERSION.txt
+    to: connector/VERSION.txt
+asar: true
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: BudcomDesktop-${version}-x64-setup.${ext}
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  deleteAppDataOnUninstall: false
+  runAfterFinish: false
+  warningsAsErrors: false
+publish: null

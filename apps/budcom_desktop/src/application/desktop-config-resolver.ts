@@ -127,9 +127,16 @@ export function applyEnvironmentOverrides(
   return { config, sources };
 }
 
+export interface ResolveDesktopConfigOptions {
+  readonly isPackaged?: boolean;
+  readonly resourcesPath?: string;
+  readonly connectorDatabaseDir?: string;
+}
+
 export function resolveDesktopConfig(
   persisted: DesktopConfigV1,
   defaults: DesktopConfigV1,
+  options: ResolveDesktopConfigOptions = {},
 ): ResolvedDesktopConfig {
   const validatedPersisted = validateDesktopConfig(persisted);
   const safePersisted = validatedPersisted.ok && validatedPersisted.config
@@ -150,6 +157,10 @@ export function resolveDesktopConfig(
     shutdownGraceMs: effective.shutdownGraceMs,
     maxRestartAttempts: effective.maxRestartAttempts,
     reconnectBaseDelayMs: effective.reconnectBaseDelayMs,
+  }, {
+    isPackaged: options.isPackaged ?? false,
+    resourcesPath: options.resourcesPath,
+    connectorDatabaseDir: options.connectorDatabaseDir,
   });
 
   return {
