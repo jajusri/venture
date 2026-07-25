@@ -5,6 +5,7 @@ import { CompanyService } from '../application/company-service.js';
 import { LedgerService } from '../application/ledger-service.js';
 import { StockItemService } from '../application/stock-item-service.js';
 import { DiagnosticsService } from '../application/diagnostics-service.js';
+import { DiagnosticExportRetentionService } from '../application/diagnostic-export-retention-service.js';
 import { getEnvironmentDefaults } from '../application/desktop-config-defaults.js';
 import { resolveDesktopConfigPaths } from '../application/desktop-config-paths.js';
 import { DesktopConfigStore } from '../application/desktop-config-store.js';
@@ -78,7 +79,21 @@ let companyService = createCompanyService(resolved.connectorBaseUrl);
 let ledgerService = createLedgerService(resolved.connectorBaseUrl);
 let stockItemService = createStockItemService(resolved.connectorBaseUrl);
 let lifecycleService = createLifecycleService(resolved.lifecycleConfig);
+const diagnosticExportRetentionService = new DiagnosticExportRetentionService({
+  log: (input) => logService.appendStructured(input),
+});
 let diagnosticsService = createDiagnosticsService();
+
+function runDiagnosticExportRetentionCleanup(): void {
+  try {
+    diagnosticExportRetentionService.cleanup({
+      exportDir: configPaths.diagnosticsExportDir,
+      retentionDays: settingsService.getResolvedConfig().effective.diagnosticsRetentionDays,
+    });
+  } catch {
+    // Cleanup failure must not block startup.
+  }
+}
 
 function createDashboardService(baseUrl: string): DashboardService {
   return new DashboardService({
@@ -133,6 +148,7 @@ function createDiagnosticsService(): DiagnosticsService {
     logService,
     exportDir: configPaths.diagnosticsExportDir,
     startedAt,
+    retentionService: diagnosticExportRetentionService,
   });
 }
 
@@ -390,6 +406,7 @@ export function bootstrapApp(): void {
     mainWindow = createMainWindow();
     startPolling(resolved.effective.healthPollIntervalMs);
     void lifecycleService.initialize();
+    runDiagnosticExportRetentionCleanup();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

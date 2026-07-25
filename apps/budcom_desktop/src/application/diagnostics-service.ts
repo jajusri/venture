@@ -16,6 +16,11 @@ import {
   serializeSafeDiagnosticBundle,
 } from './diagnostic-allowlist.js';
 import {
+  buildDiagnosticExportDirName,
+  DIAGNOSTIC_EXPORT_BUNDLE_FILENAME,
+} from './diagnostic-export-convention.js';
+import { DiagnosticExportRetentionService } from './diagnostic-export-retention-service.js';
+import {
   getConnectorNetworkExposure,
   getConnectorNetworkExposureWarning,
 } from './connector-network-binding.js';
@@ -33,7 +38,8 @@ export interface DiagnosticsServiceOptions {
   readonly logService: LogService;
   readonly exportDir: string;
   readonly startedAt: number;
-  readonly fsImpl?: Pick<typeof fs, 'mkdirSync' | 'writeFileSync'>;
+  readonly retentionService?: DiagnosticExportRetentionService;
+  readonly fsImpl?: Pick<typeof fs, 'mkdirSync' | 'writeFileSync' | 'readFileSync'>;
 }
 
 export class DiagnosticsService {
@@ -47,6 +53,7 @@ export class DiagnosticsService {
   private readonly logService: LogService;
   private readonly exportDir: string;
   private readonly startedAt: number;
+  private readonly retentionService: DiagnosticExportRetentionService | null;
   private readonly fsImpl: NonNullable<DiagnosticsServiceOptions['fsImpl']>;
 
   constructor(options: DiagnosticsServiceOptions) {
@@ -60,6 +67,7 @@ export class DiagnosticsService {
     this.logService = options.logService;
     this.exportDir = options.exportDir;
     this.startedAt = options.startedAt;
+    this.retentionService = options.retentionService ?? null;
     this.fsImpl = options.fsImpl ?? fs;
   }
 
@@ -194,11 +202,12 @@ export class DiagnosticsService {
         fileLoggingAvailable: snapshot.fileLoggingAvailable,
       });
       const serialized = serializeSafeDiagnosticBundle(bundle);
-      const timestamp = snapshot.generatedAt.replace(/[:.]/g, '-');
-      const bundleDir = targetDir ?? path.join(this.exportDir, `budcom-diagnostics-${timestamp}`);
+      const bundleDir = targetDir ?? path.join(this.exportDir, buildDiagnosticExportDirName(snapshot.generatedAt));
       this.fsImpl.mkdirSync(bundleDir, { recursive: true });
-      const bundlePath = path.join(bundleDir, 'diagnostics-bundle.json');
+      const bundlePath = path.join(bundleDir, DIAGNOSTIC_EXPORT_BUNDLE_FILENAME);
       this.fsImpl.writeFileSync(bundlePath, serialized.json, 'utf8');
+      this.confirmExportedBundle(bundlePath);
+      this.runRetentionCleanup();
       this.logService.appendStructured({
         level: 'information',
         message: `Diagnostics bundle exported (${serialized.truncated ? 'truncated' : 'complete'})`,
@@ -226,5 +235,25 @@ export class DiagnosticsService {
         bundlePath: null,
       };
     }
+  }
+
+  runRetentionCleanup(): void {
+    if (!this.retentionService) {
+      return;
+    }
+    try {
+      this.retentionService.cleanup({
+        exportDir: this.exportDir,
+        retentionDays: this.resolvedConfig.effective.diagnosticsRetentionDays,
+      });
+    } catch {
+      // Cleanup failure must not block export or startup callers.
+    }
+  }
+
+  private confirmExportedBundle(bundlePath: string): void {
+    const readFileSync = this.fsImpl.readFileSync ?? fs.readFileSync.bind(fs);
+    const onDisk = readFileSync(bundlePath, 'utf8');
+    JSON.parse(onDisk);
   }
 }

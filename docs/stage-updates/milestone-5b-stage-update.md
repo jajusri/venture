@@ -1639,3 +1639,83 @@ Diagnostic-export cleanup (B2b); sync-run pruning (B2c); backup deletion; migrat
 **Verdict (Phase B2a):** **SAFE TO COMMIT BOUNDED AUDIT ROTATION**
 
 **Unrestricted production remains unapproved.**
+
+---
+
+## §26 — RC#4 Phase B2b: desktop diagnostic export retention (2026-07-25)
+
+### Requirement addressed
+
+Reliability Control #4 Phase B2b — enforce existing `diagnosticsRetentionDays` for app-owned desktop diagnostic export directories only.
+
+### Prior defect
+
+Diagnostic exports accumulated under `{userData}/diagnostics-exports/budcom-diagnostics-*` without lifecycle enforcement despite persisted `diagnosticsRetentionDays` (1–90 days; default 14 production / 7 development).
+
+### Implementation status
+
+**COMPLETE (desktop scope)** — focused `DiagnosticExportRetentionService`; startup and post-export invocation; no connector, sync, backup, encryption, or cloud lifecycle changes.
+
+### Ownership boundary
+
+Only directory names matching:
+
+`^budcom-diagnostics-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$`
+
+under `{userData}/diagnostics-exports/`. Each export directory contains `diagnostics-bundle.json`. Unrelated files, backup files, temp files, symbolic links, and non-owned directories are never deleted.
+
+### Retention semantics
+
+- Read `diagnosticsRetentionDays` from effective desktop config (existing settings boundary).
+- Export age from dirname-encoded ISO timestamp; fallback to filesystem `mtimeMs`.
+- Invalid/unparseable timestamps preserved conservatively.
+- Sort eligible exports by timestamp descending, then directory name descending.
+- **Always preserve the newest eligible export**, even when expired.
+- Delete other eligible exports only when `now - exportTime > retentionDays`.
+- Injectable clock via `nowMs` / `now()` for deterministic tests.
+
+### Invocation points
+
+1. **Startup:** `main.ts` → `runDiagnosticExportRetentionCleanup()` inside `app.whenReady()` after `lifecycleService.initialize()`; failures do not block startup.
+2. **Post-export:** `DiagnosticsService.exportBundle()` after successful bundle write; failures do not fail the export.
+
+### Failure behavior
+
+Missing export directory → successful no-op. Unreadable directory → bounded warning log with `failureCount`. Individual deletion failures increment `failureCount` and continue. Lifecycle logs emit aggregate counts only (`diagnostics_export_retention_cleanup`); no private paths or bundle contents.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `src/application/diagnostic-export-convention.ts` | **New** — export dir naming, ownership match, timestamp parse |
+| `src/application/diagnostic-export-retention-service.ts` | **New** — retention cleanup service |
+| `src/application/diagnostics-service.ts` | Convention helper; post-export cleanup hook |
+| `src/main/main.ts` | Startup cleanup wiring |
+| `test/unit/diagnostic-export-retention.test.ts` | **New** — unit tests |
+| `test/integration/diagnostic-export-retention.test.ts` | **New** — integration tests |
+
+### Explicit exclusions (still open)
+
+- `sync_runs` pruning (B2c)
+- Backup deletion / config backup lifecycle changes
+- Cloud lifecycle
+- Encryption at rest
+- Generic user-file cleanup
+- Connector audit rotation (completed in B2a)
+- Production packaging lifecycle
+
+### RC#4 status (post-B2b)
+
+**Reliability Control #4 remains PARTIAL** — connector audit rotation (B2a) and desktop diagnostic export retention (B2b) implemented; sync-run pruning, encryption, backup cleanup, and broader retention gaps remain.
+
+### Validation evidence (B2b)
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` (desktop) | **PASS** |
+| `npm run build` (desktop) | **PASS** |
+| Desktop vitest | **124/124 PASS** (97 prior + 27 new B2b tests) |
+| `npm run lint` (connector) | **PASS** (unchanged) |
+| Connector vitest | **656/656 PASS** (unchanged) |
+
+**Unrestricted production remains unapproved.**
