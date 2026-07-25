@@ -43,6 +43,8 @@ export function createTestConnectorConfig(basePath: string): ConnectorConfig {
     connectorVersion: '0.3.1',
     schemaVersion: '1.0.0',
     sessionTtlMs: 86_400_000,
+    syncRunHistoryMaxCount: 100,
+    syncRunHistoryMaxAgeDays: 90,
   };
 }
 

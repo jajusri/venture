@@ -1,5 +1,9 @@
 import {
   defaultConfig,
+  SYNC_RUN_HISTORY_MAX_AGE_DAYS_LIMIT,
+  SYNC_RUN_HISTORY_MAX_AGE_DAYS_MIN,
+  SYNC_RUN_HISTORY_MAX_COUNT_LIMIT,
+  SYNC_RUN_HISTORY_MAX_COUNT_MIN,
   TALLY_REQUEST_AUDIT_MAX_BYTES_LIMIT,
   TALLY_REQUEST_AUDIT_MAX_BYTES_MIN,
   TALLY_REQUEST_AUDIT_MAX_FILES_LIMIT,
@@ -189,6 +193,20 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
       process.env.BUDCOM_SESSION_TTL_MS,
       defaultConfig.sessionTtlMs,
     ),
+    syncRunHistoryMaxCount: parseBoundedInt(
+      process.env.BUDCOM_SYNC_RUN_HISTORY_MAX_COUNT,
+      defaultConfig.syncRunHistoryMaxCount,
+      SYNC_RUN_HISTORY_MAX_COUNT_MIN,
+      SYNC_RUN_HISTORY_MAX_COUNT_LIMIT,
+      'sync run history max count',
+    ),
+    syncRunHistoryMaxAgeDays: parseBoundedInt(
+      process.env.BUDCOM_SYNC_RUN_HISTORY_MAX_AGE_DAYS,
+      defaultConfig.syncRunHistoryMaxAgeDays,
+      SYNC_RUN_HISTORY_MAX_AGE_DAYS_MIN,
+      SYNC_RUN_HISTORY_MAX_AGE_DAYS_LIMIT,
+      'sync run history max age days',
+    ),
     ...overrides,
   };
 
@@ -229,6 +247,21 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
     || resolved.tallyRequestAuditMaxFiles > TALLY_REQUEST_AUDIT_MAX_FILES_LIMIT
   ) {
     throw new Error(`Invalid tally request audit max files: ${resolved.tallyRequestAuditMaxFiles}`);
+  }
+
+  if (
+    !Number.isInteger(resolved.syncRunHistoryMaxCount)
+    || resolved.syncRunHistoryMaxCount < SYNC_RUN_HISTORY_MAX_COUNT_MIN
+    || resolved.syncRunHistoryMaxCount > SYNC_RUN_HISTORY_MAX_COUNT_LIMIT
+  ) {
+    throw new Error(`Invalid sync run history max count: ${resolved.syncRunHistoryMaxCount}`);
+  }
+  if (
+    !Number.isInteger(resolved.syncRunHistoryMaxAgeDays)
+    || resolved.syncRunHistoryMaxAgeDays < SYNC_RUN_HISTORY_MAX_AGE_DAYS_MIN
+    || resolved.syncRunHistoryMaxAgeDays > SYNC_RUN_HISTORY_MAX_AGE_DAYS_LIMIT
+  ) {
+    throw new Error(`Invalid sync run history max age days: ${resolved.syncRunHistoryMaxAgeDays}`);
   }
 
   return resolved;

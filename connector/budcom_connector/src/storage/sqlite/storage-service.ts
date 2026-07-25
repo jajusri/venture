@@ -14,6 +14,7 @@ import { SqliteLedgerRepository } from './sqlite-ledger-repository.js';
 import { SqliteStockItemRepository } from './sqlite-stock-item-repository.js';
 import { SqliteDatabase } from './sqlite-database.js';
 import { SyncRunRepository } from './sync-run-repository.js';
+import { SyncRunRetentionService } from './sync-run-retention-service.js';
 import { STORAGE_SCHEMA_VERSION } from './schema.js';
 
 export interface LedgerStorageBundle {
@@ -55,6 +56,15 @@ export class SqliteStorageService implements LocalDatabaseService {
         recoveredCount: recovered,
       });
     }
+    const retention = new SyncRunRetentionService(
+      syncRunRepository,
+      {
+        maxCount: this.config.syncRunHistoryMaxCount,
+        maxAgeDays: this.config.syncRunHistoryMaxAgeDays,
+      },
+      this.logger,
+    );
+    retention.prune();
     this.bundle = { database, ledgerRepository, stockItemRepository, syncRunRepository, migrationReport };
     this.running = true;
     this.logger.info('sqlite_storage_started', {

@@ -40,6 +40,10 @@ export interface ConnectorConfig {
   readonly schemaVersion: string;
   /** Maximum age of a connector session selection before SESSION_EXPIRED. */
   readonly sessionTtlMs: number;
+  /** Maximum terminal sync-run history rows retained per company and resource kind. */
+  readonly syncRunHistoryMaxCount: number;
+  /** Maximum age in days for non-protected terminal sync-run rows outside the count window. */
+  readonly syncRunHistoryMaxAgeDays: number;
 }
 
 export const TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
@@ -48,6 +52,13 @@ export const TALLY_REQUEST_AUDIT_MAX_BYTES_MIN = 64 * 1024;
 export const TALLY_REQUEST_AUDIT_MAX_BYTES_LIMIT = 100 * 1024 * 1024;
 export const TALLY_REQUEST_AUDIT_MAX_FILES_MIN = 1;
 export const TALLY_REQUEST_AUDIT_MAX_FILES_LIMIT = 20;
+
+export const SYNC_RUN_HISTORY_MAX_COUNT_DEFAULT = 100;
+export const SYNC_RUN_HISTORY_MAX_COUNT_MIN = 20;
+export const SYNC_RUN_HISTORY_MAX_COUNT_LIMIT = 500;
+export const SYNC_RUN_HISTORY_MAX_AGE_DAYS_DEFAULT = 90;
+export const SYNC_RUN_HISTORY_MAX_AGE_DAYS_MIN = 7;
+export const SYNC_RUN_HISTORY_MAX_AGE_DAYS_LIMIT = 365;
 
 export const defaultConfig: ConnectorConfig = {
   env: 'development',
@@ -83,4 +94,6 @@ export const defaultConfig: ConnectorConfig = {
   connectorVersion: CONNECTOR_VERSION,
   schemaVersion: SCHEMA_VERSION,
   sessionTtlMs: 8 * 60 * 60 * 1000,
+  syncRunHistoryMaxCount: SYNC_RUN_HISTORY_MAX_COUNT_DEFAULT,
+  syncRunHistoryMaxAgeDays: SYNC_RUN_HISTORY_MAX_AGE_DAYS_DEFAULT,
 };

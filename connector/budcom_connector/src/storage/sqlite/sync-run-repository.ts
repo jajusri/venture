@@ -215,6 +215,65 @@ export class SyncRunRepository {
     return Number(result.changes);
   }
 
+  listDistinctScopes(): Array<{ companyId: string; resourceKind: SyncResourceKind }> {
+    const db = this.database.getDatabase();
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT company_id, resource_kind
+         FROM sync_runs
+         ORDER BY company_id ASC, resource_kind ASC`,
+      )
+      .all() as Array<{ company_id: string; resource_kind: string }>;
+    return rows.map((row) => ({
+      companyId: row.company_id,
+      resourceKind: row.resource_kind as SyncResourceKind,
+    }));
+  }
+
+  listAllRunsForScope(companyId: string, resourceKind: SyncResourceKind): LedgerSyncRunRecord[] {
+    const db = this.database.getDatabase();
+    const rows = db
+      .prepare(
+        `SELECT * FROM sync_runs
+         WHERE company_id = ? AND resource_kind = ?
+         ORDER BY started_at DESC`,
+      )
+      .all(companyId, resourceKind) as unknown as SyncRunRow[];
+    return rows.map(fromRow);
+  }
+
+  listPredecessorReferencedIds(): string[] {
+    const db = this.database.getDatabase();
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT predecessor_sync_run_id AS sync_run_id
+         FROM sync_runs
+         WHERE predecessor_sync_run_id IS NOT NULL`,
+      )
+      .all() as Array<{ sync_run_id: string }>;
+    return rows.map((row) => row.sync_run_id);
+  }
+
+  hasActiveRun(companyId: string, resourceKind: SyncResourceKind): boolean {
+    return this.findActiveRun(companyId, resourceKind) !== null;
+  }
+
+  deleteRunsByIds(syncRunIds: readonly string[]): number {
+    if (syncRunIds.length === 0) {
+      return 0;
+    }
+    return this.database.runInTransactionSync(() => {
+      const db = this.database.getDatabase();
+      const statement = db.prepare('DELETE FROM sync_runs WHERE sync_run_id = ?');
+      let deleted = 0;
+      for (const syncRunId of syncRunIds) {
+        const result = statement.run(syncRunId);
+        deleted += Number(result.changes);
+      }
+      return deleted;
+    });
+  }
+
   private loadPredecessorForRetry(
     db: ReturnType<SqliteDatabase['getDatabase']>,
     predecessorSyncRunId: string,

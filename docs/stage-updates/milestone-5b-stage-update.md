@@ -1696,7 +1696,7 @@ Missing export directory → successful no-op. Unreadable directory → bounded 
 
 ### Explicit exclusions (still open)
 
-- `sync_runs` pruning (B2c)
+- ~~`sync_runs` pruning (B2c)~~ — completed in §27
 - Backup deletion / config backup lifecycle changes
 - Cloud lifecycle
 - Encryption at rest
@@ -1706,7 +1706,7 @@ Missing export directory → successful no-op. Unreadable directory → bounded 
 
 ### RC#4 status (post-B2b)
 
-**Reliability Control #4 remains PARTIAL** — connector audit rotation (B2a) and desktop diagnostic export retention (B2b) implemented; sync-run pruning, encryption, backup cleanup, and broader retention gaps remain.
+**Reliability Control #4 remains PARTIAL** — connector audit rotation (B2a), desktop diagnostic export retention (B2b), and sync-run history pruning (B2c) implemented; encryption, backup cleanup, and broader retention gaps remain.
 
 ### Validation evidence (B2b)
 
@@ -1717,5 +1717,94 @@ Missing export directory → successful no-op. Unreadable directory → bounded 
 | Desktop vitest | **124/124 PASS** (97 prior + 27 new B2b tests) |
 | `npm run lint` (connector) | **PASS** (unchanged) |
 | Connector vitest | **656/656 PASS** (unchanged) |
+
+**Unrestricted production remains unapproved.**
+
+---
+
+## §27 — RC#4 Phase B2c: bounded `sync_runs` retention and pruning (2026-07-25)
+
+### Requirement addressed
+
+Reliability Control #4 Phase B2c — age- and count-bounded, TD-006-safe pruning of locally persisted `sync_runs` history only.
+
+### Prior defect
+
+`sync_runs` rows accumulated indefinitely; no `DELETE` path existed despite API history and recovery lineage dependencies.
+
+### Policy (internal defaults — no UI)
+
+| Setting | Default | Bounds | Env override |
+|---------|---------|--------|--------------|
+| `syncRunHistoryMaxCount` | **100** unprotected terminal rows per `(company_id, resource_kind)` | 20–500 | `BUDCOM_SYNC_RUN_HISTORY_MAX_COUNT` |
+| `syncRunHistoryMaxAgeDays` | **90** days | 7–365 | `BUDCOM_SYNC_RUN_HISTORY_MAX_AGE_DAYS` |
+| Delete batch cap | **100** rows per invocation (internal constant) | — | — |
+
+Dual-trigger deletion (either trigger deletes an unprotected terminal row):
+
+1. Terminal timestamp older than `maxAgeDays` (`now − terminal_at > period`), or
+2. Row rank ≥ `maxCount` among unprotected terminal rows ordered by terminal timestamp DESC, `sync_run_id` DESC.
+
+Terminal timestamp field order: `completed_at` → `updated_at` → `started_at`.
+
+### Status policy
+
+| Class | Statuses | Treatment |
+|-------|----------|-----------|
+| Terminal (prunable when unprotected) | `completed`, `failed`, `cancelled`, `interrupted` | Eligible after protection rules |
+| Nonterminal (never pruned) | `running`, `cancelling`, `recovering` | Always protected |
+| Unknown / not persisted | e.g. `idle` | Preserved if encountered |
+| `interrupted` | — | Protected when retry-eligible (`findRetryPredecessor`), predecessor-referenced, or latest `failed`/`interrupted` in scope; otherwise terminal-prunable |
+
+### Never deleted
+
+- Nonterminal statuses (`running`, `cancelling`, `recovering`)
+- Unknown statuses
+- Retry-eligible `interrupted` runs (`findRetryPredecessor` semantics)
+- Runs referenced as `predecessor_sync_run_id`
+- Latest `completed` per scope (by terminal timestamp)
+- Latest `failed` or `interrupted` per scope (support window)
+
+Active runs **do not skip the scope** — unrelated eligible terminal rows in the same `(company_id, resource_kind)` scope are pruned when transactionally safe.
+
+### Implementation
+
+| File | Change |
+|------|--------|
+| `src/config/defaults.ts` | Retention constants + config fields |
+| `src/config/index.ts` | Bounded env parsing + validation |
+| `src/storage/sqlite/sync-run-retention-service.ts` | **New** — pure selection + batched `SyncRunRetentionService.prune()` |
+| `src/storage/sqlite/sync-run-repository.ts` | Scope listing, predecessor refs, transactional delete |
+| `src/storage/sqlite/storage-service.ts` | Startup prune after `recoverAllAbandonedRuns()` |
+| `test/helpers/sync-run-retention-test-helpers.ts` | **New** |
+| `test/unit/storage/sync-run-retention-selection.test.ts` | **New** — selection + batch unit tests (23) |
+| `test/unit/storage/sync-run-retention-config.test.ts` | **New** — config tests (10) |
+| `test/integration/sync-run-retention.test.ts` | **New** — TD-006, isolation, startup, fail-safe (9) |
+
+### Explicit exclusions (still open)
+
+- Backup deletion / config backup lifecycle changes
+- Cloud lifecycle
+- Encryption at rest
+- Generic user-file cleanup
+- Production packaging lifecycle
+- Post-terminal / post-sync prune hook (startup-only by design)
+
+### RC#4 status (post-B2c)
+
+**Reliability Control #4 remains PARTIAL** — audit rotation (B2a), diagnostic export retention (B2b), and sync-run history pruning (B2c) implemented; encryption, backup cleanup, and broader retention gaps remain.
+
+**Verdict (Phase B2c):** **SAFE TO COMMIT SYNC-RUN RETENTION PRUNING** (pending review — uncommitted)
+
+### Validation evidence (B2c)
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` (connector) | **PASS** |
+| `npm run build` (connector) | **PASS** |
+| B2c suites (selection, config, integration) | **42/42 PASS** |
+| `test/architecture/module-boundaries.test.ts` | **12/12 PASS** |
+| Full connector vitest | **698/698 PASS** (656 prior + 42 new B2c tests) |
+| Desktop lint/build/tests (unchanged scope) | **124/124 PASS** |
 
 **Unrestricted production remains unapproved.**
