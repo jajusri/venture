@@ -1808,3 +1808,86 @@ Active runs **do not skip the scope** — unrelated eligible terminal rows in th
 | Desktop lint/build/tests (unchanged scope) | **124/124 PASS** |
 
 **Unrestricted production remains unapproved.**
+
+---
+
+## §28 — RC#4 Phase B2b-lite + B2-doc: config temp reconciliation and local lifecycle documentation (2026-07-25)
+
+### Requirement addressed
+
+1. **B2b-lite** — safely reconcile orphan `{userData}/desktop-config.json.tmp` at desktop startup without blocking load.
+2. **B2-doc** — document ownership and lifecycle for manual/migration SQLite backups, legacy JSON copies, desktop config artifacts, and uninstall data boundaries.
+
+### Prior defect
+
+Atomic config saves write to `desktop-config.json.tmp` then rename. Process crash between temp write and rename left orphan temp files indefinitely with no reconciliation. Backup/config lifecycle ownership was scattered across code comments and partial ops docs.
+
+### Implementation status
+
+**COMPLETE (desktop B2b-lite + documentation)** — no connector sync semantic changes, no manual SQLite backup auto-deletion, no encryption or installer lifecycle work.
+
+### B2b-lite temp reconciliation algorithm
+
+Exact path: `{userData}/desktop-config.json.tmp` only (`isAppOwnedDesktopConfigTempPath`).
+
+| Condition | Action |
+|-----------|--------|
+| Temp absent | No-op |
+| Temp symlink or directory | Skip (preserve) |
+| Primary valid | Delete temp (stale/invalid orphan) |
+| Primary invalid/missing, temp valid | Best-effort archive corrupt primary → rename temp to primary |
+| Primary invalid, temp invalid, backup valid | Delete invalid temp; store recovery uses backup |
+| Primary, temp, backup all invalid | Preserve temp (uncertain) |
+| Any operation failure | Aggregate warning log; startup continues |
+
+Safety: `lstat` (no symlink follow); never delete backup, corrupt archives, primary (except promotion rename target), unrelated `.tmp` files.
+
+### Startup integration
+
+`main.ts`: after `LogService` init, before `DesktopConfigStore` construction → `runDesktopConfigTempReconciliation()` wrapped in try/catch (non-blocking).
+
+### B2-doc deliverable
+
+`docs/operations/local-data-lifecycle.md` — artifact table, restore/retention/uninstall ownership, explicit **no auto-delete for manual SQLite backups**, RC#4 closure assessment, controlled-pilot vs unrestricted-production status.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `src/application/desktop-config-paths.ts` | `configTempPath`, ownership helpers |
+| `src/application/desktop-config-temp-reconciliation-service.ts` | **New** — reconciliation service |
+| `src/application/desktop-config-store.ts` | Use `configTempPath` |
+| `src/main/main.ts` | Startup wiring; reorder log before config store |
+| `test/unit/desktop-config-temp-reconciliation.test.ts` | **New** — unit tests (22) |
+| `test/integration/desktop-config-temp-reconciliation.test.ts` | **New** — integration tests (2) |
+| `docs/operations/local-data-lifecycle.md` | **New** — B2-doc lifecycle reference |
+
+### Explicit exclusions (still open)
+
+- Automatic deletion/retention for manual SQLite backups
+- Corrupt config archive pruning
+- Encryption at rest
+- Generic user-file cleanup
+- Production packaging / uninstall automation
+- Cloud lifecycle
+
+### RC#4 status (post-B2b-lite + B2-doc)
+
+**Reliability Control #4 remains PARTIAL** — audit rotation (B2a), diagnostic export retention (B2b), config temp reconciliation (B2b-lite), sync-run pruning (B2c), and local lifecycle documentation (B2-doc) complete; encryption, manual backup auto-deletion, installer lifecycle, and broader retention gaps remain.
+
+**Verdict (Phase B2b-lite + B2-doc):** **SAFE TO COMMIT LOCAL LIFECYCLE CLOSURE** (pending review — uncommitted)
+
+### Validation evidence (B2b-lite + B2-doc)
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` (desktop) | **PASS** |
+| `npm run build` (desktop) | **PASS** |
+| Desktop vitest | **148/148 PASS** (124 prior + 24 new B2b-lite tests) |
+| `npm run lint` (connector) | **PASS** (unchanged) |
+| `npm run build` (connector) | **PASS** (unchanged) |
+| Full connector vitest | **698/698 PASS** (unchanged) |
+| Architecture tests | **12/12 PASS** (unchanged) |
+| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — no modified generated artifacts** |
+
+**Unrestricted production remains unapproved.**

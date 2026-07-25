@@ -77,7 +77,7 @@ export class DesktopConfigStore {
 
     try {
       this.ensureDirectories();
-      const tempPath = `${this.paths.configFilePath}.tmp`;
+      const tempPath = this.paths.configTempPath;
       const payload = `${JSON.stringify(validated.config, null, 2)}\n`;
       this.fsImpl.writeFileSync(tempPath, payload, 'utf8');
       if (this.fsImpl.existsSync(this.paths.configFilePath)) {

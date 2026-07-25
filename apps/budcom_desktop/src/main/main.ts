@@ -6,6 +6,7 @@ import { LedgerService } from '../application/ledger-service.js';
 import { StockItemService } from '../application/stock-item-service.js';
 import { DiagnosticsService } from '../application/diagnostics-service.js';
 import { DiagnosticExportRetentionService } from '../application/diagnostic-export-retention-service.js';
+import { DesktopConfigTempReconciliationService } from '../application/desktop-config-temp-reconciliation-service.js';
 import { getEnvironmentDefaults } from '../application/desktop-config-defaults.js';
 import { resolveDesktopConfigPaths } from '../application/desktop-config-paths.js';
 import { DesktopConfigStore } from '../application/desktop-config-store.js';
@@ -51,15 +52,29 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const configPaths = resolveDesktopConfigPaths(app.getPath('userData'));
-const configStore = new DesktopConfigStore({
-  paths: configPaths,
-  defaults: getEnvironmentDefaults(isDevelopment),
-});
 const fileLogWriter = new FileLogWriter({ logsDir: configPaths.logsDir });
 const logService = new LogService({
   fileWriter: fileLogWriter,
   minimumLevel: isDevelopment ? 'debug' : 'info',
   consoleEnabled: isDevelopment,
+});
+const configTempReconciliationService = new DesktopConfigTempReconciliationService({
+  log: (input) => logService.appendStructured(input),
+});
+
+function runDesktopConfigTempReconciliation(): void {
+  try {
+    configTempReconciliationService.reconcile({ paths: configPaths });
+  } catch {
+    // Reconciliation failure must not block startup.
+  }
+}
+
+runDesktopConfigTempReconciliation();
+
+const configStore = new DesktopConfigStore({
+  paths: configPaths,
+  defaults: getEnvironmentDefaults(isDevelopment),
 });
 const recoveryService = new RecoveryService(logService);
 const configLoadResult = configStore.loadFromDisk();
