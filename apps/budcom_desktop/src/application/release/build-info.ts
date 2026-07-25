@@ -18,10 +18,17 @@ export interface BudcomBuildInfo {
   readonly architecture: string;
   readonly nodeVersion: string;
   readonly electronVersion: string;
+  /** Source-tree dirtiness at release pipeline start — not post-build generated output. */
   readonly dirtyTree: boolean;
   readonly buildChannel: string;
   readonly artifactFilename?: string;
   readonly checksumAlgorithm: typeof CHECKSUM_ALGORITHM;
+  /** True when the repository working tree was clean before the release pipeline started. */
+  readonly sourceTreeCleanAtStart?: boolean;
+  /** Allowlisted generated paths permitted to change after build without invalidating provenance. */
+  readonly allowlistedGeneratedPaths?: readonly string[];
+  /** Repository paths changed during the pipeline that matched the generated-output allowlist. */
+  readonly generatedChangesAfterBuild?: readonly string[];
 }
 
 export const DEV_BUILD_INFO_FALLBACK: BudcomBuildInfo = {
@@ -98,6 +105,15 @@ export function parseBuildInfoJson(raw: string): BudcomBuildInfo | null {
       buildChannel: String(value.buildChannel ?? 'unknown'),
       artifactFilename: value.artifactFilename ? String(value.artifactFilename) : undefined,
       checksumAlgorithm: CHECKSUM_ALGORITHM,
+      sourceTreeCleanAtStart: typeof value.sourceTreeCleanAtStart === 'boolean'
+        ? value.sourceTreeCleanAtStart
+        : undefined,
+      allowlistedGeneratedPaths: Array.isArray(value.allowlistedGeneratedPaths)
+        ? value.allowlistedGeneratedPaths.map(String)
+        : undefined,
+      generatedChangesAfterBuild: Array.isArray(value.generatedChangesAfterBuild)
+        ? value.generatedChangesAfterBuild.map(String)
+        : undefined,
     };
   } catch {
     return null;
@@ -124,6 +140,7 @@ export function formatBuildInfoForDiagnostics(info: BudcomBuildInfo): Record<str
     architecture: info.architecture,
     buildChannel: info.buildChannel,
     dirtyTree: info.dirtyTree,
+    sourceTreeCleanAtStart: info.sourceTreeCleanAtStart ?? false,
     checksumAlgorithm: info.checksumAlgorithm,
   };
 }

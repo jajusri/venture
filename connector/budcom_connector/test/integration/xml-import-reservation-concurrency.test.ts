@@ -66,6 +66,10 @@ function reserveInput(overrides: Partial<ReserveXmlImportAttemptInput> = {}): Re
   };
 }
 
+/** Injected fixed recovery clock — always after reservation received_at, independent of wall clock. */
+const RECOVERY_NOW = new Date('2099-01-01T00:00:00.000Z');
+const recoveryOptions = { now: () => RECOVERY_NOW };
+
 describe('XmlImportAttemptRepository reservation concurrency', () => {
   it('1. concurrent identical reservations yield exactly one acquired owner', async () => {
     const { repo } = createRepo();
@@ -118,9 +122,7 @@ describe('XmlImportAttemptRepository reservation concurrency', () => {
     const acquired = repo.reserveAttempt(reserveInput());
     expect(acquired.kind).toBe('acquired');
     expect(repo.countActiveReservations()).toBe(1);
-    const recovered = repo.recoverAllAbandonedReservations({
-      now: () => new Date('2026-07-25T12:00:00.000Z'),
-    });
+    const recovered = repo.recoverAllAbandonedReservations(recoveryOptions);
     expect(recovered).toBe(1);
     expect(repo.countActiveReservations()).toBe(0);
   });
@@ -128,9 +130,7 @@ describe('XmlImportAttemptRepository reservation concurrency', () => {
   it('6. retry after abandoned recovery succeeds', () => {
     const { repo } = createRepo();
     expect(repo.reserveAttempt(reserveInput()).kind).toBe('acquired');
-    repo.recoverAllAbandonedReservations({
-      now: () => new Date('2026-07-25T12:00:00.000Z'),
-    });
+    repo.recoverAllAbandonedReservations(recoveryOptions);
     const retry = repo.reserveAttempt(reserveInput());
     expect(retry.kind).toBe('acquired');
     repo.completeAttempt({
@@ -144,12 +144,8 @@ describe('XmlImportAttemptRepository reservation concurrency', () => {
   it('7. recovery is idempotent', () => {
     const { repo } = createRepo();
     repo.reserveAttempt(reserveInput());
-    const first = repo.recoverAllAbandonedReservations({
-      now: () => new Date('2026-07-25T12:00:00.000Z'),
-    });
-    const second = repo.recoverAllAbandonedReservations({
-      now: () => new Date('2026-07-25T12:00:00.000Z'),
-    });
+    const first = repo.recoverAllAbandonedReservations(recoveryOptions);
+    const second = repo.recoverAllAbandonedReservations(recoveryOptions);
     expect(first).toBe(1);
     expect(second).toBe(0);
   });

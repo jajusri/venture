@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { resolveDirtyTreeFromProvenance } from './release-provenance.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
 
@@ -28,28 +30,50 @@ function isDirtyTree() {
   }
 }
 
+function loadProvenanceFromEnv() {
+  const raw = process.env.BUDCOM_RELEASE_PROVENANCE;
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
 export function generateBuildInfo(options = {}) {
   const desktopPkg = readJson(path.join(repoRoot, 'apps/budcom_desktop/package.json'));
   const connectorPkg = readJson(path.join(repoRoot, 'connector/budcom_connector/package.json'));
+  const provenance = options.provenance ?? loadProvenanceFromEnv();
   const releaseMode = options.releaseMode ?? process.env.BUDCOM_RELEASE_MODE ?? 'controlled_pilot';
   const desktopVersion = desktopPkg.version;
   const connectorVersion = connectorPkg.version;
+  const gitCommit = options.gitCommit
+    ?? provenance?.gitCommit
+    ?? gitValue('git rev-parse HEAD');
+  const dirtyTree = options.dirtyTree
+    ?? resolveDirtyTreeFromProvenance(provenance, isDirtyTree());
+
   return {
     applicationVersion: desktopVersion,
     desktopVersion,
     connectorVersion,
     storageSchemaVersion: options.storageSchemaVersion ?? 8,
-    gitCommit: options.gitCommit ?? gitValue('git rev-parse HEAD'),
+    gitCommit,
     buildTimestamp: options.buildTimestamp ?? new Date().toISOString(),
     releaseMode,
     packagingTarget: options.packagingTarget ?? 'windows-nsis-x64',
     architecture: options.architecture ?? 'x64',
     nodeVersion: process.version,
     electronVersion: options.electronVersion ?? desktopPkg.devDependencies?.electron ?? 'unknown',
-    dirtyTree: options.dirtyTree ?? isDirtyTree(),
+    dirtyTree,
     buildChannel: options.buildChannel ?? 'controlled-pilot',
     checksumAlgorithm: 'sha256',
     artifactFilename: options.artifactFilename,
+    sourceTreeCleanAtStart: provenance?.sourceTreeCleanAtStart,
+    allowlistedGeneratedPaths: provenance?.allowlistedGeneratedPaths,
+    generatedChangesAfterBuild: provenance?.generatedChangesAfterBuild,
   };
 }
 

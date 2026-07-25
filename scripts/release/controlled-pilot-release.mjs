@@ -16,6 +16,14 @@ import {
 import { generateBuildInfo } from './generate-build-info.mjs';
 import { generateManifest, renderChecksumFile, verifyManifest } from './manifest.mjs';
 import { inspectPackageBoundary } from './package-boundary.mjs';
+import {
+  ALLOWLISTED_GENERATED_PATH_PREFIXES,
+  assertReleaseStartClean,
+  buildReleaseProvenanceMetadata,
+  captureReleaseProvenanceSnapshot,
+  createRepoGitRunner,
+  validatePostBuildProvenance,
+} from './release-provenance.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
@@ -107,6 +115,17 @@ async function main() {
     platform: process.platform,
   };
 
+  const gitRunner = createRepoGitRunner(repoRoot);
+  const startProvenanceSnapshot = captureReleaseProvenanceSnapshot(gitRunner);
+  assertReleaseStartClean(startProvenanceSnapshot);
+  const releaseProvenanceEnv = buildReleaseProvenanceMetadata(startProvenanceSnapshot, []);
+  process.env.BUDCOM_RELEASE_PROVENANCE = JSON.stringify(releaseProvenanceEnv);
+  report.provenance = {
+    sourceTreeCleanAtStart: startProvenanceSnapshot.sourceTreeCleanAtStart,
+    gitCommitAtStart: startProvenanceSnapshot.headCommit,
+    allowlistedGeneratedPaths: [...ALLOWLISTED_GENERATED_PATH_PREFIXES],
+  };
+
   function step(name, fn) {
     console.log(`\n=== ${name} ===`);
     fn();
@@ -125,13 +144,6 @@ async function main() {
     step('desktop-audit', () => run('npm run audit:prod', desktopRoot));
     step('contract-test', () => run('npm test', path.join(repoRoot, 'tests/contract')));
 
-    const buildInfoPath = path.join(releaseRoot, 'build-info.json');
-    const buildInfo = generateBuildInfo({
-      releaseMode: 'controlled_pilot',
-      packagingTarget: process.platform === 'win32' ? 'windows-nsis-x64' : 'validation-only',
-    });
-    fs.writeFileSync(buildInfoPath, `${JSON.stringify(buildInfo, null, 2)}\n`, 'utf8');
-
     if (process.platform !== 'win32') {
       writeNonWindowsValidationReport(releaseRoot, reportsDir, report);
       console.error('\nControlled-pilot distributable release requires Windows for NSIS installer creation.');
@@ -144,6 +156,28 @@ async function main() {
         BUDCOM_RELEASE_MODE: 'controlled_pilot',
       });
     });
+
+    const endProvenanceSnapshot = captureReleaseProvenanceSnapshot(gitRunner);
+    const generatedChangesAfterBuild = validatePostBuildProvenance(
+      startProvenanceSnapshot,
+      endProvenanceSnapshot,
+    );
+    const releaseProvenance = buildReleaseProvenanceMetadata(
+      startProvenanceSnapshot,
+      generatedChangesAfterBuild,
+    );
+    process.env.BUDCOM_RELEASE_PROVENANCE = JSON.stringify(releaseProvenance);
+    report.provenance.generatedChangesAfterBuild = [...generatedChangesAfterBuild];
+
+    const buildInfoPath = path.join(releaseRoot, 'build-info.json');
+    const buildInfo = generateBuildInfo({
+      releaseMode: 'controlled_pilot',
+      packagingTarget: 'windows-nsis-x64',
+      provenance: releaseProvenance,
+      gitCommit: releaseProvenance.gitCommit,
+      dirtyTree: releaseProvenance.dirtyTree,
+    });
+    fs.writeFileSync(buildInfoPath, `${JSON.stringify(buildInfo, null, 2)}\n`, 'utf8');
 
     const installerFilename = findInstallerArtifact(artifactsDir, desktopVersion);
     const installerPath = path.join(artifactsDir, installerFilename);

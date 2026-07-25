@@ -68,6 +68,19 @@ No mutable business data is stored inside the installation directory.
 
 Checksum verification proves integrity only — not publisher authenticity.
 
+## Source provenance (`dirtyTree`)
+
+`dirtyTree` describes **source-tree cleanliness at release pipeline start**, not deterministic generated build output produced later in the run.
+
+| Field | Meaning |
+|-------|---------|
+| `sourceTreeCleanAtStart` | Repository working tree was fully clean before any build step |
+| `dirtyTree` | Inverse of `sourceTreeCleanAtStart` for build metadata compatibility |
+| `generatedChangesAfterBuild` | Allowlisted paths that changed during the pipeline (for example `apps/budcom_desktop/dist/**`) |
+| `allowlistedGeneratedPaths` | Explicit generated-output prefixes permitted after build |
+
+Controlled-pilot release **fails closed** when the repository is dirty at start, HEAD changes during the run, or any non-allowlisted tracked/untracked file appears. A clean start followed only by allowlisted desktop `dist/` regeneration yields `dirtyTree=false`.
+
 ## Gate evidence vs pilot-distribution artifact
 
 A successful controlled-pilot release run is not automatically distributable. Build metadata must be evaluated before handoff:
