@@ -17,7 +17,7 @@ Maintain a **strict architectural boundary** between two concerns:
 | **Live read connector** | Approved export reads via HTTP/XML API | Yes (through gateway only) |
 | **Offline XML ingestion** | Parse user-selected files from disk into Budcom | **Never** |
 
-Offline ingestion lives in `src/ingestion/offline-xml-ingestion.service.ts` and implements `XmlImportService`.
+Offline ingestion lives in `src/ingestion/offline-xml-ingestion.service.ts` and implements `XmlImportService`. All offline paths delegate to `InboundXmlEnvelopeService` (see `docs/architecture/inbound-xml-envelope.md`).
 
 ## Why offline XML import is separated
 

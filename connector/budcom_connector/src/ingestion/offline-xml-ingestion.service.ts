@@ -1,41 +1,69 @@
-import { readFile } from 'node:fs/promises';
-
 import type { Logger } from '../infrastructure/logging/logger.js';
 import { AppError, ErrorCodes } from '../infrastructure/errors/app-error.js';
 import type { ServiceStatus } from '../core/types.js';
-import { TallyXmlResponseParser, type ParsedXmlNode } from '../tally/xml/response-parser.js';
 import type { XmlImportService } from '../services/interfaces/xml-import.js';
-
-function countNodes(node: ParsedXmlNode): number {
-  return 1 + node.children.reduce((sum, child) => sum + countNodes(child), 0);
-}
+import type { XmlImportAttemptRepository } from '../storage/sqlite/xml-import-attempt-repository.js';
+import {
+  InboundXmlEnvelopeService,
+  type InboundXmlEnvelopeServiceOptions,
+} from './inbound-xml-envelope.service.js';
+import {
+  InboundXmlSourceType,
+  isValidatedInboundEnvelope,
+  type InboundXmlAcceptResult,
+} from './inbound-xml-types.js';
 
 /**
  * OFFLINE Budcom XML FILE ingestion.
  *
- * ARCHITECTURAL BOUNDARY (Phase 3): this module ingests user-selected XML files
- * that were exported elsewhere. It parses and validates files locally. It has
- * NO access to the live Tally transport, connection manager, read gateway,
- * fetch client, or any network socket, and it never issues a Tally IMPORT
- * request. "Import" here means importing files INTO Budcom, not into Tally.
- *
- * The dependency-boundary architecture test enforces that this file (and the
- * `src/ingestion` directory) never imports from `src/tally/transport`,
- * `src/tally/connection`, or `src/tally/gateway`.
+ * ARCHITECTURAL BOUNDARY (Phase 3): this module ingests XML files supplied by
+ * trusted internal callers (tests; future desktop IPC with path capability).
+ * There is no OS file-picker product surface yet. Files are validated through
+ * the unified inbound XML envelope boundary. This module has NO access to the
+ * live Tally transport, connection manager, read gateway, fetch client, or any
+ * network socket, and it never issues a Tally IMPORT request.
  */
 export interface OfflineIngestionResult {
   readonly sourceLabel: string;
   readonly nodeCount: number;
   readonly byteLength: number;
+  readonly resourceKind?: string;
+  readonly contentFingerprint?: string;
+  readonly duplicateStatus?: string;
+  readonly validationStatus: string;
+}
+
+export interface OfflineIngestionOptions {
+  readonly targetCompanyId?: string;
+  readonly targetCompanyName?: string;
+  readonly recordAttempt?: boolean;
+  readonly approvedRoot?: string;
 }
 
 export class OfflineXmlIngestionService implements XmlImportService {
+  private readonly envelopeService: InboundXmlEnvelopeService;
   private running = false;
 
   constructor(
-    private readonly parser: TallyXmlResponseParser,
     private readonly logger: Logger,
-  ) {}
+    envelopeOptions: InboundXmlEnvelopeServiceOptions = {},
+  ) {
+    this.envelopeService = new InboundXmlEnvelopeService({
+      ...envelopeOptions,
+      logger,
+    });
+  }
+
+  static withRepository(
+    logger: Logger,
+    importAttemptRepository: XmlImportAttemptRepository,
+    connectorVersion = '0.3.1',
+  ): OfflineXmlIngestionService {
+    return new OfflineXmlIngestionService(logger, {
+      importAttemptRepository,
+      connectorVersion,
+    });
+  }
 
   async start(): Promise<void> {
     this.running = true;
@@ -51,29 +79,39 @@ export class OfflineXmlIngestionService implements XmlImportService {
     return this.running;
   }
 
-  getParser(): TallyXmlResponseParser {
-    return this.parser;
+  getParser() {
+    return this.envelopeService.getParser();
   }
 
-  /** Ingest an XML export file from local disk. Never contacts Tally. */
-  async ingestFile(filePath: string): Promise<OfflineIngestionResult> {
+  async ingestFile(filePath: string, options: OfflineIngestionOptions = {}): Promise<OfflineIngestionResult> {
     this.assertRunning();
-    const content = await readFile(filePath, 'utf8');
-    return this.ingestString(content, filePath);
+    const result = await this.envelopeService.acceptFile({
+      sourceType: options.approvedRoot
+        ? InboundXmlSourceType.WatchedFolderFile
+        : InboundXmlSourceType.TrustedInternalFile,
+      filePath,
+      approvedRoot: options.approvedRoot,
+      targetCompanyId: options.targetCompanyId,
+      targetCompanyName: options.targetCompanyName,
+      recordAttempt: options.recordAttempt,
+    });
+    return this.toOfflineResult(result, filePath);
   }
 
-  /** Ingest an in-memory XML export string. Never contacts Tally. */
-  ingestString(xml: string, sourceLabel = 'inline'): OfflineIngestionResult {
+  ingestString(
+    xml: string,
+    sourceLabel = 'inline',
+    options: OfflineIngestionOptions = {},
+  ): OfflineIngestionResult {
     this.assertRunning();
-    if (!xml.trim()) {
-      throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Offline XML file is empty', 400);
-    }
-    const document = this.parser.parse(xml);
-    return {
-      sourceLabel,
-      nodeCount: countNodes(document.root),
-      byteLength: Buffer.byteLength(xml, 'utf8'),
-    };
+    const result = this.envelopeService.acceptBuffer(Buffer.from(xml, 'utf8'), {
+      sourceType: InboundXmlSourceType.InlineBuffer,
+      sourceIdentifier: sourceLabel,
+      targetCompanyId: options.targetCompanyId,
+      targetCompanyName: options.targetCompanyName,
+      recordAttempt: options.recordAttempt,
+    });
+    return this.toOfflineResult(result, sourceLabel);
   }
 
   getStatus(): ServiceStatus {
@@ -82,6 +120,24 @@ export class OfflineXmlIngestionService implements XmlImportService {
       running: this.running,
       ready: this.running,
       message: 'Offline XML ingestion ready (no live Tally access)',
+    };
+  }
+
+  private toOfflineResult(result: InboundXmlAcceptResult, sourceLabel: string): OfflineIngestionResult {
+    if (!isValidatedInboundEnvelope(result)) {
+      throw new AppError(ErrorCodes.VALIDATION_ERROR, result.message, 400, {
+        reasonCode: result.reasonCode,
+        importAttemptId: result.importAttemptId,
+      });
+    }
+    return {
+      sourceLabel,
+      nodeCount: result.nodeCount,
+      byteLength: result.byteSize,
+      resourceKind: result.resourceKind,
+      contentFingerprint: result.contentFingerprint,
+      duplicateStatus: result.duplicateStatus,
+      validationStatus: result.validationStatus,
     };
   }
 

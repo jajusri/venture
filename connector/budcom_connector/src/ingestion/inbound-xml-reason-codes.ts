@@ -1,0 +1,36 @@
+/** Privacy-safe, stable inbound XML rejection reason codes. */
+export const InboundXmlReasonCode = {
+  SourceUnauthorized: 'source_unauthorized',
+  PathOutsideRoot: 'path_outside_root',
+  PathTraversal: 'path_traversal',
+  PathNullByte: 'path_null_byte',
+  NotRegularFile: 'not_regular_file',
+  SymlinkRejected: 'symlink_rejected',
+  FileMissing: 'file_missing',
+  FileUnstable: 'file_unstable',
+  EmptyPayload: 'empty_payload',
+  OversizedPayload: 'oversized_payload',
+  UnsupportedEncoding: 'unsupported_encoding',
+  InvalidByteSequence: 'invalid_byte_sequence',
+  BinaryNullByte: 'binary_null_byte',
+  ProhibitedConstruct: 'prohibited_construct',
+  MutationInstruction: 'mutation_instruction',
+  EnvelopeDrift: 'envelope_drift',
+  UnknownResourceKind: 'unknown_resource_kind',
+  ResourceKindMismatch: 'resource_kind_mismatch',
+  MissingCompanyIdentity: 'missing_company_identity',
+  AmbiguousCompanyIdentity: 'ambiguous_company_identity',
+  CompanyMismatch: 'company_mismatch',
+  XmlMalformed: 'xml_malformed',
+  XmlOversized: 'xml_oversized',
+  XmlMaxDepth: 'xml_max_depth_exceeded',
+  XmlMaxNodes: 'xml_max_node_count_exceeded',
+  TallyLineError: 'tally_line_error',
+  DuplicateContent: 'duplicate_content',
+  ImportInProgress: 'import_in_progress',
+  PersistenceFailed: 'persistence_failed',
+  ServiceUnavailable: 'service_unavailable',
+} as const;
+
+export type InboundXmlReasonCode =
+  (typeof InboundXmlReasonCode)[keyof typeof InboundXmlReasonCode];

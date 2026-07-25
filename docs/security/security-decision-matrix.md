@@ -19,7 +19,7 @@ This matrix records unresolved or partially resolved security decisions that req
 | Crash reporting / telemetry | Blind production defects vs privacy | Disabled | Medium operational visibility | Opt-in Sentry-style with allowlist | Explicit owner opt-in required | Post-MVP |
 | Remote support access | Support without on-site visit | Diagnostics export only (allowlisted) | Low with export policy | Remote bundle upload; screen share | Manual export remains approved path | Controlled pilot OK |
 | LAN API authentication (TD-009) | Unauthenticated connector on LAN | Loopback default; LAN requires acknowledgement; no authN | High if LAN enabled carelessly | Local token; mTLS; VPN-only | Keep loopback default; document firewall requirement | Commercial pilot if LAN required |
-| Inbound offline XML envelope hardening | Malicious imported XML files | Custom parser limits; partial envelope coverage | Medium for import modes | Unified envelope validator before parse | Reliability order item 6 — separate gate | Commercial pilot |
+| Inbound offline XML envelope hardening | Malicious imported XML files | Unified envelope boundary (`InboundXmlEnvelopeService`); import-attempt history; domain upsert deferred | Medium for import modes | Offline domain persistence + desktop import UI | Implemented in RC#4 §30; commercial pilot after domain upsert | Commercial pilot |
 
 ## Controlled pilot status
 
@@ -47,7 +47,7 @@ All commercial pilot blockers, plus:
 - Installer/uninstall lifecycle automation with explicit data ownership
 - Auto-update trust chain
 - Crash reporting policy (if desired)
-- Residual inbound XML envelope hardening for all import paths
+- Residual offline domain persistence from validated inbound envelopes (ledger/stock upsert)
 
 ## Related documents
 

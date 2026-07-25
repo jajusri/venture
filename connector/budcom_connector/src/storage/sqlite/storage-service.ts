@@ -15,6 +15,7 @@ import { SqliteStockItemRepository } from './sqlite-stock-item-repository.js';
 import { SqliteDatabase } from './sqlite-database.js';
 import { SyncRunRepository } from './sync-run-repository.js';
 import { SyncRunRetentionService } from './sync-run-retention-service.js';
+import { XmlImportAttemptRepository } from './xml-import-attempt-repository.js';
 import { STORAGE_SCHEMA_VERSION } from './schema.js';
 import {
   assertNotProtectedWriteTarget,
@@ -27,6 +28,7 @@ export interface LedgerStorageBundle {
   readonly ledgerRepository: LedgerRepositoryPort;
   readonly stockItemRepository: StockItemRepositoryPort;
   readonly syncRunRepository: SyncRunRepository;
+  readonly xmlImportAttemptRepository: XmlImportAttemptRepository;
   readonly migrationReport: JsonMigrationReport;
 }
 
@@ -47,6 +49,22 @@ export class SqliteStorageService implements LocalDatabaseService {
     const ledgerRepository = new SqliteLedgerRepository(database);
     const stockItemRepository = new SqliteStockItemRepository(database);
     const syncRunRepository = new SyncRunRepository(database);
+    const xmlImportAttemptRepository = new XmlImportAttemptRepository(database);
+    try {
+      const recoveredImportAttempts = xmlImportAttemptRepository.recoverAllAbandonedReservations();
+      if (recoveredImportAttempts > 0) {
+        this.logger.info('sqlite_abandoned_xml_import_attempts_recovered', {
+          component: 'sqlite-storage',
+          recoveredCount: recoveredImportAttempts,
+        });
+      }
+    } catch (error) {
+      this.logger.warn('sqlite_abandoned_xml_import_attempts_recovery_failed', {
+        component: 'sqlite-storage',
+        reasonCode: 'recovery_failed',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
     const migration = new JsonToSqliteMigrationService(
       database,
       ledgerRepository,
@@ -70,7 +88,14 @@ export class SqliteStorageService implements LocalDatabaseService {
       this.logger,
     );
     retention.prune();
-    this.bundle = { database, ledgerRepository, stockItemRepository, syncRunRepository, migrationReport };
+    this.bundle = {
+      database,
+      ledgerRepository,
+      stockItemRepository,
+      syncRunRepository,
+      xmlImportAttemptRepository,
+      migrationReport,
+    };
     this.running = true;
     this.logger.info('sqlite_storage_started', {
       component: 'sqlite-storage',

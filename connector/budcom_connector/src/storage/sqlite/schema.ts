@@ -1,4 +1,4 @@
-export const STORAGE_SCHEMA_VERSION = 5;
+export const STORAGE_SCHEMA_VERSION = 8;
 
 export const MIGRATION_001 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -198,3 +198,58 @@ export const LEDGER_COLUMN_UPGRADES: ReadonlyArray<{ readonly name: string; read
   { name: 'data_quality', ddl: "ALTER TABLE ledgers ADD COLUMN data_quality TEXT NOT NULL DEFAULT 'complete'" },
   { name: 'is_bill_wise_on', ddl: 'ALTER TABLE ledgers ADD COLUMN is_bill_wise_on INTEGER' },
 ];
+
+/** Offline/inbound XML import attempt history (Reliability order item 6). */
+export const MIGRATION_006 = `
+CREATE TABLE IF NOT EXISTS xml_import_attempts (
+  import_attempt_id TEXT PRIMARY KEY,
+  company_id TEXT,
+  resource_kind TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  source_identifier TEXT,
+  content_fingerprint TEXT NOT NULL,
+  byte_size INTEGER NOT NULL,
+  reservation_status TEXT NOT NULL DEFAULT 'released',
+  validation_status TEXT NOT NULL,
+  persistence_status TEXT NOT NULL,
+  duplicate_status TEXT NOT NULL,
+  error_code TEXT,
+  parser_version TEXT NOT NULL,
+  connector_version TEXT NOT NULL,
+  received_at TEXT NOT NULL,
+  completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_xml_import_attempts_company_resource
+  ON xml_import_attempts(company_id, resource_kind, received_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_xml_import_attempts_fingerprint
+  ON xml_import_attempts(content_fingerprint, resource_kind, validation_status, persistence_status);
+`;
+
+/** Adds reservation_status and atomic duplicate index to v6 databases created before column existed. */
+export const MIGRATION_007 = `
+CREATE UNIQUE INDEX IF NOT EXISTS idx_xml_import_attempts_reservation
+  ON xml_import_attempts(
+    COALESCE(company_id, '__none__'),
+    resource_kind,
+    content_fingerprint
+  )
+  WHERE reservation_status IN ('active', 'completed');
+`;
+
+/**
+ * Replaces COALESCE sentinel index with collision-proof dual partial indexes.
+ * NULL company scope and non-NULL company scope are indexed separately.
+ */
+export const MIGRATION_008 = `
+DROP INDEX IF EXISTS idx_xml_import_attempts_reservation;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_xml_import_attempts_reservation_no_company
+  ON xml_import_attempts(resource_kind, content_fingerprint)
+  WHERE company_id IS NULL AND reservation_status IN ('active', 'completed');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_xml_import_attempts_reservation_scoped
+  ON xml_import_attempts(company_id, resource_kind, content_fingerprint)
+  WHERE company_id IS NOT NULL AND reservation_status IN ('active', 'completed');
+`;

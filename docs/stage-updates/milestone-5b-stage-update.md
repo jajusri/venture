@@ -2008,3 +2008,80 @@ Addressed provisional review findings without removing size protection or breaki
 | Desktop vitest | **168/168 PASS** |
 | `npm run audit:prod` (desktop) | **0 vulnerabilities** |
 | Tracked `apps/budcom_desktop/dist/**` after build | **Restored — clean** |
+
+---
+
+## 30. RC#4 Unified Inbound XML Envelope and Offline Import Safety Closure (2026-07-25)
+
+**Requirement addressed:** Reliability order item 6 — unified inbound XML envelope before untrusted voucher/import scope (`milestone-5b-stage-update.md` §687; deferred from §29 §1960; `security-decision-matrix.md` row 22)
+
+**Implementation status:** Complete for approved connector offline/import boundary. Domain upsert from offline files remains future scope.
+
+### Ingestion surface map
+
+| Surface | Status |
+|---------|--------|
+| `OfflineXmlIngestionService` | Routed through `InboundXmlEnvelopeService` |
+| `InboundXmlEnvelopeService.acceptBuffer/acceptFile` | Implemented |
+| Watched-folder path rules | Framework only (no product watcher) |
+| Desktop import UI | Not implemented |
+| Connector HTTP XML upload | None |
+| Live Tally read path | Unchanged |
+
+### Controls added
+
+| Area | Change |
+|------|--------|
+| Unified boundary | `InboundXmlEnvelopeService` + supporting modules under `src/ingestion/` |
+| Path safety | Null-byte rejection, symlink/junction rejection, watched-root containment |
+| File stability | Bounded size/mtime stability window before read |
+| Encoding | UTF-8 + BOM only; SHA-256 fingerprint of original bytes |
+| Prohibited constructs | DOCTYPE, ENTITY, IMPORT/EXECUTE rejection |
+| Resource allowlist | Ledgers, stock items, ledger groups, company list |
+| Company isolation | Missing/ambiguous/mismatch fail closed |
+| Import history | SQLite schema v6 `xml_import_attempts` + transactional duplicate detection |
+| DI wiring | `OfflineXmlIngestionService` receives repository when `LocalDatabase` is running |
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `connector/.../ingestion/inbound-xml-*.ts` | **New** unified envelope modules |
+| `connector/.../ingestion/offline-xml-ingestion.service.ts` | Delegate to envelope service |
+| `connector/.../storage/sqlite/schema.ts` | Schema v6 + `MIGRATION_006` |
+| `connector/.../storage/sqlite/xml-import-attempt-repository.ts` | **New** |
+| `connector/.../storage/sqlite/storage-service.ts` | Repository in bundle |
+| `connector/.../bootstrap/register-services.ts` | Updated XmlImport factory |
+| `connector/.../test/unit/ingestion/inbound-xml-envelope.test.ts` | **New** |
+| `connector/.../test/unit/ingestion/inbound-xml-file-source.test.ts` | **New** |
+| `connector/.../test/integration/xml-import-attempt-repository.test.ts` | **New** |
+| `connector/.../test/unit/ingestion/offline-xml-ingestion.test.ts` | Updated |
+| `docs/architecture/inbound-xml-envelope.md` | **New** |
+
+### Known limitations
+
+- Offline import does not yet upsert ledgers/stock into SQLite domain tables.
+- Desktop watched-folder and manual file UI not built.
+- Concurrent duplicate import race relies on SQLite `BEGIN IMMEDIATE`; domain upsert concurrency untested until persistence exists.
+
+### RC#4 status (post inbound envelope closure)
+
+**Reliability Control #4 remains PARTIAL** — inbound envelope unified; encryption, LAN auth, signing, installer lifecycle, and offline domain persistence remain open.
+
+### Validation evidence (§30)
+
+| Command | Result |
+|---------|--------|
+| `npm run lint` (connector) | **PASS** |
+| `npm run build` (connector) | **PASS** |
+| Full connector vitest | **784/784 PASS** (+57 inbound envelope/reservation tests) |
+| Architecture tests | **12/12 PASS** |
+| Contract tests (`tests/contract`) | **5/5 PASS** |
+| `npm run audit:prod` (connector) | **0 vulnerabilities** |
+| `npm run lint` (desktop) | **PASS** |
+| `npm run build` (desktop) | **PASS** |
+| Desktop vitest | **168/168 PASS** |
+| `npm run audit:prod` (desktop) | **0 vulnerabilities** |
+| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — clean** |
+
+**Unrestricted production remains unapproved.**

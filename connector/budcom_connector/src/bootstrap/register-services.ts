@@ -31,7 +31,6 @@ import { CompanyResolver } from '../services/extraction/company-resolver.js';
 import { MasterDataServiceImpl } from '../services/extraction/master-data.service.js';
 import { ConnectorSessionServiceImpl } from '../services/session/connector-session.service.js';
 import { createTallyModule } from '../tally/tally-module.js';
-import { TallyXmlResponseParser } from '../tally/xml/response-parser.js';
 import type { MasterDataService } from '../services/extraction/master-data.service.js';
 import type { ConnectorSessionService } from '../services/interfaces/connector-session.js';
 
@@ -65,17 +64,23 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         logger.child({ service: 'TallyConnection' }),
       ),
   );
-  // Offline Budcom XML file ingestion. Deliberately receives ONLY a pure XML
-  // parser — never the read gateway, connection manager, or transport — so it
-  // cannot reach live Tally. Uses its own parser instance (not the adapter's).
-  container.registerFactory(
-    ServiceTokens.XmlImport,
-    () =>
-      new OfflineXmlIngestionService(
-        new TallyXmlResponseParser(),
-        logger.child({ service: 'OfflineXmlIngestion' }),
-      ),
-  );
+  // Offline Budcom XML file ingestion. Deliberately receives ONLY the unified
+  // inbound envelope boundary — never the read gateway, connection manager, or
+  // transport — so it cannot reach live Tally.
+  container.registerFactory(ServiceTokens.XmlImport, () => {
+    const importLogger = logger.child({ service: 'OfflineXmlIngestion' });
+    const storage = container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase);
+    if (storage.isRunning()) {
+      return OfflineXmlIngestionService.withRepository(
+        importLogger,
+        storage.getBundle().xmlImportAttemptRepository,
+        config.connectorVersion ?? '0.3.1',
+      );
+    }
+    return new OfflineXmlIngestionService(importLogger, {
+      connectorVersion: config.connectorVersion ?? '0.3.1',
+    });
+  });
   container.registerFactory(
     ServiceTokens.CompanyDiscovery,
     () =>

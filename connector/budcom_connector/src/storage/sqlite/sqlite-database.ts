@@ -12,6 +12,9 @@ import {
   MIGRATION_003,
   MIGRATION_004,
   MIGRATION_005,
+  MIGRATION_006,
+  MIGRATION_007,
+  MIGRATION_008,
   STOCK_ITEM_COLUMN_UPGRADES,
   STORAGE_SCHEMA_VERSION,
 } from './schema.js';
@@ -211,6 +214,19 @@ export class SqliteDatabase {
         db.exec(MIGRATION_005);
         db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(5, now);
       }
+      if (currentVersion < 6) {
+        db.exec(MIGRATION_006);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(6, now);
+      }
+      if (currentVersion < 7) {
+        this.ensureXmlImportAttemptReservationColumn(db);
+        db.exec(MIGRATION_007);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(7, now);
+      }
+      if (currentVersion < 8) {
+        db.exec(MIGRATION_008);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(8, now);
+      }
       db.exec('COMMIT;');
     } catch (error) {
       db.exec('ROLLBACK;');
@@ -219,6 +235,25 @@ export class SqliteDatabase {
         'SQLite schema migration failed and was rolled back.',
         500,
         { cause: error instanceof Error ? error.message : String(error) },
+      );
+    }
+  }
+
+  private ensureXmlImportAttemptReservationColumn(db: DatabaseSync): void {
+    const tableExists = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'xml_import_attempts'")
+      .get() as { name: string } | undefined;
+    if (!tableExists) {
+      return;
+    }
+    const columns = new Set(
+      (db.prepare('PRAGMA table_info(xml_import_attempts)').all() as Array<{ name: string }>).map(
+        (row) => row.name,
+      ),
+    );
+    if (!columns.has('reservation_status')) {
+      db.exec(
+        "ALTER TABLE xml_import_attempts ADD COLUMN reservation_status TEXT NOT NULL DEFAULT 'released'",
       );
     }
   }
