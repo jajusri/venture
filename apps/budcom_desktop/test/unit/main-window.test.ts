@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import desktopPackage from '../../package.json';
+
 vi.mock('electron', () => {
   class BrowserWindow {
     public id = 1;
@@ -22,13 +24,16 @@ vi.mock('electron', () => {
     once = vi.fn((_event: string, callback: () => void) => {
       callback();
     });
+    on = vi.fn();
   }
   return {
     app: {
       whenReady: vi.fn().mockResolvedValue(undefined),
       on: vi.fn(),
       quit: vi.fn(),
+      isPackaged: false,
       getPath: vi.fn(() => '/tmp/budcom-test-userdata'),
+      getVersion: vi.fn(() => desktopPackage.version),
     },
     BrowserWindow,
     ipcMain: { handle: vi.fn() },

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getEnvironmentDefaults } from '../../src/application/desktop-config-defaults.js';
 import { resolveDesktopConfigPaths } from '../../src/application/desktop-config-paths.js';
@@ -90,6 +90,26 @@ describe('environment overrides', () => {
 });
 
 describe('settings service', () => {
+  const connectorEnvKeys = ['BUDCOM_CONNECTOR_PORT', 'BUDCOM_CONNECTOR_URL', 'BUDCOM_CONNECTOR_HOST'] as const;
+  const savedConnectorEnv: Partial<Record<(typeof connectorEnvKeys)[number], string | undefined>> = {};
+
+  beforeEach(() => {
+    for (const key of connectorEnvKeys) {
+      savedConnectorEnv[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of connectorEnvKeys) {
+      if (savedConnectorEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = savedConnectorEnv[key];
+      }
+    }
+  });
+
   it('validates invalid settings patch', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-settings-'));
     const paths = resolveDesktopConfigPaths(tempDir);
