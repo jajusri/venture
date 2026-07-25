@@ -77,8 +77,8 @@ export function generateBuildInfo(options = {}) {
   };
 }
 
-if (import.meta.url === pathToFileURL(path.resolve(process.argv[1] ?? '')).href
-  || import.meta.url === pathToFileURL(fileURLToPath(import.meta.url)).href) {
+if (process.argv[1]
+  && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const outputPath = process.argv[2];
   if (!outputPath) {
     console.error('Usage: node generate-build-info.mjs <output-path>');
