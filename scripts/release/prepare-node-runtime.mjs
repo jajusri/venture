@@ -69,6 +69,12 @@ function assertNodeRuntimeArchitecture(nodeExecutable) {
   }
 }
 
+export function cleanupTemporaryNodeRuntimeContent(root = outputRoot) {
+  for (const directory of ['.extract', '.cache', '.stage']) {
+    fs.rmSync(path.join(root, directory), { recursive: true, force: true });
+  }
+}
+
 export function prepareNodeRuntime() {
   const cacheDir = path.join(outputRoot, '.cache');
   const extractRoot = path.join(outputRoot, '.extract');
@@ -122,6 +128,7 @@ export function prepareNodeRuntime() {
     fs.copyFileSync(from, to);
   }
   fs.rmSync(stagedRoot, { recursive: true, force: true });
+  cleanupTemporaryNodeRuntimeContent();
 
   return manifest;
 }

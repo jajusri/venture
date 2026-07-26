@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
@@ -60,6 +62,50 @@ describe('packaged node runtime integrity', () => {
       const { exePath } = writeSyntheticRuntime(root, 'valid-node-runtime');
       const verified = verifyPackagedNodeRuntimeIntegrity(root, { validateSqlite: false });
       expect(verified.nodeExecutable).toBe(exePath);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('removes preparation staging while preserving the verified runtime contract', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-node-runtime-cleanup-'));
+    try {
+      const { exePath } = writeSyntheticRuntime(root, 'verified-node-runtime');
+      const nodeDir = path.join(root, 'node');
+      const licensePath = path.join(nodeDir, 'LICENSE');
+      fs.writeFileSync(licensePath, 'Node.js license material', 'utf8');
+      for (const directory of ['.extract', '.cache', '.stage']) {
+        fs.mkdirSync(path.join(nodeDir, directory), { recursive: true });
+        fs.writeFileSync(path.join(nodeDir, directory, 'temporary.txt'), 'temporary', 'utf8');
+      }
+
+      const cleanupScript = path.resolve(
+        __dirname,
+        '../../../../scripts/release/prepare-node-runtime.mjs',
+      );
+      const cleanup = spawnSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          'const { cleanupTemporaryNodeRuntimeContent } = await import(process.argv[1]); cleanupTemporaryNodeRuntimeContent(process.argv[2]);',
+          pathToFileURL(cleanupScript).href,
+          nodeDir,
+        ],
+        { encoding: 'utf8' },
+      );
+
+      expect(cleanup.status, cleanup.stderr || cleanup.stdout).toBe(0);
+      expect(fs.existsSync(exePath)).toBe(true);
+      expect(fs.existsSync(path.join(nodeDir, 'node-runtime.manifest.json'))).toBe(true);
+      expect(fs.existsSync(licensePath)).toBe(true);
+      expect(fs.existsSync(path.join(nodeDir, '.extract'))).toBe(false);
+      expect(fs.existsSync(path.join(nodeDir, '.cache'))).toBe(false);
+      expect(fs.existsSync(path.join(nodeDir, '.stage'))).toBe(false);
+      expect(() => verifyPackagedNodeRuntimeIntegrity(root, {
+        validateSqlite: false,
+        forceReverify: true,
+      })).not.toThrow();
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
