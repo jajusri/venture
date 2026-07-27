@@ -10,6 +10,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.budcom.android.feature.company.presentation.CompanyRoute
 import com.budcom.android.feature.dashboard.presentation.DashboardRoute
+import com.budcom.android.feature.diagnostics.presentation.DiagnosticsRoute
 import com.budcom.android.feature.masterdata.ledger.presentation.LedgerBrowserRoute
 import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
 import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
@@ -41,6 +42,7 @@ fun BudcomNavHost(
                 onOpenVouchers = { navController.navigate(Routes.vouchers()) },
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenSync = { navController.navigate(Routes.SYNC) },
+                onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
             )
         }
         composable(route = Routes.SERVER_CONFIG) {
@@ -75,6 +77,12 @@ fun BudcomNavHost(
             SyncRoute(
                 onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
                 onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
+            )
+        }
+        composable(route = Routes.DIAGNOSTICS) {
+            DiagnosticsRoute(
+                onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
+                onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
             )
         }
         composable(

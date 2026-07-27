@@ -45,9 +45,33 @@
     <string name="dashboard_action_vouchers">Vouchers</string>
     <string name="dashboard_action_search">Search</string>
     <string name="dashboard_action_sync">Sync</string>
+    <string name="dashboard_action_diagnostics">Diagnostics</string>
     <string name="dashboard_sync_heading">Synchronization</string>
     <string name="dashboard_sync_status_label">Status</string>
-    <string name="dashboard_future_features">Diagnostics and advanced automation are not available yet.</string>
+    <string name="dashboard_future_features">Settings and advanced automation are not available yet.</string>
+
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostics_tools_heading">Operational tools</string>
+    <string name="diagnostics_refresh">Refresh diagnostics</string>
+    <string name="diagnostics_recheck_health">Refresh health</string>
+    <string name="diagnostics_recheck_readiness">Recheck readiness</string>
+    <string name="diagnostics_retry">Retry</string>
+    <string name="diagnostics_open_server_config">Open server configuration</string>
+    <string name="diagnostics_open_company">Open company selection</string>
+    <string name="diagnostics_application_heading">Application</string>
+    <string name="diagnostics_connector_heading">Connector</string>
+    <string name="diagnostics_health_heading">Health</string>
+    <string name="diagnostics_readiness_heading">Readiness</string>
+    <string name="diagnostics_connection_heading">Connection diagnostics</string>
+    <string name="diagnostics_company_heading">Company</string>
+    <string name="diagnostics_sync_heading">Synchronization</string>
+    <string name="diagnostics_search_heading">Search</string>
+    <string name="diagnostics_master_data_heading">Master data</string>
+    <string name="diagnostics_voucher_heading">Voucher</string>
+    <string name="diagnostics_unavailable">Not available</string>
+    <string name="diagnostics_no_company">No company selected</string>
+    <string name="diagnostics_never">Never</string>
+    <string name="diagnostics_none">None</string>
 
     <string name="search_title">Search</string>
     <string name="search_subtitle">Search ledgers, stock items, and vouchers</string>

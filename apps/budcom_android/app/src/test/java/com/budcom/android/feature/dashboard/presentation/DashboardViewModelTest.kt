@@ -143,6 +143,7 @@ class DashboardViewModelTest {
         viewModel.onEvent(DashboardEvent.OpenVouchers)
         viewModel.onEvent(DashboardEvent.OpenSearch)
         viewModel.onEvent(DashboardEvent.OpenSync)
+        viewModel.onEvent(DashboardEvent.OpenDiagnostics)
         advanceUntilIdle()
         assertEquals(
             listOf(
@@ -152,6 +153,7 @@ class DashboardViewModelTest {
                 DashboardNavigation.Vouchers,
                 DashboardNavigation.Search,
                 DashboardNavigation.Sync,
+                DashboardNavigation.Diagnostics,
             ),
             emitted,
         )

@@ -12,6 +12,7 @@ object Routes {
     const val MASTER_DATA = "master_data"
     const val SEARCH = "search"
     const val SYNC = "sync"
+    const val DIAGNOSTICS = "diagnostics"
     const val LEDGERS = "ledgers?q={q}"
     const val STOCK_ITEMS = "stock_items?q={q}"
     const val VOUCHERS = "vouchers?q={q}"
