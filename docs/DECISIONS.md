@@ -84,6 +84,27 @@
 **Context:** Public detail API intentionally omits source identity and nested allocations.  
 **Consequences:** Browser row opens Details; Sync/edit remain out of scope.
 
+### 2026-07-27 — Universal Search is Android-side orchestration
+
+**Status:** Accepted  
+**Decision:** Universal Search Foundation fans out to typed public ports (`SearchLedgersPort`, `SearchStockItemsPort`, `SearchVouchersPort`) over existing Connector entity list/search routes. No cross-entity Connector endpoint is invented.  
+**Context:** Connector exposes only entity-scoped search (`query` / `q`).  
+**Consequences:** Search never depends on Retrofit/DTOs; future entities join via additional ports.
+
+### 2026-07-27 — Universal Search bounded previews and partial success
+
+**Status:** Accepted  
+**Decision:** Results are grouped by entity with a fixed order (Ledgers → Stock Items → Vouchers), bounded preview page size (5), and “See all” into existing browsers. Partial section success is preserved; cross-entity relevance ranking is deferred.  
+**Context:** First foundation milestone prioritizes trust and reuse over merged ranking.  
+**Consequences:** Users see honest per-section empty/error states; browsers remain the full-list surfaces.
+
+### 2026-07-27 — Universal Search voucher window is last 30 UTC days
+
+**Status:** Accepted  
+**Decision:** Voucher section uses the same client default date window as Voucher Browser (last 30 UTC days inclusive) and discloses it in UI.  
+**Context:** Connector requires explicit `from`/`to` for voucher list/search.  
+**Consequences:** Search must not imply all historical vouchers were searched; expanded ranges remain future work.
+
 ---
 
 ## Decision log template

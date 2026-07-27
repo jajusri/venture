@@ -8,9 +8,9 @@ Authoritative docs: [`docs/PRODUCT_SOUL.md`](../../docs/PRODUCT_SOUL.md), [`docs
 
 ## Milestone status
 
-**Current:** Voucher Experience Complete. **Next:** Universal Search Foundation.
+**Current:** Sync Foundation. **Completed here:** Universal Search Foundation.
 
-**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details.
+**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details, Universal Search across ledgers/stock items/vouchers.
 
 ## Stack
 
@@ -43,9 +43,10 @@ com.budcom.android
 │   ├── company         # discovery/session (+ CompanySessionPort)
 │   ├── dashboard       # operational home (domain + presentation)
 │   ├── masterdata      # hub, shared list conventions, pagination VO
-│   │   ├── ledger      # Ledger Browser vertical slice
-│   │   └── stockitem   # Stock Item Browser vertical slice
-│   ├── voucher         # Voucher foundation + Browser + Details
+│   │   ├── ledger      # Ledger Browser (+ SearchLedgersPort)
+│   │   └── stockitem   # Stock Item Browser (+ SearchStockItemsPort)
+│   ├── voucher         # Voucher foundation + Browser + Details (+ SearchVouchersPort)
+│   ├── search          # Universal Search Foundation (orchestrates typed ports)
 │   └── settings        # reserved
 ├── data/ / domain/     # scaffold markers only — prefer feature slices
 ├── navigation
@@ -79,6 +80,23 @@ Contract notes: [`docs/contracts/android-master-data-ledger.md`](../../docs/cont
 | Sync UI / create / edit / delete | Out of scope |
 
 Contract notes: [`docs/contracts/android-voucher-api.md`](../../docs/contracts/android-voucher-api.md).
+
+## Universal Search capabilities
+
+| Capability | Status |
+| --- | --- |
+| Dashboard → Search | Implemented |
+| Grouped results: Ledgers, Stock Items, Vouchers | Implemented |
+| Debounced query; blank ignored; obsolete requests cancelled | Implemented |
+| Bounded preview (5) + See all → existing browsers | Implemented |
+| Voucher section: last 30 UTC days (disclosed) | Implemented |
+| Partial section success / per-section retry | Implemented |
+| Result → Ledger/Stock browsers or Voucher Details | Implemented |
+| Contact / AI / OCR / ranking / history | Out of scope |
+
+Contract notes: [`docs/contracts/android-universal-search.md`](../../docs/contracts/android-universal-search.md).
+
+**Limitations:** Not ERP-wide search. Vouchers are limited to the disclosed date window. No Ledger/Stock detail destinations yet.
 
 ## Architecture rules
 

@@ -21,30 +21,27 @@ Ordered implementation milestones are separate from long-term product innovation
 - ✔ Master Data (Ledger Browser + Stock Item Browser + shared foundation)
 - ✔ Voucher Browser
 - ✔ Voucher Details
+- ✔ Universal Search Foundation
 
 ---
 
 ## Current milestone
 
-**Voucher Experience Complete**
-
-Typed voucher foundation, Browser, and Details are delivered against confirmed Connector contracts. Contract notes: [contracts/android-voucher-api.md](contracts/android-voucher-api.md).
+**Sync Foundation**
 
 ---
 
 ## Next
 
-**Universal Search Foundation**
+**Diagnostics Foundation**
 
 ---
 
 ## Upcoming
 
-1. Sync
-2. Diagnostics
-3. Settings
-4. Production hardening
-5. Release preparation
+1. Settings
+2. Production hardening
+3. Release preparation
 
 ---
 
