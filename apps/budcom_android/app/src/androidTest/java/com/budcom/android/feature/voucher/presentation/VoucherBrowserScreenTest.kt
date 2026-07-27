@@ -43,6 +43,7 @@ class VoucherBrowserScreenTest {
 
     @Test
     fun contentState() {
+        var openedId: String? = null
         composeRule.setContent {
             BudcomTheme {
                 VoucherBrowserScreen(
@@ -61,11 +62,13 @@ class VoucherBrowserScreenTest {
                         ),
                     ),
                     onEvent = {},
+                    onOpenVoucherDetails = { openedId = it },
                 )
             }
         }
         composeRule.onNodeWithTag("voucher_list").assertIsDisplayed()
-        composeRule.onNodeWithTag("voucher_row_v-1").assertIsDisplayed()
+        composeRule.onNodeWithTag("voucher_row_v-1").assertIsDisplayed().performClick()
+        assertTrue(openedId == "v-1")
     }
 
     @Test

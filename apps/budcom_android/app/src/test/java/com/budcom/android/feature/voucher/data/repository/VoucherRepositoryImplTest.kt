@@ -77,6 +77,39 @@ class VoucherRepositoryImplTest {
         assertTrue(result.error is AppError.Offline)
     }
 
+    @Test
+    fun `maps details success`() = runTest(dispatcher) {
+        val details = VoucherDetails(
+            summary = sampleSummary(),
+            effectiveDate = "2026-07-27",
+            narration = "Paid",
+            ledgerEntries = emptyList(),
+            inventoryEntries = emptyList(),
+        )
+        val remote = FakeRemote(
+            listResult = ApiResult.Failure(NetworkError.Unknown()),
+            detailsResult = ApiResult.Success(details),
+        )
+        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val result = repo.getVoucherDetails("estimation", "v-1") as AppResult.Success
+        assertEquals("v-1", result.value.summary.identity.id)
+        assertEquals("Paid", result.value.narration)
+    }
+
+    @Test
+    fun `maps details not found`() = runTest(dispatcher) {
+        val remote = FakeRemote(
+            listResult = ApiResult.Failure(NetworkError.Unknown()),
+            detailsResult = ApiResult.Failure(
+                NetworkError.Http(404, "NOT_FOUND", "Voucher was not found."),
+            ),
+        )
+        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val result = repo.getVoucherDetails("estimation", "missing") as AppResult.Failure
+        assertTrue(result.error is AppError.Remote)
+        assertEquals(404, (result.error as AppError.Remote).httpStatus)
+    }
+
     private class FakeRemote(
         private val listResult: ApiResult<VoucherPage>,
         private val detailsResult: ApiResult<VoucherDetails> = ApiResult.Failure(NetworkError.Unknown()),

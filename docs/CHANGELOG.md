@@ -13,11 +13,12 @@
 - Ledger Browser against Connector `GET /ledgers`
 - Stock Item Browser against Connector `GET /stock-items`
 - Confirmed Voucher Connector contract notes (`docs/contracts/android-voucher-api.md`)
-- Voucher foundation (typed domain, repository, details use-case port) and Voucher Browser against `GET /api/v1/vouchers`
+- Voucher foundation and Voucher Browser against `GET /api/v1/vouchers`
+- Voucher Details against `GET /api/v1/vouchers/:id` (header, metadata, narration, ledger/inventory lines)
 
 ### Changed
 
 - Dashboard architectural boundaries (stable ports, authoritative operational mode)
 - Startup Connector URL hydration via core port
 - Android module documentation accuracy
-- Roadmap: Master Data complete; current = Voucher Browser; next = Voucher Details
+- Roadmap: Voucher experience complete (Browser + Details); next = Universal Search Foundation

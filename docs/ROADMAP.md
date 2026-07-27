@@ -19,26 +19,32 @@ Ordered implementation milestones are separate from long-term product innovation
 - Architecture ADR foundation
 - ✔ Dashboard
 - ✔ Master Data (Ledger Browser + Stock Item Browser + shared foundation)
+- ✔ Voucher Browser
+- ✔ Voucher Details
 
 ---
 
 ## Current milestone
 
-**▶ Voucher Browser**
+**Voucher Experience Complete**
 
-Typed voucher foundation and network-backed Voucher Browser against confirmed Connector `GET /api/v1/vouchers` (required company + date range). Contract notes: [contracts/android-voucher-api.md](contracts/android-voucher-api.md).
+Typed voucher foundation, Browser, and Details are delivered against confirmed Connector contracts. Contract notes: [contracts/android-voucher-api.md](contracts/android-voucher-api.md).
+
+---
+
+## Next
+
+**Universal Search Foundation**
 
 ---
 
 ## Upcoming
 
-1. Voucher Details
-2. Search
-3. Sync
-4. Diagnostics
-5. Settings
-6. Production hardening
-7. Release preparation
+1. Sync
+2. Diagnostics
+3. Settings
+4. Production hardening
+5. Release preparation
 
 ---
 

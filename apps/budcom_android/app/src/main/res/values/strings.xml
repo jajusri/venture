@@ -78,6 +78,24 @@
     <string name="voucher_status_label">Status: %1$s</string>
     <string name="voucher_amount_label">Amount: %1$s</string>
 
+    <string name="voucher_details_title">Voucher details</string>
+    <string name="voucher_details_metadata">Metadata</string>
+    <string name="voucher_details_id">Voucher id</string>
+    <string name="voucher_details_party">Party</string>
+    <string name="voucher_details_reference">Reference</string>
+    <string name="voucher_details_status">Status</string>
+    <string name="voucher_details_data_quality_label">Data quality</string>
+    <string name="voucher_details_data_quality">Data quality: %1$s</string>
+    <string name="voucher_details_unknown">Not provided</string>
+    <string name="voucher_details_effective_date">Effective date: %1$s</string>
+    <string name="voucher_details_narration">Narration</string>
+    <string name="voucher_details_ledger_heading">Ledger entries (%1$d)</string>
+    <string name="voucher_details_inventory_heading">Inventory entries (%1$d)</string>
+    <string name="voucher_details_no_ledger_lines">No ledger entries in this voucher.</string>
+    <string name="voucher_details_no_inventory_lines">No inventory entries in this voucher.</string>
+    <string name="voucher_details_line_title">%1$d. %2$s</string>
+    <string name="voucher_details_quantity">Quantity: %1$s</string>
+
     <string name="server_config_title">Server configuration</string>
     <string name="server_config_url_label">Connector base URL</string>
     <string name="server_config_saved_label">Saved URL: %1$s</string>

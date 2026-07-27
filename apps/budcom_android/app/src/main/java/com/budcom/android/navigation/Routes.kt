@@ -1,5 +1,7 @@
 package com.budcom.android.navigation
 
+import android.net.Uri
+
 /**
  * Type-safe navigation route identifiers.
  */
@@ -11,4 +13,8 @@ object Routes {
     const val LEDGERS = "ledgers"
     const val STOCK_ITEMS = "stock_items"
     const val VOUCHERS = "vouchers"
+    const val VOUCHER_DETAILS = "vouchers/detail/{voucherId}"
+
+    fun voucherDetails(voucherId: String): String =
+        "vouchers/detail/${Uri.encode(voucherId)}"
 }

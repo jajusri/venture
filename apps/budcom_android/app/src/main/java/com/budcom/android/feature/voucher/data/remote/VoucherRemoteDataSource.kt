@@ -1,10 +1,10 @@
 package com.budcom.android.feature.voucher.data.remote
 
-import com.budcom.android.core.common.AppError
-import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.network.ApiException
 import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkConnectivityObserver
+import com.budcom.android.core.network.NetworkError
 import com.budcom.android.core.network.RetryPolicy
 import com.budcom.android.core.network.safeApiCall
 import com.budcom.android.core.network.withRetry
@@ -53,7 +53,13 @@ class DefaultVoucherRemoteDataSource @Inject constructor(
             safeApiCall(errorMapper, connectivityObserver) {
                 val envelope = api.getVoucher(id = voucherId, company = companyId)
                 val voucher = envelope.data.voucher
-                    ?: throw IllegalStateException("Voucher details payload was empty.")
+                    ?: throw ApiException(
+                        NetworkError.Http(
+                            httpStatus = 404,
+                            code = "NOT_FOUND",
+                            message = "Voucher was not found.",
+                        ),
+                    )
                 voucher.toDomain()
             }
         }

@@ -59,15 +59,30 @@
 
 ---
 
-## Detail (foundation port; UI deferred)
+## Detail (Voucher Details)
 
 | Item | Value |
 | --- | --- |
 | Route | `GET /api/v1/vouchers/:id?company=…` |
+| Method | GET |
+| Company | Required query `company` |
 | 200 | `{ schemaVersion, data: { companyId, voucher: VoucherPublicDetails } }` |
 | 404 | `{ code: "NOT_FOUND", message }` |
 
-`VoucherPublicDetails` extends the public record with `effectiveDate`, `narration`, `ledgerEntries[]`, `inventoryEntries[]`.
+### VoucherPublicDetails fields
+
+All `VoucherPublicRecord` fields, plus:
+
+- `effectiveDate` (`string | null`)
+- `narration` (`string | null`)
+- `ledgerEntries[]`: `lineNumber`, `ledgerName`, `amount{value,side}`, `isDeemedPositive`
+- `inventoryEntries[]`: `lineNumber`, `itemName`, `quantity`, `amount{value,side}|null`
+
+Not exposed on the public detail contract (intentionally omitted by Connector):
+
+- `guid`, `masterId`, `alterId`, nested `allocations`, tax-specific blocks, attachments
+
+Android displays only confirmed public fields. Missing/null values are shown as “Not provided” / omitted sections honestly.
 
 ---
 

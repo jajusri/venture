@@ -104,7 +104,7 @@ data class VoucherPage(
 }
 
 /**
- * Detail model for future Voucher Details milestone (foundation only).
+ * Detail model for voucher details screens (Connector VoucherPublicDetails).
  */
 data class VoucherDetails(
     val summary: VoucherSummary,

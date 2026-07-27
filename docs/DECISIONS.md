@@ -72,10 +72,17 @@
 
 ### 2026-07-27 — Voucher foundation keeps typed repository + deferred details UI
 
-**Status:** Accepted  
+**Status:** Superseded by 2026-07-27 — Voucher Details UI delivered  
 **Decision:** Ship typed `VoucherRepository` with list + `getVoucherDetails` ports; Voucher Browser is list-only; detail Compose destination is the next milestone.  
 **Context:** Connector exposes `GET /api/v1/vouchers/:id`; browser navigation must not pretend details exist.  
 **Consequences:** Details use case is ready for the next milestone without duplicate DTO mapping.
+
+### 2026-07-27 — Voucher Details UI is read-only public contract
+
+**Status:** Accepted  
+**Decision:** Voucher Details renders only Connector `VoucherPublicDetails` fields (metadata, narration, ledger/inventory lines). Unknown/null values are shown honestly; no fabricated tax, attachments, or allocations.  
+**Context:** Public detail API intentionally omits source identity and nested allocations.  
+**Consequences:** Browser row opens Details; Sync/edit remain out of scope.
 
 ---
 

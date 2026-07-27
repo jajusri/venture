@@ -3,9 +3,11 @@ package com.budcom.android.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.budcom.android.feature.company.presentation.CompanyRoute
 import com.budcom.android.feature.dashboard.presentation.DashboardRoute
 import com.budcom.android.feature.masterdata.ledger.presentation.LedgerBrowserRoute
@@ -13,6 +15,8 @@ import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
 import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
 import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
+import com.budcom.android.feature.voucher.presentation.VoucherDetailsRoute
+import com.budcom.android.feature.voucher.presentation.VoucherDetailsViewModel
 
 /**
  * Root navigation host for BUDCO Android.
@@ -54,7 +58,21 @@ fun BudcomNavHost(
             StockItemBrowserRoute()
         }
         composable(route = Routes.VOUCHERS) {
-            VoucherBrowserRoute()
+            VoucherBrowserRoute(
+                onOpenVoucherDetails = { voucherId ->
+                    navController.navigate(Routes.voucherDetails(voucherId))
+                },
+            )
+        }
+        composable(
+            route = Routes.VOUCHER_DETAILS,
+            arguments = listOf(
+                navArgument(VoucherDetailsViewModel.VOUCHER_ID_ARG) {
+                    type = NavType.StringType
+                },
+            ),
+        ) {
+            VoucherDetailsRoute()
         }
     }
 }

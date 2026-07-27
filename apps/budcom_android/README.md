@@ -8,9 +8,9 @@ Authoritative docs: [`docs/PRODUCT_SOUL.md`](../../docs/PRODUCT_SOUL.md), [`docs
 
 ## Milestone status
 
-**Current:** ▶ Voucher Browser (foundation + list). **Next:** Voucher Details.
+**Current:** Voucher Experience Complete. **Next:** Universal Search Foundation.
 
-**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Voucher Browser.
+**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details.
 
 ## Stack
 
@@ -45,7 +45,7 @@ com.budcom.android
 │   ├── masterdata      # hub, shared list conventions, pagination VO
 │   │   ├── ledger      # Ledger Browser vertical slice
 │   │   └── stockitem   # Stock Item Browser vertical slice
-│   ├── voucher         # Voucher foundation + Browser
+│   ├── voucher         # Voucher foundation + Browser + Details
 │   └── settings        # reserved
 ├── data/ / domain/     # scaffold markers only — prefer feature slices
 ├── navigation
@@ -74,7 +74,8 @@ Contract notes: [`docs/contracts/android-master-data-ledger.md`](../../docs/cont
 | Page / pageSize pagination | Implemented |
 | Editable date range (client default: last 30 UTC days) | Implemented |
 | Loading / empty / error / offline / refresh | Implemented |
-| Voucher Details UI | Deferred (repository port ready) |
+| Dashboard → Vouchers → Details | Implemented |
+| `GET /api/v1/vouchers/:id` details (metadata, narration, ledger/inventory lines) | Implemented |
 | Sync UI / create / edit / delete | Out of scope |
 
 Contract notes: [`docs/contracts/android-voucher-api.md`](../../docs/contracts/android-voucher-api.md).

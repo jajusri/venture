@@ -47,12 +47,14 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun VoucherBrowserRoute(
+    onOpenVoucherDetails: (voucherId: String) -> Unit,
     viewModel: VoucherBrowserViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     VoucherBrowserScreen(
         state = state,
         onEvent = viewModel::onEvent,
+        onOpenVoucherDetails = onOpenVoucherDetails,
     )
 }
 
@@ -61,6 +63,7 @@ fun VoucherBrowserRoute(
 fun VoucherBrowserScreen(
     state: VoucherBrowserUiState,
     onEvent: (VoucherBrowserEvent) -> Unit,
+    onOpenVoucherDetails: (voucherId: String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val pullRefreshState = rememberPullRefreshState(
@@ -184,7 +187,10 @@ fun VoucherBrowserScreen(
                                 .testTag("voucher_list"),
                         ) {
                             items(state.vouchers, key = { it.id }) { row ->
-                                VoucherRowCard(row = row)
+                                VoucherRowCard(
+                                    row = row,
+                                    onClick = { onOpenVoucherDetails(row.id) },
+                                )
                             }
                             if (state.isLoadingMore) {
                                 item {
@@ -214,9 +220,14 @@ fun VoucherBrowserScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun VoucherRowCard(row: VoucherRowUi) {
+private fun VoucherRowCard(
+    row: VoucherRowUi,
+    onClick: () -> Unit,
+) {
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .testTag("voucher_row_${row.id}")
@@ -230,6 +241,7 @@ private fun VoucherRowCard(row: VoucherRowUi) {
                     row.secondaryLabel?.let { append(", ").append(it) }
                     append(", status ").append(row.statusLabel)
                     row.amountLabel?.let { append(", amount ").append(it) }
+                    append(". Open voucher details")
                 }
             },
     ) {

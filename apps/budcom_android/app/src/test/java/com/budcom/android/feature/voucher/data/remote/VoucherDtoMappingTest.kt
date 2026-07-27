@@ -50,6 +50,55 @@ class VoucherDtoMappingTest {
     }
 
     @Test
+    fun `deserializes confirmed voucher details envelope`() {
+        val payload = """
+            {
+              "schemaVersion": "1.0.0",
+              "data": {
+                "companyId": "estimation",
+                "voucher": {
+                  "id": "v-1",
+                  "date": "2026-07-27",
+                  "type": "Sales",
+                  "number": "S-1",
+                  "partyName": "Acme",
+                  "referenceNumber": "R-1",
+                  "amount": { "value": "100.00", "side": "debit" },
+                  "status": "active",
+                  "dataQuality": "complete",
+                  "effectiveDate": "2026-07-27",
+                  "narration": "Narration",
+                  "ledgerEntries": [
+                    {
+                      "lineNumber": 1,
+                      "ledgerName": "Cash",
+                      "amount": { "value": "100.00", "side": "debit" },
+                      "isDeemedPositive": true
+                    }
+                  ],
+                  "inventoryEntries": [
+                    {
+                      "lineNumber": 1,
+                      "itemName": "Widget",
+                      "quantity": "2 Nos",
+                      "amount": { "value": "50.00", "side": "debit" }
+                    }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+        val envelope = json.decodeFromString(VoucherDetailsEnvelopeDto.serializer(), payload)
+        val details = envelope.data.voucher!!.toDomain()
+        assertEquals("v-1", details.summary.identity.id)
+        assertEquals("Narration", details.narration)
+        assertEquals(1, details.ledgerEntries.size)
+        assertEquals("Cash", details.ledgerEntries[0].ledgerName)
+        assertEquals(1, details.inventoryEntries.size)
+        assertEquals("2 Nos", details.inventoryEntries[0].quantity)
+    }
+
+    @Test
     fun `maps details and null amount side`() {
         val dto = VoucherPublicDetailsDto(
             id = "v-2",

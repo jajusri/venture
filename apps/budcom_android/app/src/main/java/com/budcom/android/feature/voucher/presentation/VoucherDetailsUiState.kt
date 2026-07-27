@@ -1,0 +1,98 @@
+package com.budcom.android.feature.voucher.presentation
+
+import com.budcom.android.core.common.AppError
+import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
+import com.budcom.android.feature.masterdata.presentation.toMasterDataUiError
+import com.budcom.android.feature.voucher.domain.model.VoucherDetails
+import com.budcom.android.feature.voucher.domain.model.VoucherInventoryLine
+import com.budcom.android.feature.voucher.domain.model.VoucherLedgerLine
+import com.budcom.android.feature.voucher.domain.model.VoucherMoney
+
+data class VoucherDetailsUiState(
+    val voucherId: String = "",
+    val isInitialLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
+    val isOnline: Boolean = true,
+    val details: VoucherDetailsContentUi? = null,
+    val error: MasterDataUiError? = null,
+) {
+    val isBusy: Boolean get() = isInitialLoading || isRefreshing
+    val hasContent: Boolean get() = details != null
+}
+
+data class VoucherDetailsContentUi(
+    val id: String,
+    val typeLabel: String,
+    val numberLabel: String,
+    val dateLabel: String,
+    val effectiveDateLabel: String?,
+    val partyLabel: String?,
+    val referenceLabel: String?,
+    val amountLabel: String?,
+    val statusLabel: String,
+    val dataQualityLabel: String,
+    val narration: String?,
+    val ledgerLines: List<VoucherLedgerLineUi>,
+    val inventoryLines: List<VoucherInventoryLineUi>,
+)
+
+data class VoucherLedgerLineUi(
+    val lineNumber: Int,
+    val ledgerName: String,
+    val amountLabel: String,
+    val deemedPositiveLabel: String?,
+)
+
+data class VoucherInventoryLineUi(
+    val lineNumber: Int,
+    val itemName: String,
+    val quantityLabel: String?,
+    val amountLabel: String?,
+)
+
+sealed interface VoucherDetailsEvent {
+    data object Load : VoucherDetailsEvent
+    data object Refresh : VoucherDetailsEvent
+    data object Retry : VoucherDetailsEvent
+}
+
+internal fun AppError.toVoucherDetailsUiError(): MasterDataUiError = toMasterDataUiError()
+
+internal fun VoucherDetails.toContentUi(): VoucherDetailsContentUi {
+    val summary = summary
+    return VoucherDetailsContentUi(
+        id = summary.identity.id,
+        typeLabel = summary.type,
+        numberLabel = summary.number?.takeIf { it.isNotBlank() } ?: "—",
+        dateLabel = summary.date,
+        effectiveDateLabel = effectiveDate,
+        partyLabel = summary.partyName,
+        referenceLabel = summary.referenceNumber,
+        amountLabel = summary.amount.formatAmount(),
+        statusLabel = summary.status.name.lowercase().replaceFirstChar { it.titlecase() },
+        dataQualityLabel = summary.dataQuality.name.lowercase().replaceFirstChar { it.titlecase() },
+        narration = narration,
+        ledgerLines = ledgerEntries.map { it.toLineUi() },
+        inventoryLines = inventoryEntries.map { it.toLineUi() },
+    )
+}
+
+private fun VoucherLedgerLine.toLineUi(): VoucherLedgerLineUi = VoucherLedgerLineUi(
+    lineNumber = lineNumber,
+    ledgerName = ledgerName,
+    amountLabel = amount.formatAmount() ?: "—",
+    deemedPositiveLabel = isDeemedPositive?.let { if (it) "Deemed positive: yes" else "Deemed positive: no" },
+)
+
+private fun VoucherInventoryLine.toLineUi(): VoucherInventoryLineUi = VoucherInventoryLineUi(
+    lineNumber = lineNumber,
+    itemName = itemName,
+    quantityLabel = quantity,
+    amountLabel = amount.formatAmount(),
+)
+
+private fun VoucherMoney?.formatAmount(): String? {
+    val money = this ?: return null
+    val side = money.side?.name?.lowercase()
+    return if (side != null) "${money.value} ($side)" else money.value
+}
