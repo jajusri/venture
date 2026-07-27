@@ -15,6 +15,7 @@ import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
 import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
 import com.budcom.android.feature.search.presentation.UniversalSearchRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
+import com.budcom.android.feature.sync.presentation.SyncRoute
 import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsViewModel
@@ -39,6 +40,7 @@ fun BudcomNavHost(
                 onOpenMasterData = { navController.navigate(Routes.MASTER_DATA) },
                 onOpenVouchers = { navController.navigate(Routes.vouchers()) },
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
+                onOpenSync = { navController.navigate(Routes.SYNC) },
             )
         }
         composable(route = Routes.SERVER_CONFIG) {
@@ -67,6 +69,12 @@ fun BudcomNavHost(
                 onOpenVoucherDetails = { voucherId ->
                     navController.navigate(Routes.voucherDetails(voucherId))
                 },
+            )
+        }
+        composable(route = Routes.SYNC) {
+            SyncRoute(
+                onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
+                onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
             )
         }
         composable(

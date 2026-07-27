@@ -86,6 +86,23 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @SyncHttp
+    fun provideSyncOkHttpClient(
+        dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor,
+        loggingInterceptor: HttpLoggingInterceptor,
+    ): OkHttpClient {
+        return OkHttpClient.Builder()
+            .connectTimeout(NetworkConstants.SYNC_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(NetworkConstants.SYNC_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(NetworkConstants.SYNC_WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(NetworkConstants.SYNC_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .addInterceptor(dynamicBaseUrlInterceptor)
+            .addInterceptor(loggingInterceptor)
+            .build()
+    }
+
+    @Provides
+    @Singleton
     fun provideRetrofit(
         okHttpClient: OkHttpClient,
         json: Json,
@@ -93,6 +110,21 @@ object NetworkModule {
         val contentType = "application/json".toMediaType()
         return Retrofit.Builder()
             // Placeholder origin; DynamicBaseUrlInterceptor applies the configured host.
+            .baseUrl(BuildConfig.CONNECTOR_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(json.asConverterFactory(contentType))
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    @SyncHttp
+    fun provideSyncRetrofit(
+        @SyncHttp okHttpClient: OkHttpClient,
+        json: Json,
+    ): Retrofit {
+        val contentType = "application/json".toMediaType()
+        return Retrofit.Builder()
             .baseUrl(BuildConfig.CONNECTOR_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(json.asConverterFactory(contentType))

@@ -54,6 +54,7 @@ fun DashboardRoute(
     onOpenMasterData: () -> Unit,
     onOpenVouchers: () -> Unit,
     onOpenSearch: () -> Unit,
+    onOpenSync: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -65,6 +66,7 @@ fun DashboardRoute(
                 DashboardNavigation.MasterData -> onOpenMasterData()
                 DashboardNavigation.Vouchers -> onOpenVouchers()
                 DashboardNavigation.Search -> onOpenSearch()
+                DashboardNavigation.Sync -> onOpenSync()
             }
         }
     }
@@ -126,6 +128,7 @@ fun DashboardScreen(
 
                         ConnectorStatusCard(state = state, onEvent = onEvent)
                         CompanySessionCard(state = state, onEvent = onEvent)
+                        SyncStatusCard(state = state, onEvent = onEvent)
                         QuickActionsCard(onEvent = onEvent)
 
                         Spacer(modifier = Modifier.height(24.dp))
@@ -372,6 +375,39 @@ private fun CompanySessionCard(
 }
 
 @Composable
+private fun SyncStatusCard(state: DashboardUiState, onEvent: (DashboardEvent) -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("dashboard_sync_card"),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.dashboard_sync_heading),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            StatusRow(
+                label = stringResource(R.string.dashboard_sync_status_label),
+                value = state.syncStatusLabel,
+                testTag = "dashboard_sync_status",
+            )
+            OutlinedButton(
+                onClick = { onEvent(DashboardEvent.OpenSync) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("dashboard_open_sync_card")
+                    .semantics { contentDescription = "Open sync" },
+            ) {
+                Text(stringResource(R.string.dashboard_action_sync))
+            }
+        }
+    }
+}
+
+@Composable
 private fun QuickActionsCard(onEvent: (DashboardEvent) -> Unit) {
     Card(
         modifier = Modifier
@@ -430,6 +466,15 @@ private fun QuickActionsCard(onEvent: (DashboardEvent) -> Unit) {
                     .semantics { contentDescription = "Open search" },
             ) {
                 Text(stringResource(R.string.dashboard_action_search))
+            }
+            Button(
+                onClick = { onEvent(DashboardEvent.OpenSync) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("dashboard_open_sync")
+                    .semantics { contentDescription = "Open sync" },
+            ) {
+                Text(stringResource(R.string.dashboard_action_sync))
             }
             Text(
                 text = stringResource(R.string.dashboard_future_features),

@@ -44,7 +44,10 @@
     <string name="dashboard_action_master_data">Master data</string>
     <string name="dashboard_action_vouchers">Vouchers</string>
     <string name="dashboard_action_search">Search</string>
-    <string name="dashboard_future_features">Sync and advanced automation are not available yet.</string>
+    <string name="dashboard_action_sync">Sync</string>
+    <string name="dashboard_sync_heading">Synchronization</string>
+    <string name="dashboard_sync_status_label">Status</string>
+    <string name="dashboard_future_features">Diagnostics and advanced automation are not available yet.</string>
 
     <string name="search_title">Search</string>
     <string name="search_subtitle">Search ledgers, stock items, and vouchers</string>
@@ -62,6 +65,23 @@
     <string name="search_section_empty">No matches in this category.</string>
     <string name="search_see_all">See all (%1$d)</string>
     <string name="search_voucher_window">Vouchers from %1$s to %2$s (last 30 days)</string>
+
+    <string name="sync_title">Sync</string>
+    <string name="sync_summary_heading">Summary</string>
+    <string name="sync_company_value">Company: %1$s</string>
+    <string name="sync_no_company">No company selected</string>
+    <string name="sync_phase_label">Phase: %1$s</string>
+    <string name="sync_select_company">Select company</string>
+    <string name="sync_open_server_config">Open server configuration</string>
+    <string name="sync_targets_heading">Sync targets</string>
+    <string name="sync_start">Sync now</string>
+    <string name="sync_cancel">Cancel sync</string>
+    <string name="sync_retry">Retry</string>
+    <string name="sync_refresh">Refresh status</string>
+    <string name="sync_run_available">Run available syncs</string>
+    <string name="sync_run_available_disclaimer">Runs Ledgers then Stock items sequentially. Not an atomic transaction. Voucher sync is unavailable.</string>
+    <string name="sync_active_heading">Active run</string>
+    <string name="sync_progress_not_reported">Progress totals are not fully reported by the Connector yet.</string>
 
     <string name="master_data_title">Master data</string>
     <string name="master_data_subtitle">Browse Connector master records for the selected company.</string>

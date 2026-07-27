@@ -28,6 +28,7 @@ data class DashboardUiState(
     val lastSuccessfulSessionValidationEpochMillis: Long? = null,
     val sessionError: DashboardUiError? = null,
     val operationalMode: DashboardOperationalMode = DashboardOperationalMode.PartiallyAvailable,
+    val syncStatusLabel: String = "Never synced",
 ) {
     val isBusy: Boolean
         get() = isInitialLoading || isRefreshing || isTestingConnection || isValidatingSession
@@ -63,6 +64,7 @@ sealed interface DashboardEvent {
     data object OpenMasterData : DashboardEvent
     data object OpenVouchers : DashboardEvent
     data object OpenSearch : DashboardEvent
+    data object OpenSync : DashboardEvent
 }
 
 internal fun AppError.toDashboardUiError(): DashboardUiError = when (this) {

@@ -18,11 +18,16 @@ import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionP
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
+import com.budcom.android.feature.sync.domain.model.SyncStatusSummary
+import com.budcom.android.feature.sync.domain.model.SyncTarget
+import com.budcom.android.feature.sync.domain.model.SyncTargetSnapshot
+import com.budcom.android.feature.sync.domain.port.ObserveSyncStatusPort
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -42,6 +47,7 @@ class DashboardViewModelTest {
     private lateinit var connector: FakeConnectorStatus
     private lateinit var company: FakeCompanySession
     private lateinit var connectivity: FakeConnectivity
+    private lateinit var syncStatus: FakeSyncStatus
 
     @Before
     fun setUp() {
@@ -49,6 +55,7 @@ class DashboardViewModelTest {
         connector = FakeConnectorStatus()
         company = FakeCompanySession()
         connectivity = FakeConnectivity(true)
+        syncStatus = FakeSyncStatus()
     }
 
     @After
@@ -75,6 +82,7 @@ class DashboardViewModelTest {
                 companySession = company,
                 connectivityObserver = connectivity,
             ),
+            observeSyncStatus = syncStatus,
         )
     }
 
@@ -134,6 +142,7 @@ class DashboardViewModelTest {
         viewModel.onEvent(DashboardEvent.OpenMasterData)
         viewModel.onEvent(DashboardEvent.OpenVouchers)
         viewModel.onEvent(DashboardEvent.OpenSearch)
+        viewModel.onEvent(DashboardEvent.OpenSync)
         advanceUntilIdle()
         assertEquals(
             listOf(
@@ -142,6 +151,7 @@ class DashboardViewModelTest {
                 DashboardNavigation.MasterData,
                 DashboardNavigation.Vouchers,
                 DashboardNavigation.Search,
+                DashboardNavigation.Sync,
             ),
             emitted,
         )
@@ -199,6 +209,29 @@ private class FakeConnectivity(initiallyOnline: Boolean) : NetworkConnectivityOb
     val online = MutableStateFlow(initiallyOnline)
     override val isOnline: Flow<Boolean> = online
     override fun current(): Boolean = online.value
+}
+
+private class FakeSyncStatus : ObserveSyncStatusPort {
+    override val summary: StateFlow<SyncStatusSummary> = MutableStateFlow(
+        SyncStatusSummary(
+            companyId = null,
+            isAnySyncActive = false,
+            activeTarget = null,
+            activeStatus = null,
+            latestSuccessfulAt = null,
+            latestFailedMessage = null,
+            targets = listOf(
+                SyncTargetSnapshot(SyncTarget.Ledgers, available = true),
+                SyncTargetSnapshot(SyncTarget.StockItems, available = true),
+                SyncTargetSnapshot(
+                    SyncTarget.Vouchers,
+                    available = false,
+                    unavailableReason = "Public voucher sync is not available on the Connector.",
+                ),
+            ),
+            lastUpdatedEpochMillis = 0L,
+        ),
+    )
 }
 
 private fun sampleProbe(ready: Boolean) = ConnectorConnectionProbe(

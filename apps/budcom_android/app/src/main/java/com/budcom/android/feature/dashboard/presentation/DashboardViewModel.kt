@@ -8,6 +8,7 @@ import com.budcom.android.feature.dashboard.domain.usecase.ObserveDashboardConte
 import com.budcom.android.feature.dashboard.domain.usecase.ProbeConnectorConnectionUseCase
 import com.budcom.android.feature.dashboard.domain.usecase.RefreshDashboardUseCase
 import com.budcom.android.feature.dashboard.domain.usecase.ValidateDashboardSessionUseCase
+import com.budcom.android.feature.sync.domain.port.ObserveSyncStatusPort
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +26,7 @@ class DashboardViewModel @Inject constructor(
     private val probeConnectorConnection: ProbeConnectorConnectionUseCase,
     private val validateDashboardSession: ValidateDashboardSessionUseCase,
     private val observeDashboardContext: ObserveDashboardContextUseCase,
+    private val observeSyncStatus: ObserveSyncStatusPort,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -60,6 +62,18 @@ class DashboardViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch {
+            observeSyncStatus.summary.collect { summary ->
+                val label = when {
+                    summary.isAnySyncActive -> "Sync in progress"
+                    !summary.latestSuccessfulAt.isNullOrBlank() ->
+                        "Last sync completed at ${summary.latestSuccessfulAt}"
+                    !summary.latestFailedMessage.isNullOrBlank() -> "Last sync failed"
+                    else -> "Never synced"
+                }
+                _uiState.update { it.copy(syncStatusLabel = label) }
+            }
+        }
         refresh(isInitial = true)
     }
 
@@ -73,6 +87,7 @@ class DashboardViewModel @Inject constructor(
             DashboardEvent.OpenMasterData -> emitNav(DashboardNavigation.MasterData)
             DashboardEvent.OpenVouchers -> emitNav(DashboardNavigation.Vouchers)
             DashboardEvent.OpenSearch -> emitNav(DashboardNavigation.Search)
+            DashboardEvent.OpenSync -> emitNav(DashboardNavigation.Sync)
         }
     }
 
@@ -158,4 +173,5 @@ enum class DashboardNavigation {
     MasterData,
     Vouchers,
     Search,
+    Sync,
 }

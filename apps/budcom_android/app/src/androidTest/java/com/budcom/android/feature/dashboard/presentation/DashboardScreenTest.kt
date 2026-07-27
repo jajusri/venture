@@ -98,11 +98,13 @@ class DashboardScreenTest {
         composeRule.onNodeWithTag("dashboard_open_master_data").performClick()
         composeRule.onNodeWithTag("dashboard_open_vouchers").performClick()
         composeRule.onNodeWithTag("dashboard_open_search").performClick()
+        composeRule.onNodeWithTag("dashboard_open_sync").performClick()
         composeRule.onNodeWithTag("dashboard_change_company").performClick()
         assertTrue(events.contains(DashboardEvent.OpenServerConfig))
         assertTrue(events.contains(DashboardEvent.OpenMasterData))
         assertTrue(events.contains(DashboardEvent.OpenVouchers))
         assertTrue(events.contains(DashboardEvent.OpenSearch))
+        assertTrue(events.contains(DashboardEvent.OpenSync))
         assertTrue(events.count { it == DashboardEvent.OpenCompanySelection } >= 2)
     }
 
