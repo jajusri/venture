@@ -16,10 +16,12 @@
 - Voucher foundation and Voucher Browser against `GET /api/v1/vouchers`
 - Voucher Details against `GET /api/v1/vouchers/:id` (header, metadata, narration, ledger/inventory lines)
 - Universal Search Foundation across Ledgers, Stock Items, and Vouchers (Android-side orchestration; contract notes in `docs/contracts/android-universal-search.md`)
+- Confirmed Sync Connector contract notes (`docs/contracts/android-sync-api.md`)
+- Sync Foundation: manual Ledger/Stock Item sync, cancel, status observation, Dashboard summary port
 
 ### Changed
 
 - Dashboard architectural boundaries (stable ports, authoritative operational mode)
 - Startup Connector URL hydration via core port
 - Android module documentation accuracy
-- Roadmap: Universal Search Foundation complete; current = Sync Foundation
+- Roadmap: Sync Foundation complete; current = Diagnostics Foundation

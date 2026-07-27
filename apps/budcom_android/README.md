@@ -8,9 +8,9 @@ Authoritative docs: [`docs/PRODUCT_SOUL.md`](../../docs/PRODUCT_SOUL.md), [`docs
 
 ## Milestone status
 
-**Current:** Sync Foundation. **Completed here:** Universal Search Foundation.
+**Current:** Diagnostics Foundation. **Completed here:** Sync Foundation.
 
-**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details, Universal Search across ledgers/stock items/vouchers.
+**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details, Universal Search across ledgers/stock items/vouchers, manual Sync Foundation (Ledgers + Stock Items).
 
 ## Stack
 
@@ -47,6 +47,7 @@ com.budcom.android
 │   │   └── stockitem   # Stock Item Browser (+ SearchStockItemsPort)
 │   ├── voucher         # Voucher foundation + Browser + Details (+ SearchVouchersPort)
 │   ├── search          # Universal Search Foundation (orchestrates typed ports)
+│   ├── sync            # Manual Sync Foundation (+ ObserveSyncStatusPort)
 │   └── settings        # reserved
 ├── data/ / domain/     # scaffold markers only — prefer feature slices
 ├── navigation
@@ -97,6 +98,23 @@ Contract notes: [`docs/contracts/android-voucher-api.md`](../../docs/contracts/a
 Contract notes: [`docs/contracts/android-universal-search.md`](../../docs/contracts/android-universal-search.md).
 
 **Limitations:** Not ERP-wide search. Vouchers are limited to the disclosed date window. No Ledger/Stock detail destinations yet.
+
+## Sync capabilities
+
+| Capability | Status |
+| --- | --- |
+| Dashboard → Sync | Implemented |
+| Manual Ledger sync (`POST /sync/ledgers`) | Implemented |
+| Manual Stock Item sync (`POST /sync/stock-items`) | Implemented |
+| Status poll / cancel / recent runs | Implemented |
+| ObserveSyncStatusPort for Dashboard | Implemented |
+| Run available syncs (sequential, non-atomic) | Implemented |
+| Public voucher sync | Unavailable (Connector has no HTTP route) |
+| WorkManager / automatic sync | Out of scope |
+
+Contract notes: [`docs/contracts/android-sync-api.md`](../../docs/contracts/android-sync-api.md).
+
+**Limitations:** Sync summary is in-process (refreshed from Connector status/runs). Progress percentages are never fabricated. Abandoned Connector runs after restart appear as interrupted history, not live progress.
 
 ## Architecture rules
 

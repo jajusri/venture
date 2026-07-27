@@ -22,26 +22,26 @@ Ordered implementation milestones are separate from long-term product innovation
 - ✔ Voucher Browser
 - ✔ Voucher Details
 - ✔ Universal Search Foundation
+- ✔ Sync Foundation
 
 ---
 
 ## Current milestone
 
-**Sync Foundation**
+**Diagnostics Foundation**
 
 ---
 
 ## Next
 
-**Diagnostics Foundation**
+**Settings**
 
 ---
 
 ## Upcoming
 
-1. Settings
-2. Production hardening
-3. Release preparation
+1. Production hardening
+2. Release preparation
 
 ---
 

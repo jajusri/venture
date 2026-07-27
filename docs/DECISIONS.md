@@ -105,6 +105,20 @@
 **Context:** Connector requires explicit `from`/`to` for voucher list/search.  
 **Consequences:** Search must not imply all historical vouchers were searched; expanded ranges remain future work.
 
+### 2026-07-27 — Sync Foundation is manual and Connector-backed
+
+**Status:** Accepted  
+**Decision:** Sync Foundation exposes manual Ledger and Stock Item sync against confirmed `POST /sync/ledgers` and `POST /sync/stock-items` contracts. Progress is Connector-reported counts only; mutating start calls are not auto-retried; WorkManager/background sync is deferred. Voucher sync is unavailable publicly and must be disclosed as such.  
+**Context:** Connector sync POSTs are blocking; status/cancel/runs exist; no combined sync-all; no public voucher sync HTTP.  
+**Consequences:** “Run available syncs” is sequential non-atomic orchestration; Dashboard consumes `ObserveSyncStatusPort` for in-process summary only.
+
+### 2026-07-27 — Dedicated long-timeout Sync HTTP client
+
+**Status:** Accepted  
+**Decision:** Blocking sync POSTs use a `@SyncHttp`-qualified OkHttp/Retrofit stack with extended read timeout; default client timeouts remain unchanged for browse/API calls.  
+**Context:** Default 30s/60s timeouts are insufficient for Tally-backed sync.  
+**Consequences:** Only SyncApi uses the long-timeout client.
+
 ---
 
 ## Decision log template
