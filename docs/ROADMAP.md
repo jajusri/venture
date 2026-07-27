@@ -17,32 +17,33 @@ Ordered implementation milestones are separate from long-term product innovation
 - Company selection
 - Session validation
 - Architecture ADR foundation
+- Dashboard stabilization and Definition of Done
 
 ---
 
 ## Current milestone
 
-**Dashboard stabilization and Definition of Done**
+**Master Data foundation and Ledger Browser**
 
-Operational dashboard as home destination: connector/ready/URL/company/session status, refresh, navigation to existing areas, architectural stabilization (authoritative operational mode, startup URL port, public ports, presentation models).
+Confirm Connector Master Data contracts; reusable Master Data navigation foundation; Ledger Browser against `GET /ledgers` (session-scoped, paginated, searchable). Stock Item Browser deferred after Ledger DoD.
+
+Contract notes: [contracts/android-master-data-ledger.md](contracts/android-master-data-ledger.md)
 
 ---
 
 ## Planned milestones (ordered)
 
-1. Master Data foundation
-2. Ledger browser
-3. Stock Item browser
-4. Additional master-data categories
-5. Voucher browser
-6. Voucher details
-7. Search foundation
-8. Universal Search evolution
-9. Sync foundation
-10. Diagnostics
-11. Settings
-12. Production hardening
-13. Release preparation
+1. Stock Item browser
+2. Additional master-data categories
+3. Voucher browser
+4. Voucher details
+5. Search foundation
+6. Universal Search evolution
+7. Sync foundation
+8. Diagnostics
+9. Settings
+10. Production hardening
+11. Release preparation
 
 ---
 
