@@ -22,10 +22,11 @@
 - Diagnostics Foundation: operational view aggregating health, readiness, connection diagnostics, company/session, sync summary, and honest capability notes
 - Settings Foundation contract notes (`docs/contracts/android-settings.md`)
 - Settings Foundation: theme preference (System/Light/Dark) via DataStore, About metadata, and navigation into Server Configuration / Company / Sync / Diagnostics
+- Production Validation report (`docs/PRODUCTION_VALIDATION.md`): automated gates passed; live Connector + device verification incomplete
 
 ### Changed
 
 - Dashboard architectural boundaries (stable ports, authoritative operational mode)
 - Startup Connector URL hydration via core port
 - Android module documentation accuracy
-- Roadmap: Settings Foundation complete; current = Production Validation
+- Roadmap: Production Validation remains current until live device/Connector pass

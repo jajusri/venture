@@ -8,7 +8,7 @@ Authoritative docs: [`docs/PRODUCT_SOUL.md`](../../docs/PRODUCT_SOUL.md), [`docs
 
 ## Milestone status
 
-**Current:** Production Validation. **Completed here:** Settings Foundation.
+**Current:** Production Validation (incomplete — live Connector/device pending). See [`docs/PRODUCTION_VALIDATION.md`](../../docs/PRODUCTION_VALIDATION.md).
 
 **Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details, Universal Search across ledgers/stock items/vouchers, manual Sync Foundation (Ledgers + Stock Items), Diagnostics Foundation, Settings Foundation.
 

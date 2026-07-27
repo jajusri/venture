@@ -133,6 +133,13 @@
 **Context:** Base URL and company already had DataStore stores; theme had Compose-only system default with no persistence.  
 **Consequences:** Theme applies immediately through `MainActivity` observation of `ThemePreferencesRepository`; Settings must not duplicate Server Configuration editing.
 
+### 2026-07-27 — Production Validation requires live Connector and device
+
+**Status:** Accepted  
+**Decision:** Production Validation is complete only after automated gates **and** end-to-end verification against a reachable BudCom Connector on a usable Android device/emulator. Automated assemble/unit/androidTest-compile alone does not unlock Contact Intelligence.  
+**Context:** 2026-07-27 run at tip `be0b960` passed automated gates; Connector probes on `:8080` failed; emulator AVD launched but remained `adb offline`.  
+**Consequences:** Roadmap stays on Production Validation; Contact Intelligence remains blocked; evidence lives in `docs/PRODUCTION_VALIDATION.md`.
+
 ---
 
 ## Decision log template

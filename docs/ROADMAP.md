@@ -30,13 +30,15 @@ Ordered implementation milestones are separate from long-term product innovation
 
 ## Current milestone
 
-**Production Validation**
+**Production Validation** (in progress — see [`PRODUCTION_VALIDATION.md`](./PRODUCTION_VALIDATION.md))
+
+Automated assemble/unit/androidTest-compile gates passed on 2026-07-27 at tip `be0b960`. Live Connector and online device/emulator verification remain required before this milestone is complete.
 
 ---
 
 ## Next
 
-**Contact Intelligence Foundation**
+**Contact Intelligence Foundation** (blocked until Production Validation is successfully completed)
 
 ---
 
