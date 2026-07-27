@@ -72,6 +72,7 @@ class DashboardViewModel @Inject constructor(
             DashboardEvent.OpenCompanySelection -> emitNav(DashboardNavigation.CompanySelection)
             DashboardEvent.OpenMasterData -> emitNav(DashboardNavigation.MasterData)
             DashboardEvent.OpenVouchers -> emitNav(DashboardNavigation.Vouchers)
+            DashboardEvent.OpenSearch -> emitNav(DashboardNavigation.Search)
         }
     }
 
@@ -156,4 +157,5 @@ enum class DashboardNavigation {
     CompanySelection,
     MasterData,
     Vouchers,
+    Search,
 }

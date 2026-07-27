@@ -1,5 +1,6 @@
 package com.budcom.android.feature.masterdata.stockitem.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.common.AppResult
@@ -8,6 +9,7 @@ import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemQuery
 import com.budcom.android.feature.masterdata.stockitem.domain.usecase.LoadStockItemsUseCase
 import com.budcom.android.feature.masterdata.stockitem.domain.usecase.RefreshStockItemsUseCase
+import com.budcom.android.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -20,12 +22,15 @@ import javax.inject.Inject
 
 @HiltViewModel
 class StockItemBrowserViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val loadStockItems: LoadStockItemsUseCase,
     private val refreshStockItems: RefreshStockItemsUseCase,
     private val connectivityObserver: NetworkConnectivityObserver,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(StockItemBrowserUiState())
+    private val initialQuery = savedStateHandle.get<String>(Routes.QUERY_ARG).orEmpty()
+
+    private val _uiState = MutableStateFlow(StockItemBrowserUiState(searchQuery = initialQuery))
     val uiState: StateFlow<StockItemBrowserUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null

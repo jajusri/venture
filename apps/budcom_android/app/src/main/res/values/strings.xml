@@ -43,7 +43,25 @@
     <string name="dashboard_action_company">Company selection</string>
     <string name="dashboard_action_master_data">Master data</string>
     <string name="dashboard_action_vouchers">Vouchers</string>
-    <string name="dashboard_future_features">Voucher details and sync actions are not available yet.</string>
+    <string name="dashboard_action_search">Search</string>
+    <string name="dashboard_future_features">Sync and advanced automation are not available yet.</string>
+
+    <string name="search_title">Search</string>
+    <string name="search_subtitle">Search ledgers, stock items, and vouchers</string>
+    <string name="search_field_label">Search BUDCO</string>
+    <string name="search_field_hint">Enter a name, number, or party</string>
+    <string name="search_clear">Clear search</string>
+    <string name="search_idle_hint">Enter a query to search ledgers, stock items, and vouchers.</string>
+    <string name="search_empty">No matching ledgers, stock items, or vouchers.</string>
+    <string name="search_all_failed">Search could not complete. Retry when the Connector is available.</string>
+    <string name="search_partial_failure">Some categories failed. Successful results are still shown.</string>
+    <string name="search_retry">Retry</string>
+    <string name="search_section_ledgers">Ledgers</string>
+    <string name="search_section_stock_items">Stock items</string>
+    <string name="search_section_vouchers">Vouchers</string>
+    <string name="search_section_empty">No matches in this category.</string>
+    <string name="search_see_all">See all (%1$d)</string>
+    <string name="search_voucher_window">Vouchers from %1$s to %2$s (last 30 days)</string>
 
     <string name="master_data_title">Master data</string>
     <string name="master_data_subtitle">Browse Connector master records for the selected company.</string>

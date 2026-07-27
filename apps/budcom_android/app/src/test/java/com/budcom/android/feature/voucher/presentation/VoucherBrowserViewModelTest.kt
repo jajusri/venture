@@ -1,5 +1,6 @@
 package com.budcom.android.feature.voucher.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
@@ -16,6 +17,7 @@ import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
 import com.budcom.android.feature.voucher.domain.usecase.LoadVouchersUseCase
 import com.budcom.android.feature.voucher.domain.usecase.RefreshVouchersUseCase
+import com.budcom.android.navigation.Routes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -52,7 +54,8 @@ class VoucherBrowserViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createVm() = VoucherBrowserViewModel(
+    private fun createVm(query: String = "") = VoucherBrowserViewModel(
+        savedStateHandle = SavedStateHandle(mapOf(Routes.QUERY_ARG to query)),
         loadVouchers = LoadVouchersUseCase(repository),
         refreshVouchers = RefreshVouchersUseCase(repository),
         companySession = companySession,

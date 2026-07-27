@@ -13,6 +13,7 @@ import com.budcom.android.feature.dashboard.presentation.DashboardRoute
 import com.budcom.android.feature.masterdata.ledger.presentation.LedgerBrowserRoute
 import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
 import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
+import com.budcom.android.feature.search.presentation.UniversalSearchRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
 import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsRoute
@@ -36,7 +37,8 @@ fun BudcomNavHost(
                 onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
                 onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
                 onOpenMasterData = { navController.navigate(Routes.MASTER_DATA) },
-                onOpenVouchers = { navController.navigate(Routes.VOUCHERS) },
+                onOpenVouchers = { navController.navigate(Routes.vouchers()) },
+                onOpenSearch = { navController.navigate(Routes.SEARCH) },
             )
         }
         composable(route = Routes.SERVER_CONFIG) {
@@ -47,17 +49,57 @@ fun BudcomNavHost(
         }
         composable(route = Routes.MASTER_DATA) {
             MasterDataHubScreen(
-                onOpenLedgers = { navController.navigate(Routes.LEDGERS) },
-                onOpenStockItems = { navController.navigate(Routes.STOCK_ITEMS) },
+                onOpenLedgers = { navController.navigate(Routes.ledgers()) },
+                onOpenStockItems = { navController.navigate(Routes.stockItems()) },
             )
         }
-        composable(route = Routes.LEDGERS) {
+        composable(route = Routes.SEARCH) {
+            UniversalSearchRoute(
+                onOpenLedgerBrowser = { query ->
+                    navController.navigate(Routes.ledgers(query))
+                },
+                onOpenStockItemBrowser = { query ->
+                    navController.navigate(Routes.stockItems(query))
+                },
+                onOpenVoucherBrowser = { query ->
+                    navController.navigate(Routes.vouchers(query))
+                },
+                onOpenVoucherDetails = { voucherId ->
+                    navController.navigate(Routes.voucherDetails(voucherId))
+                },
+            )
+        }
+        composable(
+            route = Routes.LEDGERS,
+            arguments = listOf(
+                navArgument(Routes.QUERY_ARG) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) {
             LedgerBrowserRoute()
         }
-        composable(route = Routes.STOCK_ITEMS) {
+        composable(
+            route = Routes.STOCK_ITEMS,
+            arguments = listOf(
+                navArgument(Routes.QUERY_ARG) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) {
             StockItemBrowserRoute()
         }
-        composable(route = Routes.VOUCHERS) {
+        composable(
+            route = Routes.VOUCHERS,
+            arguments = listOf(
+                navArgument(Routes.QUERY_ARG) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) {
             VoucherBrowserRoute(
                 onOpenVoucherDetails = { voucherId ->
                     navController.navigate(Routes.voucherDetails(voucherId))

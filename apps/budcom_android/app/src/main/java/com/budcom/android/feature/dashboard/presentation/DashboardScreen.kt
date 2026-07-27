@@ -53,6 +53,7 @@ fun DashboardRoute(
     onOpenCompanySelection: () -> Unit,
     onOpenMasterData: () -> Unit,
     onOpenVouchers: () -> Unit,
+    onOpenSearch: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -63,6 +64,7 @@ fun DashboardRoute(
                 DashboardNavigation.CompanySelection -> onOpenCompanySelection()
                 DashboardNavigation.MasterData -> onOpenMasterData()
                 DashboardNavigation.Vouchers -> onOpenVouchers()
+                DashboardNavigation.Search -> onOpenSearch()
             }
         }
     }
@@ -419,6 +421,15 @@ private fun QuickActionsCard(onEvent: (DashboardEvent) -> Unit) {
                     .semantics { contentDescription = "Open vouchers" },
             ) {
                 Text(stringResource(R.string.dashboard_action_vouchers))
+            }
+            Button(
+                onClick = { onEvent(DashboardEvent.OpenSearch) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("dashboard_open_search")
+                    .semantics { contentDescription = "Open search" },
+            ) {
+                Text(stringResource(R.string.dashboard_action_search))
             }
             Text(
                 text = stringResource(R.string.dashboard_future_features),

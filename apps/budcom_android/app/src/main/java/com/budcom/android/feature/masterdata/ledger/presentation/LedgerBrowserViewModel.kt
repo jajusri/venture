@@ -1,5 +1,6 @@
 package com.budcom.android.feature.masterdata.ledger.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.common.AppResult
@@ -8,6 +9,7 @@ import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.LoadLedgersUseCase
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgersUseCase
+import com.budcom.android.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -20,12 +22,15 @@ import javax.inject.Inject
 
 @HiltViewModel
 class LedgerBrowserViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val loadLedgers: LoadLedgersUseCase,
     private val refreshLedgers: RefreshLedgersUseCase,
     private val connectivityObserver: NetworkConnectivityObserver,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(LedgerBrowserUiState())
+    private val initialQuery = savedStateHandle.get<String>(Routes.QUERY_ARG).orEmpty()
+
+    private val _uiState = MutableStateFlow(LedgerBrowserUiState(searchQuery = initialQuery))
     val uiState: StateFlow<LedgerBrowserUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null

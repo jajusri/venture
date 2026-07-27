@@ -1,5 +1,6 @@
 package com.budcom.android.feature.masterdata.stockitem.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
@@ -13,6 +14,7 @@ import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemSta
 import com.budcom.android.feature.masterdata.stockitem.domain.repository.StockItemRepository
 import com.budcom.android.feature.masterdata.stockitem.domain.usecase.LoadStockItemsUseCase
 import com.budcom.android.feature.masterdata.stockitem.domain.usecase.RefreshStockItemsUseCase
+import com.budcom.android.navigation.Routes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -47,7 +49,8 @@ class StockItemBrowserViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createVm() = StockItemBrowserViewModel(
+    private fun createVm(query: String = "") = StockItemBrowserViewModel(
+        savedStateHandle = SavedStateHandle(mapOf(Routes.QUERY_ARG to query)),
         loadStockItems = LoadStockItemsUseCase(repository),
         refreshStockItems = RefreshStockItemsUseCase(repository),
         connectivityObserver = connectivity,

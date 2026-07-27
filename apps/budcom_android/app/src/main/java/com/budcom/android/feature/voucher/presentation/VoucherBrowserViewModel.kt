@@ -1,5 +1,6 @@
 package com.budcom.android.feature.voucher.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.common.AppResult
@@ -10,6 +11,7 @@ import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
 import com.budcom.android.feature.voucher.domain.usecase.LoadVouchersUseCase
 import com.budcom.android.feature.voucher.domain.usecase.RefreshVouchersUseCase
+import com.budcom.android.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,13 +25,16 @@ import javax.inject.Inject
 
 @HiltViewModel
 class VoucherBrowserViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val loadVouchers: LoadVouchersUseCase,
     private val refreshVouchers: RefreshVouchersUseCase,
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(VoucherBrowserUiState())
+    private val initialQuery = savedStateHandle.get<String>(Routes.QUERY_ARG).orEmpty()
+
+    private val _uiState = MutableStateFlow(VoucherBrowserUiState(searchQuery = initialQuery))
     val uiState: StateFlow<VoucherBrowserUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null

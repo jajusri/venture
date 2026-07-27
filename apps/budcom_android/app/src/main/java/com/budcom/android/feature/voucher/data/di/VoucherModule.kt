@@ -3,7 +3,9 @@ package com.budcom.android.feature.voucher.data.di
 import com.budcom.android.feature.voucher.data.remote.DefaultVoucherRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.VoucherApi
 import com.budcom.android.feature.voucher.data.remote.VoucherRemoteDataSource
+import com.budcom.android.feature.voucher.data.repository.SearchVouchersPortImpl
 import com.budcom.android.feature.voucher.data.repository.VoucherRepositoryImpl
+import com.budcom.android.feature.voucher.domain.port.SearchVouchersPort
 import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
 import dagger.Binds
 import dagger.Module
@@ -28,6 +30,12 @@ abstract class VoucherBindModule {
     abstract fun bindVoucherRepository(
         impl: VoucherRepositoryImpl,
     ): VoucherRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSearchVouchersPort(
+        impl: SearchVouchersPortImpl,
+    ): SearchVouchersPort
 }
 
 @Module

@@ -3,7 +3,9 @@ package com.budcom.android.feature.masterdata.stockitem.data.di
 import com.budcom.android.feature.masterdata.stockitem.data.remote.DefaultStockItemRemoteDataSource
 import com.budcom.android.feature.masterdata.stockitem.data.remote.StockItemApi
 import com.budcom.android.feature.masterdata.stockitem.data.remote.StockItemRemoteDataSource
+import com.budcom.android.feature.masterdata.stockitem.data.repository.SearchStockItemsPortImpl
 import com.budcom.android.feature.masterdata.stockitem.data.repository.StockItemRepositoryImpl
+import com.budcom.android.feature.masterdata.stockitem.domain.port.SearchStockItemsPort
 import com.budcom.android.feature.masterdata.stockitem.domain.repository.StockItemRepository
 import dagger.Binds
 import dagger.Module
@@ -28,6 +30,12 @@ abstract class StockItemBindModule {
     abstract fun bindStockItemRepository(
         impl: StockItemRepositoryImpl,
     ): StockItemRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSearchStockItemsPort(
+        impl: SearchStockItemsPortImpl,
+    ): SearchStockItemsPort
 }
 
 @Module

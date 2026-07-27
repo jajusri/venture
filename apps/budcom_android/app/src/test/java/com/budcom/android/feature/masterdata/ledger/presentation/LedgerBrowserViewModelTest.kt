@@ -1,5 +1,6 @@
 package com.budcom.android.feature.masterdata.ledger.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
@@ -12,6 +13,7 @@ import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatus
 import com.budcom.android.feature.masterdata.ledger.domain.repository.LedgerRepository
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.LoadLedgersUseCase
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgersUseCase
+import com.budcom.android.navigation.Routes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -46,7 +48,8 @@ class LedgerBrowserViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createVm() = LedgerBrowserViewModel(
+    private fun createVm(query: String = "") = LedgerBrowserViewModel(
+        savedStateHandle = SavedStateHandle(mapOf(Routes.QUERY_ARG to query)),
         loadLedgers = LoadLedgersUseCase(repository),
         refreshLedgers = RefreshLedgersUseCase(repository),
         connectivityObserver = connectivity,
