@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BudCom</string>
+    <string name="dashboard_title">Dashboard</string>
+    <string name="dashboard_mode_offline">Device is offline. Showing last known operational data.</string>
+    <string name="dashboard_mode_no_server">Connector URL is not configured.</string>
+    <string name="dashboard_mode_unavailable">Connector is unavailable.</string>
+    <string name="dashboard_mode_not_ready">Connector is reachable but not ready.</string>
+    <string name="dashboard_mode_no_company">No company selected.</string>
+    <string name="dashboard_mode_session_invalid">Selected company session is invalid.</string>
+    <string name="dashboard_mode_partial">Partial operational data available.</string>
+    <string name="dashboard_mode_operational">Fully operational.</string>
+    <string name="dashboard_refreshing">Refreshing…</string>
+    <string name="dashboard_testing_connection">Testing connection…</string>
+    <string name="dashboard_validating_session">Validating session…</string>
+    <string name="dashboard_connector_heading">Connector status</string>
+    <string name="dashboard_connection_label">Connection</string>
+    <string name="dashboard_connector_connected">Connected</string>
+    <string name="dashboard_connector_unavailable">Unavailable</string>
+    <string name="dashboard_connector_unknown">Unknown</string>
+    <string name="dashboard_readiness_label">Readiness</string>
+    <string name="dashboard_readiness_ready">Ready</string>
+    <string name="dashboard_readiness_not_ready">Not ready</string>
+    <string name="dashboard_readiness_unknown">Unknown</string>
+    <string name="dashboard_base_url_label">Configured URL</string>
+    <string name="dashboard_base_url_empty">Not set</string>
+    <string name="dashboard_last_health_label">Last successful health check</string>
+    <string name="dashboard_test_connection">Test connection</string>
+    <string name="dashboard_company_heading">Company and session</string>
+    <string name="dashboard_company_label">Selected company</string>
+    <string name="dashboard_no_company_selected">No company selected</string>
+    <string name="dashboard_session_label">Session</string>
+    <string name="dashboard_session_valid">Valid</string>
+    <string name="dashboard_session_invalid">Invalid</string>
+    <string name="dashboard_session_no_company">No company</string>
+    <string name="dashboard_session_unknown">Unknown</string>
+    <string name="dashboard_last_session_label">Last successful validation</string>
+    <string name="dashboard_never">Never</string>
+    <string name="dashboard_change_company">Change company</string>
+    <string name="dashboard_validate_session">Validate session</string>
+    <string name="dashboard_actions_heading">Quick actions</string>
+    <string name="dashboard_action_server_config">Server configuration</string>
+    <string name="dashboard_action_company">Company selection</string>
+    <string name="dashboard_future_features">Master data and voucher actions are not available yet.</string>
+
+    <string name="server_config_title">Server configuration</string>
+    <string name="server_config_url_label">Connector base URL</string>
+    <string name="server_config_saved_label">Saved URL: %1$s</string>
+    <string name="server_config_save">Save</string>
+    <string name="server_config_test">Test connection</string>
+    <string name="server_config_retry">Retry</string>
+    <string name="server_config_health_heading">Connection health</string>
+    <string name="server_config_health_idle">Run a connection test to load Connector health.</string>
+    <string name="server_config_health_loading">Checking Connector…</string>
+    <string name="server_config_health_error_kind">Error: %1$s</string>
+
+    <string name="health_status">status: %1$s</string>
+    <string name="health_schema_version">schemaVersion: %1$s</string>
+    <string name="health_connector_version">connectorVersion: %1$s</string>
+    <string name="health_tally_reachable">tallyReachable: %1$s</string>
+    <string name="health_read_only">readOnly: %1$s</string>
+    <string name="health_bind_host">bindHost: %1$s</string>
+    <string name="health_bind_port">bindPort: %1$d</string>
+    <string name="health_network_exposure">networkExposure: %1$s</string>
+    <string name="health_network_exposure_warning">networkExposureWarning: %1$s</string>
+    <string name="health_network_policy_satisfied">networkPolicySatisfied: %1$s</string>
+    <string name="health_auth_lan">authenticatedLanAccessEnabled: %1$s</string>
+    <string name="health_startup_correlation">startupCorrelationId: %1$s</string>
+    <string name="health_repository_available">repositoryAvailable: %1$s</string>
+    <string name="health_database_accessible">databaseAccessible: %1$s</string>
+    <string name="health_services_heading">services:</string>
+    <string name="health_service_row">- %1$s running=%2$s ready=%3$s message=%4$s</string>
+    <string name="health_checked_at">Last successful check: %1$s</string>
+
+    <string name="ready_heading">readiness:</string>
+    <string name="ready_status">status: %1$s</string>
+    <string name="ready_http_status">httpStatus: %1$d</string>
+    <string name="ready_repository_available">repositoryAvailable: %1$s</string>
+    <string name="ready_database_accessible">databaseAccessible: %1$s</string>
+    <string name="ready_voucher_sync">voucherSynchronizationComposed: %1$s</string>
+    <string name="ready_voucher_app">voucherApplicationComposed: %1$s</string>
+
+    <string name="company_title">Company selection</string>
+    <string name="company_search_hint">Search company</string>
+    <string name="company_retry">Retry</string>
+    <string name="company_empty">No companies found.</string>
+    <string name="company_offline_title">Offline</string>
+    <string name="company_timeout_title">Request timed out</string>
+    <string name="company_http_error_title">Server error</string>
+    <string name="company_serialization_error_title">Invalid server response</string>
+    <string name="company_unknown_error_title">Unexpected error</string>
+    <string name="company_selected">Selected company</string>
+    <string name="company_currency">Currency: %1$s</string>
+</resources>

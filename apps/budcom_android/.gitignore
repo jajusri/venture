@@ -1,0 +1,19 @@
+# BudCom Android
+local.properties
+*.iml
+.gradle/
+.idea/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.log
+*.hprof
+.DS_Store
+kotlin-js/
+kotlin-wasm/
