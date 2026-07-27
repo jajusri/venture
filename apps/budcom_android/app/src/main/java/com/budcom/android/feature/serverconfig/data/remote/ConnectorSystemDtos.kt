@@ -20,8 +20,12 @@ data class HealthResponseDto(
     val authenticatedLanAccessEnabled: Boolean,
     val services: List<ServiceStatusDto> = emptyList(),
     val startupCorrelationId: String? = null,
-    val repositoryAvailable: Boolean,
-    val databaseAccessible: Boolean,
+    /**
+     * Present on current Connector contracts; omitted by some live builds (e.g. 0.3.1).
+     * Default avoids rejecting an otherwise valid health payload.
+     */
+    val repositoryAvailable: Boolean = false,
+    val databaseAccessible: Boolean = false,
 )
 
 @Serializable

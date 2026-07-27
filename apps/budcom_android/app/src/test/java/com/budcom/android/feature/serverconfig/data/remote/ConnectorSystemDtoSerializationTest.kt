@@ -92,6 +92,37 @@ class ConnectorSystemDtoSerializationTest {
         assertEquals(503, notReady.httpStatus)
     }
 
+    @Test
+    fun `decodes live connector 0_3_1 health without repository fields`() {
+        // Observed during Production Validation against running Connector 0.3.1.
+        val raw = """
+            {
+              "status": "ok",
+              "schemaVersion": "1.0.0",
+              "connectorVersion": "0.3.1",
+              "tallyReachable": true,
+              "readOnly": true,
+              "bindHost": "127.0.0.1",
+              "bindPort": 8080,
+              "networkExposure": "loopback",
+              "networkExposureWarning": null,
+              "networkPolicySatisfied": true,
+              "authenticatedLanAccessEnabled": false,
+              "services": [
+                {"name": "ApiServer", "running": true, "ready": true, "message": "Listening"}
+              ],
+              "startupCorrelationId": "8cee8334-6c03-46c3-a38d-76e429bb0886"
+            }
+        """.trimIndent()
+
+        val domain = json.decodeFromString(HealthResponseDto.serializer(), raw).toDomain()
+        assertEquals("ok", domain.status)
+        assertEquals("0.3.1", domain.connectorVersion)
+        assertEquals(true, domain.tallyReachable)
+        assertEquals(false, domain.repositoryAvailable)
+        assertEquals(false, domain.databaseAccessible)
+    }
+
     @Test(expected = kotlinx.serialization.SerializationException::class)
     fun `rejects malformed health json`() {
         json.decodeFromString(HealthResponseDto.serializer(), """{"status":"ok"}""")
