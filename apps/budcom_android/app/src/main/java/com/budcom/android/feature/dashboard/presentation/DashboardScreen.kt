@@ -56,6 +56,7 @@ fun DashboardRoute(
     onOpenSearch: () -> Unit,
     onOpenSync: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -69,6 +70,7 @@ fun DashboardRoute(
                 DashboardNavigation.Search -> onOpenSearch()
                 DashboardNavigation.Sync -> onOpenSync()
                 DashboardNavigation.Diagnostics -> onOpenDiagnostics()
+                DashboardNavigation.Settings -> onOpenSettings()
             }
         }
     }
@@ -487,12 +489,15 @@ private fun QuickActionsCard(onEvent: (DashboardEvent) -> Unit) {
             ) {
                 Text(stringResource(R.string.dashboard_action_diagnostics))
             }
-            Text(
-                text = stringResource(R.string.dashboard_future_features),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.testTag("dashboard_future_features"),
-            )
+            Button(
+                onClick = { onEvent(DashboardEvent.OpenSettings) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("dashboard_open_settings")
+                    .semantics { contentDescription = "Open settings" },
+            ) {
+                Text(stringResource(R.string.dashboard_action_settings))
+            }
         }
     }
 }

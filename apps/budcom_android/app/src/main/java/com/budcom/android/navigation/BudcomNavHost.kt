@@ -16,6 +16,7 @@ import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
 import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
 import com.budcom.android.feature.search.presentation.UniversalSearchRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
+import com.budcom.android.feature.settings.presentation.SettingsRoute
 import com.budcom.android.feature.sync.presentation.SyncRoute
 import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsRoute
@@ -43,6 +44,7 @@ fun BudcomNavHost(
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenSync = { navController.navigate(Routes.SYNC) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }
         composable(route = Routes.SERVER_CONFIG) {
@@ -83,6 +85,14 @@ fun BudcomNavHost(
             DiagnosticsRoute(
                 onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
                 onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
+            )
+        }
+        composable(route = Routes.SETTINGS) {
+            SettingsRoute(
+                onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
+                onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
+                onOpenSync = { navController.navigate(Routes.SYNC) },
+                onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
             )
         }
         composable(

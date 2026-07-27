@@ -46,9 +46,36 @@
     <string name="dashboard_action_search">Search</string>
     <string name="dashboard_action_sync">Sync</string>
     <string name="dashboard_action_diagnostics">Diagnostics</string>
+    <string name="dashboard_action_settings">Settings</string>
     <string name="dashboard_sync_heading">Synchronization</string>
     <string name="dashboard_sync_status_label">Status</string>
-    <string name="dashboard_future_features">Settings and advanced automation are not available yet.</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_retry">Retry</string>
+    <string name="settings_refresh">Refresh Connector facts</string>
+    <string name="settings_connection_heading">Connection</string>
+    <string name="settings_base_url_label">Connector base URL</string>
+    <string name="settings_connectivity_label">Device connectivity</string>
+    <string name="settings_online">Online</string>
+    <string name="settings_offline">Offline</string>
+    <string name="settings_open_server_config">Open server configuration</string>
+    <string name="settings_appearance_heading">Appearance</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_company_heading">Company</string>
+    <string name="settings_current_company_label">Current company</string>
+    <string name="settings_no_company">No company selected</string>
+    <string name="settings_change_company">Change company</string>
+    <string name="settings_sync_heading">Synchronization</string>
+    <string name="settings_sync_status_label">Status</string>
+    <string name="settings_open_sync">Open Sync</string>
+    <string name="settings_diagnostics_heading">Diagnostics</string>
+    <string name="settings_open_diagnostics">Open Diagnostics</string>
+    <string name="settings_about_heading">About</string>
+    <string name="settings_connector_version_label">Connector version</string>
+    <string name="settings_connector_version_unavailable">Not available from last health check</string>
+    <string name="settings_unavailable">Not available</string>
 
     <string name="diagnostics_title">Diagnostics</string>
     <string name="diagnostics_tools_heading">Operational tools</string>
