@@ -126,6 +126,13 @@
 **Context:** No public `GET /version` or `GET /build`; connector version is on `/health`; extraction diagnostics and export/clear/restart actions are out of foundation scope.  
 **Consequences:** Dashboard and Sync continue to own their UI; Diagnostics reuses shared ports without duplicate health polling loops.
 
+### 2026-07-27 — Settings Foundation exposes only implemented configuration
+
+**Status:** Accepted  
+**Decision:** Settings is the single hub for user-configurable behavior that already exists: theme preference (new DataStore `app_settings`), Connector base URL via navigation to Server Configuration, company via Company Selection, Sync and Diagnostics entry points, and About metadata from BuildConfig/package. No placeholder or future-disabled options.  
+**Context:** Base URL and company already had DataStore stores; theme had Compose-only system default with no persistence.  
+**Consequences:** Theme applies immediately through `MainActivity` observation of `ThemePreferencesRepository`; Settings must not duplicate Server Configuration editing.
+
 ---
 
 ## Decision log template

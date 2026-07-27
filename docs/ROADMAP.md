@@ -24,24 +24,26 @@ Ordered implementation milestones are separate from long-term product innovation
 - ✔ Universal Search Foundation
 - ✔ Sync Foundation
 - ✔ Diagnostics Foundation
+- ✔ Settings Foundation
 
 ---
 
 ## Current milestone
 
-**Settings Foundation**
+**Production Validation**
 
 ---
 
 ## Next
 
-**Production hardening**
+**Contact Intelligence Foundation**
 
 ---
 
 ## Upcoming
 
-1. Release preparation
+1. Production hardening
+2. Release preparation
 
 ---
 

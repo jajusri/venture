@@ -20,10 +20,12 @@
 - Sync Foundation: manual Ledger/Stock Item sync, cancel, status observation, Dashboard summary port
 - Confirmed Diagnostics Connector contract notes (`docs/contracts/android-diagnostics.md`)
 - Diagnostics Foundation: operational view aggregating health, readiness, connection diagnostics, company/session, sync summary, and honest capability notes
+- Settings Foundation contract notes (`docs/contracts/android-settings.md`)
+- Settings Foundation: theme preference (System/Light/Dark) via DataStore, About metadata, and navigation into Server Configuration / Company / Sync / Diagnostics
 
 ### Changed
 
 - Dashboard architectural boundaries (stable ports, authoritative operational mode)
 - Startup Connector URL hydration via core port
 - Android module documentation accuracy
-- Roadmap: Diagnostics Foundation complete; current = Settings Foundation
+- Roadmap: Settings Foundation complete; current = Production Validation

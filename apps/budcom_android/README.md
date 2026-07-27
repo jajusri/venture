@@ -8,9 +8,9 @@ Authoritative docs: [`docs/PRODUCT_SOUL.md`](../../docs/PRODUCT_SOUL.md), [`docs
 
 ## Milestone status
 
-**Current:** Settings Foundation. **Completed here:** Diagnostics Foundation.
+**Current:** Production Validation. **Completed here:** Settings Foundation.
 
-**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details, Universal Search across ledgers/stock items/vouchers, manual Sync Foundation (Ledgers + Stock Items), Diagnostics Foundation.
+**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details, Universal Search across ledgers/stock items/vouchers, manual Sync Foundation (Ledgers + Stock Items), Diagnostics Foundation, Settings Foundation.
 
 ## Stack
 
@@ -49,7 +49,7 @@ com.budcom.android
 │   ├── search          # Universal Search Foundation (orchestrates typed ports)
 │   ├── sync            # Manual Sync Foundation (+ ObserveSyncStatusPort)
 │   ├── diagnostics     # Diagnostics Foundation (+ ConnectionDiagnosticsPort)
-│   └── settings        # reserved
+│   └── settings        # Settings Foundation (+ ThemePreferencesRepository)
 ├── data/ / domain/     # scaffold markers only — prefer feature slices
 ├── navigation
 └── ui
@@ -134,6 +134,23 @@ Contract notes: [`docs/contracts/android-sync-api.md`](../../docs/contracts/andr
 Contract notes: [`docs/contracts/android-diagnostics.md`](../../docs/contracts/android-diagnostics.md).
 
 **Limitations:** Does not invent Connector version/build endpoints. Does not estimate readiness. Partial section failures remain visible instead of collapsing into one generic error.
+
+## Settings capabilities
+
+| Capability | Status |
+| --- | --- |
+| Dashboard → Settings | Implemented |
+| Theme System / Light / Dark (DataStore `app_settings`) | Implemented |
+| Immediate theme apply (no restart) | Implemented |
+| Connection summary + open Server Configuration | Implemented |
+| Company summary + open Company Selection | Implemented |
+| Sync summary + open Sync | Implemented |
+| Open Diagnostics | Implemented |
+| About (BuildConfig + package; Connector version when probed) | Implemented |
+| Placeholder / future-disabled options | Forbidden |
+| Second Base URL editor | Forbidden (reuse Server Configuration) |
+
+Contract notes: [`docs/contracts/android-settings.md`](../../docs/contracts/android-settings.md).
 
 ## Architecture rules
 
