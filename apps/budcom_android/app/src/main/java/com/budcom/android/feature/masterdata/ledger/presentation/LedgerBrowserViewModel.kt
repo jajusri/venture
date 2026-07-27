@@ -1,0 +1,125 @@
+package com.budcom.android.feature.masterdata.ledger.presentation
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.network.NetworkConnectivityObserver
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
+import com.budcom.android.feature.masterdata.ledger.domain.usecase.LoadLedgersUseCase
+import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgersUseCase
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class LedgerBrowserViewModel @Inject constructor(
+    private val loadLedgers: LoadLedgersUseCase,
+    private val refreshLedgers: RefreshLedgersUseCase,
+    private val connectivityObserver: NetworkConnectivityObserver,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(LedgerBrowserUiState())
+    val uiState: StateFlow<LedgerBrowserUiState> = _uiState.asStateFlow()
+
+    private var searchJob: Job? = null
+    private var loadJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            connectivityObserver.isOnline.collect { online ->
+                _uiState.update { it.copy(isOnline = online) }
+            }
+        }
+        onEvent(LedgerBrowserEvent.Load)
+    }
+
+    fun onEvent(event: LedgerBrowserEvent) {
+        when (event) {
+            LedgerBrowserEvent.Load -> load(page = 1, append = false, refreshing = false)
+            LedgerBrowserEvent.Refresh -> load(page = 1, append = false, refreshing = true)
+            LedgerBrowserEvent.Retry -> load(page = 1, append = false, refreshing = false)
+            LedgerBrowserEvent.LoadNextPage -> {
+                val state = _uiState.value
+                if (!state.canLoadMore || state.isBusy) return
+                load(page = state.page + 1, append = true, refreshing = false)
+            }
+            is LedgerBrowserEvent.SearchChanged -> {
+                _uiState.update { it.copy(searchQuery = event.query) }
+                searchJob?.cancel()
+                searchJob = viewModelScope.launch {
+                    delay(SEARCH_DEBOUNCE_MS)
+                    load(page = 1, append = false, refreshing = false)
+                }
+            }
+        }
+    }
+
+    private fun load(page: Int, append: Boolean, refreshing: Boolean) {
+        // Allow refresh/search/retry to cancel in-flight work; skip only concurrent appends.
+        if (append && loadJob?.isActive == true) return
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            val queryText = _uiState.value.searchQuery
+            _uiState.update {
+                when {
+                    refreshing -> it.copy(isRefreshing = true, error = null)
+                    append -> it.copy(isLoadingMore = true, error = null)
+                    it.hasContent -> it.copy(isRefreshing = true, error = null)
+                    else -> it.copy(isInitialLoading = true, error = null)
+                }
+            }
+
+            val query = LedgerQuery(
+                text = queryText.trim().ifEmpty { null },
+                page = page,
+                pageSize = _uiState.value.pageSize,
+            )
+            val result = if (refreshing) refreshLedgers(query) else loadLedgers(query)
+            when (result) {
+                is AppResult.Success -> {
+                    val pageData = result.value
+                    _uiState.update { state ->
+                        val rows = if (append) {
+                            state.ledgers + pageData.toRows()
+                        } else {
+                            pageData.toRows()
+                        }
+                        state.copy(
+                            isInitialLoading = false,
+                            isRefreshing = false,
+                            isLoadingMore = false,
+                            ledgers = rows,
+                            page = pageData.page,
+                            pageSize = pageData.pageSize,
+                            totalItems = pageData.totalItems,
+                            totalPages = pageData.totalPages,
+                            canLoadMore = pageData.page < pageData.totalPages,
+                            dataFreshnessAt = pageData.dataFreshnessAt,
+                            error = null,
+                        )
+                    }
+                }
+                is AppResult.Failure -> {
+                    _uiState.update { state ->
+                        state.copy(
+                            isInitialLoading = false,
+                            isRefreshing = false,
+                            isLoadingMore = false,
+                            error = result.error.toLedgerUiError(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private companion object {
+        const val SEARCH_DEBOUNCE_MS = 350L
+    }
+}

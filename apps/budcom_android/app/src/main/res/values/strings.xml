@@ -41,7 +41,21 @@
     <string name="dashboard_actions_heading">Quick actions</string>
     <string name="dashboard_action_server_config">Server configuration</string>
     <string name="dashboard_action_company">Company selection</string>
-    <string name="dashboard_future_features">Master data and voucher actions are not available yet.</string>
+    <string name="dashboard_action_master_data">Master data</string>
+    <string name="dashboard_future_features">Voucher actions are not available yet.</string>
+
+    <string name="master_data_title">Master data</string>
+    <string name="master_data_subtitle">Browse Connector master records for the selected company.</string>
+    <string name="master_data_open_ledgers">Ledgers</string>
+    <string name="master_data_stock_items_future">Stock items (coming next)</string>
+
+    <string name="ledger_browser_title">Ledgers</string>
+    <string name="ledger_search_hint">Search ledgers</string>
+    <string name="ledger_empty">No ledgers found. Sync ledgers on the Connector if the list is empty.</string>
+    <string name="ledger_retry">Retry</string>
+    <string name="ledger_offline_banner">Device is offline. Showing retained list when available.</string>
+    <string name="ledger_status_label">Status: %1$s</string>
+    <string name="ledger_balance_label">Closing: %1$s</string>
 
     <string name="server_config_title">Server configuration</string>
     <string name="server_config_url_label">Connector base URL</string>

@@ -7,4 +7,6 @@ object Routes {
     const val HOME = "home"
     const val SERVER_CONFIG = "server_config"
     const val COMPANY = "company"
+    const val MASTER_DATA = "master_data"
+    const val LEDGERS = "ledgers"
 }

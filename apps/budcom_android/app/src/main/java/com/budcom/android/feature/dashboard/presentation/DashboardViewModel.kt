@@ -70,6 +70,7 @@ class DashboardViewModel @Inject constructor(
             DashboardEvent.ValidateSession -> validateSessionOnly()
             DashboardEvent.OpenServerConfig -> emitNav(DashboardNavigation.ServerConfig)
             DashboardEvent.OpenCompanySelection -> emitNav(DashboardNavigation.CompanySelection)
+            DashboardEvent.OpenMasterData -> emitNav(DashboardNavigation.MasterData)
         }
     }
 
@@ -152,4 +153,5 @@ class DashboardViewModel @Inject constructor(
 enum class DashboardNavigation {
     ServerConfig,
     CompanySelection,
+    MasterData,
 }

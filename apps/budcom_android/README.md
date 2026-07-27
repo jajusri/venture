@@ -8,9 +8,9 @@ Authoritative docs: [`docs/PRODUCT_SOUL.md`](../../docs/PRODUCT_SOUL.md), [`docs
 
 ## Milestone status
 
-**Current:** Dashboard stabilization and Definition of Done (see roadmap).
+**Current:** Stock Item Browser (see roadmap).
 
-**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home).
+**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub, Ledger Browser.
 
 ## Stack
 
@@ -42,11 +42,29 @@ com.budcom.android
 │   ├── serverconfig    # URL + health/readiness (+ ConnectorStatusPort)
 │   ├── company         # discovery/session (+ CompanySessionPort)
 │   ├── dashboard       # operational home (domain + presentation)
+│   ├── masterdata      # hub + category identity
+│   │   └── ledger      # Ledger Browser vertical slice
 │   └── settings        # reserved
 ├── data/ / domain/     # scaffold markers only — prefer feature slices
 ├── navigation
 └── ui
 ```
+
+## Master Data / Ledger capabilities
+
+| Capability | Status |
+| --- | --- |
+| Dashboard → Master Data → Ledgers navigation | Implemented |
+| `GET /ledgers` list (session company required on Connector) | Implemented |
+| Server-side `query` search (debounced) | Implemented |
+| Page / pageSize pagination | Implemented |
+| Manual refresh (pull-to-refresh) | Implemented |
+| Loading / empty / error / offline UI | Implemented |
+| Stock Items destination | Hub placeholder only (disabled) |
+| Durable Room cache | Deferred |
+| Ledger detail screen | Deferred |
+
+Contract notes: [`docs/contracts/android-master-data-ledger.md`](../../docs/contracts/android-master-data-ledger.md).
 
 ## Architecture rules
 

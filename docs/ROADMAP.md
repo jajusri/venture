@@ -18,32 +18,30 @@ Ordered implementation milestones are separate from long-term product innovation
 - Session validation
 - Architecture ADR foundation
 - Dashboard stabilization and Definition of Done
+- Master Data foundation and Ledger Browser
 
 ---
 
 ## Current milestone
 
-**Master Data foundation and Ledger Browser**
+**Stock Item Browser**
 
-Confirm Connector Master Data contracts; reusable Master Data navigation foundation; Ledger Browser against `GET /ledgers` (session-scoped, paginated, searchable). Stock Item Browser deferred after Ledger DoD.
-
-Contract notes: [contracts/android-master-data-ledger.md](contracts/android-master-data-ledger.md)
+Implement Stock Item list/browser against confirmed Connector `GET /stock-items`, reusing Master Data navigation and read-only list conventions established by Ledger Browser. Contract notes: [contracts/android-master-data-ledger.md](contracts/android-master-data-ledger.md).
 
 ---
 
 ## Planned milestones (ordered)
 
-1. Stock Item browser
-2. Additional master-data categories
-3. Voucher browser
-4. Voucher details
-5. Search foundation
-6. Universal Search evolution
-7. Sync foundation
-8. Diagnostics
-9. Settings
-10. Production hardening
-11. Release preparation
+1. Additional master-data categories
+2. Voucher browser
+3. Voucher details
+4. Search foundation
+5. Universal Search evolution
+6. Sync foundation
+7. Diagnostics
+8. Settings
+9. Production hardening
+10. Release preparation
 
 ---
 

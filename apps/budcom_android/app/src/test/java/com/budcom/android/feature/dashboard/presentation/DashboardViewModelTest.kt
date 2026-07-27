@@ -131,9 +131,14 @@ class DashboardViewModelTest {
         advanceUntilIdle()
         viewModel.onEvent(DashboardEvent.OpenServerConfig)
         viewModel.onEvent(DashboardEvent.OpenCompanySelection)
+        viewModel.onEvent(DashboardEvent.OpenMasterData)
         advanceUntilIdle()
         assertEquals(
-            listOf(DashboardNavigation.ServerConfig, DashboardNavigation.CompanySelection),
+            listOf(
+                DashboardNavigation.ServerConfig,
+                DashboardNavigation.CompanySelection,
+                DashboardNavigation.MasterData,
+            ),
             emitted,
         )
         job.cancel()

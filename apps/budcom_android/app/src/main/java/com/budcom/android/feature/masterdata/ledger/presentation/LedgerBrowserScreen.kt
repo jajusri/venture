@@ -1,0 +1,262 @@
+package com.budcom.android.feature.masterdata.ledger.presentation
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.budcom.android.R
+import kotlinx.coroutines.flow.distinctUntilChanged
+
+@Composable
+fun LedgerBrowserRoute(
+    viewModel: LedgerBrowserViewModel = hiltViewModel(),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LedgerBrowserScreen(
+        state = state,
+        onEvent = viewModel::onEvent,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
+@Composable
+fun LedgerBrowserScreen(
+    state: LedgerBrowserUiState,
+    onEvent: (LedgerBrowserEvent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pullRefreshState = rememberPullRefreshState(
+        refreshing = state.isRefreshing,
+        onRefresh = { onEvent(LedgerBrowserEvent.Refresh) },
+    )
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(listState, state.canLoadMore, state.isBusy) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+            lastVisible >= (info.totalItemsCount - 3)
+        }
+            .distinctUntilChanged()
+            .collect { nearEnd ->
+                if (nearEnd && state.canLoadMore && !state.isBusy) {
+                    onEvent(LedgerBrowserEvent.LoadNextPage)
+                }
+            }
+    }
+
+    Scaffold(
+        modifier = modifier.fillMaxSize().testTag("ledger_browser_screen"),
+        topBar = {
+            TopAppBar(title = { Text(stringResource(R.string.ledger_browser_title)) })
+        },
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .pullRefresh(pullRefreshState),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (!state.isOnline) {
+                    Text(
+                        text = stringResource(R.string.ledger_offline_banner),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag("ledger_offline_banner"),
+                    )
+                }
+
+                OutlinedTextField(
+                    value = state.searchQuery,
+                    onValueChange = { onEvent(LedgerBrowserEvent.SearchChanged(it)) },
+                    label = { Text(stringResource(R.string.ledger_search_hint)) },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("ledger_search")
+                        .semantics { contentDescription = "Search ledgers" },
+                )
+
+                when {
+                    state.isInitialLoading && !state.hasContent -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("ledger_loading"),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                    state.error != null && !state.hasContent -> {
+                        ErrorBlock(
+                            error = state.error,
+                            onRetry = { onEvent(LedgerBrowserEvent.Retry) },
+                        )
+                    }
+                    !state.hasContent -> {
+                        Text(
+                            text = stringResource(R.string.ledger_empty),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("ledger_empty"),
+                        )
+                    }
+                    else -> {
+                        if (state.error != null) {
+                            Text(
+                                text = errorText(state.error),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.testTag("ledger_inline_error"),
+                            )
+                        }
+                        LazyColumn(
+                            state = listState,
+                            contentPadding = PaddingValues(bottom = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .testTag("ledger_list"),
+                        ) {
+                            items(state.ledgers, key = { it.id }) { row ->
+                                LedgerRowCard(row = row)
+                            }
+                            if (state.isLoadingMore) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        CircularProgressIndicator()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            PullRefreshIndicator(
+                refreshing = state.isRefreshing,
+                state = pullRefreshState,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .testTag("ledger_refresh_indicator"),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LedgerRowCard(row: LedgerRowUi) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("ledger_row_${row.id}")
+            .semantics {
+                contentDescription = buildString {
+                    append(row.primaryLabel)
+                    row.secondaryLabel?.let { append(", ").append(it) }
+                    append(", status ").append(row.statusLabel)
+                    row.balanceLabel?.let { append(", balance ").append(it) }
+                }
+            },
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(text = row.primaryLabel, style = MaterialTheme.typography.titleMedium)
+            row.secondaryLabel?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                text = stringResource(R.string.ledger_status_label, row.statusLabel),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            row.balanceLabel?.let {
+                Text(
+                    text = stringResource(R.string.ledger_balance_label, it),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorBlock(
+    error: LedgerUiError,
+    onRetry: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("ledger_error"),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = errorText(error),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+        Button(
+            onClick = onRetry,
+            modifier = Modifier.testTag("ledger_retry"),
+        ) {
+            Text(stringResource(R.string.ledger_retry))
+        }
+    }
+}
+
+@Composable
+private fun errorText(error: LedgerUiError): String = when (error) {
+    is LedgerUiError.Offline -> error.message
+    is LedgerUiError.Timeout -> error.message
+    is LedgerUiError.Remote -> error.message
+    is LedgerUiError.Message -> error.message
+    is LedgerUiError.Unexpected -> error.message
+}

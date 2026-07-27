@@ -95,8 +95,10 @@ class DashboardScreenTest {
         }
         composeRule.onNodeWithTag("dashboard_open_server_config").performClick()
         composeRule.onNodeWithTag("dashboard_open_company").performClick()
+        composeRule.onNodeWithTag("dashboard_open_master_data").performClick()
         composeRule.onNodeWithTag("dashboard_change_company").performClick()
         assertTrue(events.contains(DashboardEvent.OpenServerConfig))
+        assertTrue(events.contains(DashboardEvent.OpenMasterData))
         assertTrue(events.count { it == DashboardEvent.OpenCompanySelection } >= 2)
     }
 

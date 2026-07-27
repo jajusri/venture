@@ -51,6 +51,7 @@ import java.time.format.DateTimeFormatter
 fun DashboardRoute(
     onOpenServerConfig: () -> Unit,
     onOpenCompanySelection: () -> Unit,
+    onOpenMasterData: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -59,6 +60,7 @@ fun DashboardRoute(
             when (target) {
                 DashboardNavigation.ServerConfig -> onOpenServerConfig()
                 DashboardNavigation.CompanySelection -> onOpenCompanySelection()
+                DashboardNavigation.MasterData -> onOpenMasterData()
             }
         }
     }
@@ -397,6 +399,15 @@ private fun QuickActionsCard(onEvent: (DashboardEvent) -> Unit) {
                     .semantics { contentDescription = "Open company selection" },
             ) {
                 Text(stringResource(R.string.dashboard_action_company))
+            }
+            Button(
+                onClick = { onEvent(DashboardEvent.OpenMasterData) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("dashboard_open_master_data")
+                    .semantics { contentDescription = "Open master data" },
+            ) {
+                Text(stringResource(R.string.dashboard_action_master_data))
             }
             Text(
                 text = stringResource(R.string.dashboard_future_features),
