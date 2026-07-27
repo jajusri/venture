@@ -8,9 +8,9 @@ Authoritative docs: [`docs/PRODUCT_SOUL.md`](../../docs/PRODUCT_SOUL.md), [`docs
 
 ## Milestone status
 
-**Current:** Diagnostics Foundation. **Completed here:** Sync Foundation.
+**Current:** Settings Foundation. **Completed here:** Diagnostics Foundation.
 
-**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details, Universal Search across ledgers/stock items/vouchers, manual Sync Foundation (Ledgers + Stock Items).
+**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Browser + Details, Universal Search across ledgers/stock items/vouchers, manual Sync Foundation (Ledgers + Stock Items), Diagnostics Foundation.
 
 ## Stack
 
@@ -48,6 +48,7 @@ com.budcom.android
 │   ├── voucher         # Voucher foundation + Browser + Details (+ SearchVouchersPort)
 │   ├── search          # Universal Search Foundation (orchestrates typed ports)
 │   ├── sync            # Manual Sync Foundation (+ ObserveSyncStatusPort)
+│   ├── diagnostics     # Diagnostics Foundation (+ ConnectionDiagnosticsPort)
 │   └── settings        # reserved
 ├── data/ / domain/     # scaffold markers only — prefer feature slices
 ├── navigation
@@ -115,6 +116,24 @@ Contract notes: [`docs/contracts/android-universal-search.md`](../../docs/contra
 Contract notes: [`docs/contracts/android-sync-api.md`](../../docs/contracts/android-sync-api.md).
 
 **Limitations:** Sync summary is in-process (refreshed from Connector status/runs). Progress percentages are never fabricated. Abandoned Connector runs after restart appear as interrupted history, not live progress.
+
+## Diagnostics capabilities
+
+| Capability | Status |
+| --- | --- |
+| Dashboard → Diagnostics | Implemented |
+| Health / readiness via `ConnectorStatusPort` | Implemented |
+| `GET /diagnostics/connection` | Implemented |
+| Company / session via `CompanySessionPort` | Implemented |
+| Sync summary via `ObserveSyncStatusPort` | Implemented |
+| Application identity from `BuildConfig` | Implemented |
+| Honest search / master-data / voucher notes | Implemented |
+| Refresh diagnostics / recheck health & readiness | Implemented |
+| Export logs / clear cache / restart Connector | Out of scope |
+
+Contract notes: [`docs/contracts/android-diagnostics.md`](../../docs/contracts/android-diagnostics.md).
+
+**Limitations:** Does not invent Connector version/build endpoints. Does not estimate readiness. Partial section failures remain visible instead of collapsing into one generic error.
 
 ## Architecture rules
 

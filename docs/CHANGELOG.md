@@ -18,10 +18,12 @@
 - Universal Search Foundation across Ledgers, Stock Items, and Vouchers (Android-side orchestration; contract notes in `docs/contracts/android-universal-search.md`)
 - Confirmed Sync Connector contract notes (`docs/contracts/android-sync-api.md`)
 - Sync Foundation: manual Ledger/Stock Item sync, cancel, status observation, Dashboard summary port
+- Confirmed Diagnostics Connector contract notes (`docs/contracts/android-diagnostics.md`)
+- Diagnostics Foundation: operational view aggregating health, readiness, connection diagnostics, company/session, sync summary, and honest capability notes
 
 ### Changed
 
 - Dashboard architectural boundaries (stable ports, authoritative operational mode)
 - Startup Connector URL hydration via core port
 - Android module documentation accuracy
-- Roadmap: Sync Foundation complete; current = Diagnostics Foundation
+- Roadmap: Diagnostics Foundation complete; current = Settings Foundation

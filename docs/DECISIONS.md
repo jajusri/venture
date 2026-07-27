@@ -119,6 +119,13 @@
 **Context:** Default 30s/60s timeouts are insufficient for Tally-backed sync.  
 **Consequences:** Only SyncApi uses the long-timeout client.
 
+### 2026-07-27 — Diagnostics Foundation exposes only confirmed operational facts
+
+**Status:** Accepted  
+**Decision:** Diagnostics aggregates existing ports (`ConnectorStatusPort`, `CompanySessionPort`, `ObserveSyncStatusPort`) plus confirmed `GET /diagnostics/connection`. It never fabricates health, estimates readiness, or invents Connector version/build endpoints. Search/master-data/voucher sections disclose availability honestly when Connector diagnostics are absent.  
+**Context:** No public `GET /version` or `GET /build`; connector version is on `/health`; extraction diagnostics and export/clear/restart actions are out of foundation scope.  
+**Consequences:** Dashboard and Sync continue to own their UI; Diagnostics reuses shared ports without duplicate health polling loops.
+
 ---
 
 ## Decision log template
