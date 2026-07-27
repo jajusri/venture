@@ -12,6 +12,7 @@ import com.budcom.android.feature.masterdata.ledger.presentation.LedgerBrowserRo
 import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
 import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
+import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
 
 /**
  * Root navigation host for BUDCO Android.
@@ -31,6 +32,7 @@ fun BudcomNavHost(
                 onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
                 onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
                 onOpenMasterData = { navController.navigate(Routes.MASTER_DATA) },
+                onOpenVouchers = { navController.navigate(Routes.VOUCHERS) },
             )
         }
         composable(route = Routes.SERVER_CONFIG) {
@@ -50,6 +52,9 @@ fun BudcomNavHost(
         }
         composable(route = Routes.STOCK_ITEMS) {
             StockItemBrowserRoute()
+        }
+        composable(route = Routes.VOUCHERS) {
+            VoucherBrowserRoute()
         }
     }
 }

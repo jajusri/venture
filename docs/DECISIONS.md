@@ -63,6 +63,20 @@
 **Context:** Ledger and Stock Item browsers share UX states but different Connector fields and query params.  
 **Consequences:** Further shared abstractions require a third justifying consumer.
 
+### 2026-07-27 — Voucher API uses explicit company and date range
+
+**Status:** Accepted  
+**Decision:** Android Voucher Browser always sends Connector-required `company`, `from`, and `to` query parameters. Selected company comes from `CompanySessionPort`. Default date range is a client convenience (last 30 UTC days) and is editable in UI.  
+**Context:** Unlike session-scoped `GET /ledgers`, voucher list routes require explicit company and ISO date bounds.  
+**Consequences:** Missing company shows a clear UI error without inventing a company id; empty lists remain valid when snapshots were never synced for the period.
+
+### 2026-07-27 — Voucher foundation keeps typed repository + deferred details UI
+
+**Status:** Accepted  
+**Decision:** Ship typed `VoucherRepository` with list + `getVoucherDetails` ports; Voucher Browser is list-only; detail Compose destination is the next milestone.  
+**Context:** Connector exposes `GET /api/v1/vouchers/:id`; browser navigation must not pretend details exist.  
+**Consequences:** Details use case is ready for the next milestone without duplicate DTO mapping.
+
 ---
 
 ## Decision log template

@@ -42,7 +42,8 @@
     <string name="dashboard_action_server_config">Server configuration</string>
     <string name="dashboard_action_company">Company selection</string>
     <string name="dashboard_action_master_data">Master data</string>
-    <string name="dashboard_future_features">Voucher actions are not available yet.</string>
+    <string name="dashboard_action_vouchers">Vouchers</string>
+    <string name="dashboard_future_features">Voucher details and sync actions are not available yet.</string>
 
     <string name="master_data_title">Master data</string>
     <string name="master_data_subtitle">Browse Connector master records for the selected company.</string>
@@ -65,6 +66,17 @@
     <string name="stock_item_status_label">Status: %1$s</string>
     <string name="stock_item_unit_label">Unit: %1$s</string>
     <string name="stock_item_balance_label">Closing: %1$s</string>
+
+    <string name="voucher_browser_title">Vouchers</string>
+    <string name="voucher_search_hint">Search vouchers</string>
+    <string name="voucher_empty">No vouchers found for this company and date range. Sync vouchers on the Connector if the list is empty.</string>
+    <string name="voucher_date_from">From (YYYY-MM-DD)</string>
+    <string name="voucher_date_to">To (YYYY-MM-DD)</string>
+    <string name="voucher_apply_dates">Apply date range</string>
+    <string name="voucher_row_title">%1$s · %2$s</string>
+    <string name="voucher_date_label">Date: %1$s</string>
+    <string name="voucher_status_label">Status: %1$s</string>
+    <string name="voucher_amount_label">Amount: %1$s</string>
 
     <string name="server_config_title">Server configuration</string>
     <string name="server_config_url_label">Connector base URL</string>

@@ -11,11 +11,13 @@
 - Confirmed Master Data / Ledger / Stock Item Connector contract notes (`docs/contracts/android-master-data-ledger.md`)
 - Master Data foundation (hub navigation, shared list UI conventions, pagination metadata, shared UI errors)
 - Ledger Browser against Connector `GET /ledgers`
-- Stock Item Browser against Connector `GET /stock-items` (list, search, pagination, refresh, offline/error states)
+- Stock Item Browser against Connector `GET /stock-items`
+- Confirmed Voucher Connector contract notes (`docs/contracts/android-voucher-api.md`)
+- Voucher foundation (typed domain, repository, details use-case port) and Voucher Browser against `GET /api/v1/vouchers`
 
 ### Changed
 
 - Dashboard architectural boundaries (stable ports, authoritative operational mode)
 - Startup Connector URL hydration via core port
 - Android module documentation accuracy
-- Roadmap: Master Data complete (Dashboard, Ledger Browser, Stock Item Browser); next = Voucher Browser
+- Roadmap: Master Data complete; current = Voucher Browser; next = Voucher Details

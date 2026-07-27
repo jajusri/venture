@@ -8,9 +8,9 @@ Authoritative docs: [`docs/PRODUCT_SOUL.md`](../../docs/PRODUCT_SOUL.md), [`docs
 
 ## Milestone status
 
-**Current:** Master Data complete (see roadmap). **Next:** Voucher Browser.
+**Current:** ▶ Voucher Browser (foundation + list). **Next:** Voucher Details.
 
-**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + shared list foundation, Ledger Browser, Stock Item Browser.
+**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + Ledger/Stock Item browsers, Voucher foundation + Voucher Browser.
 
 ## Stack
 
@@ -45,6 +45,7 @@ com.budcom.android
 │   ├── masterdata      # hub, shared list conventions, pagination VO
 │   │   ├── ledger      # Ledger Browser vertical slice
 │   │   └── stockitem   # Stock Item Browser vertical slice
+│   ├── voucher         # Voucher foundation + Browser
 │   └── settings        # reserved
 ├── data/ / domain/     # scaffold markers only — prefer feature slices
 ├── navigation
@@ -55,19 +56,28 @@ com.budcom.android
 
 | Capability | Status |
 | --- | --- |
-| Dashboard → Master Data → Ledgers | Implemented |
-| Dashboard → Master Data → Stock Items | Implemented |
+| Dashboard → Master Data → Ledgers / Stock Items | Implemented |
 | Shared list UI / error / debounce defaults | Implemented |
-| `GET /ledgers` list | Implemented |
-| `GET /stock-items` list | Implemented |
-| Server-side `query` search (debounced) | Implemented (both) |
-| Page / pageSize pagination | Implemented (both) |
-| Manual refresh (pull-to-refresh) | Implemented (both) |
-| Loading / empty / error / offline UI | Implemented (both) |
 | Durable Room cache | Deferred |
 | Detail screens | Deferred |
 
 Contract notes: [`docs/contracts/android-master-data-ledger.md`](../../docs/contracts/android-master-data-ledger.md).
+
+## Voucher capabilities
+
+| Capability | Status |
+| --- | --- |
+| Dashboard → Vouchers | Implemented |
+| Typed foundation (`VoucherQuery`, repository, details port) | Implemented |
+| `GET /api/v1/vouchers` list (required `company`, `from`, `to`) | Implemented |
+| Free-text `q` search (debounced) | Implemented |
+| Page / pageSize pagination | Implemented |
+| Editable date range (client default: last 30 UTC days) | Implemented |
+| Loading / empty / error / offline / refresh | Implemented |
+| Voucher Details UI | Deferred (repository port ready) |
+| Sync UI / create / edit / delete | Out of scope |
+
+Contract notes: [`docs/contracts/android-voucher-api.md`](../../docs/contracts/android-voucher-api.md).
 
 ## Architecture rules
 

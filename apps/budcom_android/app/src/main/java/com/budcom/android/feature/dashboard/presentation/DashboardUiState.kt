@@ -61,6 +61,7 @@ sealed interface DashboardEvent {
     data object OpenServerConfig : DashboardEvent
     data object OpenCompanySelection : DashboardEvent
     data object OpenMasterData : DashboardEvent
+    data object OpenVouchers : DashboardEvent
 }
 
 internal fun AppError.toDashboardUiError(): DashboardUiError = when (this) {

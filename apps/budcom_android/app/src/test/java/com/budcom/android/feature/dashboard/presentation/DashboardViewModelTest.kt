@@ -132,12 +132,14 @@ class DashboardViewModelTest {
         viewModel.onEvent(DashboardEvent.OpenServerConfig)
         viewModel.onEvent(DashboardEvent.OpenCompanySelection)
         viewModel.onEvent(DashboardEvent.OpenMasterData)
+        viewModel.onEvent(DashboardEvent.OpenVouchers)
         advanceUntilIdle()
         assertEquals(
             listOf(
                 DashboardNavigation.ServerConfig,
                 DashboardNavigation.CompanySelection,
                 DashboardNavigation.MasterData,
+                DashboardNavigation.Vouchers,
             ),
             emitted,
         )
