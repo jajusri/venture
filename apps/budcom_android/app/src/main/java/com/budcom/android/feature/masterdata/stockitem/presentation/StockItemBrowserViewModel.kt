@@ -1,13 +1,13 @@
-package com.budcom.android.feature.masterdata.ledger.presentation
+package com.budcom.android.feature.masterdata.stockitem.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
-import com.budcom.android.feature.masterdata.ledger.domain.usecase.LoadLedgersUseCase
-import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgersUseCase
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemQuery
+import com.budcom.android.feature.masterdata.stockitem.domain.usecase.LoadStockItemsUseCase
+import com.budcom.android.feature.masterdata.stockitem.domain.usecase.RefreshStockItemsUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -19,14 +19,14 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class LedgerBrowserViewModel @Inject constructor(
-    private val loadLedgers: LoadLedgersUseCase,
-    private val refreshLedgers: RefreshLedgersUseCase,
+class StockItemBrowserViewModel @Inject constructor(
+    private val loadStockItems: LoadStockItemsUseCase,
+    private val refreshStockItems: RefreshStockItemsUseCase,
     private val connectivityObserver: NetworkConnectivityObserver,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(LedgerBrowserUiState())
-    val uiState: StateFlow<LedgerBrowserUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(StockItemBrowserUiState())
+    val uiState: StateFlow<StockItemBrowserUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
     private var loadJob: Job? = null
@@ -37,20 +37,20 @@ class LedgerBrowserViewModel @Inject constructor(
                 _uiState.update { it.copy(isOnline = online) }
             }
         }
-        onEvent(LedgerBrowserEvent.Load)
+        onEvent(StockItemBrowserEvent.Load)
     }
 
-    fun onEvent(event: LedgerBrowserEvent) {
+    fun onEvent(event: StockItemBrowserEvent) {
         when (event) {
-            LedgerBrowserEvent.Load -> load(page = 1, append = false, refreshing = false)
-            LedgerBrowserEvent.Refresh -> load(page = 1, append = false, refreshing = true)
-            LedgerBrowserEvent.Retry -> load(page = 1, append = false, refreshing = false)
-            LedgerBrowserEvent.LoadNextPage -> {
+            StockItemBrowserEvent.Load -> load(page = 1, append = false, refreshing = false)
+            StockItemBrowserEvent.Refresh -> load(page = 1, append = false, refreshing = true)
+            StockItemBrowserEvent.Retry -> load(page = 1, append = false, refreshing = false)
+            StockItemBrowserEvent.LoadNextPage -> {
                 val state = _uiState.value
                 if (!state.canLoadMore || state.isBusy) return
                 load(page = state.page + 1, append = true, refreshing = false)
             }
-            is LedgerBrowserEvent.SearchChanged -> {
+            is StockItemBrowserEvent.SearchChanged -> {
                 _uiState.update { it.copy(searchQuery = event.query) }
                 searchJob?.cancel()
                 searchJob = viewModelScope.launch {
@@ -62,7 +62,6 @@ class LedgerBrowserViewModel @Inject constructor(
     }
 
     private fun load(page: Int, append: Boolean, refreshing: Boolean) {
-        // Allow refresh/search/retry to cancel in-flight work; skip only concurrent appends.
         if (append && loadJob?.isActive == true) return
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
@@ -76,18 +75,18 @@ class LedgerBrowserViewModel @Inject constructor(
                 }
             }
 
-            val query = LedgerQuery(
+            val query = StockItemQuery(
                 text = queryText.trim().ifEmpty { null },
                 page = page,
                 pageSize = _uiState.value.pageSize,
             )
-            val result = if (refreshing) refreshLedgers(query) else loadLedgers(query)
+            val result = if (refreshing) refreshStockItems(query) else loadStockItems(query)
             when (result) {
                 is AppResult.Success -> {
                     val pageData = result.value
                     _uiState.update { state ->
                         val rows = if (append) {
-                            state.ledgers + pageData.toRows()
+                            state.stockItems + pageData.toRows()
                         } else {
                             pageData.toRows()
                         }
@@ -95,12 +94,12 @@ class LedgerBrowserViewModel @Inject constructor(
                             isInitialLoading = false,
                             isRefreshing = false,
                             isLoadingMore = false,
-                            ledgers = rows,
-                            page = pageData.page,
-                            pageSize = pageData.pageSize,
-                            totalItems = pageData.totalItems,
-                            totalPages = pageData.totalPages,
-                            canLoadMore = pageData.page < pageData.totalPages,
+                            stockItems = rows,
+                            page = pageData.pagination.page,
+                            pageSize = pageData.pagination.pageSize,
+                            totalItems = pageData.pagination.totalItems,
+                            totalPages = pageData.pagination.totalPages,
+                            canLoadMore = pageData.pagination.canLoadMore,
                             dataFreshnessAt = pageData.dataFreshnessAt,
                             error = null,
                         )
@@ -112,7 +111,7 @@ class LedgerBrowserViewModel @Inject constructor(
                             isInitialLoading = false,
                             isRefreshing = false,
                             isLoadingMore = false,
-                            error = result.error.toLedgerUiError(),
+                            error = result.error.toStockItemUiError(),
                         )
                     }
                 }

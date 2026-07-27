@@ -9,4 +9,5 @@ object Routes {
     const val COMPANY = "company"
     const val MASTER_DATA = "master_data"
     const val LEDGERS = "ledgers"
+    const val STOCK_ITEMS = "stock_items"
 }

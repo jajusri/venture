@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -25,6 +24,7 @@ import com.budcom.android.R
 @Composable
 fun MasterDataHubScreen(
     onOpenLedgers: () -> Unit,
+    onOpenStockItems: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -54,14 +54,14 @@ fun MasterDataHubScreen(
             ) {
                 Text(stringResource(R.string.master_data_open_ledgers))
             }
-            OutlinedButton(
-                onClick = {},
-                enabled = false,
+            Button(
+                onClick = onOpenStockItems,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("master_data_stock_items_future"),
+                    .testTag("master_data_open_stock_items")
+                    .semantics { contentDescription = "Open stock items" },
             ) {
-                Text(stringResource(R.string.master_data_stock_items_future))
+                Text(stringResource(R.string.master_data_open_stock_items))
             }
         }
     }

@@ -47,7 +47,9 @@
     <string name="master_data_title">Master data</string>
     <string name="master_data_subtitle">Browse Connector master records for the selected company.</string>
     <string name="master_data_open_ledgers">Ledgers</string>
-    <string name="master_data_stock_items_future">Stock items (coming next)</string>
+    <string name="master_data_open_stock_items">Stock items</string>
+    <string name="master_data_offline_banner">Device is offline. Showing retained list when available.</string>
+    <string name="master_data_retry">Retry</string>
 
     <string name="ledger_browser_title">Ledgers</string>
     <string name="ledger_search_hint">Search ledgers</string>
@@ -56,6 +58,13 @@
     <string name="ledger_offline_banner">Device is offline. Showing retained list when available.</string>
     <string name="ledger_status_label">Status: %1$s</string>
     <string name="ledger_balance_label">Closing: %1$s</string>
+
+    <string name="stock_item_browser_title">Stock items</string>
+    <string name="stock_item_search_hint">Search stock items</string>
+    <string name="stock_item_empty">No stock items found. Sync stock items on the Connector if the list is empty.</string>
+    <string name="stock_item_status_label">Status: %1$s</string>
+    <string name="stock_item_unit_label">Unit: %1$s</string>
+    <string name="stock_item_balance_label">Closing: %1$s</string>
 
     <string name="server_config_title">Server configuration</string>
     <string name="server_config_url_label">Connector base URL</string>

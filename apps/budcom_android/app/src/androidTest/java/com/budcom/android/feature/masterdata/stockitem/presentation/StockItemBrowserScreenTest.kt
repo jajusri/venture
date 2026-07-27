@@ -1,4 +1,4 @@
-package com.budcom.android.feature.masterdata.ledger.presentation
+package com.budcom.android.feature.masterdata.stockitem.presentation
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
@@ -11,7 +11,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-class LedgerBrowserScreenTest {
+class StockItemBrowserScreenTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
@@ -19,45 +19,52 @@ class LedgerBrowserScreenTest {
     fun loadingState() {
         composeRule.setContent {
             BudcomTheme {
-                LedgerBrowserScreen(
-                    state = LedgerBrowserUiState(isInitialLoading = true),
+                StockItemBrowserScreen(
+                    state = StockItemBrowserUiState(isInitialLoading = true),
                     onEvent = {},
                 )
             }
         }
-        composeRule.onNodeWithTag("ledger_loading").assertIsDisplayed()
+        composeRule.onNodeWithTag("stock_item_loading").assertIsDisplayed()
     }
 
     @Test
     fun emptyState() {
         composeRule.setContent {
             BudcomTheme {
-                LedgerBrowserScreen(
-                    state = LedgerBrowserUiState(isInitialLoading = false),
+                StockItemBrowserScreen(
+                    state = StockItemBrowserUiState(isInitialLoading = false),
                     onEvent = {},
                 )
             }
         }
-        composeRule.onNodeWithTag("ledger_empty").assertIsDisplayed()
+        composeRule.onNodeWithTag("stock_item_empty").assertIsDisplayed()
     }
 
     @Test
     fun contentState() {
         composeRule.setContent {
             BudcomTheme {
-                LedgerBrowserScreen(
-                    state = LedgerBrowserUiState(
+                StockItemBrowserScreen(
+                    state = StockItemBrowserUiState(
                         isInitialLoading = false,
-                        ledgers = listOf(
-                            LedgerRowUi("guid:cash", "Cash", "Cash-in-Hand", "Active", "10 INR Dr"),
+                        stockItems = listOf(
+                            StockItemRowUi(
+                                id = "guid:widget",
+                                primaryLabel = "Widget",
+                                secondaryLabel = "Primary",
+                                statusLabel = "Active",
+                                unitLabel = "Nos",
+                                balanceLabel = "12 INR Dr",
+                            ),
                         ),
                     ),
                     onEvent = {},
                 )
             }
         }
-        composeRule.onNodeWithTag("ledger_list").assertIsDisplayed()
-        composeRule.onNodeWithTag("ledger_row_guid:cash").assertIsDisplayed()
+        composeRule.onNodeWithTag("stock_item_list").assertIsDisplayed()
+        composeRule.onNodeWithTag("stock_item_row_guid:widget").assertIsDisplayed()
     }
 
     @Test
@@ -65,16 +72,16 @@ class LedgerBrowserScreenTest {
         var retried = false
         composeRule.setContent {
             BudcomTheme {
-                LedgerBrowserScreen(
-                    state = LedgerBrowserUiState(
+                StockItemBrowserScreen(
+                    state = StockItemBrowserUiState(
                         isInitialLoading = false,
                         error = MasterDataUiError.Timeout("The request timed out."),
                     ),
-                    onEvent = { if (it is LedgerBrowserEvent.Retry) retried = true },
+                    onEvent = { if (it is StockItemBrowserEvent.Retry) retried = true },
                 )
             }
         }
-        composeRule.onNodeWithTag("ledger_retry").performClick()
+        composeRule.onNodeWithTag("stock_item_retry").performClick()
         assertTrue(retried)
     }
 
@@ -82,19 +89,19 @@ class LedgerBrowserScreenTest {
     fun offlineBannerWithContent() {
         composeRule.setContent {
             BudcomTheme {
-                LedgerBrowserScreen(
-                    state = LedgerBrowserUiState(
+                StockItemBrowserScreen(
+                    state = StockItemBrowserUiState(
                         isInitialLoading = false,
                         isOnline = false,
-                        ledgers = listOf(
-                            LedgerRowUi("guid:cash", "Cash", null, "Active", null),
+                        stockItems = listOf(
+                            StockItemRowUi("guid:widget", "Widget", null, "Active", null, null),
                         ),
                     ),
                     onEvent = {},
                 )
             }
         }
-        composeRule.onNodeWithTag("ledger_offline_banner").assertIsDisplayed()
-        composeRule.onNodeWithTag("ledger_list").assertIsDisplayed()
+        composeRule.onNodeWithTag("stock_item_offline_banner").assertIsDisplayed()
+        composeRule.onNodeWithTag("stock_item_list").assertIsDisplayed()
     }
 }

@@ -1,18 +1,18 @@
-package com.budcom.android.feature.masterdata.ledger.presentation
+package com.budcom.android.feature.masterdata.stockitem.presentation
 
 import com.budcom.android.core.common.AppError
 import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.masterdata.presentation.toMasterDataUiError
-import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemPage
 
-data class LedgerBrowserUiState(
+data class StockItemBrowserUiState(
     val isInitialLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val isLoadingMore: Boolean = false,
     val searchQuery: String = "",
-    val ledgers: List<LedgerRowUi> = emptyList(),
+    val stockItems: List<StockItemRowUi> = emptyList(),
     val page: Int = 1,
     val pageSize: Int = MasterDataBrowserDefaults.DEFAULT_PAGE_SIZE,
     val totalItems: Int = 0,
@@ -23,44 +23,47 @@ data class LedgerBrowserUiState(
     val error: MasterDataUiError? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isLoadingMore
-    val hasContent: Boolean get() = ledgers.isNotEmpty()
+    val hasContent: Boolean get() = stockItems.isNotEmpty()
 }
 
-data class LedgerRowUi(
+data class StockItemRowUi(
     val id: String,
     val primaryLabel: String,
     val secondaryLabel: String?,
     val statusLabel: String,
+    val unitLabel: String?,
     val balanceLabel: String?,
 )
 
-sealed interface LedgerBrowserEvent {
-    data object Load : LedgerBrowserEvent
-    data object Refresh : LedgerBrowserEvent
-    data object Retry : LedgerBrowserEvent
-    data object LoadNextPage : LedgerBrowserEvent
-    data class SearchChanged(val query: String) : LedgerBrowserEvent
+sealed interface StockItemBrowserEvent {
+    data object Load : StockItemBrowserEvent
+    data object Refresh : StockItemBrowserEvent
+    data object Retry : StockItemBrowserEvent
+    data object LoadNextPage : StockItemBrowserEvent
+    data class SearchChanged(val query: String) : StockItemBrowserEvent
 }
 
-/** @deprecated Prefer [MasterDataUiError]; retained as alias for ledger call sites. */
-typealias LedgerUiError = MasterDataUiError
+internal fun AppError.toStockItemUiError(): MasterDataUiError = toMasterDataUiError()
 
-internal fun AppError.toLedgerUiError(): MasterDataUiError = toMasterDataUiError()
-
-internal fun Ledger.toRowUi(): LedgerRowUi {
-    val secondary = listOfNotNull(parentGroup, alias?.let { "Alias: $it" })
-        .joinToString(" · ")
-        .ifBlank { null }
+internal fun StockItem.toRowUi(): StockItemRowUi {
+    val secondary = listOfNotNull(
+        parentGroup,
+        category?.let { "Category: $it" },
+        alias?.let { "Alias: $it" },
+        partNumber?.let { "Part: $it" },
+        hsnCode?.let { "HSN: $it" },
+    ).joinToString(" · ").ifBlank { null }
     val balance = closingBalance?.let { money ->
         "${money.amount} ${money.currencyCode} ${money.side.name}"
     }
-    return LedgerRowUi(
+    return StockItemRowUi(
         id = id,
         primaryLabel = name,
         secondaryLabel = secondary,
         statusLabel = status.name.lowercase().replaceFirstChar { it.titlecase() },
+        unitLabel = baseUnit,
         balanceLabel = balance,
     )
 }
 
-internal fun LedgerPage.toRows(): List<LedgerRowUi> = items.map { it.toRowUi() }
+internal fun StockItemPage.toRows(): List<StockItemRowUi> = items.map { it.toRowUi() }

@@ -1,5 +1,6 @@
 package com.budcom.android.feature.masterdata.ledger.data.remote
 
+import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.ledger.domain.model.AmountSide
 import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerDataQuality
@@ -66,4 +67,4 @@ internal fun LedgerQuery.toApiSortDirection(): String = when (sortDirection) {
 }
 
 internal fun LedgerQuery.normalizedText(): String? =
-    text?.trim()?.takeIf { it.isNotEmpty() }?.take(128)
+    text?.trim()?.takeIf { it.isNotEmpty() }?.take(MasterDataBrowserDefaults.MAX_QUERY_LENGTH)

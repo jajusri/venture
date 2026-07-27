@@ -1,4 +1,4 @@
-package com.budcom.android.feature.masterdata.ledger.presentation
+package com.budcom.android.feature.masterdata.stockitem.presentation
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,11 +44,11 @@ import com.budcom.android.feature.masterdata.presentation.displayMessage
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
-fun LedgerBrowserRoute(
-    viewModel: LedgerBrowserViewModel = hiltViewModel(),
+fun StockItemBrowserRoute(
+    viewModel: StockItemBrowserViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    LedgerBrowserScreen(
+    StockItemBrowserScreen(
         state = state,
         onEvent = viewModel::onEvent,
     )
@@ -56,14 +56,14 @@ fun LedgerBrowserRoute(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
-fun LedgerBrowserScreen(
-    state: LedgerBrowserUiState,
-    onEvent: (LedgerBrowserEvent) -> Unit,
+fun StockItemBrowserScreen(
+    state: StockItemBrowserUiState,
+    onEvent: (StockItemBrowserEvent) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pullRefreshState = rememberPullRefreshState(
         refreshing = state.isRefreshing,
-        onRefresh = { onEvent(LedgerBrowserEvent.Refresh) },
+        onRefresh = { onEvent(StockItemBrowserEvent.Refresh) },
     )
     val listState = rememberLazyListState()
 
@@ -76,15 +76,15 @@ fun LedgerBrowserScreen(
             .distinctUntilChanged()
             .collect { nearEnd ->
                 if (nearEnd && state.canLoadMore && !state.isBusy) {
-                    onEvent(LedgerBrowserEvent.LoadNextPage)
+                    onEvent(StockItemBrowserEvent.LoadNextPage)
                 }
             }
     }
 
     Scaffold(
-        modifier = modifier.fillMaxSize().testTag("ledger_browser_screen"),
+        modifier = modifier.fillMaxSize().testTag("stock_item_browser_screen"),
         topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.ledger_browser_title)) })
+            TopAppBar(title = { Text(stringResource(R.string.stock_item_browser_title)) })
         },
     ) { innerPadding ->
         Box(
@@ -100,36 +100,36 @@ fun LedgerBrowserScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (!state.isOnline) {
-                    MasterDataOfflineBanner(testTag = "ledger_offline_banner")
+                    MasterDataOfflineBanner(testTag = "stock_item_offline_banner")
                 }
 
                 OutlinedTextField(
                     value = state.searchQuery,
-                    onValueChange = { onEvent(LedgerBrowserEvent.SearchChanged(it)) },
-                    label = { Text(stringResource(R.string.ledger_search_hint)) },
+                    onValueChange = { onEvent(StockItemBrowserEvent.SearchChanged(it)) },
+                    label = { Text(stringResource(R.string.stock_item_search_hint)) },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("ledger_search")
-                        .semantics { contentDescription = "Search ledgers" },
+                        .testTag("stock_item_search")
+                        .semantics { contentDescription = "Search stock items" },
                 )
 
                 when {
                     state.isInitialLoading && !state.hasContent -> {
-                        MasterDataLoadingIndicator(testTag = "ledger_loading")
+                        MasterDataLoadingIndicator(testTag = "stock_item_loading")
                     }
                     state.error != null && !state.hasContent -> {
                         MasterDataErrorBlock(
                             error = state.error,
-                            onRetry = { onEvent(LedgerBrowserEvent.Retry) },
-                            errorTestTag = "ledger_error",
-                            retryTestTag = "ledger_retry",
+                            onRetry = { onEvent(StockItemBrowserEvent.Retry) },
+                            errorTestTag = "stock_item_error",
+                            retryTestTag = "stock_item_retry",
                         )
                     }
                     !state.hasContent -> {
                         MasterDataEmptyMessage(
-                            message = stringResource(R.string.ledger_empty),
-                            testTag = "ledger_empty",
+                            message = stringResource(R.string.stock_item_empty),
+                            testTag = "stock_item_empty",
                         )
                     }
                     else -> {
@@ -138,7 +138,7 @@ fun LedgerBrowserScreen(
                                 text = state.error.displayMessage(),
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.testTag("ledger_inline_error"),
+                                modifier = Modifier.testTag("stock_item_inline_error"),
                             )
                         }
                         LazyColumn(
@@ -147,10 +147,10 @@ fun LedgerBrowserScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier
                                 .fillMaxSize()
-                                .testTag("ledger_list"),
+                                .testTag("stock_item_list"),
                         ) {
-                            items(state.ledgers, key = { it.id }) { row ->
-                                LedgerRowCard(row = row)
+                            items(state.stockItems, key = { it.id }) { row ->
+                                StockItemRowCard(row = row)
                             }
                             if (state.isLoadingMore) {
                                 item {
@@ -174,23 +174,24 @@ fun LedgerBrowserScreen(
                 state = pullRefreshState,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .testTag("ledger_refresh_indicator"),
+                    .testTag("stock_item_refresh_indicator"),
             )
         }
     }
 }
 
 @Composable
-private fun LedgerRowCard(row: LedgerRowUi) {
+private fun StockItemRowCard(row: StockItemRowUi) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("ledger_row_${row.id}")
+            .testTag("stock_item_row_${row.id}")
             .semantics {
                 contentDescription = buildString {
                     append(row.primaryLabel)
                     row.secondaryLabel?.let { append(", ").append(it) }
                     append(", status ").append(row.statusLabel)
+                    row.unitLabel?.let { append(", unit ").append(it) }
                     row.balanceLabel?.let { append(", balance ").append(it) }
                 }
             },
@@ -205,12 +206,18 @@ private fun LedgerRowCard(row: LedgerRowUi) {
                 )
             }
             Text(
-                text = stringResource(R.string.ledger_status_label, row.statusLabel),
+                text = stringResource(R.string.stock_item_status_label, row.statusLabel),
                 style = MaterialTheme.typography.bodySmall,
             )
+            row.unitLabel?.let {
+                Text(
+                    text = stringResource(R.string.stock_item_unit_label, it),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             row.balanceLabel?.let {
                 Text(
-                    text = stringResource(R.string.ledger_balance_label, it),
+                    text = stringResource(R.string.stock_item_balance_label, it),
                     style = MaterialTheme.typography.bodySmall,
                 )
             }

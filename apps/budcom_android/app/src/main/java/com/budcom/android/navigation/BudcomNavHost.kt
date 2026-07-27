@@ -10,6 +10,7 @@ import com.budcom.android.feature.company.presentation.CompanyRoute
 import com.budcom.android.feature.dashboard.presentation.DashboardRoute
 import com.budcom.android.feature.masterdata.ledger.presentation.LedgerBrowserRoute
 import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
+import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
 
 /**
@@ -41,10 +42,14 @@ fun BudcomNavHost(
         composable(route = Routes.MASTER_DATA) {
             MasterDataHubScreen(
                 onOpenLedgers = { navController.navigate(Routes.LEDGERS) },
+                onOpenStockItems = { navController.navigate(Routes.STOCK_ITEMS) },
             )
         }
         composable(route = Routes.LEDGERS) {
             LedgerBrowserRoute()
+        }
+        composable(route = Routes.STOCK_ITEMS) {
+            StockItemBrowserRoute()
         }
     }
 }

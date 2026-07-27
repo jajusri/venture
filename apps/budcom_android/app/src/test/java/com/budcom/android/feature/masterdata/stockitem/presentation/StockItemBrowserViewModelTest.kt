@@ -1,17 +1,18 @@
-package com.budcom.android.feature.masterdata.ledger.presentation
+package com.budcom.android.feature.masterdata.stockitem.presentation
 
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
+import com.budcom.android.feature.masterdata.domain.model.MasterDataPagination
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
-import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerDataQuality
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatus
-import com.budcom.android.feature.masterdata.ledger.domain.repository.LedgerRepository
-import com.budcom.android.feature.masterdata.ledger.domain.usecase.LoadLedgersUseCase
-import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgersUseCase
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemDataQuality
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemPage
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemQuery
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemStatus
+import com.budcom.android.feature.masterdata.stockitem.domain.repository.StockItemRepository
+import com.budcom.android.feature.masterdata.stockitem.domain.usecase.LoadStockItemsUseCase
+import com.budcom.android.feature.masterdata.stockitem.domain.usecase.RefreshStockItemsUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -29,15 +30,15 @@ import org.junit.Before
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class LedgerBrowserViewModelTest {
+class StockItemBrowserViewModelTest {
     private val dispatcher = StandardTestDispatcher()
-    private lateinit var repository: FakeLedgerRepository
+    private lateinit var repository: FakeStockItemRepository
     private lateinit var connectivity: FakeConnectivity
 
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
-        repository = FakeLedgerRepository()
+        repository = FakeStockItemRepository()
         connectivity = FakeConnectivity(true)
     }
 
@@ -46,29 +47,29 @@ class LedgerBrowserViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createVm() = LedgerBrowserViewModel(
-        loadLedgers = LoadLedgersUseCase(repository),
-        refreshLedgers = RefreshLedgersUseCase(repository),
+    private fun createVm() = StockItemBrowserViewModel(
+        loadStockItems = LoadStockItemsUseCase(repository),
+        refreshStockItems = RefreshStockItemsUseCase(repository),
         connectivityObserver = connectivity,
     )
 
     @Test
-    fun `loads ledgers on start`() = runTest(dispatcher) {
+    fun `loads stock items on start`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
         assertFalse(vm.uiState.value.isInitialLoading)
-        assertEquals(1, vm.uiState.value.ledgers.size)
-        assertEquals("Cash", vm.uiState.value.ledgers[0].primaryLabel)
+        assertEquals(1, vm.uiState.value.stockItems.size)
+        assertEquals("Widget", vm.uiState.value.stockItems[0].primaryLabel)
     }
 
     @Test
     fun `empty result`() = runTest(dispatcher) {
         repository.result = AppResult.Success(
-            LedgerPage(emptyList(), 1, 50, 0, 0, null),
+            StockItemPage(emptyList(), MasterDataPagination(1, 50, 0, 0), null),
         )
         val vm = createVm()
         advanceUntilIdle()
-        assertTrue(vm.uiState.value.ledgers.isEmpty())
+        assertTrue(vm.uiState.value.stockItems.isEmpty())
         assertEquals(null, vm.uiState.value.error)
     }
 
@@ -84,11 +85,11 @@ class LedgerBrowserViewModelTest {
     fun `refresh retains content on failure`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
-        assertEquals(1, vm.uiState.value.ledgers.size)
+        assertEquals(1, vm.uiState.value.stockItems.size)
         repository.result = AppResult.Failure(AppError.Timeout())
-        vm.onEvent(LedgerBrowserEvent.Refresh)
+        vm.onEvent(StockItemBrowserEvent.Refresh)
         advanceUntilIdle()
-        assertEquals(1, vm.uiState.value.ledgers.size)
+        assertEquals(1, vm.uiState.value.stockItems.size)
         assertTrue(vm.uiState.value.error is MasterDataUiError.Timeout)
     }
 
@@ -96,56 +97,47 @@ class LedgerBrowserViewModelTest {
     fun `search passes query to repository`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
-        vm.onEvent(LedgerBrowserEvent.SearchChanged("cash"))
+        vm.onEvent(StockItemBrowserEvent.SearchChanged("widget"))
         advanceUntilIdle()
-        assertEquals("cash", repository.lastQuery?.text)
+        assertEquals("widget", repository.lastQuery?.text)
     }
 
     @Test
     fun `load next page appends`() = runTest(dispatcher) {
         repository.result = AppResult.Success(
-            LedgerPage(
-                items = listOf(sampleLedger("1", "A")),
-                page = 1,
-                pageSize = 1,
-                totalItems = 2,
-                totalPages = 2,
+            StockItemPage(
+                items = listOf(sampleItem("1", "A")),
+                pagination = MasterDataPagination(1, 1, 2, 2),
                 dataFreshnessAt = null,
             ),
         )
         val vm = createVm()
         advanceUntilIdle()
         repository.result = AppResult.Success(
-            LedgerPage(
-                items = listOf(sampleLedger("2", "B")),
-                page = 2,
-                pageSize = 1,
-                totalItems = 2,
-                totalPages = 2,
+            StockItemPage(
+                items = listOf(sampleItem("2", "B")),
+                pagination = MasterDataPagination(2, 1, 2, 2),
                 dataFreshnessAt = null,
             ),
         )
-        vm.onEvent(LedgerBrowserEvent.LoadNextPage)
+        vm.onEvent(StockItemBrowserEvent.LoadNextPage)
         advanceUntilIdle()
-        assertEquals(2, vm.uiState.value.ledgers.size)
+        assertEquals(2, vm.uiState.value.stockItems.size)
         assertFalse(vm.uiState.value.canLoadMore)
     }
 }
 
-private class FakeLedgerRepository : LedgerRepository {
-    var result: AppResult<LedgerPage> = AppResult.Success(
-        LedgerPage(
-            items = listOf(sampleLedger("guid:cash", "Cash")),
-            page = 1,
-            pageSize = 50,
-            totalItems = 1,
-            totalPages = 1,
+private class FakeStockItemRepository : StockItemRepository {
+    var result: AppResult<StockItemPage> = AppResult.Success(
+        StockItemPage(
+            items = listOf(sampleItem("guid:widget", "Widget")),
+            pagination = MasterDataPagination(1, 50, 1, 1),
             dataFreshnessAt = "t",
         ),
     )
-    var lastQuery: LedgerQuery? = null
+    var lastQuery: StockItemQuery? = null
 
-    override suspend fun loadLedgers(query: LedgerQuery): AppResult<LedgerPage> {
+    override suspend fun loadStockItems(query: StockItemQuery): AppResult<StockItemPage> {
         lastQuery = query
         return result
     }
@@ -157,13 +149,18 @@ private class FakeConnectivity(online: Boolean) : NetworkConnectivityObserver {
     override fun current(): Boolean = flow.value
 }
 
-private fun sampleLedger(id: String, name: String) = Ledger(
+private fun sampleItem(id: String, name: String) = StockItem(
     id = id,
     name = name,
     alias = null,
-    parentGroup = "Cash-in-Hand",
-    status = LedgerStatus.Active,
+    parentGroup = "Primary",
+    category = null,
+    baseUnit = "Nos",
+    partNumber = null,
+    hsnCode = null,
+    gstRate = null,
+    status = StockItemStatus.Active,
     closingBalance = null,
-    dataQuality = LedgerDataQuality.Complete,
+    dataQuality = StockItemDataQuality.Complete,
     syncedAt = "t",
 )
