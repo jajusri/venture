@@ -1,12 +1,12 @@
 # Confirmed Connector Contracts — Master Data (Android Milestone)
 
-**Date:** 2026-07-27  
+**Date:** 2026-07-27 (updated for Stock Item Browser)  
 **Source of truth:** Connector implementation under `connector/budcom_connector`  
-**Purpose:** Contract discovery for BUDCO Android Master Data / Ledger Browser
+**Purpose:** Contract discovery for BUDCO Android Master Data browsers
 
 ---
 
-## Ledger list (primary for Ledger Browser)
+## Ledger list (Ledger Browser)
 
 | Item | Confirmed value |
 | --- | --- |
@@ -31,77 +31,88 @@
 
 ### Response (200)
 
-Envelope fields plus search result:
-
 - `schemaVersion`: `"1.0.0"`
 - `dataFreshnessAt`: ISO timestamp
-- `storage`: `StorageStatus` (`backend`, `schemaVersion`, `databaseHealthy`, `migrationStatus`, `message`)
+- `storage`: `StorageStatus`
 - `items`: `LedgerSummary[]`
 - `pagination`: `{ page, pageSize, totalItems, totalPages }`
-
-### LedgerSummary fields (domain contract v2)
-
-`id`, `name`, `normalizedName`, `alias?`, `parentGroup?`, `status`, `openingBalance?`, `closingBalance?`, `balanceNature`, `guid?`, `alterId?`, `masterId?`, `identitySource`, `dataQuality`, `isBillWiseOn?`, `isDeleted`, `syncedAt`
-
-`NormalizedAmount`: `{ amount, currencyCode, side }` where `side` is `Dr` | `Cr`.
-
-### Error schema
-
-Connector `AppError` JSON (e.g. `{ code, message }`); 404 on detail miss.
-
-### Request body
-
-None for list/detail GET.
-
-### Pagination / search / sort
-
-Confirmed as above (page + pageSize + totalPages; `query` search; limited sort fields).
 
 ### Source files
 
 - `src/api/routes/ledgers.ts`
 - `src/erp/ledger/ledger-domain.ts`
-- `src/services/ledger/ledger-sync.service.ts` (`getLedgers`, `requireCompanyId`)
-- Tests: `test/integration/ledger-sync.test.ts`, `test/integration/ledger-api-negative.test.ts`, `test/unit/ledger/ledger-sync.test.ts`
-
-### Ambiguities
-
-- List reflects **local Connector cache** after sync; empty list is valid when never synced (not a protocol gap).
-- Sync endpoints (`POST /sync/ledgers`, …) exist but are **out of scope** for this Android milestone (Sync foundation is later).
+- `src/services/ledger/ledger-sync.service.ts`
 
 ---
 
-## Ledger detail (available; not required for list milestone UI)
-
-| Item | Value |
-| --- | --- |
-| Route | `GET /ledgers/:id` |
-| 200 | `{ schemaVersion, dataFreshnessAt, ledger: LedgerDetails }` |
-| 404 | `{ code: 'NOT_FOUND', message }` |
-
----
-
-## Alternate live-extraction route (not used for Browser cache list)
-
-| Item | Value |
-| --- | --- |
-| Route | `GET /companies/:companyId/ledgers` |
-| Behavior | Extraction/master-data service with pagination (`page`/`pageSize`) |
-| Source | `src/api/routes/master-data.ts` |
-
-Android Ledger Browser uses **`GET /ledgers`** (session-scoped repository), not the company-path extraction route.
-
----
-
-## Stock Item (documented; implementation deferred)
+## Stock Item list (Stock Item Browser)
 
 | Item | Confirmed value |
 | --- | --- |
 | Route | `GET /stock-items` |
-| Detail | `GET /stock-items/:id` |
-| Session | Same company/session requirement pattern as ledgers |
-| Query | `query`, `parentGroup`, `category`, `dataQuality`, `page`, `pageSize`, `sortBy`, `sortDirection` |
-| Response | `schemaVersion`, `dataFreshnessAt`, `storage`, `items`, `pagination` |
-| Source | `src/api/routes/stock-items.ts`, `src/erp/stock-item/stock-item-domain.ts` |
+| Method | GET |
+| Auth headers | None (session is in-process Connector state) |
+| Session requirement | Selected company required (`requireCompanyId` / session validation) |
+| Missing company | HTTP **400**, `VALIDATION_ERROR` / “No company selected.” |
+| Service not running | HTTP **503** |
 
-Full Stock Item Browser is deferred to the next roadmap milestone.
+### Query parameters
+
+| Param | Behavior |
+| --- | --- |
+| `query` | Optional string, max 128 chars — server-side search |
+| `parentGroup` | Optional string, max 128 |
+| `category` | Optional string, max 128 |
+| `dataQuality` | Optional `complete` \| `incomplete` only |
+| `page` | Default 1; values &lt; 1 clamped to 1 |
+| `pageSize` | Default 50; clamped 1–100 |
+| `sortBy` | `name` (default), `parentGroup`, `category`, `baseUnit`, `syncedAt`; unknown → `name` |
+| `sortDirection` | `asc` (default) or `desc`; other → `asc` |
+
+### Response (200)
+
+- `schemaVersion`: `"1.0.0"`
+- `dataFreshnessAt`: ISO timestamp
+- `storage`: `StorageStatus`
+- `items`: `StockItemSummary[]`
+- `pagination`: `{ page, pageSize, totalItems, totalPages }`
+
+### StockItemSummary fields (domain contract)
+
+`id`, `name`, `normalizedName`, `parentGroup?`, `category?`, `baseUnit?`, `dataQuality` (`complete`\|`incomplete`), `openingBalance?`, `closingBalance?`, `hsnCode?`, `gstRate?`, `guid?`, `alterId?`, `alias?`, `partNumber?`, `status` (`active`\|`inactive`\|`unknown`), `sourceSystem`, `isDeleted`, `syncedAt`
+
+`NormalizedAmount`: `{ amount, currencyCode, side }` where `side` is `Dr` | `Cr`.
+
+### Error schema
+
+Connector `AppError` JSON (e.g. `{ code, message }`); detail miss → 404 `NOT_FOUND`.
+
+### Request body
+
+None for list/detail GET.
+
+### Detail (available; not required for list UI)
+
+| Item | Value |
+| --- | --- |
+| Route | `GET /stock-items/:id` |
+| 200 | `{ schemaVersion, dataFreshnessAt, stockItem: StockItemDetails }` |
+
+### Source files
+
+- `src/api/routes/stock-items.ts`
+- `src/erp/stock-item/stock-item-domain.ts`
+- `src/services/stock-item/stock-item-sync.service.ts` (`getStockItems`, `requireCompanyId`)
+- Tests: `test/integration/stock-item-api-negative.test.ts`, `test/integration/stock-item-sync.test.ts`, `test/unit/stock-item/*`
+
+### Ambiguities / out of scope
+
+- List reflects **local Connector cache** after sync; empty list is valid when never synced.
+- Sync endpoints (`POST /sync/stock-items`, …) are **out of scope** for this Android milestone.
+- Alternate extraction route `GET /companies/:companyId/stock-items` is **not** used by the browser.
+
+---
+
+## Android browser field policy
+
+Display only confirmed summary fields useful for browsing (name, group/category, unit, status, balances/HSN when present). Do not fabricate warehouse, pricing, tax calculations, or movement history.

@@ -8,13 +8,14 @@
 - Android architecture ADRs and development workflow
 - Architecture review and repository evolution guidance
 - Stabilized operational Dashboard (home destination)
-- Confirmed Master Data / Ledger Connector contract notes (`docs/contracts/android-master-data-ledger.md`)
-- Master Data foundation (hub navigation, category identity)
-- Ledger Browser against Connector `GET /ledgers` (list, search, pagination, refresh, offline/error states)
+- Confirmed Master Data / Ledger / Stock Item Connector contract notes (`docs/contracts/android-master-data-ledger.md`)
+- Master Data foundation (hub navigation, shared list UI conventions, pagination metadata, shared UI errors)
+- Ledger Browser against Connector `GET /ledgers`
+- Stock Item Browser against Connector `GET /stock-items` (list, search, pagination, refresh, offline/error states)
 
 ### Changed
 
 - Dashboard architectural boundaries (stable ports, authoritative operational mode)
 - Startup Connector URL hydration via core port
 - Android module documentation accuracy
-- Roadmap: Dashboard completed; Master Data / Ledger Browser completed; next = Stock Item Browser
+- Roadmap: Master Data complete (Dashboard, Ledger Browser, Stock Item Browser); next = Voucher Browser

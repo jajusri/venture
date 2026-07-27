@@ -8,9 +8,9 @@ Authoritative docs: [`docs/PRODUCT_SOUL.md`](../../docs/PRODUCT_SOUL.md), [`docs
 
 ## Milestone status
 
-**Current:** Stock Item Browser (see roadmap).
+**Current:** Master Data complete (see roadmap). **Next:** Voucher Browser.
 
-**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub, Ledger Browser.
+**Completed in this module:** networking foundation, dynamic server configuration, health/readiness, company selection, session validation, operational dashboard (home), Master Data hub + shared list foundation, Ledger Browser, Stock Item Browser.
 
 ## Stack
 
@@ -42,27 +42,30 @@ com.budcom.android
 │   ├── serverconfig    # URL + health/readiness (+ ConnectorStatusPort)
 │   ├── company         # discovery/session (+ CompanySessionPort)
 │   ├── dashboard       # operational home (domain + presentation)
-│   ├── masterdata      # hub + category identity
-│   │   └── ledger      # Ledger Browser vertical slice
+│   ├── masterdata      # hub, shared list conventions, pagination VO
+│   │   ├── ledger      # Ledger Browser vertical slice
+│   │   └── stockitem   # Stock Item Browser vertical slice
 │   └── settings        # reserved
 ├── data/ / domain/     # scaffold markers only — prefer feature slices
 ├── navigation
 └── ui
 ```
 
-## Master Data / Ledger capabilities
+## Master Data capabilities
 
 | Capability | Status |
 | --- | --- |
-| Dashboard → Master Data → Ledgers navigation | Implemented |
-| `GET /ledgers` list (session company required on Connector) | Implemented |
-| Server-side `query` search (debounced) | Implemented |
-| Page / pageSize pagination | Implemented |
-| Manual refresh (pull-to-refresh) | Implemented |
-| Loading / empty / error / offline UI | Implemented |
-| Stock Items destination | Hub placeholder only (disabled) |
+| Dashboard → Master Data → Ledgers | Implemented |
+| Dashboard → Master Data → Stock Items | Implemented |
+| Shared list UI / error / debounce defaults | Implemented |
+| `GET /ledgers` list | Implemented |
+| `GET /stock-items` list | Implemented |
+| Server-side `query` search (debounced) | Implemented (both) |
+| Page / pageSize pagination | Implemented (both) |
+| Manual refresh (pull-to-refresh) | Implemented (both) |
+| Loading / empty / error / offline UI | Implemented (both) |
 | Durable Room cache | Deferred |
-| Ledger detail screen | Deferred |
+| Detail screens | Deferred |
 
 Contract notes: [`docs/contracts/android-master-data-ledger.md`](../../docs/contracts/android-master-data-ledger.md).
 

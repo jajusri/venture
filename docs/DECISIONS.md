@@ -49,12 +49,19 @@
 **Context:** No approved stale-data / offline-cache product behavior for Master Data yet; constitution forbids pretending offline availability without a real cache.  
 **Consequences:** Offline shows an honest banner; retained list may remain visible after a successful prior load; Sync foundation / Room may revisit later.
 
-### 2026-07-27 — Ledger search follows Connector `query`
+### 2026-07-27 — Stock Item search follows Connector `query`
 
 **Status:** Accepted  
-**Decision:** Ledger search uses Connector `GET /ledgers?query=` with presentation debounce (350ms); not client-only filtering of a full ERP catalog.  
-**Context:** Connector implements server-side search over its local ledger cache.  
-**Consequences:** Empty results after sync-less Connector state are valid; Universal Search remains a later milestone.
+**Decision:** Stock Item search uses Connector `GET /stock-items?query=` with the shared Master Data debounce constant (350ms).  
+**Context:** Connector implements the same query max-length and pagination pattern as ledgers, with stock-specific sort fields (`category`, `baseUnit`).  
+**Consequences:** Stock Item Browser remains a typed vertical slice; shared reuse is limited to list UI conventions, pagination metadata, and error mapping.
+
+### 2026-07-27 — Shared Master Data list foundation (not a universal repository)
+
+**Status:** Accepted  
+**Decision:** Extract only shared list-browser conventions (`MasterDataUiError`, list Compose primitives, pagination VO, debounce/page-size constants). Keep typed per-entity repositories and DTOs.  
+**Context:** Ledger and Stock Item browsers share UX states but different Connector fields and query params.  
+**Consequences:** Further shared abstractions require a third justifying consumer.
 
 ---
 
