@@ -184,6 +184,7 @@
     <string name="voucher_details_no_inventory_lines">No inventory entries in this voucher.</string>
     <string name="voucher_details_line_title">%1$d. %2$s</string>
     <string name="voucher_details_quantity">Quantity: %1$s</string>
+    <string name="voucher_details_rate">Rate: %1$s</string>
 
     <string name="server_config_title">Server configuration</string>
     <string name="server_config_url_label">Connector base URL</string>

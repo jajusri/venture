@@ -67,6 +67,7 @@ internal fun VoucherInventoryEntryDto.toDomain(): VoucherInventoryLine = Voucher
     lineNumber = lineNumber,
     itemName = itemName,
     quantity = quantity?.takeIf { it.isNotBlank() },
+    rate = rate?.takeIf { it.isNotBlank() },
     amount = amount?.toDomain(),
 )
 

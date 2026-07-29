@@ -84,5 +84,6 @@ data class VoucherInventoryEntryDto(
     val lineNumber: Int,
     val itemName: String,
     val quantity: String? = null,
+    val rate: String? = null,
     val amount: VoucherAmountDto? = null,
 )

@@ -47,6 +47,7 @@ data class VoucherInventoryLineUi(
     val lineNumber: Int,
     val itemName: String,
     val quantityLabel: String?,
+    val rateLabel: String? = null,
     val amountLabel: String?,
 )
 
@@ -88,6 +89,7 @@ private fun VoucherInventoryLine.toLineUi(): VoucherInventoryLineUi = VoucherInv
     lineNumber = lineNumber,
     itemName = itemName,
     quantityLabel = quantity,
+    rateLabel = rate?.takeIf { it.isNotBlank() },
     amountLabel = amount.formatAmount(),
 )
 

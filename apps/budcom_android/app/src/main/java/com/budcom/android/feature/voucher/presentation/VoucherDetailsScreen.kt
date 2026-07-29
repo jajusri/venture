@@ -313,6 +313,12 @@ private fun InventoryLineRow(line: VoucherInventoryLineUi) {
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
+        line.rateLabel?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                text = stringResource(R.string.voucher_details_rate, it),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
         line.amountLabel?.let {
             Text(text = it, style = MaterialTheme.typography.bodyMedium)
         }

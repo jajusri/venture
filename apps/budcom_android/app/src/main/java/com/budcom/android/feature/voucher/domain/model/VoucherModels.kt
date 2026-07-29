@@ -125,5 +125,6 @@ data class VoucherInventoryLine(
     val lineNumber: Int,
     val itemName: String,
     val quantity: String?,
+    val rate: String? = null,
     val amount: VoucherMoney?,
 )
