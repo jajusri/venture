@@ -45,6 +45,10 @@ function loadProvenanceFromEnv() {
 export function generateBuildInfo(options = {}) {
   const desktopPkg = readJson(path.join(repoRoot, 'apps/budcom_desktop/package.json'));
   const connectorPkg = readJson(path.join(repoRoot, 'connector/budcom_connector/package.json'));
+  const schemaModulePath = path.join(repoRoot, 'connector/budcom_connector/src/storage/sqlite/schema.ts');
+  const schemaSource = fs.readFileSync(schemaModulePath, 'utf8');
+  const schemaMatch = schemaSource.match(/export const STORAGE_SCHEMA_VERSION\s*=\s*(\d+)\s*;/);
+  const storageSchemaVersionFromSource = schemaMatch ? Number.parseInt(schemaMatch[1], 10) : undefined;
   const provenance = options.provenance ?? loadProvenanceFromEnv();
   const releaseMode = options.releaseMode ?? process.env.BUDCOM_RELEASE_MODE ?? 'controlled_pilot';
   const desktopVersion = desktopPkg.version;
@@ -59,7 +63,7 @@ export function generateBuildInfo(options = {}) {
     applicationVersion: desktopVersion,
     desktopVersion,
     connectorVersion,
-    storageSchemaVersion: options.storageSchemaVersion ?? 8,
+    storageSchemaVersion: options.storageSchemaVersion ?? storageSchemaVersionFromSource ?? 11,
     gitCommit,
     buildTimestamp: options.buildTimestamp ?? new Date().toISOString(),
     releaseMode,
