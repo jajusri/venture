@@ -79,9 +79,10 @@ class VoucherDtoMappingTest {
                   "inventoryEntries": [
                     {
                       "lineNumber": 1,
-                      "itemName": "Widget",
-                      "quantity": "2 Nos",
-                      "amount": { "value": "50.00", "side": "debit" }
+                  "itemName": "Widget",
+                  "quantity": "2 Nos",
+                  "rate": "25.00/No",
+                  "amount": { "value": "50.00", "side": "debit" }
                     }
                   ]
                 }
@@ -96,6 +97,7 @@ class VoucherDtoMappingTest {
         assertEquals("Cash", details.ledgerEntries[0].ledgerName)
         assertEquals(1, details.inventoryEntries.size)
         assertEquals("2 Nos", details.inventoryEntries[0].quantity)
+        assertEquals("25.00/No", details.inventoryEntries[0].rate)
     }
 
     @Test
@@ -127,6 +129,38 @@ class VoucherDtoMappingTest {
         assertNull(details.summary.amount?.side)
         assertEquals(1, details.ledgerEntries.size)
         assertEquals("Cash", details.ledgerEntries[0].ledgerName)
+    }
+
+    @Test
+    fun `deserializes empty page and credit amount side`() {
+        val payload = """
+            {
+              "schemaVersion": "1.0.0",
+              "data": {
+                "companyId": "budcom-test-01",
+                "items": [
+                  {
+                    "id": "v-2",
+                    "date": "2026-07-01",
+                    "type": "Receipt",
+                    "number": null,
+                    "partyName": null,
+                    "referenceNumber": null,
+                    "amount": { "value": "25.50", "side": "credit" },
+                    "status": "active",
+                    "dataQuality": "incomplete"
+                  }
+                ],
+                "pagination": { "page": 2, "pageSize": 50, "totalItems": 75, "totalPages": 2 }
+              }
+            }
+        """.trimIndent()
+        val page = json.decodeFromString(VoucherListEnvelopeDto.serializer(), payload).toDomain()
+        assertEquals(2, page.page)
+        assertEquals(75, page.totalItems)
+        assertEquals(false, page.canLoadMore)
+        assertEquals(VoucherMoneySide.Credit, page.items.single().amount?.side)
+        assertNull(page.items.single().number)
     }
 
     @Test

@@ -11,6 +11,7 @@ import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.voucher.domain.model.VoucherDataQuality
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
 import com.budcom.android.feature.voucher.domain.model.VoucherIdentity
+import com.budcom.android.feature.voucher.domain.model.VoucherInventoryLine
 import com.budcom.android.feature.voucher.domain.model.VoucherLedgerLine
 import com.budcom.android.feature.voucher.domain.model.VoucherMoney
 import com.budcom.android.feature.voucher.domain.model.VoucherMoneySide
@@ -71,6 +72,7 @@ class VoucherDetailsViewModelTest {
         assertEquals("Sales", vm.uiState.value.details?.typeLabel)
         assertEquals("S-1", vm.uiState.value.details?.numberLabel)
         assertEquals(1, vm.uiState.value.details?.ledgerLines?.size)
+        assertEquals("50.00/PCS", vm.uiState.value.details?.inventoryLines?.single()?.rateLabel)
     }
 
     @Test
@@ -160,5 +162,13 @@ private fun sampleDetails() = VoucherDetails(
             isDeemedPositive = true,
         ),
     ),
-    inventoryEntries = emptyList(),
+    inventoryEntries = listOf(
+        VoucherInventoryLine(
+            lineNumber = 1,
+            itemName = "Fixture item",
+            quantity = "2 PCS",
+            rate = "50.00/PCS",
+            amount = VoucherMoney("100.00", VoucherMoneySide.Debit),
+        ),
+    ),
 )

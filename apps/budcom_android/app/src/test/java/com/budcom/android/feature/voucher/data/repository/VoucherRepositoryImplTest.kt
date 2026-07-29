@@ -110,6 +110,50 @@ class VoucherRepositoryImplTest {
         assertEquals(404, (result.error as AppError.Remote).httpStatus)
     }
 
+    @Test
+    fun `maps list http validation failure`() = runTest(dispatcher) {
+        val remote = FakeRemote(
+            listResult = ApiResult.Failure(
+                NetworkError.Http(400, "VALIDATION_ERROR", "Invalid voucher query."),
+            ),
+        )
+        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val result = repo.listVouchers(
+            VoucherQuery(
+                companyId = "estimation",
+                dateRange = VoucherDateRange("2026-07-01", "2026-07-27"),
+            ),
+        ) as AppResult.Failure
+        assertTrue(result.error is AppError.Remote)
+        assertEquals(400, (result.error as AppError.Remote).httpStatus)
+        assertEquals("VALIDATION_ERROR", result.error.code)
+    }
+
+    @Test
+    fun `maps empty list page success`() = runTest(dispatcher) {
+        val remote = FakeRemote(
+            listResult = ApiResult.Success(
+                VoucherPage(
+                    companyId = "estimation",
+                    items = emptyList(),
+                    page = 1,
+                    pageSize = 50,
+                    totalItems = 0,
+                    totalPages = 0,
+                ),
+            ),
+        )
+        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val result = repo.listVouchers(
+            VoucherQuery(
+                companyId = "estimation",
+                dateRange = VoucherDateRange("2026-07-01", "2026-07-27"),
+            ),
+        ) as AppResult.Success
+        assertTrue(result.value.items.isEmpty())
+        assertEquals(false, result.value.canLoadMore)
+    }
+
     private class FakeRemote(
         private val listResult: ApiResult<VoucherPage>,
         private val detailsResult: ApiResult<VoucherDetails> = ApiResult.Failure(NetworkError.Unknown()),
