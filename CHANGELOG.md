@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Connector 0.4.0 – Production Voucher Subsystem
+
+- **Production Voucher extraction** — approved read-only, company/date-scoped Tally operation with bounded XML and response handling
+- **Snapshot repository** — company-isolated SQLite persistence, atomic staging, validation, promotion, archival, and restart recovery
+- **Controlled synchronization** — bounded batches, cancellation, progress reporting, rollback, reservations, and structured summaries
+- **Read-only Voucher API** — versioned list, lookup, search, and snapshot contracts with deterministic ordering and validation
+- **Production hardening** — fail-fast startup checks, local `/health` and `/ready`, request correlation, resource cleanup, and operations guidance
+- **Compatibility** — API schema remains `1.0.0`; SQLite migrations remain forward-applied by the existing migration runner
+
 ### Milestone 3C – Production Tally Groups
 
 - **ERP-neutral groups contract** — `ErpGroupsResult` with explicit `GroupExtractionStatus`, hierarchy issues, and `ErpGroupSummary` domain models

@@ -31,6 +31,7 @@ Each ADR should state context, decision, consequences, and status. Prefer append
 | [module-boundaries.md](./module-boundaries.md) | Feature modules and dependency rules |
 | [milestones.md](./milestones.md) | Platform delivery milestones M0–M5 |
 | [accepted-reliability-hardening.md](./accepted-reliability-hardening.md) | Accepted Connector reliability rules |
+| [safe-voucher-extraction.md](./safe-voucher-extraction.md) | Safe three-phase Tally Voucher, ledger-entry, and inventory-entry extraction |
 
 ---
 

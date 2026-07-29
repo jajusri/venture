@@ -67,6 +67,10 @@ apps/budcom_desktop/.packaged-node/
 /Tally-Test-Backups/
 connector/budcom_connector/live-validation-output.json
 
+# Local Voucher discovery approvals and evidence (sensitive, never commit)
+/docs/testing/voucher-discovery-manifest.local.json
+/evidence/voucher-discovery/
+
 # TypeScript emit artifacts (tests run via vitest on .ts source)
 connector/budcom_connector/test/**/*.js
 connector/budcom_connector/test/**/*.js.map
