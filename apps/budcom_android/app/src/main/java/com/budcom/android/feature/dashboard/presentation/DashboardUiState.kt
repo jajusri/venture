@@ -33,6 +33,13 @@ data class DashboardUiState(
     val isBusy: Boolean
         get() = isInitialLoading || isRefreshing || isTestingConnection || isValidatingSession
 
+    /**
+     * True only while a user-initiated probe/validate is running.
+     * Dashboard refresh/initial load must not disable recovery actions (Settings, Test connection).
+     */
+    val isProbeBusy: Boolean
+        get() = isTestingConnection || isValidatingSession
+
     val hasContent: Boolean
         get() = baseUrl.isNotBlank() ||
             connectorConnected != null ||

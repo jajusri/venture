@@ -44,7 +44,7 @@ class DashboardViewModel @Inject constructor(
                 _uiState.update { state ->
                     state.copy(
                         isOnline = context.isOnline,
-                        baseUrl = context.baseUrl,
+                        baseUrl = context.baseUrl.ifBlank { state.baseUrl },
                         selectedCompanyId = context.selectedCompanyId,
                         sessionValidity = if (context.selectedCompanyId.isNullOrBlank()) {
                             DashboardSessionValidity.NoCompany
@@ -132,8 +132,7 @@ class DashboardViewModel @Inject constructor(
     }
 
     private fun testConnectionOnly() {
-        if (refreshInFlight || _uiState.value.isTestingConnection) return
-        refreshInFlight = true
+        if (_uiState.value.isTestingConnection || _uiState.value.isValidatingSession) return
         viewModelScope.launch {
             _uiState.update { it.copy(isTestingConnection = true) }
             when (val result = probeConnectorConnection()) {
@@ -161,12 +160,11 @@ class DashboardViewModel @Inject constructor(
                     }
                 }
             }
-            refreshInFlight = false
         }
     }
 
     private fun validateSessionOnly() {
-        if (_uiState.value.isValidatingSession || refreshInFlight) return
+        if (_uiState.value.isValidatingSession || _uiState.value.isTestingConnection) return
         if (_uiState.value.selectedCompanyId.isNullOrBlank()) return
         viewModelScope.launch {
             _uiState.update { it.copy(isValidatingSession = true) }

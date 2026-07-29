@@ -333,7 +333,7 @@ private fun ConnectorStatusCard(
             }
             OutlinedButton(
                 onClick = { onEvent(DashboardEvent.TestConnection) },
-                enabled = !state.isBusy,
+                enabled = !state.isProbeBusy,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("dashboard_test_connection")
@@ -417,7 +417,7 @@ private fun CompanySessionCard(
                 }
                 Button(
                     onClick = { onEvent(DashboardEvent.ValidateSession) },
-                    enabled = !state.selectedCompanyId.isNullOrBlank() && !state.isBusy,
+                    enabled = !state.selectedCompanyId.isNullOrBlank() && !state.isProbeBusy,
                     modifier = Modifier
                         .weight(1f)
                         .testTag("dashboard_validate_session")
