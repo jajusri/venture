@@ -107,8 +107,23 @@ internal fun mapSnapshotToUiState(
         else -> prior.connectorConnected
     }
     val baseUrl = snapshot.baseUrl.ifBlank { prior.baseUrl }
-    val sessionValidity = snapshot.sessionValidity
+    val connectorUnavailable = !snapshot.healthPresent && snapshot.connectorError != null
+    // Retain last-known company/session when Connector disconnects mid-session.
     val selectedCompanyId = snapshot.selectedCompanyId
+        ?: prior.selectedCompanyId.takeIf { connectorUnavailable || !snapshot.isOnline }
+    val selectedCompanyName = snapshot.selectedCompanyName
+        ?: prior.selectedCompanyName.takeIf { selectedCompanyId != null }
+    val sessionValidity = when {
+        snapshot.sessionValidity != DashboardSessionValidity.NoCompany ||
+            selectedCompanyId.isNullOrBlank() -> snapshot.sessionValidity
+        connectorUnavailable || !snapshot.isOnline ->
+            if (prior.sessionValidity == DashboardSessionValidity.Valid) {
+                prior.sessionValidity
+            } else {
+                DashboardSessionValidity.Unknown
+            }
+        else -> snapshot.sessionValidity
+    }
     val mode = deriveOperationalMode(
         DashboardOperationalInputs(
             isOnline = snapshot.isOnline,
@@ -132,7 +147,7 @@ internal fun mapSnapshotToUiState(
             ?: prior.lastSuccessfulHealthCheckEpochMillis,
         connectorError = snapshot.connectorError?.toDashboardUiError(),
         selectedCompanyId = selectedCompanyId,
-        selectedCompanyName = snapshot.selectedCompanyName ?: prior.selectedCompanyName,
+        selectedCompanyName = selectedCompanyName,
         sessionValidity = sessionValidity,
         lastSuccessfulSessionValidationEpochMillis =
             snapshot.lastSuccessfulSessionValidationEpochMillis

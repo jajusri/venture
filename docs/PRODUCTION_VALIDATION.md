@@ -1,130 +1,110 @@
 # BUDCO Android — Production Validation
 
-**Date:** 2026-07-27  
-**Git tip at start:** `be0b960` (`docs: document settings foundation`)  
-**Scope:** Production Validation milestone (not a feature milestone)  
-**Status:** **Incomplete** — automated gates passed; live device + live Connector verification not achieved
+**Scope:** Production Validation milestone (`apps/budcom_android`)  
+**Status:** **Partial pass** — clean-install active-company hydration from Connector session **PASS** (2026-07-28); broader E2E checklist still incomplete
 
 ---
 
-## Environment
+## Clean-install validation — active company hydration (2026-07-28)
+
+**Test date:** 2026-07-28 (~22:55 IST)  
+**Purpose:** Verify a brand-new Android installation restores the active company from Connector session without manual company selection.  
+**Result:** **PASS**
+
+### Environment
 
 | Item | Value |
 | --- | --- |
 | Host OS | Windows 10.0.26200 |
-| Date/time | 2026-07-27 20:06 IST (start); validation window through ~20:17 IST |
-| Application version | `0.1.0` (versionCode `1`) |
-| Build variant | `debug` (`com.budcom.android.debug`) |
-| Default Connector URL (BuildConfig) | `http://10.0.2.2:8080/` |
-| Physical device | None attached (`adb devices` empty at start) |
-| Emulator AVDs present | `Medium_Phone_API_36.1`, `Pixel_7` |
-| Emulator runtime | Launch attempted (headless `Medium_Phone_API_36.1`); device remained `offline` >5 minutes — **no usable device** |
-| Android version on device | **Not obtained** (emulator never reached `device`) |
-| Connector URL probed | `http://127.0.0.1:8080`, `http://localhost:8080`, `http://10.0.2.2:8080` |
-| Connector version | **Not obtained** — Connector unreachable |
-| Company tested | **Not tested** — no live session |
+| Device | Physical **CPH2707** (OPPO), serial `3C15CB00C6Z00000` |
+| Android version | **16** (API **36**) |
+| Application | `0.1.0` debug (`com.budcom.android.debug`) |
+| Install method | `adb uninstall` (confirmed package removed) → `:app:installDebug` |
+| Connector | Live on host `127.0.0.1:8080`, version **0.3.1** |
+| Reachability | `adb reverse tcp:8080 tcp:8080`; validation build used temporary `BuildConfig.CONNECTOR_BASE_URL=http://127.0.0.1:8080/` for physical+reverse only, then **reverted** to `http://10.0.2.2:8080/` |
+| Pre-existing Connector session | `selectedCompany`: **Budcom-Test-01** (`budcom-test-01`), `connectionStatus`: `connected` |
+| Manual company selection | **None** |
 
----
+### Procedure
 
-## Connector precheck
+1. Uninstalled `com.budcom.android.debug` (clean app data).  
+2. Built and installed latest debug APK from current source (including session-hydrate fix).  
+3. Confirmed Connector `GET /session` still had Budcom-Test-01.  
+4. Cold-started `MainActivity` with no UI interaction for company selection.  
+5. Dumped UI hierarchy after init (~10–12s).
+
+### Observed UI (uiautomator)
 
 | Check | Result |
 | --- | --- |
-| Connector reachable | FAIL — connection refused / unable to connect |
-| `GET /health` | FAIL |
-| `GET /ready` | FAIL |
-| Session validation | NOT RUN |
-| Company selection | NOT RUN |
-| Manual sync available | NOT RUN |
+| Connector discovered / health | **PASS** — Connection: **Connected**; last health `2026-07-28 22:55:48` |
+| Configured URL | `http://127.0.0.1:8080/` |
+| Session restored | **PASS** — Session: **Valid** |
+| Active company auto-restored | **PASS** — Selected company: **Budcom-Test-01 (budcom-test-01)** |
+| “No company selected” | **Not shown** |
+| “Setup Required” | **Not shown** |
+| Manual intervention for company | **Not required** |
 
-**Gate:** End-to-end feature validation against a real Connector was **not started** because the Connector was not operational.
+Banner showed **Partial operational data available** because live Connector **0.3.1** returns **`GET /ready` → 404** (readiness Unknown). That is separate from company hydration and does not block company restore.
+
+### Connector evidence (host)
+
+- `GET /health` → 200; service message includes `Selected company: Budcom-Test-01`; `connectorVersion`: `0.3.1`  
+- `GET /session` → 200; `session.selectedCompany.name` = `Budcom-Test-01`  
+- `POST /session/validate` previously confirmed SUCCESS for same company  
+- `GET /ready` → 404 on this Connector build
+
+### Artifacts
+
+Captured under host temp `budcom_validation_clean/` (UI dump `final.xml`, logcat, connector JSON snapshots).
+
+### Confirmation
+
+**Active company is restored automatically from Connector session on clean install** when the Connector is reachable and already has a selected company. Aligns with decision *Connector Session is the authoritative source for active company state* (`docs/DECISIONS.md`, 2026-07-28).
 
 ---
 
-## Automated quality gates
+## Earlier incomplete run (2026-07-27)
 
-Executed from `apps/budcom_android`:
+**Git tip at start:** `be0b960`  
+**Status then:** Incomplete — automated gates passed; no usable device/Connector in that window.
 
-| Command | Result |
+| Item | Value (2026-07-27) |
 | --- | --- |
-| `:app:assembleDebug` | PASS |
-| `:app:testDebugUnitTest` | PASS |
-| `:app:compileDebugAndroidTestKotlin` | PASS |
-| Instrumented Compose tests (`connectedDebugAndroidTest`) | **NOT RUN** — no online device/emulator |
+| Physical device | None |
+| Emulator | Attempted; remained `adb offline` |
+| Connector | Unreachable on `:8080` |
 
-No production-code defects were discovered in this run (no live UI session occurred). No speculative refactors performed.
-
----
-
-## End-to-end checklist (live)
-
-All live checklist items remain **UNVERIFIED**:
-
-### A. Startup
-Splash / server config / health / ready / company / session / dashboard / config change / process recreation — **UNVERIFIED**
-
-### B. Dashboard
-Status / health / readiness / company / session / sync summary / navigation — **UNVERIFIED**
-
-### C. Master Data (Ledgers / Stock Items)
-Loading / pagination / search / refresh / offline / error / empty / navigation — **UNVERIFIED**
-
-### D. Voucher Browser
-Date range / search / pagination / loading / refresh / offline / details navigation — **UNVERIFIED**
-
-### E. Voucher Details
-Metadata / amounts / ledger lines / inventory / narration / error / offline — **UNVERIFIED**
-
-### F. Universal Search
-Search / debounce / groups / See all / navigation / partial failure — **UNVERIFIED**
-
-### G. Sync
-Manual sync / conflict / progress / success / failure / retry / dashboard summary — **UNVERIFIED**
-
-### H. Diagnostics
-Health / ready / version / connector / sync / session / refresh — **UNVERIFIED**
-
-### I. Settings
-Theme / persistence / immediate apply / server config / company / diagnostics / sync / about — **UNVERIFIED**
-
-### Lifecycle / performance
-Rotation, background/foreground, process death, network loss/recovery, Connector restart, company switch, theme switch, rapid navigation, repeated search/sync, jank/memory — **UNVERIFIED**
+Automated gates at that time: `:app:assembleDebug`, `:app:testDebugUnitTest`, `:app:compileDebugAndroidTestKotlin` — PASS.
 
 ---
 
-## Defects discovered
+## Related defect fixed before this clean-install pass
 
-None in this session (no live execution path).
-
-## Defects fixed
-
-None (no Android code changes).
-
-## Remaining defects / gaps
-
-1. **Live Connector unavailable** — blocks contract-backed E2E validation.  
-2. **No online Android device/emulator** — blocks instrumented Compose execution and manual UI validation. Emulator process started but stayed `adb offline`.  
-3. Prior milestone note remains: Diagnostics (and Settings theme) still need manual device pass against a live Connector.
+| Defect | Fix |
+| --- | --- |
+| Fresh Android ignored Connector session company; showed empty local cache as “no company” | `CompanyRepositoryImpl` hydrates from `GET /session` when local cache blank; `RefreshDashboardUseCase` restores before reading local id |
 
 ---
 
-## Recommendations
+## Remaining gaps (not blockers for company-hydrate claim)
 
-1. Start a known-good BudCom Connector on host port **8080** and confirm `GET /health` + `GET /ready`.  
-2. Boot an emulator until `adb devices` shows `device` (or attach a physical device), install `debug`, point base URL at the Connector (`10.0.2.2:8080` for emulator).  
-3. Re-run this checklist end-to-end; then re-run `:app:connectedDebugAndroidTest`.  
-4. Only after live pass: mark Production Validation complete on the roadmap and unlock Contact Intelligence Foundation.
-
----
-
-## Repository hygiene
-
-Unrelated dirty tree left untouched: desktop dist/src, connector WIP, screenshots, root `CHANGELOG.md`, `.gitignore`, voucher ops docs.
+1. Full MVP-1 checklist (master data, vouchers, sync, diagnostics, lifecycle matrix) not re-run end-to-end in this pass.  
+2. Live `GET /ready` 404 on Connector 0.3.1 → readiness Unknown / partial banner.  
+3. Emulator API 36.1 still unreliable on this host; physical + `adb reverse` used for this pass.  
+4. Default `BuildConfig` remains emulator `10.0.2.2` after validation (physical pilots must configure URL or use reverse + saved URL).
 
 ---
 
-## Final milestone verdict (this run)
+## Release confidence (company hydration slice)
 
-**PRODUCTION VALIDATION INCOMPLETE — DEVICE TEST REQUIRED**
+**90%** for “clean install restores Connector-selected company when Connector is reachable.”  
+Overall Production Validation milestone: still **partial** until remaining checklist areas are closed.
 
-(Co-blocker: Connector unreachable on probed hosts.)
+---
+
+## Final verdict (this pass)
+
+**CLEAN-INSTALL ACTIVE COMPANY HYDRATION — PASS**
+
+Broader Production Validation milestone remains open for remaining E2E areas.

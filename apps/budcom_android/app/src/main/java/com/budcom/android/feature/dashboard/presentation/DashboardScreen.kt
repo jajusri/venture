@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -95,7 +96,20 @@ fun DashboardScreen(
     Scaffold(
         modifier = modifier.fillMaxSize().testTag("dashboard_screen"),
         topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.dashboard_title)) })
+            TopAppBar(
+                title = { Text(stringResource(R.string.dashboard_title)) },
+                actions = {
+                    // Always reachable — first-time / setup / loading must not lock recovery out.
+                    TextButton(
+                        onClick = { onEvent(DashboardEvent.OpenSettings) },
+                        modifier = Modifier
+                            .testTag("dashboard_topbar_settings")
+                            .semantics { contentDescription = "Open settings" },
+                    ) {
+                        Text(stringResource(R.string.dashboard_action_settings))
+                    }
+                },
+            )
         },
     ) { innerPadding ->
         Box(
@@ -106,13 +120,51 @@ fun DashboardScreen(
         ) {
             when {
                 state.isInitialLoading && !state.hasContent -> {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxSize()
+                            .padding(16.dp)
                             .testTag("dashboard_loading"),
-                        contentAlignment = Alignment.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
                     ) {
                         CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(24.dp))
+                        Text(
+                            text = stringResource(R.string.dashboard_refreshing),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = { onEvent(DashboardEvent.OpenServerConfig) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dashboard_loading_server_config")
+                                .semantics { contentDescription = "Open server configuration" },
+                        ) {
+                            Text(stringResource(R.string.dashboard_action_server_config))
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { onEvent(DashboardEvent.OpenCompanySelection) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dashboard_loading_company")
+                                .semantics { contentDescription = "Open company selection" },
+                        ) {
+                            Text(stringResource(R.string.dashboard_action_company))
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { onEvent(DashboardEvent.OpenSettings) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dashboard_loading_settings")
+                                .semantics { contentDescription = "Open settings" },
+                        ) {
+                            Text(stringResource(R.string.dashboard_action_settings))
+                        }
                     }
                 }
                 else -> {

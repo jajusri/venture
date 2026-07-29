@@ -101,15 +101,33 @@ class DashboardViewModel @Inject constructor(
         if (refreshInFlight) return
         refreshInFlight = true
         viewModelScope.launch {
-            _uiState.update {
-                if (isInitial && !it.hasContent) {
-                    it.copy(isInitialLoading = true)
-                } else {
-                    it.copy(isRefreshing = true)
+            try {
+                _uiState.update {
+                    if (isInitial && !it.hasContent) {
+                        it.copy(isInitialLoading = true)
+                    } else {
+                        it.copy(isRefreshing = true)
+                    }
+                }
+                _uiState.update { mapSnapshotToUiState(refreshDashboard(), it) }
+            } catch (_: Throwable) {
+                // Never leave the user on a permanent loading dead-end.
+                _uiState.update { state ->
+                    state.copy(
+                        isInitialLoading = false,
+                        isRefreshing = false,
+                    ).withAuthoritativeMode()
+                }
+            } finally {
+                refreshInFlight = false
+                _uiState.update { state ->
+                    if (state.isInitialLoading || state.isRefreshing) {
+                        state.copy(isInitialLoading = false, isRefreshing = false)
+                    } else {
+                        state
+                    }
                 }
             }
-            _uiState.update { mapSnapshotToUiState(refreshDashboard(), it) }
-            refreshInFlight = false
         }
     }
 

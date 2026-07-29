@@ -30,10 +30,90 @@
 | Quality | Tests are mandatory |
 | Structure | No unnecessary framework or module proliferation |
 | Privacy | No production payload logging; no secrets in logs |
+| Active company SoR | Connector `GET /session` (`session.selectedCompany`) |
+| Local selected-company id | Cache only (DataStore); never authoritative alone |
+| Conflict rule | **System of Record first. Cache second.** Connector wins |
+
+---
+
+## Architecture guideline — System of Record first
+
+**System of Record first. Cache second.**
+
+Whenever Connector state and an Android local cache (DataStore, SharedPreferences, Room, in-memory) disagree about **Connector-owned** facts:
+
+1. Treat the Connector response as authoritative.
+2. Refresh or replace the local cache from Connector when reachable.
+3. Never require the user to manually re-enter Connector state that already exists on the Connector (e.g. reselect a company after reinstall) when hydration is possible.
+4. Device-only preferences (theme, local Connector base URL) remain device-local systems of record — they are not Connector session facts.
 
 ---
 
 ## Decision log
+
+### 2026-07-28 — Connector Session is the authoritative source for active company state
+
+**Status:** Accepted  
+**Incident:** MVP-1 validation — Desktop had a company selected on Connector; fresh Android showed no active company / setup-like empty state because local `SelectedCompanyStore` was empty.  
+**Fix (narrow):** `CompanyRepositoryImpl.restoreSelection()` hydrates from `GET /session` when local cache is blank; `RefreshDashboardUseCase` restores before reading local id.
+
+#### Problem
+
+- Fresh Android installations (and wiped app data) have **no** local `SelectedCompanyStore` entry.
+- The Connector already maintains the active session (`ConnectorSession.selectedCompany`) after Desktop or another client selects a company.
+- Android incorrectly treated its local DataStore cache as the authoritative “selected company,” so dashboard/session consumers concluded **NoCompany** despite a live Connector session.
+
+#### Decision
+
+- **Connector session is the source of truth** for active company (`GET /session` → `session.selectedCompany`).
+- Android local storage (`SelectedCompanyStore` / DataStore) is a **cache only**.
+- The cache **may be empty** (fresh install, cleared data, new device).
+- The cache **may be stale** (Desktop changed company; another client cleared selection).
+- The cache **must be refreshed from Connector when possible** (hydrate on restore / dashboard refresh when blank; persist ids returned from successful select/validate).
+
+#### Consequences
+
+- Fresh installs work without forcing manual reselection when Connector already has a company.
+- Device changes / reinstalls stay consistent with Connector session.
+- Multi-device support is simpler: one session SoR on Connector.
+- Company selection stays consistent across Desktop and Android when hydration runs.
+
+#### Regression prevention (mandatory)
+
+Future implementations **must never**:
+
+- assume local selected-company cache is authoritative without consulting Connector session when online;
+- skip Connector session read/validation and invent “no company” solely from an empty cache;
+- require manual company reselection after reinstall when `GET /session` already reports `selectedCompany`;
+- treat DataStore / SharedPreferences / Room / memory mirrors of Connector session fields as systems of record.
+
+Preferred pattern: expose Connector-backed reads (`getSession` / `readSelectedCompany`) for truth; use `observeSelectedCompanyId()` only as a **hydrated cache stream**, and hydrate before relying on it for operational UI.
+
+#### Related residual watchpoints (review 2026-07-28 — do not refactor now)
+
+These still **read the local cache stream** first. They are safe **after** dashboard/company restore hydrates the cache, but can still show empty/stale company if invoked **before** hydration or if hydration is skipped:
+
+| Location | Mechanism | Notes |
+| --- | --- | --- |
+| `CompanySessionPortImpl.observeSelectedCompanyId` | DataStore via repository | Cache projection only |
+| `CompanySessionPortImpl.validateSessionStatus` | Short-circuits `NoCompany` if local id blank | Does not call `GET /session` when blank |
+| `ValidateDashboardSessionUseCase` | Local id gate | Same pattern |
+| `ObserveDashboardContextUseCase` | Observes local id | UI can briefly show empty until hydrate |
+| `ObserveSettingsSnapshotUseCase` | Local `companyId` | Facts refresh uses `readSelectedCompany()` (Connector) |
+| Sync / Voucher / Search ViewModels & use cases | `observeSelectedCompanyId()` | Need company id from cache after hydrate |
+
+**Not defects** (correct local SoR):
+
+| Location | Mechanism | Why OK |
+| --- | --- | --- |
+| `ConnectorBaseUrlLocalStore` + in-memory `ConnectorBaseUrlProvider` | DataStore + memory | Device-configured Connector URL; not Connector session state |
+| `ThemePreferencesLocalDataSource` | DataStore | Device UI preference |
+| Master Data / browser in-memory list retention | Memory | Documented deferred Room; live lists remain network-backed |
+
+**SharedPreferences:** none found in Android companion production code.  
+**Room:** reserved; no domain Room SoR competing with Connector for active company.
+
+---
 
 ### 2026-07-27 — Master Data typed per-entity repositories
 

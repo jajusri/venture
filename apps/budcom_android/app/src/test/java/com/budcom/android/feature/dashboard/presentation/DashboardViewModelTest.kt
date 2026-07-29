@@ -8,6 +8,8 @@ import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.company.domain.port.SessionValidity
+import com.budcom.android.feature.company.domain.repository.CompanyRepository
+import com.budcom.android.feature.company.domain.usecase.RestoreCompanySelectionUseCase
 import com.budcom.android.feature.dashboard.domain.model.DashboardOperationalMode
 import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidity
 import com.budcom.android.feature.dashboard.domain.usecase.ObserveDashboardContextUseCase
@@ -28,6 +30,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -67,6 +70,7 @@ class DashboardViewModelTest {
         val refresh = RefreshDashboardUseCase(
             connectorStatus = connector,
             companySession = company,
+            restoreCompanySelection = RestoreCompanySelectionUseCase(DashboardNoOpCompanyRepository),
             connectivityObserver = connectivity,
             timeProvider = TimeProvider { 9_000L },
         )
@@ -207,6 +211,17 @@ private class FakeCompanySession : CompanySessionPort {
         }
     }
     override suspend fun validateSessionStatus(): AppResult<SessionValidationStatus> = validateResult
+}
+
+private object DashboardNoOpCompanyRepository : CompanyRepository {
+    override fun observeSelectedCompanyId(): Flow<String?> = flowOf(null)
+    override suspend fun loadCompanies() = error("unused")
+    override suspend fun refreshCompanies() = error("unused")
+    override suspend fun getSession() = error("unused")
+    override suspend fun restoreSelection() = AppResult.Success(null)
+    override suspend fun selectCompany(companyId: String) = error("unused")
+    override suspend fun validateSession() = error("unused")
+    override suspend fun clearSelection() = error("unused")
 }
 
 private class FakeConnectivity(initiallyOnline: Boolean) : NetworkConnectivityObserver {

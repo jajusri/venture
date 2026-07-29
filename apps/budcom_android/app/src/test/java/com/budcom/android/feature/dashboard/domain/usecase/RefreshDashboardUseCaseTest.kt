@@ -8,6 +8,8 @@ import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.company.domain.port.SessionValidity
+import com.budcom.android.feature.company.domain.repository.CompanyRepository
+import com.budcom.android.feature.company.domain.usecase.RestoreCompanySelectionUseCase
 import com.budcom.android.feature.dashboard.domain.model.DashboardOperationalMode
 import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidity
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
@@ -69,12 +71,64 @@ class RefreshDashboardUseCaseTest {
     }
 
     @Test
+    fun `hydrates selected company from restore when local cache empty`() = runTest {
+        val companySession = FakeCompanySession(
+            selectedId = null,
+            selected = AppResult.Success(SelectedCompanyStatus("budcom-test-01", "Budcom-Test-01")),
+            validate = AppResult.Success(
+                SessionValidationStatus(
+                    validity = SessionValidity.Valid,
+                    companyId = "budcom-test-01",
+                    companyName = "Budcom-Test-01",
+                ),
+            ),
+        )
+        val restoreRepo = object : CompanyRepository by NoOpCompanyRepository {
+            override suspend fun restoreSelection(): AppResult<com.budcom.android.feature.company.domain.model.SessionValidationOutcome?> {
+                companySession.selectedFlow.value = "budcom-test-01"
+                return AppResult.Success(null)
+            }
+        }
+        val snapshot = RefreshDashboardUseCase(
+            connectorStatus = FakeConnectorStatus("http://10.0.2.2:8080/", AppResult.Success(sampleProbe(ready = true))),
+            companySession = companySession,
+            restoreCompanySelection = RestoreCompanySelectionUseCase(restoreRepo),
+            connectivityObserver = FakeConnectivity(true),
+            timeProvider = TimeProvider { 5_000L },
+        )()
+        assertEquals("budcom-test-01", snapshot.selectedCompanyId)
+        assertEquals("Budcom-Test-01", snapshot.selectedCompanyName)
+        assertEquals(DashboardSessionValidity.Valid, snapshot.sessionValidity)
+    }
+
+    @Test
     fun `offline state`() = runTest {
         val snapshot = useCase(
             online = false,
             probe = AppResult.Failure(AppError.Offline()),
         )()
         assertEquals(false, snapshot.isOnline)
+        assertEquals(DashboardOperationalMode.Offline, snapshot.operationalMode())
+    }
+
+    @Test
+    fun `offline with cached company skips live session validation`() = runTest {
+        val snapshot = useCase(
+            online = false,
+            probe = AppResult.Failure(AppError.Offline()),
+            selectedId = "budcom-test-01",
+            selected = AppResult.Failure(AppError.Offline()),
+            validate = AppResult.Success(
+                SessionValidationStatus(
+                    validity = SessionValidity.Valid,
+                    companyId = "budcom-test-01",
+                    companyName = "Budcom-Test-01",
+                ),
+            ),
+        )()
+        assertEquals("budcom-test-01", snapshot.selectedCompanyId)
+        assertEquals(DashboardSessionValidity.Unknown, snapshot.sessionValidity)
+        assertNull(snapshot.sessionError)
         assertEquals(DashboardOperationalMode.Offline, snapshot.operationalMode())
     }
 
@@ -115,6 +169,7 @@ class RefreshDashboardUseCaseTest {
     ) = RefreshDashboardUseCase(
         connectorStatus = FakeConnectorStatus(baseUrl, probe),
         companySession = FakeCompanySession(selectedId, selected, validate),
+        restoreCompanySelection = RestoreCompanySelectionUseCase(NoOpCompanyRepository),
         connectivityObserver = FakeConnectivity(online),
         timeProvider = TimeProvider { 5_000L },
     )
@@ -134,10 +189,22 @@ private class FakeCompanySession(
     private val selected: AppResult<SelectedCompanyStatus>,
     private val validate: AppResult<SessionValidationStatus>,
 ) : CompanySessionPort {
-    private val selectedFlow = MutableStateFlow(selectedId)
+    val selectedFlow = MutableStateFlow(selectedId)
     override fun observeSelectedCompanyId(): Flow<String?> = selectedFlow
     override suspend fun readSelectedCompany(): AppResult<SelectedCompanyStatus> = selected
     override suspend fun validateSessionStatus(): AppResult<SessionValidationStatus> = validate
+}
+
+private object NoOpCompanyRepository : CompanyRepository {
+    override fun observeSelectedCompanyId(): Flow<String?> = flowOf(null)
+    override suspend fun loadCompanies() = error("unused")
+    override suspend fun refreshCompanies() = error("unused")
+    override suspend fun getSession() = error("unused")
+    override suspend fun restoreSelection(): AppResult<com.budcom.android.feature.company.domain.model.SessionValidationOutcome?> =
+        AppResult.Success(null)
+    override suspend fun selectCompany(companyId: String) = error("unused")
+    override suspend fun validateSession() = error("unused")
+    override suspend fun clearSelection() = error("unused")
 }
 
 private class FakeConnectivity(private val online: Boolean) : NetworkConnectivityObserver {

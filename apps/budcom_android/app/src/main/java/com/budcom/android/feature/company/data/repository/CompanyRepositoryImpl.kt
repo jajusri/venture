@@ -43,11 +43,14 @@ class CompanyRepositoryImpl @Inject constructor(
     override suspend fun restoreSelection(): AppResult<SessionValidationOutcome?> =
         withContext(dispatchers.io) {
             val savedId = selectedCompanyStore.getSelectedCompanyId()
-            if (savedId.isNullOrBlank()) return@withContext AppResult.Success(null)
+            if (savedId.isNullOrBlank()) {
+                // Connector session is authoritative (e.g. Desktop already selected a company).
+                return@withContext hydrateLocalSelectionFromConnectorSession()
+            }
 
             when (val selection = remoteDataSource.selectCompany(savedId)) {
                 is ApiResult.Failure -> {
-                    selectedCompanyStore.clearSelectedCompanyId()
+                    // Keep local cache when Connector is unreachable (offline / disconnect).
                     AppResult.Failure(errorMapper.toAppError(selection.error))
                 }
 
@@ -65,6 +68,25 @@ class CompanyRepositoryImpl @Inject constructor(
                 }
             }
         }
+
+    /**
+     * When this device has no local selection cache, adopt the Connector's current
+     * `GET /session` selected company (if any) without re-POSTing selection.
+     */
+    private suspend fun hydrateLocalSelectionFromConnectorSession(): AppResult<SessionValidationOutcome?> {
+        return when (val session = remoteDataSource.fetchSession()) {
+            is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(session.error))
+            is ApiResult.Success -> {
+                val selectedId = session.data.selectedCompany?.id
+                if (selectedId.isNullOrBlank()) {
+                    AppResult.Success(null)
+                } else {
+                    selectedCompanyStore.saveSelectedCompanyId(selectedId)
+                    validateAndPersist(selectedId)
+                }
+            }
+        }
+    }
 
     override suspend fun selectCompany(companyId: String): AppResult<SessionValidationOutcome> =
         withContext(dispatchers.io) {
@@ -116,7 +138,7 @@ class CompanyRepositoryImpl @Inject constructor(
     private suspend fun validateAndPersist(candidateCompanyId: String): AppResult<SessionValidationOutcome> {
         return when (val validation = remoteDataSource.validateSession()) {
             is ApiResult.Failure -> {
-                selectedCompanyStore.clearSelectedCompanyId()
+                // Transport / disconnect failures must not erase the last known company.
                 AppResult.Failure(errorMapper.toAppError(validation.error))
             }
 

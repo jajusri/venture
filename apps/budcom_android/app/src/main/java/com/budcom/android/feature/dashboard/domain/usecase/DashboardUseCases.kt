@@ -6,6 +6,7 @@ import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.core.util.TimeProvider
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SessionValidity
+import com.budcom.android.feature.company.domain.usecase.RestoreCompanySelectionUseCase
 import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidity
 import com.budcom.android.feature.dashboard.domain.model.DashboardSnapshot
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
@@ -21,6 +22,7 @@ import javax.inject.Inject
 class RefreshDashboardUseCase @Inject constructor(
     private val connectorStatus: ConnectorStatusPort,
     private val companySession: CompanySessionPort,
+    private val restoreCompanySelection: RestoreCompanySelectionUseCase,
     private val connectivityObserver: NetworkConnectivityObserver,
     private val timeProvider: TimeProvider,
 ) {
@@ -29,6 +31,10 @@ class RefreshDashboardUseCase @Inject constructor(
     ): DashboardSnapshot {
         val baseUrl = connectorStatus.currentBaseUrl()
         val isOnline = connectivityObserver.current()
+        // Local DataStore may be empty while Connector already has a Desktop-selected company.
+        if (companySession.observeSelectedCompanyId().first().isNullOrBlank()) {
+            restoreCompanySelection()
+        }
         val selectedCompanyId = companySession.observeSelectedCompanyId().first()
 
         var healthPresent = false
@@ -62,7 +68,9 @@ class RefreshDashboardUseCase @Inject constructor(
                 is AppResult.Failure -> Unit
             }
 
-            if (validateSessionWhenCompanySelected) {
+            // Only re-validate against Connector when it is reachable; otherwise keep
+            // the cached company and treat session as unknown (last-known UI retained).
+            if (validateSessionWhenCompanySelected && healthPresent) {
                 when (val validation = companySession.validateSessionStatus()) {
                     is AppResult.Success -> {
                         sessionValidity = validation.value.validity.toDashboard()

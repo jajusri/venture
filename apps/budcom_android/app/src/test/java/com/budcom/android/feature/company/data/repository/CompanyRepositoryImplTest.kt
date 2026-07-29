@@ -71,6 +71,52 @@ class CompanyRepositoryImplTest {
     }
 
     @Test
+    fun `restore selection hydrates local cache from connector session when local empty`() = runTest(dispatcher) {
+        val localStore = FakeSelectedCompanyStore(initial = null)
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(
+                sessionResult = ApiResult.Success(sampleSession(selectedId = "budcom-test-01")),
+                validateResult = ApiResult.Success(
+                    SessionValidationOutcome(
+                        status = "SUCCESS",
+                        session = sampleSession(selectedId = "budcom-test-01"),
+                        reason = null,
+                        companyId = "budcom-test-01",
+                        companyName = "Budcom-Test-01",
+                        httpStatus = 200,
+                    ),
+                ),
+            ),
+            selectedCompanyStore = localStore,
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+        )
+
+        val result = repository.restoreSelection()
+        assertTrue(result is AppResult.Success)
+        assertEquals("budcom-test-01", localStore.currentId)
+        assertEquals("Budcom-Test-01", (result as AppResult.Success).value?.companyName)
+    }
+
+    @Test
+    fun `restore selection leaves local empty when connector session has no company`() = runTest(dispatcher) {
+        val localStore = FakeSelectedCompanyStore(initial = null)
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(
+                sessionResult = ApiResult.Success(sampleSession(selectedId = null)),
+            ),
+            selectedCompanyStore = localStore,
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+        )
+
+        val result = repository.restoreSelection()
+        assertTrue(result is AppResult.Success)
+        assertEquals(null, (result as AppResult.Success).value)
+        assertEquals(null, localStore.currentId)
+    }
+
+    @Test
     fun `restore selection clears persisted ID on invalid selection status`() = runTest(dispatcher) {
         val localStore = FakeSelectedCompanyStore(initial = "ghost")
         val remote = FakeRemote(
@@ -88,6 +134,48 @@ class CompanyRepositoryImplTest {
         val result = repository.restoreSelection()
         assertTrue(result is AppResult.Failure)
         assertEquals(null, localStore.currentId)
+    }
+
+    @Test
+    fun `restore selection keeps cached ID when connector is offline`() = runTest(dispatcher) {
+        val localStore = FakeSelectedCompanyStore(initial = "budcom-test-01")
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(selectResult = ApiResult.Failure(NetworkError.NoConnectivity)),
+            selectedCompanyStore = localStore,
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+        )
+
+        val result = repository.restoreSelection()
+        assertTrue(result is AppResult.Failure)
+        assertTrue((result as AppResult.Failure).error is AppError.Offline)
+        assertEquals("budcom-test-01", localStore.currentId)
+    }
+
+    @Test
+    fun `restore selection keeps cached ID when session validate times out`() = runTest(dispatcher) {
+        val localStore = FakeSelectedCompanyStore(initial = "budcom-test-01")
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(
+                selectResult = ApiResult.Success(
+                    CompanySelectionOutcome(
+                        status = "DUPLICATE_SELECTION",
+                        session = sampleSession(selectedId = "budcom-test-01"),
+                        reason = null,
+                        httpStatus = 200,
+                    ),
+                ),
+                validateResult = ApiResult.Failure(NetworkError.Timeout()),
+            ),
+            selectedCompanyStore = localStore,
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+        )
+
+        val result = repository.restoreSelection()
+        assertTrue(result is AppResult.Failure)
+        assertTrue((result as AppResult.Failure).error is AppError.Timeout)
+        assertEquals("budcom-test-01", localStore.currentId)
     }
 
     @Test
