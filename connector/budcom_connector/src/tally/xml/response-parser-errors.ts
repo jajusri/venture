@@ -4,6 +4,7 @@ export type XmlParseFailureReason =
   | 'xml_max_depth_exceeded'
   | 'xml_max_node_count_exceeded'
   | 'xml_invalid_parser_limit'
+  | 'xml_illegal_character'
   | 'xml_oversized';
 
 export class XmlParseError extends Error {

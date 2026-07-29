@@ -61,6 +61,7 @@ export class TallyXmlResponseParser {
         maxBytes: limits.maxBytes,
       });
     }
+    assertXml10Characters(rawXml);
     const ctx: ParseContext = {
       nodeCount: 0,
       maxDepth: limits.maxDepth,
@@ -133,6 +134,55 @@ export class TallyXmlResponseParser {
       this.collectNodes(child, target, found);
     }
   }
+}
+
+function assertXml10Characters(rawXml: string): void {
+  for (let index = 0; index < rawXml.length; index += 1) {
+    const codePoint = rawXml.codePointAt(index);
+    if (codePoint === undefined) break;
+    if (!isXml10Character(codePoint)) {
+      throw illegalCharacterError(rawXml, index, 'literal');
+    }
+    if (codePoint > 0xffff) index += 1;
+  }
+
+  const numericReference = /&#(?:x([0-9a-fA-F]+)|(\d+));/g;
+  for (const match of rawXml.matchAll(numericReference)) {
+    const value = Number.parseInt(match[1] ?? match[2] ?? '', match[1] ? 16 : 10);
+    if (!isXml10Character(value)) {
+      throw illegalCharacterError(rawXml, match.index, 'numeric-reference');
+    }
+  }
+}
+
+function isXml10Character(value: number): boolean {
+  return value === 0x9 ||
+    value === 0xa ||
+    value === 0xd ||
+    (value >= 0x20 && value <= 0xd7ff) ||
+    (value >= 0xe000 && value <= 0xfffd) ||
+    (value >= 0x10000 && value <= 0x10ffff);
+}
+
+function illegalCharacterError(
+  rawXml: string,
+  characterOffset: number,
+  representation: 'literal' | 'numeric-reference',
+): XmlParseError {
+  const prefix = rawXml.slice(0, characterOffset);
+  const line = prefix.split('\n').length;
+  const lastNewline = prefix.lastIndexOf('\n');
+  const column = characterOffset - (lastNewline + 1);
+  return new XmlParseError(
+    'xml_illegal_character',
+    'Invalid XML: document contains a character forbidden by XML 1.0.',
+    {
+      representation,
+      line,
+      column,
+      byteOffset: Buffer.byteLength(prefix, 'utf8'),
+    },
+  );
 }
 
 function parseElement(

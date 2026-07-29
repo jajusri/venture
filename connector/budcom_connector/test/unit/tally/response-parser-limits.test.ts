@@ -19,6 +19,7 @@ import {
 import {
   ApprovedOperationId,
   RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+  VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
 } from '../../../src/tally/registry/operation-registry.js';
 import {
   SAMPLE_COMPANY_INFO_RESPONSE,
@@ -65,6 +66,33 @@ describe('TallyXmlResponseParser bounded limits', () => {
   it('accepts valid root with trailing whitespace', () => {
     const document = parser.parse(`${SAMPLE_LEDGERS_RESPONSE}   \n\t  `);
     expect(document.root.name).toBe('ENVELOPE');
+  });
+
+  it('accepts the approved Voucher operation byte limit above 1 MiB', () => {
+    expect(resolveXmlParserOptionsForOperation(ApprovedOperationId.Vouchers)).toEqual({
+      maxBytes: VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
+    });
+    expect(resolveXmlParserLimits(
+      resolveXmlParserOptionsForOperation(ApprovedOperationId.Vouchers),
+    ).maxBytes).toBe(VOUCHER_COLLECTION_MAX_RESPONSE_BYTES);
+  });
+
+  it.each([
+    ['literal control', '<ENVELOPE>\u0004</ENVELOPE>', 'literal'],
+    ['numeric control reference', '<ENVELOPE>&#4;</ENVELOPE>', 'numeric-reference'],
+  ])('rejects an XML 1.0-invalid %s with a privacy-safe location', (_, xml, representation) => {
+    try {
+      parser.parse(xml);
+      throw new Error('Expected parser rejection.');
+    } catch (error) {
+      const parseError = error as XmlParseError;
+      expect(parseError.reason).toBe('xml_illegal_character');
+      expect(parseError.details).toMatchObject({
+        representation,
+        line: 1,
+      });
+      expect(parseError.details?.byteOffset).toBeGreaterThan(0);
+    }
   });
 
   it('rejects valid root with trailing text', () => {
