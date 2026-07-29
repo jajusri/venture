@@ -2,6 +2,7 @@ import {
   ApprovedOperationId,
   getApprovedOperation,
   RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+  VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
 } from '../registry/operation-registry.js';
 import { XmlParseError } from './response-parser-errors.js';
 
@@ -54,7 +55,10 @@ export type XmlParserOptions = Partial<XmlParserLimits>;
 export const DEFAULT_XML_PARSER_MAX_BYTES = RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES;
 
 /** Maximum raw XML bytes permitted for any parse invocation, including test overrides. */
-export const APPROVED_XML_PARSER_MAX_BYTES = RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES;
+export const APPROVED_XML_PARSER_MAX_BYTES = Math.max(
+  RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+  VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
+);
 
 export function resolveXmlParserMaxBytesForOperation(operationId: ApprovedOperationId): number {
   return getApprovedOperation(operationId).maxResponseBytes;
