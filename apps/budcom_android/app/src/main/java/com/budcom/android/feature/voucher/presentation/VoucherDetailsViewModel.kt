@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 
 @HiltViewModel
@@ -29,7 +28,7 @@ class VoucherDetailsViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val voucherId: String = savedStateHandle.get<String>(VOUCHER_ID_ARG)
-        ?.let { URLDecoder.decode(it, StandardCharsets.UTF_8) }
+        ?.let { URLDecoder.decode(it, "UTF-8") }
         .orEmpty()
 
     private val _uiState = MutableStateFlow(VoucherDetailsUiState(voucherId = voucherId))
