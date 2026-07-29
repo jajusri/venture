@@ -8,6 +8,7 @@ import type { StorageStatus } from '../../erp/ledger/ledger-domain.js';
 import type { LocalDatabaseService } from '../../services/interfaces/local-database.js';
 import type { LedgerRepositoryPort } from '../../services/ledger/ledger-repository.interface.js';
 import type { StockItemRepositoryPort } from '../../services/stock-item/stock-item-repository.interface.js';
+import type { VoucherRepositoryPort } from '../../services/voucher/voucher-repository.interface.js';
 import { JsonToSqliteMigrationService, type JsonMigrationReport } from './json-to-sqlite-migration.js';
 import { nodeSqlite } from './node-sqlite.js';
 import { SqliteLedgerRepository } from './sqlite-ledger-repository.js';
@@ -16,6 +17,7 @@ import { SqliteDatabase } from './sqlite-database.js';
 import { SyncRunRepository } from './sync-run-repository.js';
 import { SyncRunRetentionService } from './sync-run-retention-service.js';
 import { XmlImportAttemptRepository } from './xml-import-attempt-repository.js';
+import { SqliteVoucherRepository } from './sqlite-voucher-repository.js';
 import { STORAGE_SCHEMA_VERSION } from './schema.js';
 import {
   assertNotProtectedWriteTarget,
@@ -27,6 +29,7 @@ export interface LedgerStorageBundle {
   readonly database: SqliteDatabase;
   readonly ledgerRepository: LedgerRepositoryPort;
   readonly stockItemRepository: StockItemRepositoryPort;
+  readonly voucherRepository: VoucherRepositoryPort;
   readonly syncRunRepository: SyncRunRepository;
   readonly xmlImportAttemptRepository: XmlImportAttemptRepository;
   readonly migrationReport: JsonMigrationReport;
@@ -45,12 +48,13 @@ export class SqliteStorageService implements LocalDatabaseService {
     if (this.running) return;
     const databasePath = path.join(this.config.databasePath, 'budcom-ledger.db');
     const database = new SqliteDatabase({ databasePath });
-    database.open();
-    const ledgerRepository = new SqliteLedgerRepository(database);
-    const stockItemRepository = new SqliteStockItemRepository(database);
-    const syncRunRepository = new SyncRunRepository(database);
-    const xmlImportAttemptRepository = new XmlImportAttemptRepository(database);
     try {
+      database.open();
+      const ledgerRepository = new SqliteLedgerRepository(database);
+      const stockItemRepository = new SqliteStockItemRepository(database);
+      const voucherRepository = new SqliteVoucherRepository(database);
+      const syncRunRepository = new SyncRunRepository(database);
+      const xmlImportAttemptRepository = new XmlImportAttemptRepository(database);
       const recoveredImportAttempts = xmlImportAttemptRepository.recoverAllAbandonedReservations();
       if (recoveredImportAttempts > 0) {
         this.logger.info('sqlite_abandoned_xml_import_attempts_recovered', {
@@ -58,49 +62,47 @@ export class SqliteStorageService implements LocalDatabaseService {
           recoveredCount: recoveredImportAttempts,
         });
       }
+      const migration = new JsonToSqliteMigrationService(
+        database,
+        ledgerRepository,
+        path.join(this.config.databasePath, 'ledgers'),
+        path.join(this.config.databasePath, 'ledgers-backup'),
+      );
+      const migrationReport = migration.migrateIfNeeded();
+      const recovered = syncRunRepository.recoverAllAbandonedRuns();
+      if (recovered > 0) {
+        this.logger.info('sqlite_abandoned_sync_runs_recovered', {
+          component: 'sqlite-storage',
+          recoveredCount: recovered,
+        });
+      }
+      const retention = new SyncRunRetentionService(
+        syncRunRepository,
+        {
+          maxCount: this.config.syncRunHistoryMaxCount,
+          maxAgeDays: this.config.syncRunHistoryMaxAgeDays,
+        },
+        this.logger,
+      );
+      retention.prune();
+      this.bundle = {
+        database,
+        ledgerRepository,
+        stockItemRepository,
+        voucherRepository,
+        syncRunRepository,
+        xmlImportAttemptRepository,
+        migrationReport,
+      };
+      this.running = true;
+      this.logger.info('sqlite_storage_started', {
+        component: 'sqlite-storage',
+        migrationStatus: migrationReport.status,
+      });
     } catch (error) {
-      this.logger.warn('sqlite_abandoned_xml_import_attempts_recovery_failed', {
-        component: 'sqlite-storage',
-        reasonCode: 'recovery_failed',
-        message: error instanceof Error ? error.message : String(error),
-      });
+      database.close();
+      throw error;
     }
-    const migration = new JsonToSqliteMigrationService(
-      database,
-      ledgerRepository,
-      path.join(this.config.databasePath, 'ledgers'),
-      path.join(this.config.databasePath, 'ledgers-backup'),
-    );
-    const migrationReport = migration.migrateIfNeeded();
-    const recovered = syncRunRepository.recoverAllAbandonedRuns();
-    if (recovered > 0) {
-      this.logger.info('sqlite_abandoned_sync_runs_recovered', {
-        component: 'sqlite-storage',
-        recoveredCount: recovered,
-      });
-    }
-    const retention = new SyncRunRetentionService(
-      syncRunRepository,
-      {
-        maxCount: this.config.syncRunHistoryMaxCount,
-        maxAgeDays: this.config.syncRunHistoryMaxAgeDays,
-      },
-      this.logger,
-    );
-    retention.prune();
-    this.bundle = {
-      database,
-      ledgerRepository,
-      stockItemRepository,
-      syncRunRepository,
-      xmlImportAttemptRepository,
-      migrationReport,
-    };
-    this.running = true;
-    this.logger.info('sqlite_storage_started', {
-      component: 'sqlite-storage',
-      migrationStatus: migrationReport.status,
-    });
   }
 
   async stop(): Promise<void> {

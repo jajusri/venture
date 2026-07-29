@@ -6,4 +6,14 @@ export class LocalDatabaseStub extends PlaceholderService implements LocalDataba
   constructor(logger: Logger) {
     super('LocalDatabase', logger);
   }
+
+  getStorageStatus() {
+    return {
+      backend: 'sqlite' as const,
+      schemaVersion: 0,
+      databaseHealthy: this.isRunning(),
+      migrationStatus: 'none' as const,
+      message: this.isRunning() ? null : 'Storage is not running.',
+    };
+  }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@budcom/connector",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "Budcom local read-only Tally connector service",
   "type": "module",
@@ -15,6 +15,7 @@
     "lint": "eslint src test && tsc -p tsconfig.json --noEmit",
     "audit": "npm audit",
     "audit:prod": "npm audit --omit=dev",
+    "validate:voucher-live": "tsx scripts/validate-voucher-live.ts",
     "format": "prettier --check .",
     "format:fix": "prettier --write ."
   },

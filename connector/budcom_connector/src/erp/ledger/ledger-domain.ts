@@ -96,6 +96,7 @@ export interface LedgerStatistics {
 export interface LedgerSyncProgress {
   readonly syncRunId: string | null;
   readonly status: LedgerSyncStatus;
+  readonly totalExpected?: number | null;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
   readonly durationMs: number | null;

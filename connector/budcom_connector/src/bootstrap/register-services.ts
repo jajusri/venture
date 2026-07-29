@@ -33,6 +33,15 @@ import { ConnectorSessionServiceImpl } from '../services/session/connector-sessi
 import { createTallyModule } from '../tally/tally-module.js';
 import type { MasterDataService } from '../services/extraction/master-data.service.js';
 import type { ConnectorSessionService } from '../services/interfaces/connector-session.js';
+import { voucherFoundation } from '../services/voucher/voucher-foundation.js';
+import { VoucherExtractionService } from '../services/voucher/voucher-extraction.service.js';
+import type { VoucherReadPort } from '../erp/ports/vouchers.js';
+import { VoucherSynchronizationService } from '../services/voucher/voucher-snapshot-sync.service.js';
+import type { VoucherSnapshotSyncService } from '../services/voucher/voucher-application.interface.js';
+import { VoucherApplicationServiceImpl } from '../services/voucher/voucher-application.service.js';
+import type { VoucherApplicationService } from '../services/voucher/voucher-application.interface.js';
+import { TallyVoucherExtractor } from '../tally/voucher/voucher-extractor.js';
+import { validateStartupConfiguration } from './startup-validation.js';
 
 export interface ApplicationContext {
   readonly container: ServiceContainer;
@@ -52,9 +61,30 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
 
   container.registerSingleton(ServiceTokens.Config, config);
   container.registerSingleton(ServiceTokens.Logger, logger);
+  container.registerSingleton(ServiceTokens.VoucherFoundation, voucherFoundation);
 
   const tallyModule = createTallyModule({ config, logger, fetchImpl });
   container.registerSingleton(ServiceTokens.ErpReadPort, tallyModule.readPort);
+  container.registerSingleton(ServiceTokens.VoucherParser, tallyModule.voucherParser);
+  container.registerSingleton(ServiceTokens.VoucherMapper, tallyModule.voucherMapper);
+  container.registerSingleton(ServiceTokens.TallyVoucherExtractor, tallyModule.voucherExtractor);
+  container.registerFactory(
+    ServiceTokens.VoucherReadPort,
+    () => container.resolve<TallyVoucherExtractor>(ServiceTokens.TallyVoucherExtractor),
+  );
+  container.registerFactory(
+    ServiceTokens.VoucherExtraction,
+    () => new VoucherExtractionService(
+      container.resolve<VoucherReadPort>(ServiceTokens.VoucherReadPort),
+    ),
+  );
+  container.registerFactory(
+    ServiceTokens.VoucherApplication,
+    () => new VoucherApplicationServiceImpl(
+      () => container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase)
+        .getBundle().voucherRepository,
+    ),
+  );
 
   container.registerFactory(
     ServiceTokens.TallyConnection,
@@ -74,11 +104,11 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
       return OfflineXmlIngestionService.withRepository(
         importLogger,
         storage.getBundle().xmlImportAttemptRepository,
-        config.connectorVersion ?? '0.3.1',
+        config.connectorVersion ?? '0.4.0',
       );
     }
     return new OfflineXmlIngestionService(importLogger, {
-      connectorVersion: config.connectorVersion ?? '0.3.1',
+      connectorVersion: config.connectorVersion ?? '0.4.0',
     });
   });
   container.registerFactory(
@@ -94,6 +124,22 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
     const discovery = container.resolve<CompanyDiscoveryService>(ServiceTokens.CompanyDiscovery);
     return new CompanyResolver(discovery);
   });
+  container.registerFactory(ServiceTokens.VoucherSynchronization, () => {
+    const storage = container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase);
+    const companyResolver = container.resolve<CompanyResolver>(ServiceTokens.CompanyResolver);
+    return new VoucherSynchronizationService(
+      container.resolve<VoucherExtractionService>(ServiceTokens.VoucherExtraction),
+      storage.getBundle().voucherRepository,
+      undefined,
+      logger.child({ service: 'VoucherSync' }),
+      undefined,
+      (companyId) => companyResolver.resolveName(companyId),
+    );
+  });
+  container.registerFactory(
+    ServiceTokens.VoucherSync,
+    () => container.resolve<VoucherSnapshotSyncService>(ServiceTokens.VoucherSynchronization),
+  );
   container.registerFactory(
     ServiceTokens.ConnectorSession,
     () =>
@@ -170,6 +216,9 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         apiServer: container.resolve<ApiServerService>(ServiceTokens.ApiServer),
         licensing: container.resolve<LicensingService>(ServiceTokens.Licensing),
         scheduler: container.resolve<SchedulerService>(ServiceTokens.Scheduler),
+        voucherSynchronizationComposed: () =>
+          container.has(ServiceTokens.VoucherSynchronization),
+        voucherApplicationComposed: () => container.has(ServiceTokens.VoucherApplication),
       }),
   );
 
@@ -184,6 +233,9 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         ledgerSync: container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync),
         stockItemSync: container.resolve<StockItemSyncService>(ServiceTokens.StockItemSync),
         tallyDiagnostics: container.resolve<TallyDiagnosticsService>(ServiceTokens.TallyDiagnostics),
+        voucherApplication: container.resolve<VoucherApplicationService>(
+          ServiceTokens.VoucherApplication,
+        ),
       })),
   );
 
@@ -205,6 +257,10 @@ const STARTUP_ORDER: ServiceToken[] = [
   ServiceTokens.ApiServer,
 ];
 
+const INITIALIZATION_ORDER: ServiceToken[] = [
+  ServiceTokens.VoucherExtraction,
+];
+
 const SHUTDOWN_ORDER: ServiceToken[] = [
   ServiceTokens.ApiServer,
   ServiceTokens.Scheduler,
@@ -221,11 +277,53 @@ const SHUTDOWN_ORDER: ServiceToken[] = [
 ];
 
 export async function startApplication(context: ApplicationContext): Promise<void> {
-  for (const token of STARTUP_ORDER) {
-    const service = context.container.resolve<ServiceLifecycle>(token);
-    await service.start();
-    context.logger.info('Service started', { service: token });
+  validateStartupConfiguration(context.config);
+  context.logger.info('startup.validation.succeeded', {
+    event: 'startup.validation.succeeded',
+    bindHost: context.config.host,
+    bindPort: context.config.port,
+  });
+
+  for (const token of INITIALIZATION_ORDER) {
+    context.container.resolve(token);
+    context.logger.info('Service initialized', { service: token });
   }
+
+  const started: Array<{ token: ServiceToken; service: ServiceLifecycle }> = [];
+  try {
+    for (const token of STARTUP_ORDER) {
+      const service = context.container.resolve<ServiceLifecycle>(token);
+      await service.start();
+      started.push({ token, service });
+      context.logger.info('Service started', { service: token });
+    }
+  } catch (error) {
+    context.logger.error('application.startup.failed', {
+      event: 'application.startup.failed',
+      code: 'STARTUP_FAILED',
+    });
+    for (const { token, service } of started.reverse()) {
+      try {
+        await service.stop();
+        context.logger.info('Service stopped after startup failure', { service: token });
+      } catch {
+        context.logger.error('application.startup.cleanup.failed', {
+          event: 'application.startup.cleanup.failed',
+          service: token,
+        });
+      }
+    }
+    throw error;
+  }
+
+  context.logger.info('application.startup.completed', {
+    event: 'application.startup.completed',
+    bindHost: context.config.host,
+    bindPort: context.config.port,
+    voucherSynchronizationComposed: context.container.has(ServiceTokens.VoucherSynchronization),
+    voucherApplicationComposed: context.container.has(ServiceTokens.VoucherApplication),
+    startupCorrelationId: context.config.startupCorrelationId,
+  });
 }
 
 export async function stopApplication(context: ApplicationContext): Promise<void> {

@@ -1,6 +1,6 @@
 import type { ConnectorConfig } from '../../config/defaults.js';
 import { isLanModePolicySatisfied, parseConnectorBindHost } from '../../config/network-binding.js';
-import type { HealthReport } from '../../core/types.js';
+import type { HealthReport, ReadinessReport } from '../../core/types.js';
 import type { TallyConnectionService } from '../interfaces/tally-connection.js';
 import type { SyncEngineService } from '../interfaces/sync-engine.js';
 import type { XmlImportService } from '../interfaces/xml-import.js';
@@ -24,14 +24,15 @@ export interface HealthServiceDeps {
   readonly apiServer: ApiServerService;
   readonly licensing: LicensingService;
   readonly scheduler: SchedulerService;
+  readonly voucherSynchronizationComposed: () => boolean;
+  readonly voucherApplicationComposed: () => boolean;
 }
 
 export class HealthService {
   constructor(private readonly deps: HealthServiceDeps) {}
 
   async getReport(): Promise<HealthReport> {
-    const tallyReachable = await this.deps.tallyConnection.ping();
-
+    const tallyDiagnostics = this.deps.tallyConnection.getDiagnostics();
     const services = [
       this.deps.tallyConnection.getStatus(),
       this.deps.syncEngine.getStatus(),
@@ -46,6 +47,9 @@ export class HealthService {
     ];
 
     const allReady = services.every((service) => service.ready);
+    const storage = this.deps.localDatabase.getStorageStatus();
+    const repositoryAvailable = this.deps.localDatabase.isRunning();
+    const databaseAccessible = storage.databaseHealthy;
     const bindHost = parseConnectorBindHost(this.deps.config.host, '127.0.0.1');
     const networkPolicySatisfied = isLanModePolicySatisfied(
       bindHost,
@@ -53,7 +57,7 @@ export class HealthService {
     );
 
     let status: HealthReport['status'] = 'ok';
-    if (!allReady || !networkPolicySatisfied) {
+    if (!allReady || !networkPolicySatisfied || !databaseAccessible) {
       status = 'degraded';
     }
     if (!this.deps.apiServer.isRunning()) {
@@ -64,7 +68,7 @@ export class HealthService {
       status,
       schemaVersion: this.deps.config.schemaVersion,
       connectorVersion: this.deps.config.connectorVersion,
-      tallyReachable,
+      tallyReachable: Boolean(tallyDiagnostics.lastSuccessfulPingAt),
       readOnly: true,
       bindHost: this.deps.config.host,
       bindPort: this.deps.config.port,
@@ -74,6 +78,29 @@ export class HealthService {
       authenticatedLanAccessEnabled: false,
       services,
       startupCorrelationId: this.deps.config.startupCorrelationId,
+      repositoryAvailable,
+      databaseAccessible,
+    };
+  }
+
+  getReadinessReport(): ReadinessReport {
+    const storage = this.deps.localDatabase.getStorageStatus();
+    const repositoryAvailable = this.deps.localDatabase.isRunning();
+    const databaseAccessible = storage.databaseHealthy;
+    const voucherSynchronizationComposed = this.deps.voucherSynchronizationComposed();
+    const voucherApplicationComposed = this.deps.voucherApplicationComposed();
+    return {
+      status:
+        repositoryAvailable
+        && databaseAccessible
+        && voucherSynchronizationComposed
+        && voucherApplicationComposed
+          ? 'ready'
+          : 'not_ready',
+      repositoryAvailable,
+      databaseAccessible,
+      voucherSynchronizationComposed,
+      voucherApplicationComposed,
     };
   }
 }

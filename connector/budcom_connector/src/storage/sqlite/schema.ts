@@ -1,4 +1,4 @@
-export const STORAGE_SCHEMA_VERSION = 8;
+export const STORAGE_SCHEMA_VERSION = 11;
 
 export const MIGRATION_001 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -252,4 +252,349 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_xml_import_attempts_reservation_no_company
 CREATE UNIQUE INDEX IF NOT EXISTS idx_xml_import_attempts_reservation_scoped
   ON xml_import_attempts(company_id, resource_kind, content_fingerprint)
   WHERE company_id IS NOT NULL AND reservation_status IN ('active', 'completed');
+`;
+
+/** Immutable Voucher snapshots with atomic per-company active-pointer promotion. */
+export const MIGRATION_009 = `
+CREATE TABLE voucher_snapshots (
+  company_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  date_from TEXT NOT NULL,
+  date_to TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (
+    status IN ('PENDING', 'WRITING', 'VALIDATED', 'PROMOTED', 'ARCHIVED', 'FAILED')
+  ),
+  created_at TEXT NOT NULL,
+  validated_at TEXT,
+  promoted_at TEXT,
+  failed_at TEXT,
+  failure_reason TEXT,
+  voucher_count INTEGER NOT NULL DEFAULT 0 CHECK (voucher_count >= 0),
+  PRIMARY KEY (company_id, snapshot_id),
+  UNIQUE (snapshot_id)
+);
+
+CREATE TABLE voucher_active_snapshots (
+  company_id TEXT PRIMARY KEY,
+  snapshot_id TEXT NOT NULL,
+  promoted_at TEXT NOT NULL,
+  FOREIGN KEY (company_id, snapshot_id)
+    REFERENCES voucher_snapshots(company_id, snapshot_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+
+CREATE TABLE voucher_headers (
+  company_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  voucher_id TEXT NOT NULL,
+  identity_version TEXT NOT NULL,
+  guid TEXT,
+  master_id TEXT,
+  alter_id TEXT,
+  voucher_key TEXT,
+  voucher_retain_key TEXT,
+  voucher_date TEXT NOT NULL,
+  effective_date TEXT,
+  voucher_type TEXT NOT NULL,
+  voucher_number TEXT,
+  reference_number TEXT,
+  narration TEXT,
+  narration_preview TEXT,
+  party_name TEXT,
+  amount TEXT,
+  amount_side TEXT CHECK (amount_side IN ('debit', 'credit') OR amount_side IS NULL),
+  amount_comparable INTEGER NOT NULL CHECK (amount_comparable IN (0, 1)),
+  voucher_status TEXT NOT NULL CHECK (voucher_status IN ('active', 'cancelled')),
+  data_quality TEXT NOT NULL CHECK (data_quality IN ('complete', 'incomplete')),
+  ledger_entry_count INTEGER NOT NULL CHECK (ledger_entry_count >= 0),
+  inventory_entry_count INTEGER NOT NULL CHECK (inventory_entry_count >= 0),
+  allocation_count INTEGER NOT NULL CHECK (allocation_count >= 0),
+  voucher_json TEXT NOT NULL,
+  PRIMARY KEY (company_id, snapshot_id, voucher_id),
+  FOREIGN KEY (company_id, snapshot_id)
+    REFERENCES voucher_snapshots(company_id, snapshot_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+
+CREATE TABLE voucher_ledger_entries (
+  company_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  voucher_id TEXT NOT NULL,
+  line_number INTEGER NOT NULL CHECK (line_number > 0),
+  ledger_name TEXT NOT NULL,
+  amount TEXT NOT NULL,
+  amount_side TEXT CHECK (amount_side IN ('debit', 'credit') OR amount_side IS NULL),
+  is_deemed_positive INTEGER CHECK (is_deemed_positive IN (0, 1) OR is_deemed_positive IS NULL),
+  reference_type TEXT,
+  reference_name TEXT,
+  allocation_count INTEGER NOT NULL CHECK (allocation_count >= 0),
+  PRIMARY KEY (company_id, snapshot_id, voucher_id, line_number),
+  FOREIGN KEY (company_id, snapshot_id, voucher_id)
+    REFERENCES voucher_headers(company_id, snapshot_id, voucher_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+
+CREATE TABLE voucher_inventory_entries (
+  company_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  voucher_id TEXT NOT NULL,
+  line_number INTEGER NOT NULL CHECK (line_number > 0),
+  item_name TEXT NOT NULL,
+  quantity TEXT,
+  actual_quantity TEXT,
+  billed_quantity TEXT,
+  unit TEXT,
+  rate TEXT,
+  amount TEXT,
+  amount_side TEXT CHECK (amount_side IN ('debit', 'credit') OR amount_side IS NULL),
+  allocation_count INTEGER NOT NULL CHECK (allocation_count >= 0),
+  PRIMARY KEY (company_id, snapshot_id, voucher_id, line_number),
+  FOREIGN KEY (company_id, snapshot_id, voucher_id)
+    REFERENCES voucher_headers(company_id, snapshot_id, voucher_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+
+CREATE TABLE voucher_allocations (
+  company_id TEXT NOT NULL,
+  snapshot_id TEXT NOT NULL,
+  voucher_id TEXT NOT NULL,
+  owner_type TEXT NOT NULL CHECK (owner_type IN ('VOUCHER', 'LEDGER', 'INVENTORY')),
+  owner_line_number INTEGER NOT NULL DEFAULT 0 CHECK (owner_line_number >= 0),
+  allocation_index INTEGER NOT NULL CHECK (allocation_index >= 0),
+  allocation_type TEXT NOT NULL CHECK (
+    allocation_type IN ('accounting', 'batch', 'bank', 'bill', 'cost-track', 'inventory')
+  ),
+  source_name TEXT NOT NULL,
+  values_json TEXT NOT NULL,
+  PRIMARY KEY (
+    company_id, snapshot_id, voucher_id, owner_type, owner_line_number, allocation_index
+  ),
+  FOREIGN KEY (company_id, snapshot_id, voucher_id)
+    REFERENCES voucher_headers(company_id, snapshot_id, voucher_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT
+);
+
+CREATE INDEX idx_voucher_snapshots_company_status
+  ON voucher_snapshots(company_id, status, created_at DESC);
+CREATE INDEX idx_voucher_headers_snapshot_date
+  ON voucher_headers(company_id, snapshot_id, voucher_date);
+CREATE INDEX idx_voucher_headers_snapshot_type
+  ON voucher_headers(company_id, snapshot_id, voucher_type);
+CREATE INDEX idx_voucher_headers_snapshot_number
+  ON voucher_headers(company_id, snapshot_id, voucher_number);
+CREATE INDEX idx_voucher_headers_snapshot_party
+  ON voucher_headers(company_id, snapshot_id, party_name);
+CREATE UNIQUE INDEX idx_voucher_headers_snapshot_guid
+  ON voucher_headers(company_id, snapshot_id, guid) WHERE guid IS NOT NULL;
+CREATE UNIQUE INDEX idx_voucher_headers_snapshot_key
+  ON voucher_headers(company_id, snapshot_id, voucher_key) WHERE voucher_key IS NOT NULL;
+CREATE UNIQUE INDEX idx_voucher_headers_snapshot_master
+  ON voucher_headers(company_id, snapshot_id, master_id) WHERE master_id IS NOT NULL;
+CREATE INDEX idx_voucher_ledger_name
+  ON voucher_ledger_entries(company_id, snapshot_id, ledger_name);
+CREATE INDEX idx_voucher_inventory_item
+  ON voucher_inventory_entries(company_id, snapshot_id, item_name);
+
+CREATE TRIGGER voucher_snapshots_immutable_update
+BEFORE UPDATE ON voucher_snapshots
+WHEN OLD.status IN ('ARCHIVED', 'FAILED')
+  OR (OLD.status = 'PROMOTED' AND NEW.status != 'ARCHIVED')
+BEGIN
+  SELECT RAISE(ABORT, 'immutable voucher snapshot');
+END;
+
+CREATE TRIGGER voucher_snapshots_immutable_delete
+BEFORE DELETE ON voucher_snapshots
+WHEN OLD.status = 'PROMOTED'
+BEGIN
+  SELECT RAISE(ABORT, 'immutable voucher snapshot');
+END;
+
+CREATE TRIGGER voucher_headers_require_writable_insert
+BEFORE INSERT ON voucher_headers
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = NEW.company_id
+    AND s.snapshot_id = NEW.snapshot_id
+    AND s.status IN ('PENDING', 'WRITING')
+    AND s.validated_at IS NULL
+)
+BEGIN
+  SELECT RAISE(ABORT, 'voucher snapshot is not writable');
+END;
+
+CREATE TRIGGER voucher_headers_immutable_update
+BEFORE UPDATE ON voucher_headers
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = OLD.company_id AND s.snapshot_id = OLD.snapshot_id
+    AND s.status IN ('PENDING', 'WRITING') AND s.validated_at IS NULL
+)
+BEGIN
+  SELECT RAISE(ABORT, 'immutable voucher snapshot data');
+END;
+
+CREATE TRIGGER voucher_headers_immutable_delete
+BEFORE DELETE ON voucher_headers
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = OLD.company_id AND s.snapshot_id = OLD.snapshot_id
+    AND (
+      s.status IN ('PENDING', 'WRITING')
+      OR NOT EXISTS (
+        SELECT 1 FROM voucher_active_snapshots a
+        WHERE a.company_id = OLD.company_id AND a.snapshot_id = OLD.snapshot_id
+      )
+    )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'immutable voucher snapshot data');
+END;
+
+CREATE TRIGGER voucher_ledger_entries_require_staging
+BEFORE INSERT ON voucher_ledger_entries
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = NEW.company_id AND s.snapshot_id = NEW.snapshot_id
+    AND s.status IN ('PENDING', 'WRITING') AND s.validated_at IS NULL
+)
+BEGIN
+  SELECT RAISE(ABORT, 'voucher snapshot is not writable');
+END;
+
+CREATE TRIGGER voucher_inventory_entries_require_staging
+BEFORE INSERT ON voucher_inventory_entries
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = NEW.company_id AND s.snapshot_id = NEW.snapshot_id
+    AND s.status IN ('PENDING', 'WRITING') AND s.validated_at IS NULL
+)
+BEGIN
+  SELECT RAISE(ABORT, 'voucher snapshot is not writable');
+END;
+
+CREATE TRIGGER voucher_allocations_require_staging
+BEFORE INSERT ON voucher_allocations
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = NEW.company_id AND s.snapshot_id = NEW.snapshot_id
+    AND s.status IN ('PENDING', 'WRITING') AND s.validated_at IS NULL
+)
+BEGIN
+  SELECT RAISE(ABORT, 'voucher snapshot is not writable');
+END;
+
+CREATE TRIGGER voucher_ledger_entries_immutable_update
+BEFORE UPDATE ON voucher_ledger_entries
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = OLD.company_id AND s.snapshot_id = OLD.snapshot_id
+    AND s.status IN ('PENDING', 'WRITING') AND s.validated_at IS NULL
+)
+BEGIN SELECT RAISE(ABORT, 'immutable voucher snapshot data'); END;
+
+CREATE TRIGGER voucher_ledger_entries_immutable_delete
+BEFORE DELETE ON voucher_ledger_entries
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = OLD.company_id AND s.snapshot_id = OLD.snapshot_id
+    AND (
+      s.status IN ('PENDING', 'WRITING')
+      OR NOT EXISTS (SELECT 1 FROM voucher_active_snapshots a
+        WHERE a.company_id = OLD.company_id AND a.snapshot_id = OLD.snapshot_id)
+    )
+)
+BEGIN SELECT RAISE(ABORT, 'immutable voucher snapshot data'); END;
+
+CREATE TRIGGER voucher_inventory_entries_immutable_update
+BEFORE UPDATE ON voucher_inventory_entries
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = OLD.company_id AND s.snapshot_id = OLD.snapshot_id
+    AND s.status IN ('PENDING', 'WRITING') AND s.validated_at IS NULL
+)
+BEGIN SELECT RAISE(ABORT, 'immutable voucher snapshot data'); END;
+
+CREATE TRIGGER voucher_inventory_entries_immutable_delete
+BEFORE DELETE ON voucher_inventory_entries
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = OLD.company_id AND s.snapshot_id = OLD.snapshot_id
+    AND (
+      s.status IN ('PENDING', 'WRITING')
+      OR NOT EXISTS (SELECT 1 FROM voucher_active_snapshots a
+        WHERE a.company_id = OLD.company_id AND a.snapshot_id = OLD.snapshot_id)
+    )
+)
+BEGIN SELECT RAISE(ABORT, 'immutable voucher snapshot data'); END;
+
+CREATE TRIGGER voucher_allocations_immutable_update
+BEFORE UPDATE ON voucher_allocations
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = OLD.company_id AND s.snapshot_id = OLD.snapshot_id
+    AND s.status IN ('PENDING', 'WRITING') AND s.validated_at IS NULL
+)
+BEGIN SELECT RAISE(ABORT, 'immutable voucher snapshot data'); END;
+
+CREATE TRIGGER voucher_allocations_immutable_delete
+BEFORE DELETE ON voucher_allocations
+WHEN NOT EXISTS (
+  SELECT 1 FROM voucher_snapshots s
+  WHERE s.company_id = OLD.company_id AND s.snapshot_id = OLD.snapshot_id
+    AND (
+      s.status IN ('PENDING', 'WRITING')
+      OR NOT EXISTS (SELECT 1 FROM voucher_active_snapshots a
+        WHERE a.company_id = OLD.company_id AND a.snapshot_id = OLD.snapshot_id)
+    )
+)
+BEGIN SELECT RAISE(ABORT, 'immutable voucher snapshot data'); END;
+`;
+
+/** Cross-process, company-scoped lease for production Voucher synchronization. */
+export const MIGRATION_010 = `
+CREATE TABLE voucher_sync_reservations (
+  company_id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  acquired_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_voucher_sync_reservations_expiry
+  ON voucher_sync_reservations(expires_at);
+`;
+
+/**
+ * Trusted-device records for optional auto-connect.
+ *
+ * Design decisions:
+ * - token_hash stores a SHA-256 hex digest of the raw bearer token; the raw
+ *   token is never persisted on the Connector side.
+ * - mobile_number is optional metadata only and must not be used as proof of
+ *   identity on its own.
+ * - auto_connect_enabled is stored as INTEGER (0/1) per SQLite convention.
+ * - revoked_at being non-NULL means the record is revoked and must not grant
+ *   access even if the token hash matches.
+ * - company_id is informational; all access must still be re-validated through
+ *   the live session service before any data is returned.
+ */
+export const MIGRATION_011 = `
+CREATE TABLE trusted_devices (
+  device_record_id  TEXT PRIMARY KEY,
+  token_hash        TEXT NOT NULL UNIQUE,
+  company_id        TEXT NOT NULL,
+  company_name      TEXT NOT NULL,
+  installation_id   TEXT NOT NULL,
+  friendly_name     TEXT,
+  auto_connect_enabled INTEGER NOT NULL DEFAULT 0,
+  created_at        TEXT NOT NULL,
+  last_used_at      TEXT,
+  revoked_at        TEXT
+);
+
+CREATE INDEX idx_trusted_devices_company
+  ON trusted_devices(company_id);
+
+CREATE INDEX idx_trusted_devices_installation
+  ON trusted_devices(installation_id);
 `;

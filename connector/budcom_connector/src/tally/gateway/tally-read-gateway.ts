@@ -25,6 +25,8 @@ import {
 export interface ApprovedReadRequest {
   readonly operationId: ApprovedOperationId;
   readonly companyName?: string;
+  readonly dateFrom?: string;
+  readonly dateTo?: string;
   readonly signal?: AbortSignal;
 }
 
@@ -67,14 +69,25 @@ export class TallyReadGateway {
       );
     }
 
-    const spec = operation.render({ companyName: request.companyName });
-    const xml = this.deps.requestBuilder.build(spec);
+    const params = {
+      companyName: request.companyName,
+      dateFrom: request.dateFrom,
+      dateTo: request.dateTo,
+    };
+    const xml =
+      'renderEmbeddedCollection' in operation
+        ? this.deps.requestBuilder.buildEmbeddedCollection(
+            operation.renderEmbeddedCollection(params),
+          )
+        : this.deps.requestBuilder.build(operation.render(params));
 
     const isCollection = operation.requestKind === 'Collection';
     const exchange = await this.deps.connectionManager.exchange(xml, {
       collectionId: isCollection ? operation.tallyId : undefined,
       reportId: isCollection ? undefined : operation.tallyId,
       timeoutMs: operation.timeoutMs,
+      maxResponseBytes: operation.maxResponseBytes,
+      responseLimitLabel: operation.operationId,
       signal: request.signal,
     });
 

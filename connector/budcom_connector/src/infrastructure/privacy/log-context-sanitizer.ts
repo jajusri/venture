@@ -40,6 +40,17 @@ export const APPROVED_LOG_CONTEXT_KEYS = new Set([
   'status',
   'running',
   'ready',
+  'event',
+  'httpMethod',
+  'httpRoute',
+  'bindHost',
+  'bindPort',
+  'outcome',
+  'vouchersExtracted',
+  'vouchersPersisted',
+  'droppedVouchers',
+  'rollbackStatus',
+  'promoted',
 ]);
 
 const SENSITIVE_KEY_PATTERN =
@@ -71,6 +82,12 @@ function sanitizeContextString(key: string, value: string): string {
     key === 'component' ||
     key === 'signal' ||
     key === 'status' ||
+    key === 'event' ||
+    key === 'httpMethod' ||
+    key === 'httpRoute' ||
+    key === 'bindHost' ||
+    key === 'outcome' ||
+    key === 'rollbackStatus' ||
     key === 'resourceKind' ||
     key === 'migrationStatus' ||
     key === 'contractStatus' ||

@@ -57,7 +57,7 @@ export class InboundXmlEnvelopeService {
   constructor(options: InboundXmlEnvelopeServiceOptions = {}) {
     this.parser = options.parser ?? new TallyXmlResponseParser();
     this.logger = options.logger;
-    this.connectorVersion = options.connectorVersion ?? '0.3.1';
+    this.connectorVersion = options.connectorVersion ?? '0.4.0';
     this.importAttemptRepository = options.importAttemptRepository;
     this.maxPackageBytes = options.maxPackageBytes ?? DEFAULT_XML_PARSER_MAX_BYTES;
   }

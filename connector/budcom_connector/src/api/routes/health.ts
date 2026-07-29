@@ -24,9 +24,16 @@ export function createHealthRouter(healthService: HealthService): Router {
         authenticatedLanAccessEnabled: report.authenticatedLanAccessEnabled,
         services: report.services,
         startupCorrelationId: report.startupCorrelationId ?? null,
+        repositoryAvailable: report.repositoryAvailable,
+        databaseAccessible: report.databaseAccessible,
       });
     }),
   );
+
+  router.get('/ready', (_req, res) => {
+    const report = healthService.getReadinessReport();
+    res.status(report.status === 'ready' ? 200 : 503).json(report);
+  });
 
   return router;
 }

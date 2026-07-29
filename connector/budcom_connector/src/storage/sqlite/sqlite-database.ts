@@ -15,6 +15,9 @@ import {
   MIGRATION_006,
   MIGRATION_007,
   MIGRATION_008,
+  MIGRATION_009,
+  MIGRATION_010,
+  MIGRATION_011,
   STOCK_ITEM_COLUMN_UPGRADES,
   STORAGE_SCHEMA_VERSION,
 } from './schema.js';
@@ -57,10 +60,13 @@ export class SqliteDatabase {
       this.db = new nodeSqlite.DatabaseSync(this.options.databasePath, {
         readOnly: this.options.readonly ?? false,
       });
+      // Install the busy handler before journal-mode negotiation. Independent
+      // connections may open concurrently and journal_mode itself can require
+      // a lock; without this ordering it fails immediately instead of waiting.
+      this.db.exec('PRAGMA busy_timeout = 5000;');
       this.db.exec('PRAGMA foreign_keys = ON;');
       this.db.exec('PRAGMA journal_mode = WAL;');
       this.db.exec('PRAGMA synchronous = NORMAL;');
-      this.db.exec('PRAGMA busy_timeout = 5000;');
       this.runMigrations();
       return this.db;
     } catch (error) {
@@ -243,6 +249,18 @@ export class SqliteDatabase {
       if (currentVersion < 8) {
         db.exec(MIGRATION_008);
         db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(8, now);
+      }
+      if (currentVersion < 9) {
+        db.exec(MIGRATION_009);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(9, now);
+      }
+      if (currentVersion < 10) {
+        db.exec(MIGRATION_010);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(10, now);
+      }
+      if (currentVersion < 11) {
+        db.exec(MIGRATION_011);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(11, now);
       }
       db.exec('COMMIT;');
     } catch (error) {

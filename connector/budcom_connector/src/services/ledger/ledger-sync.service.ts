@@ -614,6 +614,7 @@ function createIdleProgress(): LedgerSyncProgress {
   return {
     syncRunId: null,
     status: 'idle',
+    totalExpected: null,
     startedAt: null,
     completedAt: null,
     durationMs: null,
@@ -637,6 +638,7 @@ function toProgress(
   return {
     syncRunId: run.syncRunId,
     status: run.status,
+    totalExpected: run.totalExpected,
     startedAt: run.startedAt,
     completedAt: run.completedAt,
     durationMs,

@@ -20,6 +20,13 @@ export function createErrorMiddleware(logger: Logger) {
     }
 
     if (isAppError(error)) {
+      if (error.statusCode === 400) {
+        logger.warn('api.validation.failed', {
+          event: 'api.validation.failed',
+          code: error.code,
+          statusCode: error.statusCode,
+        });
+      }
       if (error.statusCode >= 500 && error.code !== ErrorCodes.NOT_IMPLEMENTED) {
         const safeDetails = sanitizeLogDetails(error.details);
         logger.error(sanitizeLogMessage(error.message), {

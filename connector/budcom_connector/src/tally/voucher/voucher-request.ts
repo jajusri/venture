@@ -1,6 +1,11 @@
 import type { EmbeddedTdlCollectionRequestSpec } from '../xml/request-builder.js';
 
 export const PRODUCTION_VOUCHER_COLLECTION_NAME = 'Budcom Voucher Discovery' as const;
+export const PRODUCTION_VOUCHER_LEDGER_SOURCE_NAME = 'Budcom Voucher Ledger Source' as const;
+export const PRODUCTION_VOUCHER_LEDGER_COLLECTION_NAME = 'Budcom Voucher Ledger Entries' as const;
+export const PRODUCTION_VOUCHER_INVENTORY_SOURCE_NAME = 'Budcom Voucher Inventory Source' as const;
+export const PRODUCTION_VOUCHER_INVENTORY_COLLECTION_NAME =
+  'Budcom Voucher Inventory Entries' as const;
 export const PRODUCTION_VOUCHER_DATE_FILTER_NAME = 'BudcomVoucherDateRange' as const;
 
 export const PRODUCTION_VOUCHER_FETCH_METHODS = [
@@ -10,19 +15,24 @@ export const PRODUCTION_VOUCHER_FETCH_METHODS = [
   'Reference',
   'Narration',
   'PartyLedgerName',
-  'Amount',
   'MasterID',
   'AlterID',
   'GUID',
   'IsCancelled',
-  'AllLedgerEntries.LedgerName',
-  'AllLedgerEntries.Amount',
-  'AllLedgerEntries.IsDeemedPositive',
-  'AllInventoryEntries.StockItemName',
-  'AllInventoryEntries.ActualQty',
-  'AllInventoryEntries.BilledQty',
-  'AllInventoryEntries.Rate',
-  'AllInventoryEntries.Amount',
+] as const;
+
+export const PRODUCTION_VOUCHER_LEDGER_FETCH_METHODS = [
+  'LedgerName',
+  'IsDeemedPositive',
+  'Amount',
+] as const;
+
+export const PRODUCTION_VOUCHER_INVENTORY_FETCH_METHODS = [
+  'StockItemName',
+  'ActualQty',
+  'BilledQty',
+  'Rate',
+  'Amount',
 ] as const;
 
 export interface VoucherCollectionRequestParams {
@@ -58,6 +68,95 @@ export function buildVoucherCollectionRequestSpec(
         `$Date >= $$Date:"${toTallyDateLiteral(params.dateFrom)}" `
         + `AND $Date <= $$Date:"${toTallyDateLiteral(params.dateTo)}"`,
     },
+  };
+}
+
+export function buildVoucherLedgerCollectionRequestSpec(
+  params: VoucherCollectionRequestParams,
+): EmbeddedTdlCollectionRequestSpec {
+  requireValue(params.companyName, 'Voucher ledger collection company');
+  validateDateRange(params.dateFrom, params.dateTo);
+  return {
+    collection: {
+      name: PRODUCTION_VOUCHER_LEDGER_COLLECTION_NAME,
+      sourceCollection: PRODUCTION_VOUCHER_LEDGER_SOURCE_NAME,
+      walk: 'AllLedgerEntries',
+      fetch: PRODUCTION_VOUCHER_LEDGER_FETCH_METHODS,
+      compute: {
+        ParentGUID: '$$Owner:$GUID',
+      },
+      attributes: {
+        ISFIXED: 'No',
+        ISINITIALIZE: 'Yes',
+      },
+    },
+    supportingCollections: [{
+      name: PRODUCTION_VOUCHER_LEDGER_SOURCE_NAME,
+      objectType: 'Voucher',
+      fetch: ['GUID'],
+      attributes: {
+        ISFIXED: 'No',
+        ISINITIALIZE: 'Yes',
+      },
+      filters: [PRODUCTION_VOUCHER_DATE_FILTER_NAME],
+    }],
+    staticVariables: buildStaticVariables(params),
+    systemFormulae: buildDateFormula(params),
+  };
+}
+
+export function buildVoucherInventoryCollectionRequestSpec(
+  params: VoucherCollectionRequestParams,
+): EmbeddedTdlCollectionRequestSpec {
+  requireValue(params.companyName, 'Voucher inventory collection company');
+  validateDateRange(params.dateFrom, params.dateTo);
+  return {
+    collection: {
+      name: PRODUCTION_VOUCHER_INVENTORY_COLLECTION_NAME,
+      sourceCollection: PRODUCTION_VOUCHER_INVENTORY_SOURCE_NAME,
+      walk: 'AllInventoryEntries',
+      fetch: PRODUCTION_VOUCHER_INVENTORY_FETCH_METHODS,
+      compute: {
+        ParentGUID: '$$Owner:$GUID',
+      },
+      attributes: {
+        ISFIXED: 'No',
+        ISINITIALIZE: 'Yes',
+      },
+    },
+    supportingCollections: [{
+      name: PRODUCTION_VOUCHER_INVENTORY_SOURCE_NAME,
+      objectType: 'Voucher',
+      fetch: ['GUID'],
+      attributes: {
+        ISFIXED: 'No',
+        ISINITIALIZE: 'Yes',
+      },
+      filters: [PRODUCTION_VOUCHER_DATE_FILTER_NAME],
+    }],
+    staticVariables: buildStaticVariables(params),
+    systemFormulae: buildDateFormula(params),
+  };
+}
+
+function buildStaticVariables(
+  params: VoucherCollectionRequestParams,
+): Readonly<Record<string, string>> {
+  return {
+    SVEXPORTFORMAT: '$$SysName:XML',
+    SVCURRENTCOMPANY: params.companyName,
+    SVFROMDATE: params.dateFrom.replaceAll('-', ''),
+    SVTODATE: params.dateTo.replaceAll('-', ''),
+  };
+}
+
+function buildDateFormula(
+  params: VoucherCollectionRequestParams,
+): Readonly<Record<string, string>> {
+  return {
+    [PRODUCTION_VOUCHER_DATE_FILTER_NAME]:
+      `$Date >= $$Date:"${toTallyDateLiteral(params.dateFrom)}" `
+      + `AND $Date <= $$Date:"${toTallyDateLiteral(params.dateTo)}"`,
   };
 }
 

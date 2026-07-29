@@ -3,6 +3,8 @@ export interface ErpTransportRequest {
   readonly body: string;
   readonly contentType: string;
   readonly timeoutMs?: number;
+  readonly maxResponseBytes?: number;
+  readonly responseLimitLabel?: string;
   readonly correlationId?: string;
   readonly signal?: AbortSignal;
 }

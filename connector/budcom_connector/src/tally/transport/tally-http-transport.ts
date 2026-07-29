@@ -63,7 +63,14 @@ export class TallyHttpTransport implements ErpTransport {
         signal: controller.signal,
       });
 
-      const body = await response.text();
+      const maxResponseBytes =
+        request.maxResponseBytes ?? resolveTallyRuntimeLimits(this.options.config).maxResponseBytes;
+      const body = await readBoundedUtf8Body(
+        response,
+        maxResponseBytes,
+        controller,
+        request.responseLimitLabel,
+      );
       const durationMs = Date.now() - started;
 
       if (!response.ok) {
@@ -91,7 +98,7 @@ export class TallyHttpTransport implements ErpTransport {
       this.options.logger.debug('Tally HTTP exchange complete', {
         correlationId: request.correlationId,
         durationMs,
-        byteLength: body.length,
+        byteLength: Buffer.byteLength(body, 'utf8'),
         statusCode: response.status,
       });
 
@@ -124,5 +131,49 @@ export class TallyHttpTransport implements ErpTransport {
     } finally {
       clearTimeout(timer);
     }
+  }
+}
+
+async function readBoundedUtf8Body(
+  response: Response,
+  maxResponseBytes: number,
+  controller: AbortController,
+  responseLimitLabel?: string,
+): Promise<string> {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  const parts: string[] = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > maxResponseBytes) {
+        await reader.cancel('response-size-limit-exceeded').catch(() => undefined);
+        controller.abort();
+        throw new AppError(
+          ErrorCodes.SERVICE_UNAVAILABLE,
+          responseLimitLabel
+            ? `Response for ${responseLimitLabel} exceeds contract maximum (${maxResponseBytes} bytes)`
+            : `Tally response exceeds maximum size (${maxResponseBytes} bytes)`,
+          503,
+          { responseBytes: byteLength, maxResponseBytes },
+        );
+      }
+      parts.push(decoder.decode(value, { stream: true }));
+    }
+    parts.push(decoder.decode());
+    return parts.join('');
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(
+      ErrorCodes.SERVICE_UNAVAILABLE,
+      'TALLY_HTTP_ERROR: Tally response body was truncated or invalid UTF-8',
+      503,
+    );
+  } finally {
+    reader.releaseLock();
   }
 }

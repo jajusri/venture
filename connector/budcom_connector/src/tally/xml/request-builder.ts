@@ -11,14 +11,18 @@ export interface TallyXmlRequestSpec {
 
 export interface EmbeddedTdlCollectionDefinition {
   readonly name: string;
-  readonly objectType: string;
+  readonly objectType?: string;
+  readonly sourceCollection?: string;
+  readonly walk?: string;
   readonly fetch?: readonly string[];
+  readonly compute?: Readonly<Record<string, string>>;
   readonly attributes?: Readonly<Record<string, string>>;
   readonly filters?: readonly string[];
 }
 
 export interface EmbeddedTdlCollectionRequestSpec {
   readonly collection: EmbeddedTdlCollectionDefinition;
+  readonly supportingCollections?: readonly EmbeddedTdlCollectionDefinition[];
   readonly staticVariables?: Readonly<Record<string, string>>;
   readonly version?: string;
   readonly systemFormulae?: Readonly<Record<string, string>>;
@@ -85,17 +89,11 @@ ${staticXml}
 
     const version = spec.version ?? '1';
     const { collection } = spec;
-    const attributes = Object.entries(collection.attributes ?? {})
-      .map(([name, value]) => ` ${name}="${escapeXml(value)}"`)
-      .join('');
     const staticVariables = Object.entries(spec.staticVariables ?? {})
       .map(([name, value]) => `        <${name}>${escapeXml(value)}</${name}>`)
       .join('\n');
-    const fetch = (collection.fetch ?? [])
-      .map((method) => `            <NATIVEMETHOD>${escapeXml(method)}</NATIVEMETHOD>`)
-      .join('\n');
-    const filters = (collection.filters ?? [])
-      .map((filter) => `            <FILTERS>${escapeXml(filter)}</FILTERS>`)
+    const collections = [...(spec.supportingCollections ?? []), collection]
+      .map(renderEmbeddedCollectionDefinition)
       .join('\n');
     const formulae = Object.entries(spec.systemFormulae ?? {})
       .map(([name, formula]) =>
@@ -113,9 +111,7 @@ ${staticXml}
     <DESC>
 ${staticVariables ? `      <STATICVARIABLES>\n${staticVariables}\n      </STATICVARIABLES>\n` : ''}      <TDL>
         <TDLMESSAGE>
-          <COLLECTION NAME="${escapeXml(collection.name)}" ISMODIFY="No"${attributes}>
-            <TYPE>${escapeXml(collection.objectType)}</TYPE>
-${filters ? `${filters}\n` : ''}${fetch ? `${fetch}\n` : ''}          </COLLECTION>
+${collections}
 ${formulae ? `${formulae}\n` : ''}
         </TDLMESSAGE>
       </TDL>
@@ -168,34 +164,79 @@ function validateEmbeddedCollectionSpec(spec: EmbeddedTdlCollectionRequestSpec):
   }
 
   requireNonBlank(spec.collection.name, 'Collection name');
-  requireNonBlank(spec.collection.objectType, 'Collection object type');
+  validateCollectionDefinition(spec.collection);
+  for (const collection of spec.supportingCollections ?? []) {
+    validateCollectionDefinition(collection);
+  }
   if (spec.version !== undefined) requireNonBlank(spec.version, 'Request version');
 
   validateStringRecord(spec.staticVariables, 'Static variable');
-  validateStringRecord(spec.collection.attributes, 'Collection attribute', {
+  validateStringRecord(spec.systemFormulae, 'System formula');
+}
+
+function renderEmbeddedCollectionDefinition(
+  collection: EmbeddedTdlCollectionDefinition,
+): string {
+  const attributes = Object.entries(collection.attributes ?? {})
+    .map(([name, value]) => ` ${name}="${escapeXml(value)}"`)
+    .join('');
+  const fields = [
+    collection.objectType ? `            <TYPE>${escapeXml(collection.objectType)}</TYPE>` : '',
+    collection.sourceCollection
+      ? `            <SOURCECOLLECTION>${escapeXml(collection.sourceCollection)}</SOURCECOLLECTION>`
+      : '',
+    collection.walk ? `            <WALK>${escapeXml(collection.walk)}</WALK>` : '',
+    ...(collection.filters ?? [])
+      .map((filter) => `            <FILTERS>${escapeXml(filter)}</FILTERS>`),
+    ...(collection.fetch ?? [])
+      .map((method) => `            <NATIVEMETHOD>${escapeXml(method)}</NATIVEMETHOD>`),
+    ...Object.entries(collection.compute ?? {})
+      .map(([name, formula]) =>
+        `            <COMPUTE>${escapeXml(`${name} : ${formula}`)}</COMPUTE>`),
+  ].filter(Boolean).join('\n');
+  return `          <COLLECTION NAME="${escapeXml(collection.name)}" ISMODIFY="No"${attributes}>
+${fields}
+          </COLLECTION>`;
+}
+
+function validateCollectionDefinition(
+  collection: EmbeddedTdlCollectionDefinition,
+): void {
+  requireNonBlank(collection.name, 'Collection name');
+  const hasObjectType = collection.objectType !== undefined;
+  const hasSource = collection.sourceCollection !== undefined;
+  if (hasObjectType === hasSource) {
+    throw new Error('Collection must define exactly one of objectType or sourceCollection.');
+  }
+  if (collection.objectType !== undefined) {
+    requireNonBlank(collection.objectType, 'Collection object type');
+  }
+  if (collection.sourceCollection !== undefined) {
+    requireNonBlank(collection.sourceCollection, 'Collection source');
+  }
+  if (collection.walk !== undefined) requireNonBlank(collection.walk, 'Collection walk');
+  validateStringRecord(collection.attributes, 'Collection attribute', {
     reservedNames: RESERVED_COLLECTION_ATTRIBUTES,
   });
+  validateStringRecord(collection.compute, 'Collection compute');
 
-  if (spec.collection.fetch !== undefined && !Array.isArray(spec.collection.fetch)) {
+  if (collection.fetch !== undefined && !Array.isArray(collection.fetch)) {
     throw new Error('Collection fetch list must be an array.');
   }
   const seenFetches = new Set<string>();
-  for (const method of spec.collection.fetch ?? []) {
+  for (const method of collection.fetch ?? []) {
     requireNonBlank(method, 'Fetch method');
     const normalized = method.toUpperCase();
-    if (seenFetches.has(normalized)) {
-      throw new Error(`Duplicate fetch method: ${method}`);
-    }
+    if (seenFetches.has(normalized)) throw new Error(`Duplicate fetch method: ${method}`);
     seenFetches.add(normalized);
   }
-  if (spec.collection.filters !== undefined && !Array.isArray(spec.collection.filters)) {
+  if (collection.filters !== undefined && !Array.isArray(collection.filters)) {
     throw new Error('Collection filter list must be an array.');
   }
-  for (const filter of spec.collection.filters ?? []) {
+  for (const filter of collection.filters ?? []) {
     requireNonBlank(filter, 'Collection filter');
     if (!XML_NAME.test(filter)) throw new Error(`Invalid collection filter name: ${filter}`);
   }
-  validateStringRecord(spec.systemFormulae, 'System formula');
 }
 
 function validateStringRecord(

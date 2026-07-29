@@ -116,7 +116,14 @@ export class TallyConnectionManager {
 
   async exchange(
     xml: string,
-    metadata: { collectionId?: string; reportId?: string; timeoutMs?: number; signal?: AbortSignal } = {},
+    metadata: {
+      collectionId?: string;
+      reportId?: string;
+      timeoutMs?: number;
+      maxResponseBytes?: number;
+      responseLimitLabel?: string;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<TallyExchangeResult> {
     if (!this.running) {
       throw new AppError(
@@ -154,10 +161,16 @@ export class TallyConnectionManager {
           contentType: 'text/xml',
           correlationId,
           timeoutMs: metadata.timeoutMs,
+          maxResponseBytes: Math.min(
+            metadata.maxResponseBytes ?? this.runtimeLimits.maxResponseBytes,
+            this.runtimeLimits.maxResponseBytes,
+          ),
+          responseLimitLabel: metadata.responseLimitLabel,
           signal: metadata.signal,
         });
 
-        await this.requestGuard.recordSuccess(context, response.body.length);
+        const responseBytes = Buffer.byteLength(response.body, 'utf8');
+        await this.requestGuard.recordSuccess(context, responseBytes);
 
         this.totalRequests += 1;
         this.totalLatencyMs += response.durationMs;
@@ -175,7 +188,7 @@ export class TallyConnectionManager {
             receivedAt: new Date().toISOString(),
             durationMs: response.durationMs,
             statusCode: response.statusCode,
-            byteLength: response.body.length,
+            byteLength: responseBytes,
           },
           rawXml: response.body,
         };

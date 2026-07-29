@@ -16,10 +16,14 @@ import { JSON_BODY_LIMIT, rejectMalformedContentLength, requireJsonContentTypeFo
 import { createApiStubsRouter } from './routes/api-stubs.js';
 import { createCompaniesRouter } from './routes/companies.js';
 import { createDeviceRouter } from './routes/device.js';
+import type { TrustedDeviceRepository } from '../services/device/trusted-device-repository.js';
 import { createDiagnosticsRouter } from './routes/diagnostics.js';
 import { createHealthRouter } from './routes/health.js';
 import { createMasterDataRouter } from './routes/master-data.js';
 import { createSessionRouter } from './routes/session.js';
+import { createVouchersRouter } from './routes/vouchers.js';
+import type { VoucherApplicationService } from '../services/voucher/voucher-application.interface.js';
+import { createRequestLoggingMiddleware } from './middleware/request-logging.js';
 
 export interface ExpressAppDeps {
   readonly logger: Logger;
@@ -30,23 +34,28 @@ export interface ExpressAppDeps {
   readonly ledgerSync: LedgerSyncService;
   readonly stockItemSync: StockItemSyncService;
   readonly tallyDiagnostics: TallyDiagnosticsService;
+  readonly voucherApplication: VoucherApplicationService;
+  /** Optional: when provided, device pairing routes are functional. */
+  readonly trustedDevices?: TrustedDeviceRepository;
 }
 
 export function createExpressApp(deps: ExpressAppDeps): Express {
   const app = express();
 
+  app.use(createRequestLoggingMiddleware(deps.logger));
   app.use(rejectMalformedContentLength);
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
   app.use(requireJsonContentTypeForMutation);
   app.use(readOnlyMiddleware);
   app.use(createHealthRouter(deps.healthService));
   app.use(createDiagnosticsRouter(deps.tallyDiagnostics));
-  app.use(createDeviceRouter());
+  app.use(createDeviceRouter(deps.trustedDevices));
   app.use(createCompaniesRouter(deps.companyDiscovery));
   app.use(createSessionRouter(deps.connectorSession));
   app.use(createMasterDataRouter(deps.masterData));
   app.use(createLedgersRouter(deps.ledgerSync));
   app.use(createStockItemsRouter(deps.stockItemSync));
+  app.use(createVouchersRouter(deps.voucherApplication));
   app.use(createApiStubsRouter());
   app.use(createErrorMiddleware(deps.logger));
 

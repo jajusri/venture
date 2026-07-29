@@ -11,6 +11,7 @@ import type { MasterDataService } from '../extraction/master-data.service.js';
 import type { LedgerSyncService } from '../ledger/ledger-sync.service.js';
 import type { StockItemSyncService } from '../stock-item/stock-item-sync.service.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
+import type { VoucherApplicationService } from '../voucher/voucher-application.interface.js';
 
 export interface ApiServerDeps {
   readonly healthService: HealthService;
@@ -20,6 +21,7 @@ export interface ApiServerDeps {
   readonly ledgerSync: LedgerSyncService;
   readonly stockItemSync: StockItemSyncService;
   readonly tallyDiagnostics: TallyDiagnosticsService;
+  readonly voucherApplication: VoucherApplicationService;
 }
 
 export class ApiServerStub implements ApiServerService {
@@ -45,10 +47,13 @@ export class ApiServerStub implements ApiServerService {
       ledgerSync: deps.ledgerSync,
       stockItemSync: deps.stockItemSync,
       tallyDiagnostics: deps.tallyDiagnostics,
+      voucherApplication: deps.voucherApplication,
     });
 
-    await new Promise<void>((resolve) => {
-      this.server = app.listen(this.config.port, this.config.host, () => {
+    await new Promise<void>((resolve, reject) => {
+      const server = app.listen(this.config.port, this.config.host, () => {
+        server.off('error', reject);
+        this.server = server;
         this.running = true;
         this.logger.info('API server listening', {
           host: this.config.host,
@@ -64,6 +69,7 @@ export class ApiServerStub implements ApiServerService {
         }
         resolve();
       });
+      server.once('error', reject);
     });
   }
 

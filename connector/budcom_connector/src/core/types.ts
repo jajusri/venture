@@ -27,4 +27,14 @@ export interface HealthReport {
   readonly services: readonly ServiceStatus[];
   /** Present when desktop supervisor supplied BUDCOM_STARTUP_CORRELATION_ID for this launch. */
   readonly startupCorrelationId?: string | null;
+  readonly repositoryAvailable: boolean;
+  readonly databaseAccessible: boolean;
+}
+
+export interface ReadinessReport {
+  readonly status: 'ready' | 'not_ready';
+  readonly repositoryAvailable: boolean;
+  readonly databaseAccessible: boolean;
+  readonly voucherSynchronizationComposed: boolean;
+  readonly voucherApplicationComposed: boolean;
 }

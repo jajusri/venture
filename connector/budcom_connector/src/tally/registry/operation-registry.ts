@@ -1,4 +1,7 @@
-import type { TallyXmlRequestSpec } from '../xml/request-builder.js';
+import type {
+  EmbeddedTdlCollectionRequestSpec,
+  TallyXmlRequestSpec,
+} from '../xml/request-builder.js';
 import {
   buildCollectionTemplate,
   buildObjectTemplate,
@@ -7,6 +10,14 @@ import {
 } from '../../extraction/templates/master-data-templates.js';
 import { TallyCapability } from '../security/capabilities.js';
 import type { PolicyOperation } from '../../erp/policy/policy-types.js';
+import {
+  buildVoucherCollectionRequestSpec,
+  buildVoucherInventoryCollectionRequestSpec,
+  buildVoucherLedgerCollectionRequestSpec,
+  PRODUCTION_VOUCHER_COLLECTION_NAME,
+  PRODUCTION_VOUCHER_INVENTORY_COLLECTION_NAME,
+  PRODUCTION_VOUCHER_LEDGER_COLLECTION_NAME,
+} from '../voucher/voucher-request.js';
 
 /**
  * Version-aware registry of approved Tally READ operations.
@@ -30,6 +41,9 @@ export const ApprovedOperationId = {
   CostCategories: 'COST_CATEGORIES',
   CostCentres: 'COST_CENTRES',
   VoucherTypes: 'VOUCHER_TYPES',
+  Vouchers: 'VOUCHERS',
+  VoucherLedgerEntries: 'VOUCHER_LEDGER_ENTRIES',
+  VoucherInventoryEntries: 'VOUCHER_INVENTORY_ENTRIES',
   GstRegistrations: 'GST_REGISTRATIONS',
 } as const;
 
@@ -47,9 +61,11 @@ export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 
 export interface OperationParams {
   readonly companyName?: string;
+  readonly dateFrom?: string;
+  readonly dateTo?: string;
 }
 
-export interface ApprovedOperation {
+interface ApprovedOperationBase {
   readonly operationId: ApprovedOperationId;
   readonly erpType: 'tally';
   readonly adapterVersion: string;
@@ -63,6 +79,8 @@ export interface ApprovedOperation {
   readonly classification: OperationClassification;
   readonly risk: RiskLevel;
   readonly requiresCompany: boolean;
+  readonly requiresDateRange?: boolean;
+  readonly maximumRangeDays?: number;
   readonly maxRequestBytes: number;
   readonly maxResponseBytes: number;
   readonly timeoutMs: number;
@@ -75,8 +93,27 @@ export interface ApprovedOperation {
   readonly evidenceSource: string;
   readonly rolloutStatus: 'production' | 'disabled';
   /** Immutable request contract — builds the spec from typed params only. */
+}
+
+export interface StandardApprovedOperation extends ApprovedOperationBase {
   readonly render: (params: OperationParams) => TallyXmlRequestSpec;
 }
+
+export interface EmbeddedCollectionApprovedOperation extends ApprovedOperationBase {
+  readonly renderEmbeddedCollection: (
+    params: OperationParams,
+  ) => EmbeddedTdlCollectionRequestSpec;
+}
+
+export type ApprovedOperation =
+  | StandardApprovedOperation
+  | EmbeddedCollectionApprovedOperation;
+
+type EmbeddedApprovedOperationId =
+  | 'VOUCHERS'
+  | 'VOUCHER_LEDGER_ENTRIES'
+  | 'VOUCHER_INVENTORY_ENTRIES';
+type StandardApprovedOperationId = Exclude<ApprovedOperationId, EmbeddedApprovedOperationId>;
 
 const ADAPTER_VERSION = '0.4.0-security';
 const EVIDENCE_BUILD = 'TallyPrime (ESTIMATION, 2026-07-22 live evidence)';
@@ -89,6 +126,8 @@ const EVIDENCE_BUILD = 'TallyPrime (ESTIMATION, 2026-07-22 live evidence)';
  * Larger companies may exceed this cap and require additional validation before raising.
  */
 export const RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES = 1_048_576 as const;
+/** Live Budcom-Test-01 single-day voucher export measured ~1.06 MiB (2026-07-29). */
+export const VOUCHER_COLLECTION_MAX_RESPONSE_BYTES = 5_242_880 as const;
 
 /** Pre-rich-FETCH shallow ledger export cap (superseded; retained for test reference). */
 export const LEGACY_SHALLOW_LEDGER_MAX_RESPONSE_BYTES = 524_288 as const;
@@ -269,6 +308,100 @@ const REGISTRY: Readonly<Record<ApprovedOperationId, ApprovedOperation>> = Objec
     20_000,
     'live 24 rec',
   ),
+  [ApprovedOperationId.Vouchers]: {
+    operationId: ApprovedOperationId.Vouchers,
+    erpType: 'tally',
+    adapterVersion: ADAPTER_VERSION,
+    tallyEvidenceBuild: 'TallyPrime ESTIMATION BASELINE-04 (2026-07-27)',
+    capability: TallyCapability.ReportRead,
+    tallyRequest: 'Export',
+    requestKind: 'Collection',
+    tallyId: PRODUCTION_VOUCHER_COLLECTION_NAME,
+    classification: 'VERIFIED_SAFE',
+    risk: 'MEDIUM',
+    requiresCompany: true,
+    maxRequestBytes: 65_536,
+    maxResponseBytes: VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
+    timeoutMs: 30_000,
+    autoApproveConditional: false,
+    evidenceSource: 'live Budcom-Test-01 2026-07-24: 14 metadata records / 18279 bytes / valid XML',
+    rolloutStatus: 'production',
+    requiresDateRange: true,
+    maximumRangeDays: 366,
+    renderEmbeddedCollection: (params) => {
+      if (!params.companyName || !params.dateFrom || !params.dateTo) {
+        throw new Error('VOUCHERS requires companyName, dateFrom, and dateTo.');
+      }
+      return buildVoucherCollectionRequestSpec({
+        companyName: params.companyName,
+        dateFrom: params.dateFrom,
+        dateTo: params.dateTo,
+      });
+    },
+  },
+  [ApprovedOperationId.VoucherLedgerEntries]: {
+    operationId: ApprovedOperationId.VoucherLedgerEntries,
+    erpType: 'tally',
+    adapterVersion: ADAPTER_VERSION,
+    tallyEvidenceBuild: 'TallyPrime Budcom-Test-01 (2026-07-29)',
+    capability: TallyCapability.ReportRead,
+    tallyRequest: 'Export',
+    requestKind: 'Collection',
+    tallyId: PRODUCTION_VOUCHER_LEDGER_COLLECTION_NAME,
+    classification: 'VERIFIED_SAFE',
+    risk: 'MEDIUM',
+    requiresCompany: true,
+    maxRequestBytes: 65_536,
+    maxResponseBytes: VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
+    timeoutMs: 30_000,
+    autoApproveConditional: false,
+    evidenceSource: 'live 2026-07-24: SOURCECOLLECTION/WALK 28 entries / 11121 bytes / 0 illegal references',
+    rolloutStatus: 'production',
+    requiresDateRange: true,
+    maximumRangeDays: 366,
+    renderEmbeddedCollection: (params) => {
+      if (!params.companyName || !params.dateFrom || !params.dateTo) {
+        throw new Error('VOUCHER_LEDGER_ENTRIES requires companyName, dateFrom, and dateTo.');
+      }
+      return buildVoucherLedgerCollectionRequestSpec({
+        companyName: params.companyName,
+        dateFrom: params.dateFrom,
+        dateTo: params.dateTo,
+      });
+    },
+  },
+  [ApprovedOperationId.VoucherInventoryEntries]: {
+    operationId: ApprovedOperationId.VoucherInventoryEntries,
+    erpType: 'tally',
+    adapterVersion: ADAPTER_VERSION,
+    tallyEvidenceBuild: 'TallyPrime Budcom-Test-01 (2026-07-30)',
+    capability: TallyCapability.ReportRead,
+    tallyRequest: 'Export',
+    requestKind: 'Collection',
+    tallyId: PRODUCTION_VOUCHER_INVENTORY_COLLECTION_NAME,
+    classification: 'VERIFIED_SAFE',
+    risk: 'MEDIUM',
+    requiresCompany: true,
+    maxRequestBytes: 65_536,
+    maxResponseBytes: VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
+    timeoutMs: 30_000,
+    autoApproveConditional: false,
+    evidenceSource:
+      'live 2026-07-24: SOURCECOLLECTION/WALK 100 entries / 46687 bytes / 0 illegal references',
+    rolloutStatus: 'production',
+    requiresDateRange: true,
+    maximumRangeDays: 366,
+    renderEmbeddedCollection: (params) => {
+      if (!params.companyName || !params.dateFrom || !params.dateTo) {
+        throw new Error('VOUCHER_INVENTORY_ENTRIES requires companyName, dateFrom, and dateTo.');
+      }
+      return buildVoucherInventoryCollectionRequestSpec({
+        companyName: params.companyName,
+        dateFrom: params.dateFrom,
+        dateTo: params.dateTo,
+      });
+    },
+  },
   [ApprovedOperationId.GstRegistrations]: masterCollection(
     ApprovedOperationId.GstRegistrations,
     TallyMasterDataCollections.GstRegistrations,
@@ -311,6 +444,13 @@ function masterCollection(
   };
 }
 
+export function getApprovedOperation(
+  operationId: StandardApprovedOperationId,
+): StandardApprovedOperation;
+export function getApprovedOperation(
+  operationId: EmbeddedApprovedOperationId,
+): EmbeddedCollectionApprovedOperation;
+export function getApprovedOperation(operationId: ApprovedOperationId): ApprovedOperation;
 export function getApprovedOperation(operationId: ApprovedOperationId): ApprovedOperation {
   return REGISTRY[operationId];
 }

@@ -57,7 +57,7 @@ export class OfflineXmlIngestionService implements XmlImportService {
   static withRepository(
     logger: Logger,
     importAttemptRepository: XmlImportAttemptRepository,
-    connectorVersion = '0.3.1',
+    connectorVersion = '0.4.0',
   ): OfflineXmlIngestionService {
     return new OfflineXmlIngestionService(logger, {
       importAttemptRepository,
