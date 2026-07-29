@@ -1,5 +1,7 @@
 package com.budcom.android.feature.company.data.repository
 
+import com.budcom.android.feature.company.data.local.CompanyLocalDataSource
+import com.budcom.android.feature.company.data.local.RoomCompanyLocalDataSource
 import com.budcom.android.feature.company.data.remote.CompanyApi
 import com.budcom.android.feature.company.data.remote.CompanyRemoteDataSource
 import com.budcom.android.feature.company.data.remote.DefaultCompanyRemoteDataSource
@@ -20,6 +22,12 @@ abstract class CompanyBindModule {
     abstract fun bindCompanyRemoteDataSource(
         impl: DefaultCompanyRemoteDataSource,
     ): CompanyRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindCompanyLocalDataSource(
+        impl: RoomCompanyLocalDataSource,
+    ): CompanyLocalDataSource
 
     @Binds
     @Singleton

@@ -6,6 +6,7 @@ import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkError
 import com.budcom.android.core.util.DispatcherProvider
+import com.budcom.android.feature.company.data.local.CompanyLocalDataSource
 import com.budcom.android.feature.company.data.remote.CompanyRemoteDataSource
 import com.budcom.android.feature.company.domain.model.CompanyDiscoverySnapshot
 import com.budcom.android.feature.company.domain.model.CompanySelectionOutcome
@@ -63,7 +64,7 @@ class CompanyRepositoryImplTest {
                 ),
             ),
         )
-        val repository = CompanyRepositoryImpl(remote, localStore, errorMapper, dispatchers)
+        val repository = CompanyRepositoryImpl(remote, FakeCompanyLocal(), localStore, errorMapper, dispatchers)
 
         val result = repository.restoreSelection()
         assertTrue(result is AppResult.Success)
@@ -87,6 +88,7 @@ class CompanyRepositoryImplTest {
                     ),
                 ),
             ),
+            localDataSource = FakeCompanyLocal(),
             selectedCompanyStore = localStore,
             errorMapper = errorMapper,
             dispatchers = dispatchers,
@@ -105,6 +107,7 @@ class CompanyRepositoryImplTest {
             remoteDataSource = FakeRemote(
                 sessionResult = ApiResult.Success(sampleSession(selectedId = null)),
             ),
+            localDataSource = FakeCompanyLocal(),
             selectedCompanyStore = localStore,
             errorMapper = errorMapper,
             dispatchers = dispatchers,
@@ -129,7 +132,7 @@ class CompanyRepositoryImplTest {
                 ),
             ),
         )
-        val repository = CompanyRepositoryImpl(remote, localStore, errorMapper, dispatchers)
+        val repository = CompanyRepositoryImpl(remote, FakeCompanyLocal(), localStore, errorMapper, dispatchers)
 
         val result = repository.restoreSelection()
         assertTrue(result is AppResult.Failure)
@@ -141,6 +144,7 @@ class CompanyRepositoryImplTest {
         val localStore = FakeSelectedCompanyStore(initial = "budcom-test-01")
         val repository = CompanyRepositoryImpl(
             remoteDataSource = FakeRemote(selectResult = ApiResult.Failure(NetworkError.NoConnectivity)),
+            localDataSource = FakeCompanyLocal(),
             selectedCompanyStore = localStore,
             errorMapper = errorMapper,
             dispatchers = dispatchers,
@@ -167,6 +171,7 @@ class CompanyRepositoryImplTest {
                 ),
                 validateResult = ApiResult.Failure(NetworkError.Timeout()),
             ),
+            localDataSource = FakeCompanyLocal(),
             selectedCompanyStore = localStore,
             errorMapper = errorMapper,
             dispatchers = dispatchers,
@@ -182,6 +187,7 @@ class CompanyRepositoryImplTest {
     fun `select company maps offline failure`() = runTest(dispatcher) {
         val repository = CompanyRepositoryImpl(
             remoteDataSource = FakeRemote(selectResult = ApiResult.Failure(NetworkError.NoConnectivity)),
+            localDataSource = FakeCompanyLocal(),
             selectedCompanyStore = FakeSelectedCompanyStore(),
             errorMapper = errorMapper,
             dispatchers = dispatchers,
@@ -216,6 +222,7 @@ class CompanyRepositoryImplTest {
                     ),
                 ),
             ),
+            localDataSource = FakeCompanyLocal(),
             selectedCompanyStore = localStore,
             errorMapper = errorMapper,
             dispatchers = dispatchers,
@@ -224,6 +231,50 @@ class CompanyRepositoryImplTest {
         val result = repository.selectCompany("estimation")
         assertTrue(result is AppResult.Success)
         assertEquals("estimation", localStore.currentId)
+    }
+
+    @Test
+    fun `load companies writes cache on success`() = runTest(dispatcher) {
+        val local = FakeCompanyLocal()
+        val snapshot = sampleDiscovery()
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(companiesResult = ApiResult.Success(snapshot)),
+            localDataSource = local,
+            selectedCompanyStore = FakeSelectedCompanyStore(),
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+        )
+        val result = repository.loadCompanies() as AppResult.Success
+        assertEquals(1, result.value.items.size)
+        assertEquals(snapshot, local.cached)
+    }
+
+    @Test
+    fun `load companies returns cache when offline`() = runTest(dispatcher) {
+        val cached = sampleDiscovery()
+        val local = FakeCompanyLocal(cached)
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(companiesResult = ApiResult.Failure(NetworkError.NoConnectivity)),
+            localDataSource = local,
+            selectedCompanyStore = FakeSelectedCompanyStore(),
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+        )
+        val result = repository.loadCompanies() as AppResult.Success
+        assertEquals("budcom-test-01", result.value.items.single().id)
+    }
+
+    @Test
+    fun `load companies offline without cache fails`() = runTest(dispatcher) {
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(companiesResult = ApiResult.Failure(NetworkError.NoConnectivity)),
+            localDataSource = FakeCompanyLocal(),
+            selectedCompanyStore = FakeSelectedCompanyStore(),
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+        )
+        val result = repository.loadCompanies() as AppResult.Failure
+        assertTrue(result.error is AppError.Offline)
     }
 }
 
@@ -279,9 +330,23 @@ private class FakeSelectedCompanyStore(
     }
 }
 
+private class FakeCompanyLocal(
+    initial: CompanyDiscoverySnapshot? = null,
+) : CompanyLocalDataSource {
+    var cached: CompanyDiscoverySnapshot? = initial
+
+    override suspend fun hasCache(): Boolean = cached != null
+
+    override suspend fun readSnapshot(): CompanyDiscoverySnapshot? = cached
+
+    override suspend fun replaceSnapshot(snapshot: CompanyDiscoverySnapshot) {
+        cached = snapshot
+    }
+}
+
 private fun sampleSession(selectedId: String?): ConnectorSessionSnapshot = ConnectorSessionSnapshot(
     sessionId = "s1",
-    selectedCompany = selectedId?.let { SessionSelectedCompany(id = it, name = "ESTIMATION") },
+    selectedCompany = selectedId?.let { SessionSelectedCompany(id = it, name = it.uppercase()) },
     connectionStatus = "connected",
     connectorVersion = "0.4.0",
     erpType = "tally",
@@ -289,4 +354,24 @@ private fun sampleSession(selectedId: String?): ConnectorSessionSnapshot = Conne
     lastValidatedAt = null,
     createdAt = "2026-01-01T00:00:00Z",
     contractVersion = "1",
+)
+
+private fun sampleDiscovery() = CompanyDiscoverySnapshot(
+    items = listOf(
+        ConnectorCompany(
+            id = "budcom-test-01",
+            name = "Budcom-Test-01",
+            financialYear = null,
+            booksFrom = null,
+            baseCurrency = "INR",
+        ),
+    ),
+    schemaVersion = "1.0.0",
+    dataFreshnessAt = "2026-01-01T00:00:00Z",
+    contractVersion = "1",
+    status = "SUCCESS",
+    tallyReachable = true,
+    dataQualityStatus = null,
+    dataQualityReason = null,
+    reason = null,
 )

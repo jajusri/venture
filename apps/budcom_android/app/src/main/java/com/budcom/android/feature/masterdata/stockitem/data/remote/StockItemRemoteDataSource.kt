@@ -21,11 +21,11 @@ class DefaultStockItemRemoteDataSource @Inject constructor(
     private val api: StockItemApi,
     private val errorMapper: ErrorMapper,
     private val connectivityObserver: NetworkConnectivityObserver,
-    private val retryPolicy: RetryPolicy,
 ) : StockItemRemoteDataSource {
 
     override suspend fun fetchStockItems(query: StockItemQuery): ApiResult<StockItemPage> =
-        withRetry(retryPolicy) {
+        // Master-data GETs fail over to Room; avoid multi-attempt delays when Connector is down.
+        withRetry(RetryPolicy.None) {
             safeApiCall(errorMapper, connectivityObserver) {
                 api.getStockItems(
                     query = query.normalizedText(),

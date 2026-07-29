@@ -18,7 +18,7 @@
 | Delivery shape | Feature-first vertical slices |
 | Networking | Retrofit + OkHttp + Kotlin Serialization |
 | Preferences | DataStore |
-| Database | Room when justified by a real feature |
+| Database | Room for durable Master Data cache (companies metadata, ledgers, stock items) |
 | DI | Hilt |
 | Background | WorkManager when durable work is required |
 | Contracts | Connector implementation is the source of truth |
@@ -108,12 +108,25 @@ These still **read the local cache stream** first. They are safe **after** dashb
 | --- | --- | --- |
 | `ConnectorBaseUrlLocalStore` + in-memory `ConnectorBaseUrlProvider` | DataStore + memory | Device-configured Connector URL; not Connector session state |
 | `ThemePreferencesLocalDataSource` | DataStore | Device UI preference |
-| Master Data / browser in-memory list retention | Memory | Documented deferred Room; live lists remain network-backed |
+| Master Data / browser list retention | Room + memory | Room is durable availability cache; Connector remains SoR |
 
 **SharedPreferences:** none found in Android companion production code.  
-**Room:** reserved; no domain Room SoR competing with Connector for active company.
+**Room:** durable Master Data availability cache only; never SoR for active company/session.
 
 ---
+
+### 2026-07-29 — Durable Master Data Room cache (availability)
+
+**Status:** Accepted (supersedes 2026-07-27 “Durable Master Data cache deferred”)  
+**Decision:** Android persists Companies (discovery metadata), Ledgers, and Stock Items in Room as a **Source of Availability**. Connector remains **Source of Truth**.  
+**Repository flow:**
+1. Online success → map DTO → domain → atomically replace (or upsert on partial page) Room for the selected company → return domain to UI.
+2. Online/transport failure → if Room has rows for the selected company, return cached domain pages; never clear Room because of transport failure.
+3. UI / Search ports stay repository-backed and do not branch on online vs Room.
+**Sync strategy:** Unfiltered page-1 loads warm remaining pages (bounded) and `REPLACE` the company-scoped table only when every page succeeds; mid-warm failure upserts without deleting prior cache.  
+**Clearing:** No automatic wipe on disconnect; explicit user clear is a future action.  
+**Out of scope:** vouchers, auth, dashboard redesign, sync-history UI.  
+**Consequences:** Offline browse/search of previously loaded master data works across process death and reboot; offline banners remain; session company SoR unchanged.
 
 ### 2026-07-27 — Master Data typed per-entity repositories
 
@@ -124,10 +137,10 @@ These still **read the local cache stream** first. They are safe **after** dashb
 
 ### 2026-07-27 — Durable Master Data cache deferred
 
-**Status:** Accepted  
+**Status:** Superseded (2026-07-29 Durable Master Data Room cache)  
 **Decision:** Ledger Browser is network-backed with in-memory UI retention on transient failure; Room durable cache is deferred.  
 **Context:** No approved stale-data / offline-cache product behavior for Master Data yet; constitution forbids pretending offline availability without a real cache.  
-**Consequences:** Offline shows an honest banner; retained list may remain visible after a successful prior load; Sync foundation / Room may revisit later.
+**Consequences:** Replaced by the 2026-07-29 Room availability-cache decision.
 
 ### 2026-07-27 — Stock Item search follows Connector `query`
 

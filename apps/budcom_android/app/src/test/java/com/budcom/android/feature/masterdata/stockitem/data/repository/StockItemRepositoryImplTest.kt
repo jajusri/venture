@@ -6,7 +6,9 @@ import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkError
 import com.budcom.android.core.util.DispatcherProvider
+import com.budcom.android.feature.company.data.repository.SelectedCompanyStore
 import com.budcom.android.feature.masterdata.domain.model.MasterDataPagination
+import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemLocalDataSource
 import com.budcom.android.feature.masterdata.stockitem.data.remote.StockItemRemoteDataSource
 import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem
 import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemDataQuality
@@ -14,6 +16,8 @@ import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemPag
 import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemQuery
 import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemStatus
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -39,7 +43,8 @@ class StockItemRepositoryImplTest {
     }
 
     @Test
-    fun `maps success page`() = runTest(dispatcher) {
+    fun `maps success page and replaces cache`() = runTest(dispatcher) {
+        val local = FakeStockLocal()
         val remote = FakeRemote(
             ApiResult.Success(
                 StockItemPage(
@@ -49,24 +54,95 @@ class StockItemRepositoryImplTest {
                 ),
             ),
         )
-        val repo = StockItemRepositoryImpl(remote, errorMapper, dispatchers)
+        val repo = StockItemRepositoryImpl(
+            remote,
+            local,
+            FakeSelectedCompanyStore("co-1"),
+            errorMapper,
+            dispatchers,
+        )
         val result = repo.loadStockItems(StockItemQuery()) as AppResult.Success
         assertEquals(1, result.value.items.size)
-        assertEquals("guid:widget", result.value.items[0].id)
+        assertEquals(1, local.replaceCount)
     }
 
     @Test
-    fun `maps offline failure`() = runTest(dispatcher) {
-        val remote = FakeRemote(ApiResult.Failure(NetworkError.NoConnectivity))
-        val repo = StockItemRepositoryImpl(remote, errorMapper, dispatchers)
+    fun `offline without cache maps failure`() = runTest(dispatcher) {
+        val repo = StockItemRepositoryImpl(
+            FakeRemote(ApiResult.Failure(NetworkError.NoConnectivity)),
+            FakeStockLocal(),
+            FakeSelectedCompanyStore("co-1"),
+            errorMapper,
+            dispatchers,
+        )
         val result = repo.loadStockItems(StockItemQuery()) as AppResult.Failure
         assertTrue(result.error is AppError.Offline)
+    }
+
+    @Test
+    fun `offline with cache returns cached page`() = runTest(dispatcher) {
+        val local = FakeStockLocal().apply {
+            stored["co-1"] = mutableListOf(sampleItem())
+        }
+        val repo = StockItemRepositoryImpl(
+            FakeRemote(ApiResult.Failure(NetworkError.NoConnectivity)),
+            local,
+            FakeSelectedCompanyStore("co-1"),
+            errorMapper,
+            dispatchers,
+        )
+        val result = repo.loadStockItems(StockItemQuery()) as AppResult.Success
+        assertEquals("guid:widget", result.value.items.single().id)
     }
 
     private class FakeRemote(
         private val result: ApiResult<StockItemPage>,
     ) : StockItemRemoteDataSource {
         override suspend fun fetchStockItems(query: StockItemQuery): ApiResult<StockItemPage> = result
+    }
+
+    private class FakeStockLocal : StockItemLocalDataSource {
+        val stored = mutableMapOf<String, MutableList<StockItem>>()
+        var replaceCount = 0
+
+        override suspend fun hasCache(companyId: String): Boolean = stored[companyId]?.isNotEmpty() == true
+
+        override suspend fun upsert(companyId: String, items: List<StockItem>, dataFreshnessAt: String?) {
+            val bucket = stored.getOrPut(companyId) { mutableListOf() }
+            items.forEach { item ->
+                bucket.removeAll { it.id == item.id }
+                bucket.add(item)
+            }
+        }
+
+        override suspend fun replaceAll(companyId: String, items: List<StockItem>, dataFreshnessAt: String?) {
+            replaceCount++
+            stored[companyId] = items.toMutableList()
+        }
+
+        override suspend fun query(companyId: String, query: StockItemQuery): StockItemPage? {
+            val items = stored[companyId] ?: return null
+            if (items.isEmpty()) return null
+            return StockItemPage(
+                items = items,
+                pagination = MasterDataPagination(1, query.pageSize, items.size, 1),
+                dataFreshnessAt = "cached",
+            )
+        }
+    }
+
+    private class FakeSelectedCompanyStore(
+        initial: String?,
+    ) : SelectedCompanyStore {
+        private val state = MutableStateFlow(initial)
+        override fun observeSelectedCompanyId(): Flow<String?> = state
+        override suspend fun getSelectedCompanyId(): String? = state.value
+        override suspend fun saveSelectedCompanyId(companyId: String) {
+            state.value = companyId
+        }
+        override suspend fun clearSelectedCompanyId() {
+            state.value = null
+        }
     }
 
     private fun sampleItem() = StockItem(

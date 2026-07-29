@@ -26,8 +26,8 @@ Adopt an **offline-aware** philosophy for Android:
 ### Cached data
 
 - Small configuration and selection state may live in DataStore (Connector URL, selected company id).
-- Broader offline caches (Room entities) appear only when a milestone defines a real schema.
-- Cached business data must be labelled or implied as potentially stale; do not present it as live Connector truth without qualification.
+- Broader offline caches (Room entities) are introduced by approved milestones. MVP-1 durable cache covers company discovery metadata, ledgers, and stock items as a Source of Availability (Connector remains Source of Truth).
+- Cached business data must be labelled or implied as potentially stale (offline banner / freshness); do not present it as live Connector truth without qualification.
 
 ### Manual synchronization
 
@@ -61,5 +61,5 @@ Offline intelligence means **useful viewing, diagnosis, and preserved work**, no
 ## Consequences
 
 - Features must design partial-success states up front.
-- Room is deferred until offline entities are real.
+- Room Master Data cache is availability-only; failed transport must not wipe last successful cache.
 - Product soul pillars (smart notifications, automation) build on this philosophy but do not override Connector authority.

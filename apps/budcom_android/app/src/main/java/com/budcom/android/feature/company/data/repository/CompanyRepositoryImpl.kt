@@ -5,6 +5,7 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.util.DispatcherProvider
+import com.budcom.android.feature.company.data.local.CompanyLocalDataSource
 import com.budcom.android.feature.company.data.remote.CompanyRemoteDataSource
 import com.budcom.android.feature.company.domain.model.CompanyDiscoverySnapshot
 import com.budcom.android.feature.company.domain.model.ConnectorSessionSnapshot
@@ -18,6 +19,7 @@ import javax.inject.Singleton
 @Singleton
 class CompanyRepositoryImpl @Inject constructor(
     private val remoteDataSource: CompanyRemoteDataSource,
+    private val localDataSource: CompanyLocalDataSource,
     private val selectedCompanyStore: SelectedCompanyStore,
     private val errorMapper: ErrorMapper,
     private val dispatchers: DispatcherProvider,
@@ -27,12 +29,29 @@ class CompanyRepositoryImpl @Inject constructor(
 
     override suspend fun loadCompanies(): AppResult<CompanyDiscoverySnapshot> =
         withContext(dispatchers.io) {
-            remoteDataSource.fetchCompanies().toAppResult(errorMapper)
+            loadCompaniesWithCache()
         }
 
     override suspend fun refreshCompanies(): AppResult<CompanyDiscoverySnapshot> =
         withContext(dispatchers.io) {
-            remoteDataSource.fetchCompanies().toAppResult(errorMapper)
+            loadCompaniesWithCache()
+        }
+
+    private suspend fun loadCompaniesWithCache(): AppResult<CompanyDiscoverySnapshot> =
+        when (val remote = remoteDataSource.fetchCompanies()) {
+            is ApiResult.Success -> {
+                localDataSource.replaceSnapshot(remote.data)
+                AppResult.Success(remote.data)
+            }
+
+            is ApiResult.Failure -> {
+                val cached = localDataSource.readSnapshot()
+                if (cached != null) {
+                    AppResult.Success(cached)
+                } else {
+                    AppResult.Failure(errorMapper.toAppError(remote.error))
+                }
+            }
         }
 
     override suspend fun getSession(): AppResult<ConnectorSessionSnapshot> =

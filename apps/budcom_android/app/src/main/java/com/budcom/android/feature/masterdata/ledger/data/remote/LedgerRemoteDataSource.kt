@@ -20,11 +20,11 @@ class DefaultLedgerRemoteDataSource @Inject constructor(
     private val api: LedgerApi,
     private val errorMapper: ErrorMapper,
     private val connectivityObserver: NetworkConnectivityObserver,
-    private val retryPolicy: RetryPolicy,
 ) : LedgerRemoteDataSource {
 
     override suspend fun fetchLedgers(query: LedgerQuery): ApiResult<LedgerPage> =
-        withRetry(retryPolicy) {
+        // Master-data GETs fail over to Room; avoid multi-attempt delays when Connector is down.
+        withRetry(RetryPolicy.None) {
             safeApiCall(errorMapper, connectivityObserver) {
                 api.getLedgers(
                     query = query.normalizedText(),
