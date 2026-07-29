@@ -79,10 +79,62 @@ function runProductionAudit() {
   return { vulnerabilityCount };
 }
 
+/**
+ * Keep Desktop packaging VERSION.txt aligned with connector package.json.
+ * Stale VERSION.txt previously caused packaged installs to advertise 0.3.1
+ * while shipping newer connector JS (or the reverse).
+ */
+export function syncDesktopConnectorVersionLabel() {
+  const packageJsonPath = path.join(connectorRoot, 'package.json');
+  const versionFilePath = path.join(repoRoot, 'apps/budcom_desktop/build/VERSION.txt');
+  const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  const version = typeof pkg.version === 'string' ? pkg.version.trim() : '';
+  if (!/^\d+\.\d+\.\d+/.test(version)) {
+    throw new Error(`Invalid connector package version: ${version || '(empty)'}`);
+  }
+  fs.mkdirSync(path.dirname(versionFilePath), { recursive: true });
+  fs.writeFileSync(versionFilePath, `${version}\n`, 'utf8');
+  return { version, versionFilePath };
+}
+
+/**
+ * Fail packaging early when connector dist lacks voucher API routes.
+ * Physical Android validation requires /api/v1/vouchers in the packaged binary.
+ */
+export function assertPackagedConnectorDistIncludesVouchers() {
+  const vouchersRoute = path.join(connectorRoot, 'dist/api/routes/vouchers.js');
+  const serverEntry = path.join(connectorRoot, 'dist/api/server.js');
+  const mainEntry = path.join(connectorRoot, 'dist/main.js');
+  if (!fs.existsSync(mainEntry)) {
+    throw new Error(
+      'connector/budcom_connector/dist/main.js is missing. Run `npm run build` in the connector before packaging.',
+    );
+  }
+  if (!fs.existsSync(vouchersRoute)) {
+    throw new Error(
+      'Packaged connector dist is missing dist/api/routes/vouchers.js. Rebuild the connector (0.4.x+) before packaging.',
+    );
+  }
+  if (!fs.existsSync(serverEntry)) {
+    throw new Error('Packaged connector dist is missing dist/api/server.js');
+  }
+  const serverSource = fs.readFileSync(serverEntry, 'utf8');
+  const vouchersSource = fs.readFileSync(vouchersRoute, 'utf8');
+  if (!serverSource.includes('createVouchersRouter')) {
+    throw new Error('Packaged connector server.js does not register createVouchersRouter');
+  }
+  if (!vouchersSource.includes('/api/v1/vouchers')) {
+    throw new Error('Packaged connector vouchers.js does not declare /api/v1/vouchers');
+  }
+  return { vouchersRoute, mainEntry };
+}
+
 export function prepareConnectorPackaging() {
   if (!fs.existsSync(path.join(connectorRoot, 'package-lock.json'))) {
     throw new Error('connector/budcom_connector/package-lock.json is required for deterministic packaging');
   }
+  const versionLabel = syncDesktopConnectorVersionLabel();
+  const voucherRoutes = assertPackagedConnectorDistIncludesVouchers();
   fs.rmSync(outputRoot, { recursive: true, force: true });
   fs.mkdirSync(outputRoot, { recursive: true });
   for (const fileName of ['package.json', 'package-lock.json']) {
@@ -102,6 +154,8 @@ export function prepareConnectorPackaging() {
     outputRoot,
     outputModules,
     productionDependencyCount,
+    connectorVersion: versionLabel.version,
+    voucherRoutes,
     audit,
   };
 }

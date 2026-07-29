@@ -12,7 +12,7 @@
     "lint": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && vitest run --passWithNoTests false",
     "audit": "npm audit",
     "audit:prod": "npm audit --omit=dev",
-    "dist:win": "npm run build && node ../../scripts/release/prepare-connector-packaging.mjs && node ../../scripts/release/prepare-node-runtime.mjs && electron-builder --win --config electron-builder.yml",
+    "dist:win": "npm run build --prefix ../../connector/budcom_connector && npm run build && node ../../scripts/release/prepare-connector-packaging.mjs && node ../../scripts/release/prepare-node-runtime.mjs && electron-builder --win --config electron-builder.yml",
     "release:controlled-pilot": "node ../../scripts/release/controlled-pilot-release.mjs",
     "screenshot": "npm run build && electron dist/scripts/capture-screenshot.js"
   },
