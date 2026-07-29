@@ -17,7 +17,7 @@ describe('loadConfig', () => {
     expect(config.host).toBe('127.0.0.1');
     expect(config.networkExposure).toBe('loopback');
     expect(config.schemaVersion).toBe('1.0.0');
-    expect(config.connectorVersion).toBe('0.3.1');
+    expect(config.connectorVersion).toBe('0.4.0');
     expect(config.tallySafeMode).toBe(true);
     expect(config.tallyPoolMaxConnections).toBe(1);
     expect(config.tallyRetryMaxAttempts).toBe(1);

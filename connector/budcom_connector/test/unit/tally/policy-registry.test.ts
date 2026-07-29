@@ -6,6 +6,7 @@ import {
   getApprovedOperation,
   listApprovedOperations,
   RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+  VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
   toPolicyOperation,
 } from '../../../src/tally/registry/operation-registry.js';
 import { LEDGER_RICH_FETCH_FIELDS } from '../../../src/extraction/core/ledger-identity.js';
@@ -49,6 +50,15 @@ describe('operation registry', () => {
       RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
     );
     expect(getApprovedOperation(ApprovedOperationId.StockItems).maxResponseBytes).toBe(
+      RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+    );
+  });
+
+  it('allows a higher response cap for voucher collections than rich masters', () => {
+    expect(getApprovedOperation(ApprovedOperationId.Vouchers).maxResponseBytes).toBe(
+      VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
+    );
+    expect(VOUCHER_COLLECTION_MAX_RESPONSE_BYTES).toBeGreaterThan(
       RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
     );
   });

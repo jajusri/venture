@@ -12,6 +12,7 @@ import type { HealthService } from '../../src/services/health/health-service.js'
 import type { TallyDiagnosticsService } from '../../src/services/interfaces/tally-diagnostics.js';
 import type { Logger } from '../../src/infrastructure/logging/logger.js';
 import type { ApplicationContext } from '../../src/bootstrap/register-services.js';
+import type { VoucherApplicationService } from '../../src/services/voucher/voucher-application.interface.js';
 
 export interface StartTestServicesOptions {
   readonly selectCompanyId?: string;
@@ -42,6 +43,9 @@ export function createTestApp(context: ApplicationContext = createTestContext())
     ServiceTokens.TallyDiagnostics,
   );
   const logger = context.container.resolve<Logger>(ServiceTokens.Logger);
+  const voucherApplication = context.container.resolve<VoucherApplicationService>(
+    ServiceTokens.VoucherApplication,
+  );
   return createExpressApp({
     logger,
     healthService,
@@ -51,6 +55,7 @@ export function createTestApp(context: ApplicationContext = createTestContext())
     ledgerSync,
     stockItemSync,
     tallyDiagnostics,
+    voucherApplication,
   });
 }
 

@@ -14,7 +14,7 @@ describe('GET /health', () => {
       status: 'unavailable',
       schemaVersion: '1.0.0',
       readOnly: true,
-      connectorVersion: '0.3.1',
+      connectorVersion: '0.4.0',
       bindHost: '127.0.0.1',
       networkExposure: 'loopback',
       networkPolicySatisfied: true,
@@ -86,10 +86,16 @@ describe('read-only enforcement', () => {
     expect(response.body.code).toBe('READ_ONLY_VIOLATION');
   });
 
-  it('allows POST /device/pair to reach stub handler', async () => {
+  it('returns 501 when device pairing repository is not configured', async () => {
+    // A well-formed pairing request reaches the repository guard and gets 501
+    // because the test context does not inject a TrustedDeviceRepository.
     const response = await request(createTestApp())
       .post('/device/pair')
-      .send({ deviceId: 'dev-1', pairingCode: '123456' });
+      .send({
+        companyId: 'acme-001',
+        companyName: 'Acme Corp',
+        installationId: 'install-0000000000000000',
+      });
     expect(response.status).toBe(501);
     expect(response.body.code).toBe('NOT_IMPLEMENTED');
   });

@@ -89,7 +89,7 @@ describe('DI does not expose raw transport or bypass paths to application code',
     vi.restoreAllMocks();
   });
 
-  it('TallyModule exposes only readPort and connectionManager (adapter-internal)', async () => {
+  it('TallyModule exposes only ERP-neutral read ports and connectionManager', async () => {
     const { createTallyModule } = await import('../../../src/tally/tally-module.js');
     const mod = createTallyModule({
       config: loadConfig({ env: 'test' }),
@@ -100,6 +100,7 @@ describe('DI does not expose raw transport or bypass paths to application code',
     expect('readGateway' in mod).toBe(false);
     expect('responseParser' in mod).toBe(false);
     expect('readPort' in mod).toBe(true);
+    expect('voucherReadPort' in mod).toBe(true);
     expect('connectionManager' in mod).toBe(true);
     vi.restoreAllMocks();
   });

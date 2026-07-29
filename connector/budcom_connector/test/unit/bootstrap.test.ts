@@ -7,12 +7,17 @@ import {
 } from '../../src/bootstrap/register-services.js';
 import { ServiceTokens } from '../../src/core/tokens.js';
 import type { ServiceLifecycle } from '../../src/core/types.js';
+import { VoucherExtractionService } from '../../src/services/voucher/voucher-extraction.service.js';
 
 describe('application lifecycle', () => {
   it('starts and stops all registered services in order', async () => {
     const context = registerServices({ env: 'test', logLevel: 'error', port: 9876 });
 
     await startApplication(context);
+
+    expect(
+      context.container.resolve<VoucherExtractionService>(ServiceTokens.VoucherExtraction),
+    ).toBeInstanceOf(VoucherExtractionService);
 
     const lifecycleTokens = [
       ServiceTokens.LocalDatabase,

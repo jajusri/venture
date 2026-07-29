@@ -55,4 +55,58 @@ describe('TallyHttpTransport', () => {
       transport.send({ body: '<ENVELOPE></ENVELOPE>', contentType: 'text/xml' }),
     ).rejects.toMatchObject({ statusCode: 503 });
   });
+
+  it('accepts a response whose UTF-8 byte length exactly reaches the limit', async () => {
+    const body = '<E>1234</E>';
+    const { fetchImpl } = createMockFetch(() => ({ body }));
+    const transport = new TallyHttpTransport({
+      config: loadConfig({ env: 'test', tallyMaxResponseBytes: Buffer.byteLength(body) }),
+      logger: createLogger({ service: 'test', level: 'error' }),
+      fetchImpl,
+    });
+
+    await expect(
+      transport.send({ body: '<E/>', contentType: 'text/xml' }),
+    ).resolves.toMatchObject({ body });
+  });
+
+  it('aborts reading immediately after the byte limit is exceeded', async () => {
+    let cancelled = false;
+    const fetchImpl: typeof fetch = async () => new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('12345'));
+          controller.enqueue(new TextEncoder().encode('6'));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      { status: 200 },
+    );
+    const transport = new TallyHttpTransport({
+      config: loadConfig({ env: 'test', tallyMaxResponseBytes: 5 }),
+      logger: createLogger({ service: 'test', level: 'error' }),
+      fetchImpl,
+    });
+
+    await expect(
+      transport.send({ body: '<E/>', contentType: 'text/xml' }),
+    ).rejects.toMatchObject({ statusCode: 503 });
+    expect(cancelled).toBe(true);
+  });
+
+  it('counts multibyte XML as UTF-8 bytes', async () => {
+    const body = '₹';
+    const { fetchImpl } = createMockFetch(() => ({ body }));
+    const transport = new TallyHttpTransport({
+      config: loadConfig({ env: 'test', tallyMaxResponseBytes: 2 }),
+      logger: createLogger({ service: 'test', level: 'error' }),
+      fetchImpl,
+    });
+
+    await expect(
+      transport.send({ body: '<E/>', contentType: 'text/xml' }),
+    ).rejects.toMatchObject({ statusCode: 503 });
+  });
 });
