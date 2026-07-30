@@ -130,7 +130,7 @@
     <string name="sync_retry">Retry</string>
     <string name="sync_refresh">Refresh status</string>
     <string name="sync_run_available">Run available syncs</string>
-    <string name="sync_run_available_disclaimer">Runs Ledgers then Stock items sequentially. Not an atomic transaction. Voucher sync is unavailable.</string>
+    <string name="sync_run_available_disclaimer">Runs Ledgers, Stock items, then Vouchers sequentially. Not an atomic transaction.</string>
     <string name="sync_active_heading">Active run</string>
     <string name="sync_progress_not_reported">Progress totals are not fully reported by the Connector yet.</string>
 

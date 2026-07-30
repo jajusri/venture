@@ -39,7 +39,7 @@ class DefaultSyncRemoteDataSource @Inject constructor(
             when (target) {
                 SyncTarget.Ledgers -> api.startLedgerSync(body).toOutcome()
                 SyncTarget.StockItems -> api.startStockItemSync(body).toOutcome()
-                SyncTarget.Vouchers -> error("Voucher sync is not publicly available.")
+                SyncTarget.Vouchers -> api.startVoucherSync(VoucherSyncStartRequestDto()).toOutcome()
             }
         }
     }

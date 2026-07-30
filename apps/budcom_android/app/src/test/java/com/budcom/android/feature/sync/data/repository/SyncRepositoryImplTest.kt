@@ -33,10 +33,10 @@ class SyncRepositoryImplTest {
     private val time = TimeProvider { 42L }
 
     @Test
-    fun voucherStartRejected() = runTest {
+    fun voucherStartSucceeds() = runTest {
         val repo = SyncRepositoryImpl(FakeRemote(), errorMapper, time)
         val result = repo.startSync(SyncTarget.Vouchers)
-        assertTrue(result is AppResult.Failure)
+        assertTrue(result is AppResult.Success)
     }
 
     @Test

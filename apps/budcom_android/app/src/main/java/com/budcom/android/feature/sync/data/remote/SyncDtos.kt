@@ -8,6 +8,12 @@ data class SyncStartRequestDto(
 )
 
 @Serializable
+data class VoucherSyncStartRequestDto(
+    val dateFrom: String? = null,
+    val dateTo: String? = null,
+)
+
+@Serializable
 data class SyncProgressDto(
     val syncRunId: String? = null,
     val status: String,
@@ -113,6 +119,23 @@ data class StockSyncResultDto(
     val statistics: StockSyncStatisticsDto,
     val progress: SyncProgressDto,
     val changes: List<SyncChangeDto> = emptyList(),
+    val validationIssueCount: Int = 0,
+)
+
+@Serializable
+data class VoucherSyncStatisticsDto(
+    val totalVouchers: Int = 0,
+    val lastSyncedAt: String? = null,
+)
+
+@Serializable
+data class VoucherSyncResultDto(
+    val schemaVersion: String? = null,
+    val syncRunId: String,
+    val status: String,
+    val extractionCompleteness: String? = null,
+    val statistics: VoucherSyncStatisticsDto,
+    val progress: SyncProgressDto,
     val validationIssueCount: Int = 0,
 )
 

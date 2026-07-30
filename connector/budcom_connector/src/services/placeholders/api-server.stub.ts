@@ -11,7 +11,10 @@ import type { MasterDataService } from '../extraction/master-data.service.js';
 import type { LedgerSyncService } from '../ledger/ledger-sync.service.js';
 import type { StockItemSyncService } from '../stock-item/stock-item-sync.service.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
-import type { VoucherApplicationService } from '../voucher/voucher-application.interface.js';
+import type {
+  VoucherApplicationService,
+  VoucherSnapshotSyncService,
+} from '../voucher/voucher-application.interface.js';
 
 export interface ApiServerDeps {
   readonly healthService: HealthService;
@@ -22,6 +25,7 @@ export interface ApiServerDeps {
   readonly stockItemSync: StockItemSyncService;
   readonly tallyDiagnostics: TallyDiagnosticsService;
   readonly voucherApplication: VoucherApplicationService;
+  readonly voucherSynchronization?: VoucherSnapshotSyncService;
 }
 
 export class ApiServerStub implements ApiServerService {
@@ -48,6 +52,7 @@ export class ApiServerStub implements ApiServerService {
       stockItemSync: deps.stockItemSync,
       tallyDiagnostics: deps.tallyDiagnostics,
       voucherApplication: deps.voucherApplication,
+      voucherSynchronization: deps.voucherSynchronization,
     });
 
     await new Promise<void>((resolve, reject) => {

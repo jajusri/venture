@@ -39,4 +39,7 @@ interface SyncApi {
 
     @GET("sync/stock-items/runs")
     suspend fun stockItemSyncRuns(@Query("limit") limit: Int = 5): SyncRunsResponseDto
+
+    @POST("sync/vouchers")
+    suspend fun startVoucherSync(@Body body: VoucherSyncStartRequestDto): VoucherSyncResultDto
 }

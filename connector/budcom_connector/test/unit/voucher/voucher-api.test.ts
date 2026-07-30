@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import express from 'express';
 import request from 'supertest';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { VoucherDetails } from '../../../src/erp/voucher/voucher-domain.js';
 import { createVouchersRouter } from '../../../src/api/routes/vouchers.js';
@@ -17,6 +17,8 @@ import { TallyXmlResponseParser } from '../../../src/tally/xml/response-parser.j
 import { VoucherXmlMapper } from '../../../src/tally/voucher/voucher-mapper.js';
 import { VoucherCollectionParser } from '../../../src/tally/voucher/voucher-parser.js';
 import { APPROVED_VOUCHER_FIXTURE_XML } from '../../fixtures/vouchers/approved-voucher-fixture.js';
+import type { ConnectorSessionService } from '../../../src/services/interfaces/connector-session.js';
+import type { VoucherSnapshotSyncService } from '../../../src/services/voucher/voucher-application.interface.js';
 
 const PERIOD = { dateFrom: '2026-07-27', dateTo: '2026-07-27' };
 const tempDirs: string[] = [];
@@ -71,6 +73,80 @@ async function promote(
 const listPath = '/api/v1/vouchers?company=company-a&from=2026-07-27&to=2026-07-27';
 
 describe('production Voucher API', () => {
+  it('runs the controlled public synchronization flow for the selected company', async () => {
+    const synchronize = vi.fn().mockResolvedValue({
+      company: 'company-a',
+      period: PERIOD,
+      snapshotId: 'snapshot-sync',
+      outcome: 'completed',
+      responseStatus: 'records',
+      candidateVoucherCount: 20,
+      acceptedVoucherCount: 20,
+      rejectedVoucherCount: 0,
+      incompleteVoucherCount: 0,
+      ledgerEntryCount: 40,
+      inventoryEntryCount: 10,
+      allocationCount: 0,
+      phaseDurationsMs: {},
+      validationIssues: [],
+      repositoryFailureCode: null,
+      previousActiveSnapshotPreserved: false,
+      promotionOccurred: true,
+      failureReason: null,
+      notificationFailureCount: 0,
+      startedAt: '2026-07-27T12:00:00.000Z',
+      finishedAt: '2026-07-27T12:00:01.000Z',
+      durationMs: 1_000,
+      vouchersExtracted: 20,
+      vouchersPersisted: 20,
+      droppedVouchers: 0,
+      validationWarningCount: 0,
+      rollbackStatus: 'not_required',
+      promoted: true,
+    });
+    const synchronization = { synchronize } as unknown as VoucherSnapshotSyncService;
+    const connectorSession = {
+      getSession: () => ({
+        session: { selectedCompany: { id: 'company-a', name: 'Company A' } },
+      }),
+      validateForOperation: vi.fn().mockResolvedValue({ status: 'SUCCESS' }),
+    } as unknown as ConnectorSessionService;
+    const syncApp = express();
+    syncApp.use(express.json());
+    syncApp.use(createVouchersRouter(
+      new VoucherApplicationServiceImpl(() => repository),
+      synchronization,
+      connectorSession,
+    ));
+    syncApp.use(createErrorMiddleware(createLogger({
+      service: 'voucher-sync-api-test',
+      level: 'error',
+    })));
+
+    const response = await request(syncApp)
+      .post('/sync/vouchers')
+      .send({ dateFrom: PERIOD.dateFrom, dateTo: PERIOD.dateTo });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      status: 'completed',
+      syncRunId: 'snapshot-sync',
+      validationIssueCount: 0,
+      statistics: { totalVouchers: 20 },
+      progress: {
+        itemsProcessed: 20,
+        itemsAdded: 20,
+        itemsSkipped: 0,
+        itemsFailed: 0,
+      },
+    });
+    expect(synchronize).toHaveBeenCalledWith(
+      { companyId: 'company-a', ...PERIOD },
+      expect.any(Object),
+      { requested: false },
+    );
+  });
+
   it('lists stable public records with deterministic pagination and sorting', async () => {
     await promote('company-a', 'snapshot-a');
     const response = await request(app).get(`${listPath}&page=1&pageSize=2&sort=voucherNumber:desc`);

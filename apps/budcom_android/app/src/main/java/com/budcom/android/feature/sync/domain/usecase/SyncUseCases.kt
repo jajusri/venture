@@ -80,7 +80,7 @@ class RunAvailableSyncsUseCase @Inject constructor(
 
     suspend operator fun invoke(): AppResult<AggregateResult> {
         val outcomes = mutableListOf<SyncOutcome>()
-        for (target in listOf(SyncTarget.Ledgers, SyncTarget.StockItems)) {
+        for (target in listOf(SyncTarget.Ledgers, SyncTarget.StockItems, SyncTarget.Vouchers)) {
             when (val result = startTargetSync(target)) {
                 is AppResult.Success -> outcomes.add(result.value)
                 is AppResult.Failure -> {

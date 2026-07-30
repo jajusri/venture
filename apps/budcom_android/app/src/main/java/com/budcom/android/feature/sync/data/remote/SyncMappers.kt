@@ -71,6 +71,37 @@ internal fun StockSyncStatisticsDto.toSummary(): SyncStatisticsSummary = SyncSta
     totalItems = totalStockItems,
 )
 
+internal fun VoucherSyncStatisticsDto.toSummary(): SyncStatisticsSummary = SyncStatisticsSummary(
+    lastSyncedAt = lastSyncedAt,
+    totalItems = totalVouchers,
+)
+
+internal fun VoucherSyncResultDto.toOutcome(): SyncOutcome {
+    val progressDomain = progress.toDomain()
+    return if (status.toSyncRunStatus() == SyncRunStatus.Completed) {
+        SyncOutcome.Succeeded(
+            target = SyncTarget.Vouchers,
+            syncRunId = syncRunId,
+            status = SyncRunStatus.Completed,
+            progress = progressDomain,
+            validationIssueCount = validationIssueCount,
+            extractionCompleteness = extractionCompleteness,
+            statistics = statistics.toSummary(),
+            warningMessage = null,
+        )
+    } else {
+        SyncOutcome.Failed(
+            target = SyncTarget.Vouchers,
+            error = com.budcom.android.core.common.AppError.Remote(
+                httpStatus = 200,
+                code = status,
+                message = progress.lastError ?: "Voucher sync ended with status $status.",
+            ),
+            progress = progressDomain,
+        )
+    }
+}
+
 internal fun LedgerSyncResultDto.toOutcome(): SyncOutcome {
     val progressDomain = progress.toDomain()
     return when (status.toSyncRunStatus()) {

@@ -4,6 +4,8 @@ import type { VoucherSearchCriteria } from '../../erp/voucher/voucher-domain.js'
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import { asyncHandler } from '../../infrastructure/errors/error-handler.js';
 import type { VoucherApplicationService } from '../../services/voucher/voucher-application.interface.js';
+import type { VoucherSnapshotSyncService } from '../../services/voucher/voucher-application.interface.js';
+import type { ConnectorSessionService } from '../../services/interfaces/connector-session.js';
 
 const SCHEMA_VERSION = '1.0.0';
 const MAX_PAGE_SIZE = 100;
@@ -21,8 +23,74 @@ interface ValidationIssue {
   readonly message: string;
 }
 
-export function createVouchersRouter(application: VoucherApplicationService): Router {
+export function createVouchersRouter(
+  application: VoucherApplicationService,
+  synchronization?: VoucherSnapshotSyncService,
+  connectorSession?: ConnectorSessionService,
+): Router {
   const router = Router();
+
+  if (synchronization && connectorSession) {
+    router.post(
+      '/sync/vouchers',
+      asyncHandler(async (req, res) => {
+        const selectedCompany = connectorSession.getSession().session.selectedCompany;
+        if (!selectedCompany) {
+          throw new AppError(
+            ErrorCodes.VALIDATION_ERROR,
+            'Select a company before synchronizing vouchers.',
+            400,
+          );
+        }
+        const validation = await connectorSession.validateForOperation(selectedCompany.id);
+        if (validation.status !== 'SUCCESS') {
+          throw new AppError(
+            ErrorCodes.VALIDATION_ERROR,
+            validation.reason ?? 'The selected company session is not valid.',
+            409,
+          );
+        }
+        const today = new Date();
+        const defaultTo = today.toISOString().slice(0, 10);
+        const defaultFromDate = new Date(today);
+        defaultFromDate.setUTCDate(defaultFromDate.getUTCDate() - 29);
+        const dateFrom = req.body?.dateFrom ?? defaultFromDate.toISOString().slice(0, 10);
+        const dateTo = req.body?.dateTo ?? defaultTo;
+        const result = await synchronization.synchronize(
+          { companyId: selectedCompany.id, dateFrom, dateTo },
+          { onProgress: () => undefined },
+          { requested: false },
+        );
+        const completed = result.outcome === 'completed' || result.outcome === 'already_current';
+        res.status(result.outcome === 'conflict' ? 409 : 200).json({
+          schemaVersion: SCHEMA_VERSION,
+          syncRunId: result.snapshotId ?? `voucher-${Date.now()}`,
+          status: completed ? 'completed' : result.outcome,
+          extractionCompleteness: result.responseStatus ?? result.outcome,
+          validationIssueCount: result.validationIssues.length,
+          statistics: {
+            totalVouchers: result.acceptedVoucherCount,
+            lastSyncedAt: completed ? result.finishedAt : null,
+          },
+          progress: {
+            syncRunId: result.snapshotId,
+            status: completed ? 'completed' : result.outcome,
+            totalExpected: result.candidateVoucherCount,
+            startedAt: result.startedAt,
+            completedAt: result.finishedAt,
+            durationMs: result.durationMs,
+            itemsProcessed: result.acceptedVoucherCount,
+            itemsAdded: result.vouchersPersisted,
+            itemsUpdated: 0,
+            itemsSkipped: result.rejectedVoucherCount,
+            itemsFailed: result.outcome === 'failed' ? 1 : 0,
+            lastError: result.failureReason,
+            cancelRequested: false,
+          },
+        });
+      }),
+    );
+  }
 
   router.get('/api/v1/vouchers/search', listHandler(application));
 

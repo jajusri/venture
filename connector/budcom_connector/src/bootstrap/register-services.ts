@@ -236,6 +236,9 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         voucherApplication: container.resolve<VoucherApplicationService>(
           ServiceTokens.VoucherApplication,
         ),
+        voucherSynchronization: container.resolve<VoucherSnapshotSyncService>(
+          ServiceTokens.VoucherSynchronization,
+        ),
       })),
   );
 

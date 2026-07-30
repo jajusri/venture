@@ -167,7 +167,7 @@ class SyncViewModel @Inject constructor(
                     isBusy = true,
                     phase = SyncPhase.Starting,
                     bannerError = null,
-                    aggregateMessage = "Running available syncs sequentially (Ledgers, then Stock items). Not atomic.",
+                    aggregateMessage = "Running available syncs sequentially (Ledgers, Stock items, then Vouchers). Not atomic.",
                 )
             }
             when (val result = runAvailableSyncs()) {

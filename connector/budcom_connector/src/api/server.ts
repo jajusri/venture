@@ -22,7 +22,10 @@ import { createHealthRouter } from './routes/health.js';
 import { createMasterDataRouter } from './routes/master-data.js';
 import { createSessionRouter } from './routes/session.js';
 import { createVouchersRouter } from './routes/vouchers.js';
-import type { VoucherApplicationService } from '../services/voucher/voucher-application.interface.js';
+import type {
+  VoucherApplicationService,
+  VoucherSnapshotSyncService,
+} from '../services/voucher/voucher-application.interface.js';
 import { createRequestLoggingMiddleware } from './middleware/request-logging.js';
 
 export interface ExpressAppDeps {
@@ -35,6 +38,7 @@ export interface ExpressAppDeps {
   readonly stockItemSync: StockItemSyncService;
   readonly tallyDiagnostics: TallyDiagnosticsService;
   readonly voucherApplication: VoucherApplicationService;
+  readonly voucherSynchronization?: VoucherSnapshotSyncService;
   /** Optional: when provided, device pairing routes are functional. */
   readonly trustedDevices?: TrustedDeviceRepository;
 }
@@ -55,7 +59,11 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
   app.use(createMasterDataRouter(deps.masterData));
   app.use(createLedgersRouter(deps.ledgerSync));
   app.use(createStockItemsRouter(deps.stockItemSync));
-  app.use(createVouchersRouter(deps.voucherApplication));
+  app.use(createVouchersRouter(
+    deps.voucherApplication,
+    deps.voucherSynchronization,
+    deps.connectorSession,
+  ));
   app.use(createApiStubsRouter());
   app.use(createErrorMiddleware(deps.logger));
 

@@ -48,11 +48,6 @@ class SyncRepositoryImpl @Inject constructor(
     }
 
     override suspend fun startSync(target: SyncTarget, mode: SyncMode): AppResult<SyncOutcome> {
-        if (target == SyncTarget.Vouchers) {
-            return AppResult.Failure(
-                AppError.Message("Public voucher sync is not available on the Connector."),
-            )
-        }
         if (localActiveTarget != null) {
             return AppResult.Failure(
                 AppError.Message("A sync is already in progress in this app session."),
@@ -294,8 +289,7 @@ class SyncRepositoryImpl @Inject constructor(
             SyncTargetSnapshot(SyncTarget.StockItems, available = true),
             SyncTargetSnapshot(
                 target = SyncTarget.Vouchers,
-                available = false,
-                unavailableReason = "Public voucher sync is not available on the Connector.",
+                available = true,
             ),
         ),
         lastUpdatedEpochMillis = 0L,

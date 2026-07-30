@@ -39,6 +39,8 @@ Thumbs.db
 
 # Logs & temp
 *.log
+.tmp-*
+/.release-backups/
 docs/_spec_extract/
 docs/_spec_text.txt
 docs/spec.zip

@@ -93,8 +93,7 @@ internal fun defaultCards(): List<SyncTargetCardUi> = listOf(
     SyncTargetCardUi(
         target = SyncTarget.Vouchers,
         title = "Vouchers",
-        available = false,
-        unavailableReason = "Public voucher sync is not available on the Connector.",
+        available = true,
         statusLine = "Unavailable",
         lastSyncedLine = null,
         canSync = false,
