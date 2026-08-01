@@ -3,6 +3,8 @@ package com.budcom.android.feature.company.domain.port
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import com.budcom.android.feature.company.domain.model.SessionSelectedCompany
 
 /**
  * Stable public port for selected-company and session validation status.
@@ -10,6 +12,8 @@ import kotlinx.coroutines.flow.Flow
  * Cross-feature consumers must use this port rather than company feature internals.
  */
 interface CompanySessionPort {
+    fun observeSelectedCompany(): Flow<SessionSelectedCompany?> =
+        observeSelectedCompanyId().map { id -> id?.let { SessionSelectedCompany(it, it) } }
     fun observeSelectedCompanyId(): Flow<String?>
 
     /** Reads `GET /session` and projects the selected company when present. */

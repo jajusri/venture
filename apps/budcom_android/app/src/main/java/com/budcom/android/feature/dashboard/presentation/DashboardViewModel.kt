@@ -53,11 +53,7 @@ class DashboardViewModel @Inject constructor(
                         } else {
                             state.sessionValidity
                         },
-                        selectedCompanyName = if (context.selectedCompanyId.isNullOrBlank()) {
-                            null
-                        } else {
-                            state.selectedCompanyName
-                        },
+                        selectedCompanyName = context.selectedCompanyName,
                     ).withAuthoritativeMode()
                 }
             }

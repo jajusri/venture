@@ -31,8 +31,9 @@ class RefreshDashboardUseCase @Inject constructor(
     ): DashboardSnapshot {
         val baseUrl = connectorStatus.currentBaseUrl()
         val isOnline = connectivityObserver.current()
-        // Local DataStore may be empty while Connector already has a Desktop-selected company.
-        if (companySession.observeSelectedCompanyId().first().isNullOrBlank()) {
+        // A null complete object can mean either an empty cache or a legacy ID-only cache.
+        // Restoration resolves and atomically persists the matching name in both cases.
+        if (companySession.observeSelectedCompany().first() == null) {
             restoreCompanySelection()
         }
         val selectedCompanyId = companySession.observeSelectedCompanyId().first()
@@ -179,14 +180,20 @@ class ObserveDashboardContextUseCase @Inject constructor(
         val isOnline: Boolean,
         val baseUrl: String,
         val selectedCompanyId: String?,
+        val selectedCompanyName: String?,
     )
 
     operator fun invoke(): Flow<Context> = combine(
         connectivityObserver.isOnline,
         connectorStatus.observeBaseUrl(),
-        companySession.observeSelectedCompanyId(),
-    ) { online, url, companyId ->
-        Context(isOnline = online, baseUrl = url, selectedCompanyId = companyId)
+        companySession.observeSelectedCompany(),
+    ) { online, url, company ->
+        Context(
+            isOnline = online,
+            baseUrl = url,
+            selectedCompanyId = company?.id,
+            selectedCompanyName = company?.name,
+        )
     }
 }
 

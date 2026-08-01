@@ -9,6 +9,7 @@ import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.company.domain.port.SessionValidity
 import com.budcom.android.feature.company.domain.repository.CompanyRepository
+import com.budcom.android.feature.company.domain.model.SessionSelectedCompany
 import com.budcom.android.feature.company.domain.usecase.RestoreCompanySelectionUseCase
 import com.budcom.android.feature.dashboard.domain.model.DashboardOperationalMode
 import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidity
@@ -66,11 +67,13 @@ class DashboardViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createViewModel(): DashboardViewModel {
+    private fun createViewModel(
+        restoreRepository: CompanyRepository = DashboardNoOpCompanyRepository,
+    ): DashboardViewModel {
         val refresh = RefreshDashboardUseCase(
             connectorStatus = connector,
             companySession = company,
-            restoreCompanySelection = RestoreCompanySelectionUseCase(DashboardNoOpCompanyRepository),
+            restoreCompanySelection = RestoreCompanySelectionUseCase(restoreRepository),
             connectivityObserver = connectivity,
             timeProvider = TimeProvider { 9_000L },
         )
@@ -93,6 +96,7 @@ class DashboardViewModelTest {
     @Test
     fun `initial refresh reaches fully operational`() = runTest(dispatcher) {
         company.selectedIdFlow.value = "estimation"
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
         company.validateResult = AppResult.Success(
             SessionValidationStatus(SessionValidity.Valid, "estimation", "ESTIMATION"),
         )
@@ -178,6 +182,55 @@ class DashboardViewModelTest {
         assertTrue(viewModel.uiState.value.connectorError is DashboardUiError.Timeout)
         assertEquals(false, viewModel.uiState.value.connectorConnected)
     }
+
+    @Test
+    fun `switching in both directions updates company id and name together without stale name`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        advanceUntilIdle()
+        assertEquals("estimation", viewModel.uiState.value.selectedCompanyId)
+        assertEquals("ESTIMATION", viewModel.uiState.value.selectedCompanyName)
+
+        company.selectedCompanyFlow.value = SessionSelectedCompany("budcom-test-01", "Budcom-Test-01")
+        advanceUntilIdle()
+        assertEquals("budcom-test-01", viewModel.uiState.value.selectedCompanyId)
+        assertEquals("Budcom-Test-01", viewModel.uiState.value.selectedCompanyName)
+    }
+
+    @Test
+    fun `legacy migration shows no stale name and runs only once`() = runTest(dispatcher) {
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        val repository = DashboardMigrationRepository(company)
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        company.selectedIdFlow.value = "budcom-test-01"
+        company.selectedCompanyFlow.value = null
+        advanceUntilIdle()
+        assertEquals(null, viewModel.uiState.value.selectedCompanyName)
+
+        viewModel.onEvent(DashboardEvent.Refresh)
+        advanceUntilIdle()
+        assertEquals("budcom-test-01", viewModel.uiState.value.selectedCompanyId)
+        assertEquals("Budcom-Test-01", viewModel.uiState.value.selectedCompanyName)
+        viewModel.onEvent(DashboardEvent.Refresh)
+        advanceUntilIdle()
+        assertEquals(1, repository.restoreCalls)
+    }
+
+    @Test
+    fun `already migrated selection remains unchanged without migration`() = runTest(dispatcher) {
+        company.selectedIdFlow.value = "estimation"
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        val repository = DashboardMigrationRepository(company)
+        val viewModel = createViewModel(repository)
+        advanceUntilIdle()
+
+        assertEquals("ESTIMATION", viewModel.uiState.value.selectedCompanyName)
+        assertEquals(0, repository.restoreCalls)
+    }
 }
 
 private class FakeConnectorStatus : ConnectorStatusPort {
@@ -195,12 +248,14 @@ private class FakeConnectorStatus : ConnectorStatusPort {
 }
 
 private class FakeCompanySession : CompanySessionPort {
+    val selectedCompanyFlow = MutableStateFlow<SessionSelectedCompany?>(null)
     val selectedIdFlow = MutableStateFlow<String?>(null)
     var selectedResult: AppResult<SelectedCompanyStatus> =
         AppResult.Success(SelectedCompanyStatus(null, null))
     var validateResult: AppResult<SessionValidationStatus> =
         AppResult.Success(SessionValidationStatus(SessionValidity.NoCompany, null, null))
 
+    override fun observeSelectedCompany(): Flow<SessionSelectedCompany?> = selectedCompanyFlow
     override fun observeSelectedCompanyId(): Flow<String?> = selectedIdFlow
     override suspend fun readSelectedCompany(): AppResult<SelectedCompanyStatus> {
         val id = selectedIdFlow.value
@@ -219,6 +274,27 @@ private object DashboardNoOpCompanyRepository : CompanyRepository {
     override suspend fun refreshCompanies() = error("unused")
     override suspend fun getSession() = error("unused")
     override suspend fun restoreSelection() = AppResult.Success(null)
+    override suspend fun selectCompany(companyId: String) = error("unused")
+    override suspend fun validateSession() = error("unused")
+    override suspend fun clearSelection() = error("unused")
+}
+
+private class DashboardMigrationRepository(
+    private val company: FakeCompanySession,
+) : CompanyRepository {
+    var restoreCalls = 0
+    override fun observeSelectedCompany(): Flow<SessionSelectedCompany?> = company.selectedCompanyFlow
+    override fun observeSelectedCompanyId(): Flow<String?> = company.selectedIdFlow
+    override suspend fun restoreSelection(): AppResult<com.budcom.android.feature.company.domain.model.SessionValidationOutcome?> {
+        restoreCalls++
+        val id = company.selectedIdFlow.value ?: return AppResult.Success(null)
+        val name = if (id == "estimation") "ESTIMATION" else "Budcom-Test-01"
+        company.selectedCompanyFlow.value = SessionSelectedCompany(id, name)
+        return AppResult.Success(null)
+    }
+    override suspend fun loadCompanies() = error("unused")
+    override suspend fun refreshCompanies() = error("unused")
+    override suspend fun getSession() = error("unused")
     override suspend fun selectCompany(companyId: String) = error("unused")
     override suspend fun validateSession() = error("unused")
     override suspend fun clearSelection() = error("unused")

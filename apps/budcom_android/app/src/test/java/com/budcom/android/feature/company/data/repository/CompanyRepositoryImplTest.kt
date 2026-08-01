@@ -15,10 +15,14 @@ import com.budcom.android.feature.company.domain.model.ConnectorSessionSnapshot
 import com.budcom.android.feature.company.domain.model.SessionSelectedCompany
 import com.budcom.android.feature.company.domain.model.SessionValidationOutcome
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -184,6 +188,112 @@ class CompanyRepositoryImplTest {
     }
 
     @Test
+    fun `legacy estimation ID resolves and persists complete selection`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore("estimation", legacy = true)
+        val remote = FakeRemote(
+            selectResult = ApiResult.Success(CompanySelectionOutcome("SUCCESS", sampleSession("estimation"), null, 200)),
+            validateResult = ApiResult.Success(
+                SessionValidationOutcome("SUCCESS", sampleSession("estimation"), null, "estimation", "ESTIMATION", 200),
+            ),
+        )
+        val repository = CompanyRepositoryImpl(remote, FakeCompanyLocal(), store, errorMapper, dispatchers)
+
+        repository.restoreSelection()
+
+        assertEquals(SessionSelectedCompany("estimation", "ESTIMATION"), store.currentCompany)
+        assertEquals(1, store.completeSaveCount)
+    }
+
+    @Test
+    fun `legacy Budcom ID persists complete selection across repository recreation`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore("budcom-test-01", legacy = true)
+        val remote = FakeRemote(
+            selectResult = ApiResult.Success(CompanySelectionOutcome("SUCCESS", sampleSession("budcom-test-01"), null, 200)),
+            validateResult = ApiResult.Success(
+                SessionValidationOutcome("SUCCESS", sampleSession("budcom-test-01"), null, "budcom-test-01", "Budcom-Test-01", 200),
+            ),
+        )
+        CompanyRepositoryImpl(remote, FakeCompanyLocal(), store, errorMapper, dispatchers).restoreSelection()
+        val recreated = CompanyRepositoryImpl(remote, FakeCompanyLocal(), store, errorMapper, dispatchers)
+
+        assertEquals(SessionSelectedCompany("budcom-test-01", "Budcom-Test-01"), recreated.observeSelectedCompany().first())
+        assertEquals(1, store.completeSaveCount)
+    }
+
+    @Test
+    fun `unknown legacy ID remains without inheriting a name`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore("unknown-company", legacy = true)
+        val repository = CompanyRepositoryImpl(
+            FakeRemote(
+                selectResult = ApiResult.Success(
+                    CompanySelectionOutcome("COMPANY_NOT_FOUND", sampleSession(null), "not found", 404),
+                ),
+            ),
+            FakeCompanyLocal(), store, errorMapper, dispatchers,
+        )
+
+        repository.restoreSelection()
+
+        assertEquals("unknown-company", store.currentId)
+        assertEquals(null, store.currentCompany)
+        assertEquals(0, store.completeSaveCount)
+    }
+
+    @Test
+    fun `slow legacy restoration cannot overwrite newer user selection`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore("estimation", legacy = true)
+        val validationStarted = CompletableDeferred<Unit>()
+        val allowValidation = CompletableDeferred<Unit>()
+        val remote = FakeRemote(
+            selectResult = ApiResult.Success(CompanySelectionOutcome("SUCCESS", sampleSession("estimation"), null, 200)),
+            validateResult = ApiResult.Success(
+                SessionValidationOutcome("SUCCESS", sampleSession("estimation"), null, "estimation", "ESTIMATION", 200),
+            ),
+            beforeValidate = {
+                validationStarted.complete(Unit)
+                allowValidation.await()
+            },
+        )
+        val repository = CompanyRepositoryImpl(remote, FakeCompanyLocal(), store, errorMapper, dispatchers)
+
+        val restoration = launch { repository.restoreSelection() }
+        runCurrent()
+        validationStarted.await()
+        store.saveSelectedCompany(SessionSelectedCompany("budcom-test-01", "Budcom-Test-01"))
+        allowValidation.complete(Unit)
+        restoration.join()
+
+        assertEquals(SessionSelectedCompany("budcom-test-01", "Budcom-Test-01"), store.currentCompany)
+    }
+
+    @Test
+    fun `slow invalid restoration cannot clear newer user selection`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore("estimation")
+        val validationStarted = CompletableDeferred<Unit>()
+        val allowValidation = CompletableDeferred<Unit>()
+        val remote = FakeRemote(
+            selectResult = ApiResult.Success(CompanySelectionOutcome("SUCCESS", sampleSession("estimation"), null, 200)),
+            validateResult = ApiResult.Success(
+                SessionValidationOutcome("INVALID", sampleSession(null), "invalid", "estimation", null, 409),
+            ),
+            beforeValidate = {
+                validationStarted.complete(Unit)
+                allowValidation.await()
+            },
+        )
+        val repository = CompanyRepositoryImpl(remote, FakeCompanyLocal(), store, errorMapper, dispatchers)
+
+        val restoration = launch { repository.restoreSelection() }
+        runCurrent()
+        validationStarted.await()
+        store.saveSelectedCompany(SessionSelectedCompany("budcom-test-01", "Budcom-Test-01"))
+        allowValidation.complete(Unit)
+        restoration.join()
+
+        assertEquals(SessionSelectedCompany("budcom-test-01", "Budcom-Test-01"), store.currentCompany)
+    }
+
+    @Test
     fun `select company maps offline failure`() = runTest(dispatcher) {
         val repository = CompanyRepositoryImpl(
             remoteDataSource = FakeRemote(selectResult = ApiResult.Failure(NetworkError.NoConnectivity)),
@@ -201,27 +311,28 @@ class CompanyRepositoryImplTest {
     @Test
     fun `select company validates session and stores selected ID`() = runTest(dispatcher) {
         val localStore = FakeSelectedCompanyStore()
-        val repository = CompanyRepositoryImpl(
-            remoteDataSource = FakeRemote(
-                selectResult = ApiResult.Success(
-                    CompanySelectionOutcome(
-                        status = "SUCCESS",
-                        session = sampleSession(selectedId = "estimation"),
-                        reason = null,
-                        httpStatus = 200,
-                    ),
-                ),
-                validateResult = ApiResult.Success(
-                    SessionValidationOutcome(
-                        status = "SUCCESS",
-                        session = sampleSession(selectedId = "estimation"),
-                        reason = null,
-                        companyId = "estimation",
-                        companyName = "ESTIMATION",
-                        httpStatus = 200,
-                    ),
+        val remote = FakeRemote(
+            selectResult = ApiResult.Success(
+                CompanySelectionOutcome(
+                    status = "SUCCESS",
+                    session = sampleSession(selectedId = "estimation"),
+                    reason = null,
+                    httpStatus = 200,
                 ),
             ),
+            validateResult = ApiResult.Success(
+                SessionValidationOutcome(
+                    status = "SUCCESS",
+                    session = sampleSession(selectedId = "estimation"),
+                    reason = null,
+                    companyId = "estimation",
+                    companyName = "ESTIMATION",
+                    httpStatus = 200,
+                ),
+            ),
+        )
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = remote,
             localDataSource = FakeCompanyLocal(),
             selectedCompanyStore = localStore,
             errorMapper = errorMapper,
@@ -231,6 +342,30 @@ class CompanyRepositoryImplTest {
         val result = repository.selectCompany("estimation")
         assertTrue(result is AppResult.Success)
         assertEquals("estimation", localStore.currentId)
+        assertEquals("ESTIMATION", localStore.currentName)
+
+        remote.selectResult = ApiResult.Success(
+            CompanySelectionOutcome(
+                "SUCCESS",
+                sampleSession("budcom-test-01"),
+                null,
+                200,
+            ),
+        )
+        remote.validateResult = ApiResult.Success(
+            SessionValidationOutcome(
+                "SUCCESS",
+                sampleSession("budcom-test-01"),
+                null,
+                "budcom-test-01",
+                "Budcom-Test-01",
+                200,
+            ),
+        )
+
+        repository.selectCompany("budcom-test-01")
+        assertEquals("budcom-test-01", localStore.currentId)
+        assertEquals("Budcom-Test-01", localStore.currentName)
     }
 
     @Test
@@ -300,20 +435,36 @@ private class FakeRemote(
         SessionValidationOutcome("SUCCESS", sampleSession("estimation"), null, "estimation", "ESTIMATION", 200),
     ),
     var clearResult: ApiResult<ConnectorSessionSnapshot> = ApiResult.Success(sampleSession(null)),
+    var beforeValidate: suspend () -> Unit = {},
 ) : CompanyRemoteDataSource {
     override suspend fun fetchCompanies(): ApiResult<CompanyDiscoverySnapshot> = companiesResult
     override suspend fun fetchSession(): ApiResult<ConnectorSessionSnapshot> = sessionResult
     override suspend fun selectCompany(companyId: String): ApiResult<CompanySelectionOutcome> = selectResult
-    override suspend fun validateSession(): ApiResult<SessionValidationOutcome> = validateResult
+    override suspend fun validateSession(): ApiResult<SessionValidationOutcome> {
+        beforeValidate()
+        return validateResult
+    }
     override suspend fun clearSession(): ApiResult<ConnectorSessionSnapshot> = clearResult
 }
 
 private class FakeSelectedCompanyStore(
     initial: String? = null,
+    legacy: Boolean = false,
 ) : SelectedCompanyStore {
     private val flow = MutableStateFlow(initial)
+    private val companyFlow = MutableStateFlow(
+        if (legacy) null else initial?.let { SessionSelectedCompany(it, it.uppercase()) },
+    )
     var currentId: String? = initial
         private set
+    var currentName: String? = null
+        private set
+    val currentCompany: SessionSelectedCompany?
+        get() = companyFlow.value
+    var completeSaveCount: Int = 0
+        private set
+
+    override fun observeSelectedCompany(): Flow<SessionSelectedCompany?> = companyFlow
 
     override fun observeSelectedCompanyId(): Flow<String?> = flow
 
@@ -324,9 +475,34 @@ private class FakeSelectedCompanyStore(
         flow.value = companyId
     }
 
+    override suspend fun saveSelectedCompany(company: SessionSelectedCompany) {
+        currentId = company.id
+        currentName = company.name
+        flow.value = company.id
+        companyFlow.value = company
+        completeSaveCount++
+    }
+
+    override suspend fun saveSelectedCompanyIfCurrentId(
+        expectedCompanyId: String?,
+        company: SessionSelectedCompany,
+    ): Boolean {
+        if (currentId != expectedCompanyId) return false
+        saveSelectedCompany(company)
+        return true
+    }
+
     override suspend fun clearSelectedCompanyId() {
         currentId = null
+        currentName = null
         flow.value = null
+        companyFlow.value = null
+    }
+
+    override suspend fun clearSelectedCompanyIfCurrentId(expectedCompanyId: String): Boolean {
+        if (currentId != expectedCompanyId) return false
+        clearSelectedCompanyId()
+        return true
     }
 }
 

@@ -20,6 +20,8 @@ class CompanySessionPortImpl @Inject constructor(
     private val repository: CompanyRepository,
 ) : CompanySessionPort {
 
+    override fun observeSelectedCompany() = repository.observeSelectedCompany()
+
     override fun observeSelectedCompanyId(): Flow<String?> = repository.observeSelectedCompanyId()
 
     override suspend fun readSelectedCompany(): AppResult<SelectedCompanyStatus> =
