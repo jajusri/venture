@@ -44,15 +44,74 @@ class InvoiceShareContentTest {
     }
 
     @Test
-    fun `long invoice render plan preserves every item exactly once and in order`() {
+    fun `estimate uses exact heading labels columns and footer`() {
+        assertEquals("ESTIMATE", EstimatePdfText.HEADING)
+        assertEquals("Est. Voucher No.", EstimatePdfText.VOUCHER_LABEL)
+        assertEquals("Est. To", EstimatePdfText.BUYER_LABEL)
+        assertEquals(listOf("Sl. No.", "Item Description", "Qty", "Unit", "Rate", "Amount"), EstimatePdfText.COLUMNS)
+        assertEquals(6, EstimatePdfText.COLUMNS.size)
+        assertFalse(EstimatePdfText.HEADING.contains("invoice", ignoreCase = true))
+        assertFalse(EstimatePdfText.HEADING.contains("logo", ignoreCase = true))
+        assertEquals("For review and reference only. Original invoice accompanies the goods.", EstimatePdfText.FOOTER_REVIEW)
+        assertEquals("Generated from synchronized Tally data in BUDCOM.", EstimatePdfText.FOOTER_SOURCE)
+        assertEquals("Page 2 of 4", EstimatePdfText.pageLabel(2, 4))
+    }
+
+    @Test
+    fun `quantity unit and rate come only from canonical item values`() {
+        assertEquals("2.50" to "PCS", splitEstimateQuantity("2.50 PCS"))
+        assertEquals("2.50" to "", splitEstimateQuantity("2.50"))
+        assertEquals("50.00", estimateRate("50.00/PCS", "PCS"))
+        assertEquals("50.00/BOX", estimateRate("50.00/BOX", "PCS"))
+        assertEquals("" to "", splitEstimateQuantity(null))
+    }
+
+    @Test
+    fun `long descriptions wrap without losing text`() {
+        val description = "A deliberately long synchronized item description that must wrap safely across multiple compact lines"
+        val lines = wrapEstimateText(description, 24)
+        assertTrue(lines.size > 1)
+        assertTrue(lines.all { it.length <= 24 })
+        assertEquals(description.split(Regex("\\s+")).joinToString(""), lines.joinToString("").replace(" ", ""))
+    }
+
+    @Test
+    fun `long estimate plan preserves every item once in order and reserves final summary`() {
         val items = (1..120).map {
             VoucherInventoryLine(it, "Item $it with a deterministic synchronized description", "$it PCS", "10/PCS", VoucherMoney("$it.00", null))
         }
-        val plan = planInvoiceItems(items, startingY = 180f, bottom = 800f, continuationStartY = 60f)
+        val plan = planEstimateItems(items, firstPageStartY = 125f, continuationStartY = 60f, bottom = 758f)
         assertEquals((1..120).toList(), plan.map { it.item.lineNumber })
         assertEquals(120, plan.map { it.item.lineNumber }.distinct().size)
         assertTrue(plan.zipWithNext().all { (first, second) -> second.page >= first.page })
-        assertTrue(plan.filter { it.startsNewPage }.all { it.page > 1 })
+        assertTrue(plan.maxOf { it.page } > 1)
+        assertTrue(plan.all { it.top < it.bottom && it.bottom <= 758f })
+        assertTrue(plan.last().bottom + 8f + 28f <= 758f)
+    }
+
+    @Test
+    fun `summary keeps narration and total on one fixed-height row`() {
+        val summary = planEstimateSummary("  Deliver   before noon\nHandle carefully  ", "100.00", 700f)
+        assertEquals("Narration: Deliver before noon Handle carefully", summary.narrationText)
+        assertFalse(summary.narrationText!!.contains('\n'))
+        assertEquals("TOTAL: 100.00", summary.totalText)
+        assertEquals(28f, summary.bottom - summary.top)
+    }
+
+    @Test
+    fun `blank narration omits its label without affecting total`() {
+        val summary = planEstimateSummary("  ", "100.00", 700f)
+        assertEquals(null, summary.narrationText)
+        assertEquals("TOTAL: 100.00", summary.totalText)
+    }
+
+    @Test
+    fun `long narration remains a single logical line and cannot alter total`() {
+        val narration = (1..80).joinToString(" ") { "canonical$it" }
+        val summary = planEstimateSummary(narration, "1234567890.00", 700f)
+        assertFalse(summary.narrationText!!.contains('\n'))
+        assertEquals("TOTAL: 1234567890.00", summary.totalText)
+        assertEquals(28f, summary.bottom - summary.top)
     }
 
     private fun details() = VoucherDetails(

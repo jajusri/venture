@@ -121,106 +121,267 @@ class AndroidInvoiceShareCoordinator @Inject constructor(
 internal object InvoicePdfRenderer {
     private const val PAGE_WIDTH = 595
     private const val PAGE_HEIGHT = 842
-    private const val MARGIN = 42f
-    private const val BOTTOM = 800f
+    private const val MARGIN = 36f
+    private const val CONTENT_RIGHT = 559f
+    private const val TABLE_BOTTOM = 758f
+    private const val FOOTER_TOP = 782f
+    private const val HEADER_HEIGHT = 24f
+    private const val SUMMARY_HEIGHT = 28f
+
+    private val columnEdges = floatArrayOf(MARGIN, 76f, 292f, 340f, 390f, 470f, CONTENT_RIGHT)
 
     fun render(details: VoucherDetails, output: File) {
         val document = PdfDocument()
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 10f; color = android.graphics.Color.BLACK }
-        val bold = Paint(paint).apply { typeface = Typeface.DEFAULT_BOLD }
-        var pageNumber = 0
-        var page: PdfDocument.Page? = null
-        var y = MARGIN
-
-        fun startPage(repeatHeader: Boolean) {
-            page?.let { current ->
-                current.canvas.drawText("Page $pageNumber", PAGE_WIDTH - 82f, PAGE_HEIGHT - 24f, paint)
-                document.finishPage(current)
-            }
-            pageNumber++
-            page = document.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber).create())
-            y = MARGIN
-            if (repeatHeader) {
-                page!!.canvas.drawText("Item", MARGIN, y, bold)
-                page!!.canvas.drawText("Quantity / Rate", 300f, y, bold)
-                page!!.canvas.drawText("Amount", 485f, y, bold)
-                y += 18f
-            }
+        val body = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 8f; color = android.graphics.Color.rgb(35, 35, 35) }
+        val bold = Paint(body).apply { typeface = Typeface.DEFAULT_BOLD }
+        val heading = Paint(bold).apply { textSize = 18f; textAlign = Paint.Align.CENTER }
+        val total = Paint(bold).apply { textSize = 10f; textAlign = Paint.Align.RIGHT }
+        val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(210, 210, 210)
+            strokeWidth = 0.65f
         }
 
-        fun line(text: String, x: Float = MARGIN, style: Paint = paint, spacing: Float = 16f) {
-            if (y + spacing > BOTTOM) startPage(false)
-            page!!.canvas.drawText(text.take(110), x, y, style)
-            y += spacing
-        }
-
-        fun wrapped(text: String, x: Float, maxChars: Int, style: Paint = paint) {
-            text.chunked(maxChars).forEach { line(it, x, style) }
-        }
+        val voucherLines = wrapEstimateText("${EstimatePdfText.VOUCHER_LABEL}: ${details.summary.number.orEmpty()}", 52).take(2)
+        val buyerLines = wrapEstimateText("${EstimatePdfText.BUYER_LABEL}: ${details.summary.partyName.orEmpty()}", 52).take(2)
+        val firstHeaderTop = 77f + maxOf(voucherLines.size, buyerLines.size).coerceAtLeast(1) * 11f
+        val rows = planEstimateItems(
+            details.inventoryEntries,
+            firstHeaderTop + HEADER_HEIGHT,
+            MARGIN + HEADER_HEIGHT,
+            TABLE_BOTTOM,
+        ) { description -> wrapEstimateTextToWidth(description, columnEdges[2] - columnEdges[1] - 10f, body) }
+        val totalPages = rows.maxOfOrNull(EstimateItemLayout::page) ?: 1
 
         try {
-            startPage(false)
-            line("SALES INVOICE", style = Paint(bold).apply { textSize = 18f }, spacing = 28f)
-            line("Generated from synchronized Tally data; not the original statutory invoice.", spacing = 22f)
-            line("Invoice number: ${details.summary.number}", style = bold)
-            line("Invoice date: ${details.summary.date}")
-            details.summary.partyName?.takeIf { it.isNotBlank() }?.let { wrapped("Party: $it", MARGIN, 85) }
-            details.summary.referenceNumber?.takeIf { it.isNotBlank() }?.let { wrapped("Reference: $it", MARGIN, 85) }
-            y += 10f
-            line("Item", MARGIN, bold)
-            page!!.canvas.drawText("Quantity / Rate", 300f, y - 16f, bold)
-            page!!.canvas.drawText("Amount", 485f, y - 16f, bold)
-            planInvoiceItems(details.inventoryEntries, y, BOTTOM, MARGIN + 18f).forEach { planned ->
-                val item = planned.item
-                if (planned.startsNewPage) startPage(true)
-                wrapped("${item.lineNumber}. ${item.itemName}", MARGIN, 42)
-                val quantityRate = listOfNotNull(item.quantity, item.rate).filter { it.isNotBlank() }.joinToString(" @ ")
-                if (quantityRate.isNotBlank()) line(quantityRate, 300f)
-                item.amount?.value?.takeIf { it.isNotBlank() }?.let { line(it, 485f) }
-                y += 6f
-            }
-            y += 8f
-            details.summary.amount?.value?.takeIf { it.isNotBlank() }?.let { line("Invoice total: $it", style = bold) }
-            details.narration?.takeIf { it.isNotBlank() }?.let {
-                y += 8f
-                line("Narration", style = bold)
-                wrapped(it, MARGIN, 90)
-            }
-            page?.let { current ->
-                current.canvas.drawText("Page $pageNumber", PAGE_WIDTH - 82f, PAGE_HEIGHT - 24f, paint)
-                document.finishPage(current)
+            (1..totalPages).forEach { pageNumber ->
+                val page = document.startPage(PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber).create())
+                val canvas = page.canvas
+                val headerTop = if (pageNumber == 1) firstHeaderTop else MARGIN
+
+                if (pageNumber == 1) {
+                    canvas.drawText(EstimatePdfText.HEADING, PAGE_WIDTH / 2f, 50f, heading)
+                    voucherLines.forEachIndexed { index, text -> canvas.drawText(text, MARGIN, 75f + index * 11f, bold) }
+                    buyerLines.forEachIndexed { index, text ->
+                        val aligned = Paint(if (index == 0) bold else body).apply { textAlign = Paint.Align.RIGHT }
+                        canvas.drawText(text, CONTENT_RIGHT, 75f + index * 11f, aligned)
+                    }
+                }
+
+                drawTableHeader(canvas, headerTop, bold, rule)
+                rows.filter { it.page == pageNumber }.forEach { row -> drawEstimateRow(canvas, row, body, rule) }
+
+                if (pageNumber == totalPages) {
+                    val lastBottom = rows.lastOrNull()?.bottom ?: (headerTop + HEADER_HEIGHT)
+                    drawSummary(canvas, lastBottom + 8f, details.narration, details.summary.amount?.value, body, total, rule)
+                }
+
+                drawFooter(canvas, pageNumber, totalPages, body, rule)
+                document.finishPage(page)
             }
             output.outputStream().use(document::writeTo)
         } finally {
             document.close()
         }
     }
+
+    private fun drawTableHeader(canvas: android.graphics.Canvas, top: Float, bold: Paint, rule: Paint) {
+        canvas.drawLine(MARGIN, top, CONTENT_RIGHT, top, rule)
+        canvas.drawLine(MARGIN, top + HEADER_HEIGHT, CONTENT_RIGHT, top + HEADER_HEIGHT, rule)
+        columnEdges.forEach { x -> canvas.drawLine(x, top, x, top + HEADER_HEIGHT, rule) }
+        val baseline = top + 15f
+        EstimatePdfText.COLUMNS.forEachIndexed { index, label ->
+            val align = when (index) {
+                0, 3 -> Paint.Align.CENTER
+                1 -> Paint.Align.LEFT
+                else -> Paint.Align.RIGHT
+            }
+            drawCell(canvas, label, index, baseline, bold, align)
+        }
+    }
+
+    private fun drawEstimateRow(
+        canvas: android.graphics.Canvas,
+        row: EstimateItemLayout,
+        body: Paint,
+        rule: Paint,
+    ) {
+        columnEdges.forEach { x -> canvas.drawLine(x, row.top, x, row.bottom, rule) }
+        canvas.drawLine(MARGIN, row.bottom, CONTENT_RIGHT, row.bottom, rule)
+        val baseline = row.top + 13f
+        drawCell(canvas, row.item.lineNumber.toString(), 0, baseline, body, Paint.Align.CENTER)
+        row.descriptionLines.forEachIndexed { index, text -> drawCell(canvas, text, 1, baseline + index * 11f, body, Paint.Align.LEFT) }
+        val quantity = splitEstimateQuantity(row.item.quantity)
+        drawCell(canvas, quantity.first, 2, baseline, body, Paint.Align.RIGHT)
+        drawCell(canvas, quantity.second, 3, baseline, body, Paint.Align.CENTER)
+        drawCell(canvas, estimateRate(row.item.rate, quantity.second), 4, baseline, body, Paint.Align.RIGHT)
+        drawCell(canvas, row.item.amount?.value.orEmpty(), 5, baseline, body, Paint.Align.RIGHT)
+    }
+
+    private fun drawCell(canvas: android.graphics.Canvas, text: String, column: Int, baseline: Float, paint: Paint, align: Paint.Align) {
+        if (text.isBlank()) return
+        val copy = Paint(paint).apply { textAlign = align }
+        val left = columnEdges[column]
+        val right = columnEdges[column + 1]
+        val x = when (align) {
+            Paint.Align.LEFT -> left + 5f
+            Paint.Align.CENTER -> (left + right) / 2f
+            Paint.Align.RIGHT -> right - 5f
+        }
+        canvas.drawText(text, x, baseline, copy)
+    }
+
+    private fun drawSummary(
+        canvas: android.graphics.Canvas,
+        top: Float,
+        narration: String?,
+        amount: String?,
+        body: Paint,
+        totalPaint: Paint,
+        rule: Paint,
+    ) {
+        canvas.drawLine(MARGIN, top, CONTENT_RIGHT, top, rule)
+        canvas.drawLine(MARGIN, top + SUMMARY_HEIGHT, CONTENT_RIGHT, top + SUMMARY_HEIGHT, rule)
+        val summary = planEstimateSummary(narration, amount, top)
+        val totalText = summary.totalText
+        val totalWidth = if (totalText.isBlank()) 0f else totalPaint.measureText(totalText)
+        val narrationRight = (CONTENT_RIGHT - totalWidth - 18f).coerceAtLeast(MARGIN + 120f)
+        summary.narrationText?.let {
+            val fitted = fitSingleLine(it, narrationRight - MARGIN - 8f, body)
+            canvas.drawText(fitted.first, MARGIN + 4f, top + 18f, fitted.second)
+        }
+        if (totalText.isNotBlank()) canvas.drawText(totalText, CONTENT_RIGHT - 5f, top + 19f, totalPaint)
+    }
+
+    private fun drawFooter(canvas: android.graphics.Canvas, page: Int, pages: Int, body: Paint, rule: Paint) {
+        canvas.drawLine(MARGIN, FOOTER_TOP, CONTENT_RIGHT, FOOTER_TOP, rule)
+        val footer = Paint(body).apply { color = android.graphics.Color.rgb(90, 90, 90) }
+        canvas.drawText(EstimatePdfText.FOOTER_REVIEW, MARGIN, FOOTER_TOP + 12f, footer)
+        canvas.drawText(EstimatePdfText.FOOTER_SOURCE, MARGIN, FOOTER_TOP + 23f, footer)
+        canvas.drawText(EstimatePdfText.pageLabel(page, pages), CONTENT_RIGHT, FOOTER_TOP + 23f, Paint(footer).apply { textAlign = Paint.Align.RIGHT })
+    }
+
+    private fun fitSingleLine(text: String, maxWidth: Float, source: Paint): Pair<String, Paint> {
+        val paint = Paint(source)
+        while (paint.textSize > 6.5f && paint.measureText(text) > maxWidth) paint.textSize -= 0.5f
+        if (paint.measureText(text) <= maxWidth) return text to paint
+        val ellipsis = "..."
+        var end = text.length
+        while (end > 0 && paint.measureText(text.substring(0, end).trimEnd() + ellipsis) > maxWidth) end--
+        return (text.substring(0, end).trimEnd() + ellipsis) to paint
+    }
+
+    private fun wrapEstimateTextToWidth(text: String, maxWidth: Float, paint: Paint): List<String> {
+        if (text.isBlank()) return listOf("")
+        val lines = mutableListOf<String>()
+        var remaining = text.trim()
+        while (remaining.isNotEmpty()) {
+            val count = paint.breakText(remaining, true, maxWidth, null).coerceAtLeast(1)
+            if (count == remaining.length) {
+                lines += remaining
+                break
+            }
+            val proposed = remaining.substring(0, count)
+            val breakAt = proposed.lastIndexOf(' ').takeIf { it > 0 } ?: count
+            lines += remaining.substring(0, breakAt).trimEnd()
+            remaining = remaining.substring(breakAt).trimStart()
+        }
+        return lines
+    }
 }
 
-internal data class PlannedInvoiceItem(
+internal object EstimatePdfText {
+    const val HEADING = "ESTIMATE"
+    const val VOUCHER_LABEL = "Est. Voucher No."
+    const val BUYER_LABEL = "Est. To"
+    const val NARRATION_LABEL = "Narration"
+    const val TOTAL_LABEL = "TOTAL"
+    const val FOOTER_REVIEW = "For review and reference only. Original invoice accompanies the goods."
+    const val FOOTER_SOURCE = "Generated from synchronized Tally data in BUDCOM."
+    val COLUMNS = listOf("Sl. No.", "Item Description", "Qty", "Unit", "Rate", "Amount")
+    fun pageLabel(page: Int, pages: Int): String = "Page $page of $pages"
+}
+
+internal data class EstimateSummaryLayout(
+    val narrationText: String?,
+    val totalText: String,
+    val top: Float,
+    val bottom: Float,
+)
+
+internal fun planEstimateSummary(narration: String?, amount: String?, top: Float): EstimateSummaryLayout =
+    EstimateSummaryLayout(
+        narrationText = narration?.trim()?.takeIf(String::isNotBlank)?.replace(Regex("\\s+"), " ")
+            ?.let { "${EstimatePdfText.NARRATION_LABEL}: $it" },
+        totalText = amount?.trim()?.takeIf(String::isNotBlank)?.let { "${EstimatePdfText.TOTAL_LABEL}: $it" }.orEmpty(),
+        top = top,
+        bottom = top + 28f,
+    )
+
+internal data class EstimateItemLayout(
     val page: Int,
-    val startsNewPage: Boolean,
+    val top: Float,
+    val bottom: Float,
+    val descriptionLines: List<String>,
     val item: com.budcom.android.feature.voucher.domain.model.VoucherInventoryLine,
 )
 
-internal fun planInvoiceItems(
+internal fun planEstimateItems(
     items: List<com.budcom.android.feature.voucher.domain.model.VoucherInventoryLine>,
-    startingY: Float,
-    bottom: Float,
+    firstPageStartY: Float,
     continuationStartY: Float,
-): List<PlannedInvoiceItem> {
+    bottom: Float,
+    descriptionWrapper: (String) -> List<String> = { wrapEstimateText(it, 44) },
+): List<EstimateItemLayout> {
     var page = 1
-    var y = startingY
-    return items.map { item ->
-        val nameLines = (("${item.lineNumber}. ${item.itemName}".length + 41) / 42).coerceAtLeast(1)
-        val quantityRateLines = if (listOfNotNull(item.quantity, item.rate).any { it.isNotBlank() }) 1 else 0
-        val amountLines = if (item.amount?.value?.isNotBlank() == true) 1 else 0
-        val height = (nameLines + quantityRateLines + amountLines) * 16f + 6f
-        val newPage = y + height > bottom
-        if (newPage) {
+    var y = firstPageStartY
+    return items.mapIndexed { index, item ->
+        val description = descriptionWrapper(item.itemName)
+        val height = maxOf(24f, description.size * 11f + 10f)
+        val reserveSummary = if (index == items.lastIndex) 8f + 28f else 0f
+        if (y + height + reserveSummary > bottom) {
             page++
             y = continuationStartY
         }
-        PlannedInvoiceItem(page, newPage, item).also { y += height }
+        EstimateItemLayout(page, y, y + height, description, item).also { y += height }
     }
+}
+
+internal fun wrapEstimateText(text: String, maxChars: Int): List<String> {
+    if (text.isBlank()) return listOf("")
+    val lines = mutableListOf<String>()
+    var current = ""
+    text.trim().split(Regex("\\s+")).forEach { word ->
+        if (word.length > maxChars) {
+            if (current.isNotBlank()) lines += current
+            word.chunked(maxChars).let { chunks ->
+                lines += chunks.dropLast(1)
+                current = chunks.last()
+            }
+        } else {
+            val candidate = if (current.isBlank()) word else "$current $word"
+            if (candidate.length <= maxChars) current = candidate else {
+                lines += current
+                current = word
+            }
+        }
+    }
+    if (current.isNotBlank()) lines += current
+    return lines.ifEmpty { listOf("") }
+}
+
+internal fun splitEstimateQuantity(value: String?): Pair<String, String> {
+    val normalized = value?.trim().orEmpty()
+    if (normalized.isBlank()) return "" to ""
+    val split = normalized.lastIndexOf(' ')
+    return if (split > 0 && split < normalized.lastIndex) {
+        normalized.substring(0, split).trim() to normalized.substring(split + 1).trim()
+    } else normalized to ""
+}
+
+internal fun estimateRate(value: String?, unit: String): String {
+    val normalized = value?.trim().orEmpty()
+    if (unit.isNotBlank() && normalized.endsWith("/$unit", ignoreCase = true)) {
+        return normalized.dropLast(unit.length + 1).trim()
+    }
+    return normalized
 }
