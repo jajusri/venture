@@ -15,6 +15,11 @@ data class VoucherDetailsUiState(
     val isOnline: Boolean = true,
     val details: VoucherDetailsContentUi? = null,
     val error: MasterDataUiError? = null,
+    val canShareInvoice: Boolean = false,
+    val showShareOptions: Boolean = false,
+    val isShareBusy: Boolean = false,
+    val shareMessage: String? = null,
+    val shareError: String? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing
     val hasContent: Boolean get() = details != null
@@ -22,6 +27,8 @@ data class VoucherDetailsUiState(
 
 data class VoucherDetailsContentUi(
     val id: String,
+    val documentTitle: String,
+    val partyHeading: String,
     val typeLabel: String,
     val numberLabel: String,
     val dateLabel: String,
@@ -55,6 +62,13 @@ sealed interface VoucherDetailsEvent {
     data object Load : VoucherDetailsEvent
     data object Refresh : VoucherDetailsEvent
     data object Retry : VoucherDetailsEvent
+    data object OpenShareOptions : VoucherDetailsEvent
+    data object DismissShareOptions : VoucherDetailsEvent
+    data object SharePdf : VoucherDetailsEvent
+    data object ShareSummary : VoucherDetailsEvent
+    data object SavePdf : VoucherDetailsEvent
+    data class SaveDestinationSelected(val uri: android.net.Uri?) : VoucherDetailsEvent
+    data class ShareActivityFinished(val cancelled: Boolean) : VoucherDetailsEvent
 }
 
 internal fun AppError.toVoucherDetailsUiError(): MasterDataUiError = toMasterDataUiError()
@@ -63,6 +77,8 @@ internal fun VoucherDetails.toContentUi(): VoucherDetailsContentUi {
     val summary = summary
     return VoucherDetailsContentUi(
         id = summary.identity.id,
+        documentTitle = summary.type.toDocumentTitle(),
+        partyHeading = summary.type.toPartyHeading(),
         typeLabel = summary.type,
         numberLabel = summary.number?.takeIf { it.isNotBlank() } ?: "—",
         dateLabel = summary.date,
@@ -76,6 +92,23 @@ internal fun VoucherDetails.toContentUi(): VoucherDetailsContentUi {
         ledgerLines = ledgerEntries.map { it.toLineUi() },
         inventoryLines = inventoryEntries.map { it.toLineUi() },
     )
+}
+
+private fun String.toDocumentTitle(): String = when (trim().lowercase()) {
+    "sales" -> "Sales invoice"
+    "purchase" -> "Purchase invoice"
+    "payment" -> "Payment voucher"
+    "receipt" -> "Receipt voucher"
+    "contra" -> "Contra voucher"
+    "credit note" -> "Credit note"
+    "debit note" -> "Debit note"
+    else -> "$this voucher"
+}
+
+private fun String.toPartyHeading(): String = when (trim().lowercase()) {
+    "sales", "credit note" -> "Bill to"
+    "purchase", "debit note" -> "Supplier"
+    else -> "Account / party"
 }
 
 private fun VoucherLedgerLine.toLineUi(): VoucherLedgerLineUi = VoucherLedgerLineUi(

@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.ui.theme.BudcomTheme
 import org.junit.Assert.assertTrue
@@ -47,9 +48,45 @@ class VoucherDetailsScreenTest {
         }
         composeRule.onNodeWithTag("voucher_details_content").assertIsDisplayed()
         composeRule.onNodeWithTag("voucher_details_header").assertIsDisplayed()
-        composeRule.onNodeWithTag("voucher_details_metadata").assertIsDisplayed()
+        composeRule.onNodeWithTag("voucher_details_content").performScrollToIndex(4)
         composeRule.onNodeWithTag("voucher_details_ledger_section").assertIsDisplayed()
         composeRule.onNodeWithTag("voucher_ledger_line_1").assertIsDisplayed()
+        composeRule.onNodeWithTag("voucher_details_content").performScrollToIndex(5)
+        composeRule.onNodeWithTag("voucher_details_metadata").assertIsDisplayed()
+    }
+
+    @Test
+    fun eligibleInvoiceShowsAllShareOptions() {
+        composeRule.setContent {
+            BudcomTheme {
+                VoucherDetailsScreen(
+                    state = VoucherDetailsUiState(
+                        isInitialLoading = false,
+                        details = sampleContent(),
+                        canShareInvoice = true,
+                        showShareOptions = true,
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("share_invoice").assertExists()
+        composeRule.onNodeWithTag("share_invoice_pdf").assertExists()
+        composeRule.onNodeWithTag("share_invoice_summary").assertExists()
+        composeRule.onNodeWithTag("save_invoice_pdf").assertExists()
+    }
+
+    @Test
+    fun unsupportedVoucherDoesNotShowShareAction() {
+        composeRule.setContent {
+            BudcomTheme {
+                VoucherDetailsScreen(
+                    state = VoucherDetailsUiState(isInitialLoading = false, details = sampleContent()),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("share_invoice").assertDoesNotExist()
     }
 
     @Test
@@ -94,9 +131,8 @@ class VoucherDetailsScreenTest {
             listOf(inventoryLine(1, "Fixture item", "2 PCS", "50.00/PCS", "100.00")),
         )
 
-        composeRule.onNodeWithText("1. Fixture item").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Quantity: 2 PCS").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("Rate: 50.00/PCS").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Fixture item").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Qty 2 PCS  ·  @ 50.00/PCS").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("100.00").performScrollTo().assertIsDisplayed()
     }
 
@@ -109,9 +145,9 @@ class VoucherDetailsScreenTest {
             ),
         )
 
-        composeRule.onNodeWithText("Rate: 100").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("2. Missing rate item").performScrollTo().assertIsDisplayed()
-        composeRule.onAllNodesWithText("Rate: ").assertCountEquals(0)
+        composeRule.onNodeWithText("Qty 1 PCS  ·  @ 100").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Missing rate item").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Qty 1 PCS").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -127,7 +163,7 @@ class VoucherDetailsScreenTest {
 
         composeRule.onNodeWithTag("voucher_inventory_line_1").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("voucher_inventory_line_2").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("2. $longName").assertIsDisplayed()
+        composeRule.onNodeWithText(longName).assertIsDisplayed()
         composeRule.onNodeWithTag("voucher_inventory_line_3").performScrollTo().assertIsDisplayed()
     }
 
@@ -161,6 +197,8 @@ class VoucherDetailsScreenTest {
 
     private fun sampleContent() = VoucherDetailsContentUi(
         id = "v-1",
+        documentTitle = "Sales invoice",
+        partyHeading = "Bill to",
         typeLabel = "Sales",
         numberLabel = "S-1",
         dateLabel = "2026-07-27",

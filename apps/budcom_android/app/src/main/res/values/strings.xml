@@ -167,7 +167,16 @@
     <string name="voucher_status_label">Status: %1$s</string>
     <string name="voucher_amount_label">Amount: %1$s</string>
 
-    <string name="voucher_details_title">Voucher details</string>
+    <string name="voucher_details_title">Voucher</string>
+    <string name="voucher_details_number">Voucher no. %1$s</string>
+    <string name="voucher_details_reference_value">Reference: %1$s</string>
+    <string name="voucher_details_total">Total</string>
+    <string name="voucher_details_items">Items</string>
+    <string name="voucher_details_item">Description</string>
+    <string name="voucher_details_item_amount">Amount</string>
+    <string name="voucher_details_quantity_short">Qty %1$s</string>
+    <string name="voucher_details_rate_short">@ %1$s</string>
+    <string name="voucher_details_record_information">Record information</string>
     <string name="voucher_details_metadata">Metadata</string>
     <string name="voucher_details_id">Voucher id</string>
     <string name="voucher_details_party">Party</string>
@@ -177,8 +186,9 @@
     <string name="voucher_details_data_quality">Data quality: %1$s</string>
     <string name="voucher_details_unknown">Not provided</string>
     <string name="voucher_details_effective_date">Effective date: %1$s</string>
+    <string name="voucher_details_effective_date_label">Effective date</string>
     <string name="voucher_details_narration">Narration</string>
-    <string name="voucher_details_ledger_heading">Ledger entries (%1$d)</string>
+    <string name="voucher_details_ledger_heading">Accounting breakdown (%1$d)</string>
     <string name="voucher_details_inventory_heading">Inventory entries (%1$d)</string>
     <string name="voucher_details_no_ledger_lines">No ledger entries in this voucher.</string>
     <string name="voucher_details_no_inventory_lines">No inventory entries in this voucher.</string>

@@ -4,21 +4,28 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.Card
+import androidx.compose.material3.Button
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,9 +33,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.app.Activity
 import com.budcom.android.R
 import com.budcom.android.feature.masterdata.presentation.MasterDataErrorBlock
 import com.budcom.android.feature.masterdata.presentation.MasterDataLoadingIndicator
@@ -40,6 +52,24 @@ fun VoucherDetailsRoute(
     viewModel: VoucherDetailsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        viewModel.onEvent(VoucherDetailsEvent.ShareActivityFinished(result.resultCode == Activity.RESULT_CANCELED))
+    }
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        viewModel.onEvent(VoucherDetailsEvent.SaveDestinationSelected(uri))
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.shareEffects.collect { effect ->
+            when (effect) {
+                is VoucherDetailsShareEffect.LaunchShare -> {
+                    shareLauncher.launch(effect.intent)
+                }
+                is VoucherDetailsShareEffect.CreatePdfDocument -> {
+                    saveLauncher.launch(effect.suggestedFilename)
+                }
+            }
+        }
+    }
     VoucherDetailsScreen(
         state = state,
         onEvent = viewModel::onEvent,
@@ -119,8 +149,33 @@ fun VoucherDetailsScreen(
                         item {
                             HeaderCard(details = details)
                         }
+                        state.shareError?.let { message ->
+                            item { Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("invoice_share_error")) }
+                        }
+                        state.shareMessage?.let { message ->
+                            item { Text(message, modifier = Modifier.testTag("invoice_share_message")) }
+                        }
+                        if (state.canShareInvoice) {
+                            item {
+                                Button(
+                                    onClick = { onEvent(VoucherDetailsEvent.OpenShareOptions) },
+                                    enabled = !state.isShareBusy,
+                                    modifier = Modifier.fillMaxWidth().testTag("share_invoice"),
+                                ) { Text("Share invoice") }
+                            }
+                        }
                         item {
-                            MetadataCard(details = details)
+                            PartyCard(details = details)
+                        }
+                        if (details.inventoryLines.isNotEmpty()) {
+                            item {
+                                InvoiceItemsCard(details.inventoryLines)
+                            }
+                        }
+                        details.amountLabel?.let { amount ->
+                            item {
+                                TotalCard(amount)
+                            }
                         }
                         if (!details.narration.isNullOrBlank()) {
                             item {
@@ -154,25 +209,7 @@ fun VoucherDetailsScreen(
                             }
                         }
                         item {
-                            SectionCard(
-                                title = stringResource(
-                                    R.string.voucher_details_inventory_heading,
-                                    details.inventoryLines.size,
-                                ),
-                                testTag = "voucher_details_inventory_section",
-                            ) {
-                                if (details.inventoryLines.isEmpty()) {
-                                    Text(
-                                        text = stringResource(R.string.voucher_details_no_inventory_lines),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                } else {
-                                    details.inventoryLines.forEach { line ->
-                                        InventoryLineRow(line = line)
-                                    }
-                                }
-                            }
+                            MetadataCard(details = details)
                         }
                     }
                 }
@@ -187,6 +224,7 @@ fun VoucherDetailsScreen(
             )
         }
     }
+    ShareInvoiceOptions(state, onEvent)
 }
 
 @Composable
@@ -201,25 +239,112 @@ private fun HeaderCard(details: VoucherDetailsContentUi) {
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = stringResource(R.string.voucher_row_title, details.typeLabel, details.numberLabel),
-                style = MaterialTheme.typography.titleLarge,
+                text = details.documentTitle,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
             )
-            Text(
-                text = stringResource(R.string.voucher_date_label, details.dateLabel),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            details.effectiveDateLabel?.let {
+            Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    text = stringResource(R.string.voucher_details_effective_date, it),
+                    text = stringResource(R.string.voucher_details_number, details.numberLabel),
                     style = MaterialTheme.typography.bodyMedium,
                 )
-            }
-            details.amountLabel?.let {
+                Spacer(modifier = Modifier.weight(1f))
                 Text(
-                    text = stringResource(R.string.voucher_amount_label, it),
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = details.dateLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.End,
                 )
             }
+            details.referenceLabel?.let {
+                Text(
+                    text = stringResource(R.string.voucher_details_reference_value, it),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+
+}
+
+@Composable
+private fun PartyCard(details: VoucherDetailsContentUi) {
+    SectionCard(
+        title = details.partyHeading,
+        testTag = "voucher_details_party_card",
+    ) {
+        Text(
+            text = details.partyLabel ?: stringResource(R.string.voucher_details_unknown),
+            style = MaterialTheme.typography.titleMedium,
+        )
+    }
+}
+
+@Composable
+private fun TotalCard(amount: String) {
+    Card(modifier = Modifier.fillMaxWidth().testTag("voucher_details_total")) {
+        Row(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.voucher_details_total),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Text(
+                text = amount,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.End,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShareInvoiceOptions(
+    state: VoucherDetailsUiState,
+    onEvent: (VoucherDetailsEvent) -> Unit,
+) {
+    if (!state.showShareOptions) return
+    ModalBottomSheet(onDismissRequest = { onEvent(VoucherDetailsEvent.DismissShareOptions) }) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Share invoice", style = MaterialTheme.typography.titleLarge)
+            Button(onClick = { onEvent(VoucherDetailsEvent.SharePdf) }, modifier = Modifier.fillMaxWidth().testTag("share_invoice_pdf")) { Text("Share PDF") }
+            Button(onClick = { onEvent(VoucherDetailsEvent.ShareSummary) }, modifier = Modifier.fillMaxWidth().testTag("share_invoice_summary")) { Text("Share summary") }
+            Button(onClick = { onEvent(VoucherDetailsEvent.SavePdf) }, modifier = Modifier.fillMaxWidth().testTag("save_invoice_pdf")) { Text("Save PDF") }
+        }
+    }
+}
+
+@Composable
+private fun InvoiceItemsCard(lines: List<VoucherInventoryLineUi>) {
+    SectionCard(
+        title = stringResource(R.string.voucher_details_items),
+        testTag = "voucher_details_inventory_section",
+    ) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = stringResource(R.string.voucher_details_item),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.voucher_details_item_amount),
+                modifier = Modifier.width(96.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.End,
+            )
+        }
+        HorizontalDivider()
+        lines.forEachIndexed { index, line ->
+            InvoiceItemRow(line)
+            if (index != lines.lastIndex) HorizontalDivider()
         }
     }
 }
@@ -227,18 +352,9 @@ private fun HeaderCard(details: VoucherDetailsContentUi) {
 @Composable
 private fun MetadataCard(details: VoucherDetailsContentUi) {
     SectionCard(
-        title = stringResource(R.string.voucher_details_metadata),
+        title = stringResource(R.string.voucher_details_record_information),
         testTag = "voucher_details_metadata",
     ) {
-        MetaRow(label = stringResource(R.string.voucher_details_id), value = details.id)
-        MetaRow(
-            label = stringResource(R.string.voucher_details_party),
-            value = details.partyLabel ?: stringResource(R.string.voucher_details_unknown),
-        )
-        MetaRow(
-            label = stringResource(R.string.voucher_details_reference),
-            value = details.referenceLabel ?: stringResource(R.string.voucher_details_unknown),
-        )
         MetaRow(
             label = stringResource(R.string.voucher_details_status),
             value = details.statusLabel,
@@ -247,6 +363,10 @@ private fun MetadataCard(details: VoucherDetailsContentUi) {
             label = stringResource(R.string.voucher_details_data_quality_label),
             value = details.dataQualityLabel,
         )
+        details.effectiveDateLabel?.let {
+            MetaRow(label = stringResource(R.string.voucher_details_effective_date_label), value = it)
+        }
+        MetaRow(label = stringResource(R.string.voucher_details_id), value = details.id)
     }
 }
 
@@ -322,5 +442,40 @@ private fun InventoryLineRow(line: VoucherInventoryLineUi) {
         line.amountLabel?.let {
             Text(text = it, style = MaterialTheme.typography.bodyMedium)
         }
+    }
+}
+
+@Composable
+private fun InvoiceItemRow(line: VoucherInventoryLineUi) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("voucher_inventory_line_${line.lineNumber}")
+            .padding(vertical = 8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = line.itemName,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            val quantityAndRate = listOfNotNull(
+                line.quantityLabel?.let { stringResource(R.string.voucher_details_quantity_short, it) },
+                line.rateLabel?.let { stringResource(R.string.voucher_details_rate_short, it) },
+            ).joinToString("  ·  ")
+            if (quantityAndRate.isNotBlank()) {
+                Text(
+                    text = quantityAndRate,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Text(
+            text = line.amountLabel ?: stringResource(R.string.voucher_details_unknown),
+            modifier = Modifier.width(96.dp),
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.End,
+        )
     }
 }
