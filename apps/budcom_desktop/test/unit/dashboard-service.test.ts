@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { DashboardService } from '../../src/application/dashboard-service.js';
+import { LogService } from '../../src/application/log-service.js';
 import type { HealthResponse, SessionSnapshotResponse } from '../../src/application/types.js';
 
 const health: HealthResponse = {
@@ -66,6 +67,32 @@ describe('DashboardService', () => {
     expect(state.lastRefresh).not.toBe('—');
   });
 
+  it('does not create customer log entries when dashboard state is read repeatedly', async () => {
+    const fetchImpl = async (url: string | URL): Promise<Response> => {
+      const requestUrl = String(url);
+      if (requestUrl.endsWith('/health')) {
+        return new Response(JSON.stringify(health), { status: 200 });
+      }
+      if (requestUrl.endsWith('/session')) {
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      return new Response(JSON.stringify({ status: 'SUCCESS', session: session.session }), {
+        status: 200,
+      });
+    };
+    const logService = new LogService({ consoleEnabled: false });
+    const service = new DashboardService({
+      connectorBaseUrl: 'http://localhost:8080',
+      fetchImpl: fetchImpl as typeof fetch,
+      logService,
+    });
+
+    await service.getDashboardState();
+    await service.getDashboardState();
+
+    expect(logService.getEntries()).toEqual([]);
+  });
+
   it('returns disconnected session status when connector is unavailable', async () => {
     const fetchImpl = async (): Promise<Response> => {
       throw new TypeError('fetch failed');
@@ -81,5 +108,63 @@ describe('DashboardService', () => {
     expect(state.connectorReachable).toBe(false);
     expect(state.sessionStatus).toBe('DISCONNECTED');
     expect(state.userMessage).toContain('connector');
+  });
+
+  it('issues health and session requests concurrently (both are called even when one fails)', async () => {
+    const callLog: string[] = [];
+
+    const fetchImpl = async (url: string | URL): Promise<Response> => {
+      const path = String(url);
+      if (path.endsWith('/health')) {
+        callLog.push('health');
+        return new Response(JSON.stringify(health), { status: 200 });
+      }
+      if (path.endsWith('/session/validate')) {
+        callLog.push('validate');
+        return new Response(JSON.stringify({ status: 'SUCCESS', session: session.session }), { status: 200 });
+      }
+      if (path.endsWith('/session')) {
+        callLog.push('session');
+        // Simulate a slow session response — both paths should still be entered.
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      return new Response('Not found', { status: 404 });
+    };
+
+    const service = new DashboardService({
+      connectorBaseUrl: 'http://localhost:8080',
+      fetchImpl: fetchImpl as typeof fetch,
+      maxAttempts: 1,
+    });
+
+    await service.getDashboardState();
+
+    // Both health and session must have been called regardless of order.
+    expect(callLog).toContain('health');
+    expect(callLog).toContain('session');
+  });
+
+  it('marks connector reachable when only session succeeds', async () => {
+    const fetchImpl = async (url: string | URL): Promise<Response> => {
+      const path = String(url);
+      if (path.endsWith('/health')) {
+        throw new TypeError('health failed');
+      }
+      if (path.endsWith('/session')) {
+        return new Response(JSON.stringify(session), { status: 200 });
+      }
+      return new Response('Not found', { status: 404 });
+    };
+
+    const service = new DashboardService({
+      connectorBaseUrl: 'http://localhost:8080',
+      fetchImpl: fetchImpl as typeof fetch,
+      maxAttempts: 1,
+    });
+
+    const state = await service.getDashboardState();
+    // Session succeeded so connectorReachable should be true.
+    expect(state.connectorReachable).toBe(true);
+    expect(state.companyName).toBe('ESTIMATION');
   });
 });

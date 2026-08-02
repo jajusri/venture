@@ -88,42 +88,33 @@ export class DashboardService {
     let session: SessionSnapshotResponse | null = null;
     let userMessage: string | null = null;
 
-    try {
-      health = await this.client.getHealth();
+    // Issue health and session in parallel — both are read-only GETs and independent.
+    // If health fails we still attempt session so the session view stays populated.
+    const [healthResult, sessionResult] = await Promise.allSettled([
+      this.client.getHealth(),
+      this.client.getSession(),
+    ]);
+
+    if (healthResult.status === 'fulfilled') {
+      health = healthResult.value;
       connectorReachable = true;
-      this.logService.append('information', `Health status: ${health.status}`);
-    } catch (error) {
-      const message = toUserMessage(error);
-      userMessage = message;
-      this.logService.append('error', `Connector health request failed: ${message}`);
+    } else {
+      userMessage = toUserMessage(healthResult.reason);
     }
 
-    if (connectorReachable) {
-      try {
-        session = await this.client.getSession();
-        this.logService.append(
-          'information',
-          session.session.selectedCompany
-            ? `Session company: ${session.session.selectedCompany.name}`
-            : 'No company selected in session',
-        );
-      } catch (error) {
-        const message = toUserMessage(error);
-        userMessage = message;
-        this.logService.append('warning', `Session request failed: ${message}`);
-      }
+    if (sessionResult.status === 'fulfilled') {
+      session = sessionResult.value;
+      connectorReachable = true;
+    } else if (!userMessage) {
+      userMessage = toUserMessage(sessionResult.reason);
     }
 
     let validation: SessionValidationResponse | null = null;
     if (connectorReachable && session?.session.selectedCompany) {
       try {
         validation = await this.client.validateSession();
-        if (validation.status !== 'SUCCESS') {
-          this.logService.append('warning', `Session validation: ${validation.status}`);
-        }
-      } catch (error) {
-        const message = toUserMessage(error);
-        this.logService.append('warning', `Session validation failed: ${message}`);
+      } catch {
+        // Dashboard reads are observational; lifecycle and explicit actions own customer events.
       }
     }
 
