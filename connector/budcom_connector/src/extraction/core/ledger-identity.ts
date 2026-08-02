@@ -18,7 +18,6 @@ export interface LedgerIdentityResult {
 /** Approved rich-fetch field list for ledger collection export. */
 export const LEDGER_RICH_FETCH_FIELDS = [
   'NAME',
-  'PARENT',
   'GUID',
   'ALTERID',
   'MASTERID',
