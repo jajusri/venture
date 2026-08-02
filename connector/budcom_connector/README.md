@@ -2,6 +2,9 @@
 
 Local read-only service that runs on or near the Tally computer.
 
+Connector 0.4.0 includes approved read-only Voucher extraction, atomic SQLite snapshots,
+controlled synchronization, a stable read-only API, and local health/readiness checks.
+
 **Milestone 3** adds a production-grade read-only master data extraction layer — company info, ledger groups, ledgers, inventory masters, units, godowns, cost centres, voucher types, and GST registrations.
 
 ## Architecture
@@ -49,6 +52,7 @@ Paginated endpoints accept `?page=1&pageSize=50` (max 500). Extraction is in-mem
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health` | Connector + Tally status |
+| GET | `/ready` | Local database and Voucher service readiness |
 | GET | `/diagnostics/connection` | Connection diagnostics |
 
 ## Configuration
@@ -77,11 +81,24 @@ npm run lint
 npm run dev
 ```
 
-## Milestone 3 scope
+## Voucher API
+
+- `GET /api/v1/vouchers`
+- `GET /api/v1/vouchers/:id`
+- `GET /api/v1/vouchers/search`
+- `GET /api/v1/vouchers/snapshots`
+- `GET /api/v1/vouchers/snapshots/:snapshotId`
+
+These schema-versioned routes read only promoted, company-scoped snapshots. See
+`docs/operations/voucher-release-runbook.md` for installation, startup, controlled
+synchronization, backup, recovery, shutdown, and rollback procedures.
+
+## Scope
 
 **Implemented:** Read-only extraction of 12 master data entity types, XML templates, response parsing, normalization layer, repository/service layer, in-memory pagination, per-extractor diagnostics, unit + integration tests.
 
-**Not implemented:** Voucher/ledger transaction sync, database persistence, offline cache, scheduler, licensing, Flutter UI, write operations.
+**Not implemented:** Tally write operations, public Voucher synchronization routes,
+authentication/authorization, Voucher UI, or scheduler integration.
 
 ## Testing
 

@@ -1,0 +1,32 @@
+{
+  "evidenceVersion": "placeholder-only",
+  "governanceMode": "single-authorized-owner",
+  "authorizedOwner": {
+    "name": "[OWNER_NAME]",
+    "role": "[OWNER_ROLE]",
+    "approvedAt": "[ISO_8601_UTC_TIMESTAMP]",
+    "approvalReference": "[LOCAL_APPROVAL_REFERENCE]",
+    "fixtureOnlyAcknowledged": false,
+    "syntheticDataConfirmed": false,
+    "backupConfirmed": false,
+    "sanitizationApproved": false,
+    "dateRangeApproved": false,
+    "expectedCountsApproved": false,
+    "executionAcknowledged": false
+  },
+  "fixtureCompanyAlias": "[NON_PRODUCTION_FIXTURE_ALIAS]",
+  "nonProductionConfirmed": false,
+  "approvedExperiments": [],
+  "dateRange": {
+    "dateFrom": "[YYYY-MM-DD]",
+    "dateTo": "[YYYY-MM-DD]"
+  },
+  "expectedVouchers": [],
+  "expectedCountsByType": {},
+  "expectedActiveCount": 0,
+  "expectedCancelledCount": 0,
+  "mutationSequence": [],
+  "draftValuesApprovalStatus": "operator-provided-pending-owner-approval",
+  "sanitizationStatus": "pending",
+  "reviewerSignOffStatus": "pending"
+}
