@@ -58,9 +58,12 @@ describe('StockItemSyncServiceImpl', () => {
     );
 
     await service.start();
+    expect(service.getSyncProgress().totalExpected).toBeNull();
     const result = await service.syncStockItems();
     expect(result.status).toBe('completed');
     expect(result.statistics.totalStockItems).toBe(1);
+    expect(result.progress.totalExpected).toBe(1);
+    expect(service.getSyncProgress().totalExpected).toBe(1);
 
     const items = await service.getStockItems({ page: 1, pageSize: 10 });
     expect(items.items[0]?.name).toBe('Widget');

@@ -14,7 +14,6 @@ const workerScript = fileURLToPath(new URL('../helpers/sync-run-create-worker.ts
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  await waitForWorkerRelease();
   for (const dir of tempDirs.splice(0)) {
     try {
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -43,24 +42,25 @@ function runCreateRunWorker(
       workerData: { databasePath, companyId },
       execArgv: ['--import', 'tsx'],
     });
-    let settled = false;
+    let result: { ok: boolean; syncRunId?: string; message?: string } | undefined;
     worker.once('message', (message) => {
-      settled = true;
-      resolve(message);
+      result = message;
     });
     worker.once('error', (error) => {
-      if (!settled) reject(error);
+      reject(error);
     });
     worker.once('exit', (code) => {
-      if (!settled && code !== 0) {
+      if (code !== 0) {
         reject(new Error(`Worker exited with code ${code}`));
+        return;
       }
+      if (!result) {
+        reject(new Error('Worker exited without returning a result'));
+        return;
+      }
+      resolve(result);
     });
   });
-}
-
-async function waitForWorkerRelease(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
 describe.sequential('sync run multi-connection concurrency', () => {
@@ -102,8 +102,6 @@ describe.sequential('sync run multi-connection concurrency', () => {
       runCreateRunWorker(databasePath, 'company-a'),
     ]);
 
-    await waitForWorkerRelease();
-
     const successes = [first, second].filter((result) => result.ok);
     expect(successes.length).toBeLessThanOrEqual(1);
     expect(successes.length).toBeGreaterThanOrEqual(1);
@@ -135,10 +133,8 @@ describe.sequential('sync run multi-connection concurrency', () => {
       runCreateRunWorker(databasePath, 'company-a'),
       runCreateRunWorker(databasePath, 'company-b'),
     ]);
-    expect(companyA.ok).toBe(true);
-    expect(companyB.ok).toBe(true);
-
-    await waitForWorkerRelease();
+    expect(companyA, companyA.message).toMatchObject({ ok: true });
+    expect(companyB, companyB.message).toMatchObject({ ok: true });
 
     const verifyDb = new SqliteDatabase({ databasePath });
     verifyDb.open();

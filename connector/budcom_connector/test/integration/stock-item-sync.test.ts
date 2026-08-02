@@ -56,6 +56,7 @@ describe('stock item sync API', () => {
     const statusResponse = await request(app).get('/sync/stock-items/status');
     expect(statusResponse.status).toBe(200);
     expect(statusResponse.body.progress.status).toBe('completed');
+    expect(statusResponse.body.progress.totalExpected).toBe(syncResponse.body.statistics.totalStockItems);
 
     const statsResponse = await request(app).get('/sync/stock-items/statistics');
     expect(statsResponse.status).toBe(200);

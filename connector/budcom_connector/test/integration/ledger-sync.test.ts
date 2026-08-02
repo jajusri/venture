@@ -51,6 +51,7 @@ describe('ledger sync API', () => {
     const statusResponse = await request(app).get('/sync/ledgers/status');
     expect(statusResponse.status).toBe(200);
     expect(statusResponse.body.progress.status).toBe('completed');
+    expect(statusResponse.body.progress.totalExpected).toBe(syncResponse.body.statistics.totalLedgers);
 
     const statsResponse = await request(app).get('/sync/ledgers/statistics');
     expect(statsResponse.status).toBe(200);

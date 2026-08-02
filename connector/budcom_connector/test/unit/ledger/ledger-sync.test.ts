@@ -65,9 +65,12 @@ describe('LedgerSyncServiceImpl', () => {
     );
 
     await service.start();
+    expect(service.getSyncProgress().totalExpected).toBeNull();
     const result = await service.syncLedgers();
     expect(result.status).toBe('completed');
     expect(result.statistics.totalLedgers).toBe(1);
+    expect(result.progress.totalExpected).toBe(1);
+    expect(service.getSyncProgress().totalExpected).toBe(1);
 
     const ledgers = await service.getLedgers({ page: 1, pageSize: 10 });
     expect(ledgers.items[0]?.name).toBe('Cash');
