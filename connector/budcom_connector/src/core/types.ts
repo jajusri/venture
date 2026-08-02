@@ -35,6 +35,8 @@ export interface HealthReport {
   readonly startupCorrelationId?: string | null;
   readonly repositoryAvailable: boolean;
   readonly databaseAccessible: boolean;
+  /** ISO timestamp this Connector process actually started, derived from process.uptime(). */
+  readonly processStartedAt: string;
 }
 
 export interface ReadinessReport {

@@ -90,6 +90,7 @@ export class HealthService {
       startupCorrelationId: this.deps.config.startupCorrelationId,
       repositoryAvailable,
       databaseAccessible,
+      processStartedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
     };
   }
 
