@@ -1,9 +1,11 @@
 export const DESKTOP_CONFIG_SCHEMA_VERSION = 1 as const;
 
 export type DesktopLogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type ConnectorBindMode = 'local-only' | 'trusted-lan';
 
 export interface DesktopConfigV1 {
   readonly schemaVersion: typeof DESKTOP_CONFIG_SCHEMA_VERSION;
+  readonly connectorBindMode: ConnectorBindMode;
   readonly connectorHost: string;
   readonly connectorPort: number;
   readonly autoStartConnector: boolean;
@@ -32,6 +34,7 @@ export interface ConfigValidationResult {
 }
 
 const LOG_LEVELS: readonly DesktopLogLevel[] = ['debug', 'info', 'warn', 'error'];
+const CONNECTOR_BIND_MODES: readonly ConnectorBindMode[] = ['local-only', 'trusted-lan'];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -65,6 +68,26 @@ function readBoolean(value: unknown, field: string, errors: ConfigValidationErro
     return null;
   }
   return value;
+}
+
+function isPrivateIpv4Literal(value: string): boolean {
+  const parts = value.split('.');
+  if (parts.length !== 4) {
+    return false;
+  }
+  const bytes = parts.map((part) => Number.parseInt(part, 10));
+  if (bytes.some((byte) => !Number.isInteger(byte) || byte < 0 || byte > 255)) {
+    return false;
+  }
+  const [a, b] = bytes;
+  if (a === undefined || b === undefined) {
+    return false;
+  }
+  return (
+    a === 10
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+  );
 }
 
 export function buildConnectorBaseUrl(host: string, port: number): string {
@@ -108,6 +131,18 @@ export function validateDesktopConfig(input: unknown): ConfigValidationResult {
   }
 
   const connectorHost = readString(input.connectorHost, 'connectorHost', errors);
+  let connectorBindMode: ConnectorBindMode | null = null;
+  if (
+    typeof input.connectorBindMode !== 'string'
+    || !CONNECTOR_BIND_MODES.includes(input.connectorBindMode as ConnectorBindMode)
+  ) {
+    errors.push({
+      field: 'connectorBindMode',
+      message: `connectorBindMode must be one of: ${CONNECTOR_BIND_MODES.join(', ')}.`,
+    });
+  } else {
+    connectorBindMode = input.connectorBindMode as ConnectorBindMode;
+  }
   const connectorPort = readNumber(input.connectorPort, 'connectorPort', errors, 1, 65535);
   const autoStartConnector = readBoolean(input.autoStartConnector, 'autoStartConnector', errors);
   const healthPollIntervalMs = readNumber(input.healthPollIntervalMs, 'healthPollIntervalMs', errors, 1_000, 300_000);
@@ -136,6 +171,18 @@ export function validateDesktopConfig(input: unknown): ConfigValidationResult {
       message: 'connectorHost 0.0.0.0 is not permitted. Use 127.0.0.1 or a specific LAN address.',
     });
   }
+  if (connectorBindMode === 'local-only' && connectorHost && connectorHost !== '127.0.0.1') {
+    errors.push({
+      field: 'connectorHost',
+      message: 'Local-only mode requires connectorHost to be 127.0.0.1.',
+    });
+  }
+  if (connectorBindMode === 'trusted-lan' && connectorHost && !isPrivateIpv4Literal(connectorHost)) {
+    errors.push({
+      field: 'connectorHost',
+      message: 'Trusted-LAN mode requires connectorHost to be a private IPv4 address.',
+    });
+  }
 
   if (errors.length > 0) {
     return { ok: false, config: null, errors };
@@ -145,6 +192,7 @@ export function validateDesktopConfig(input: unknown): ConfigValidationResult {
     ok: true,
     config: {
       schemaVersion: DESKTOP_CONFIG_SCHEMA_VERSION,
+      connectorBindMode: connectorBindMode!,
       connectorHost: connectorHost!,
       connectorPort: connectorPort!,
       autoStartConnector: autoStartConnector!,
@@ -183,6 +231,7 @@ export function validateSettingsPatch(
 
 /** Fields that require desktop restart or lifecycle re-init to take full effect. */
 export const RESTART_REQUIRED_FIELDS: readonly (keyof DesktopConfigV1)[] = [
+  'connectorBindMode',
   'connectorHost',
   'connectorPort',
   'healthPollIntervalMs',

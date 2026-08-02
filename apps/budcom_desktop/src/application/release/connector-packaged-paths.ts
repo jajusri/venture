@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import {
+  nodeSupportsBuiltinSqlite,
   resolvePackagedConnectorNodeRuntime,
   tryResolvePackagedConnectorNodeRuntime,
 } from './packaged-node-runtime.js';
@@ -58,19 +59,51 @@ export const CONNECTOR_CHILD_ENV_ALLOWLIST = [
   'BUDCOM_DATABASE_PATH',
   'BUDCOM_CONNECTOR_PORT',
   'BUDCOM_CONNECTOR_HOST',
+  'BUDCOM_CONNECTOR_BIND_MODE',
+  'BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED',
   'BUDCOM_STARTUP_CORRELATION_ID',
   'BUDCOM_LOG_LEVEL',
   'NODE_ENV',
   'ELECTRON_RUN_AS_NODE',
 ] as const;
 
-export function shouldSpawnConnectorViaElectronNode(connectorExecutable: string): boolean {
-  const base = path.basename(connectorExecutable).toLowerCase();
-  if (base === 'node.exe' || base === 'node') {
-    return false;
-  }
-  // Electron-as-Node embeds an older Node runtime without built-in node:sqlite.
+/**
+ * Electron's embedded runtime, even under `ELECTRON_RUN_AS_NODE=1`, does not satisfy the
+ * Connector's `node:sqlite` requirement — so this must never report true. It exists as an
+ * explicit, named decision point (not a silent omission) for anyone tempted to re-introduce
+ * Electron-as-Node spawning: see `resolveConnectorHostExecutable` for what development mode
+ * uses instead (a real, PATH-discovered Node executable).
+ */
+export function shouldSpawnConnectorViaElectronNode(_connectorExecutable: string): boolean {
   return false;
+}
+
+/**
+ * Searches PATH for a `node`/`node.exe` executable. Never a hardcoded, developer- or
+ * machine-specific absolute path: PATH is the same mechanism the developer's own shell used
+ * to resolve `node`/`npm` to run `npm start` in the first place, so if Desktop is running in
+ * dev mode at all, a compatible entry should already be discoverable here.
+ */
+export function findNodeExecutableOnPath(
+  pathEnv: string | undefined,
+  fsImpl: Pick<typeof fs, 'existsSync'> = fs,
+): string | null {
+  if (!pathEnv) {
+    return null;
+  }
+  const candidateNames = process.platform === 'win32' ? ['node.exe'] : ['node'];
+  for (const dir of pathEnv.split(path.delimiter)) {
+    if (!dir) {
+      continue;
+    }
+    for (const name of candidateNames) {
+      const candidate = path.join(dir, name);
+      if (fsImpl.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return null;
 }
 
 export interface ResolveConnectorHostExecutableInput {
@@ -78,11 +111,29 @@ export interface ResolveConnectorHostExecutableInput {
   readonly resourcesPath?: string;
   readonly overrideExecutable?: string;
   readonly validateSqlite?: boolean;
+  /** Injectable for tests; defaults to process.execPath (real value in production). */
+  readonly currentExecPath?: string;
+  /** Injectable for tests; defaults to process.env (real value in production). */
+  readonly env?: NodeJS.ProcessEnv;
+  readonly fsImpl?: Pick<typeof fs, 'existsSync'>;
+  /** Injectable for tests; defaults to the real `node:sqlite` spawn check. */
+  readonly sqliteChecker?: (nodeExecutable: string) => boolean;
 }
 
+/**
+ * Resolves the executable used to host the Connector child process.
+ *
+ * Packaged: the integrity-verified bundled Node runtime (unchanged).
+ * Development: never Electron itself — `process.execPath` inside Electron's main process is
+ * `electron.exe`, which (a) cannot run the Connector's `node:sqlite`-dependent code under
+ * `ELECTRON_RUN_AS_NODE`, and (b) launched bare would silently start a second Electron GUI
+ * instance instead of running the script. Development mode instead discovers a real Node
+ * executable via PATH and validates it supports `node:sqlite` before use, failing with a
+ * clear, actionable error otherwise — never silently falling back to Electron.
+ */
 export function resolveConnectorHostExecutable(input: ResolveConnectorHostExecutableInput): string {
   if (input.overrideExecutable?.trim()) {
-    return input.overrideExecutable;
+    return input.overrideExecutable.trim();
   }
 
   if (input.isPackaged) {
@@ -92,12 +143,57 @@ export function resolveConnectorHostExecutable(input: ResolveConnectorHostExecut
     return resolvePackagedConnectorNodeRuntime(input.resourcesPath, input.validateSqlite ?? true);
   }
 
-  const currentBase = path.basename(process.execPath).toLowerCase();
+  const execPath = input.currentExecPath ?? process.execPath;
+  const currentBase = path.basename(execPath).toLowerCase();
   if (currentBase === 'node.exe' || currentBase === 'node') {
-    return process.execPath;
+    return execPath;
   }
 
-  throw new Error('Development connector host runtime must be launched via Node or BUDCOM_CONNECTOR_EXECUTABLE');
+  const fsImpl = input.fsImpl ?? fs;
+  const env = input.env ?? process.env;
+  const discovered = findNodeExecutableOnPath(env.PATH, fsImpl);
+  if (!discovered) {
+    throw new Error(
+      'No compatible development Node runtime was found on PATH. Electron cannot host the Connector directly. ' +
+        'Install Node.js 22+ so "node" resolves on PATH, or set BUDCOM_CONNECTOR_EXECUTABLE to a compatible ' +
+        'node executable.',
+    );
+  }
+
+  const shouldValidateSqlite = input.validateSqlite ?? true;
+  const sqliteChecker = input.sqliteChecker ?? nodeSupportsBuiltinSqlite;
+  if (shouldValidateSqlite && !sqliteChecker(discovered)) {
+    throw new Error(
+      `Development Node runtime at "${discovered}" does not support node:sqlite, which the Connector requires. ` +
+        'Install Node.js 22+ and ensure it resolves first on PATH, or set BUDCOM_CONNECTOR_EXECUTABLE to a ' +
+        'compatible node executable.',
+    );
+  }
+  return discovered;
+}
+
+export interface DevelopmentConnectorRuntimeResolution {
+  readonly executable: string | null;
+  readonly error: string | null;
+}
+
+/**
+ * Exception-safe wrapper around {@link resolveConnectorHostExecutable} for development mode,
+ * mirroring {@link tryResolvePackagedConnectorNodeRuntimeWithIntegrity}'s shape so config
+ * resolution never throws mid-startup — failures surface as a clear user-facing message via
+ * `validateConnectorExecutable` instead of an uncaught exception in the Electron main process.
+ */
+export function tryResolveDevelopmentConnectorNodeExecutable(
+  input: Omit<ResolveConnectorHostExecutableInput, 'isPackaged' | 'resourcesPath'> = {},
+): DevelopmentConnectorRuntimeResolution {
+  try {
+    return { executable: resolveConnectorHostExecutable({ ...input, isPackaged: false }), error: null };
+  } catch (error) {
+    return {
+      executable: null,
+      error: error instanceof Error ? error.message : 'Unable to resolve a development connector runtime.',
+    };
+  }
 }
 
 export { nodeSupportsBuiltinSqlite, resolvePackagedConnectorNodeRuntime, tryResolvePackagedConnectorNodeRuntime } from './packaged-node-runtime.js';

@@ -205,6 +205,8 @@ export interface SafeDiagnosticBundleV1 {
   readonly versions: {
     readonly desktop: string;
     readonly connector: string | null;
+    /** VERSION.txt packaged with Desktop (install label). */
+    readonly bundledConnector: string | null;
     readonly electron: string;
     readonly node: string;
   };
@@ -244,6 +246,7 @@ export interface BuildSafeDiagnosticBundleInput {
   readonly generatedAt: string;
   readonly desktopVersion: string;
   readonly connectorVersion: string | null;
+  readonly bundledConnectorVersion?: string | null;
   readonly electronVersion: string;
   readonly nodeVersion: string;
   readonly platform: string;
@@ -395,6 +398,7 @@ export function buildSafeDiagnosticBundle(input: BuildSafeDiagnosticBundleInput)
     versions: {
       desktop: input.desktopVersion,
       connector: input.connectorVersion,
+      bundledConnector: input.bundledConnectorVersion ?? null,
       electron: input.electronVersion,
       node: input.nodeVersion,
     },
@@ -495,6 +499,7 @@ export function formatSafeDiagnosticSummary(bundle: SafeDiagnosticBundleV1, logF
     `Correlation: ${bundle.correlationId}`,
     `Desktop: ${bundle.versions.desktop}`,
     `Connector: ${bundle.versions.connector ?? 'unavailable'}`,
+    `Bundled connector: ${bundle.versions.bundledConnector ?? 'unavailable'}`,
     `Electron: ${bundle.versions.electron}`,
     `Node: ${bundle.versions.node}`,
     `OS: ${bundle.runtime.platform} ${bundle.runtime.osRelease} (${bundle.runtime.architecture})`,

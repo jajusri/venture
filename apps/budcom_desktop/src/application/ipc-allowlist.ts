@@ -14,6 +14,7 @@ export const ALLOWED_IPC_CHANNELS = [
   'desktop:restore-default-settings',
   'desktop:validate-settings',
   'desktop:get-lifecycle-status',
+  'desktop:get-mobile-access-status',
   'desktop:start-connector',
   'desktop:stop-connector',
   'desktop:restart-connector',

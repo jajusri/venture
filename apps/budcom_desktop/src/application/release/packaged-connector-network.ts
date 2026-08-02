@@ -2,8 +2,12 @@ import { isLoopbackConnectorHost } from '../connector-network-binding.js';
 
 export const PACKAGED_CONNECTOR_LOOPBACK_HOST = '127.0.0.1';
 
-export function resolvePackagedConnectorLoopbackHost(configuredHost: string, isPackaged: boolean): string {
-  if (!isPackaged) {
+export function resolvePackagedConnectorLoopbackHost(
+  configuredHost: string,
+  isPackaged: boolean,
+  lanModeAcknowledged = false,
+): string {
+  if (!isPackaged || lanModeAcknowledged) {
     return configuredHost;
   }
   return PACKAGED_CONNECTOR_LOOPBACK_HOST;

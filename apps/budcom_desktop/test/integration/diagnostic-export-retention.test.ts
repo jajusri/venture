@@ -60,6 +60,7 @@ function createDiagnosticsHarness(tempDir: string, retentionDays = 7) {
         externalProcessDetected: false,
         lastSuccessfulHealthCheck: null,
         managedProcessPid: null,
+        bundledConnectorVersion: '0.4.0',
       }),
     } as never,
     logService,

@@ -9,7 +9,25 @@ export interface HealthResponse {
   readonly readOnly: boolean;
   readonly bindPort?: number;
   readonly startupCorrelationId?: string | null;
+  /** Stable Connector identity — not a secret, see docs/architecture. */
+  readonly connectorId?: string;
+  readonly connectorName?: string;
+  readonly networkExposure?: 'loopback' | 'lan';
+  readonly authenticatedLanAccessEnabled?: boolean;
+  readonly discoveryAdvertising?: boolean;
   readonly services: readonly ServiceStatusDto[];
+}
+
+/** Connector `/device/list` response subset used by the Mobile Access status model. */
+export interface DeviceListItemDto {
+  readonly deviceRecordId: string;
+  readonly friendlyName: string | null;
+  readonly lastUsedAt: string | null;
+  readonly revokedAt: string | null;
+}
+
+export interface DeviceListResult {
+  readonly items: readonly DeviceListItemDto[];
 }
 
 export interface ServiceStatusDto {
@@ -165,6 +183,8 @@ export interface DashboardState {
 
 export interface SettingsState {
   readonly connectorUrl: string;
+  readonly connectorBindMode: 'local-only' | 'trusted-lan';
+  readonly reachableLanUrl: string | null;
   readonly connectorHost: string;
   readonly apiVersion: string;
   readonly desktopVersion: string;
@@ -204,6 +224,8 @@ export interface DiagnosticsSnapshot {
   readonly generatedAt: string;
   readonly desktopVersion: string;
   readonly connectorVersion: string | null;
+  /** VERSION.txt packaged with Desktop (may differ from live /health until Connector starts). */
+  readonly bundledConnectorVersion: string | null;
   readonly electronVersion: string;
   readonly nodeVersion: string;
   readonly platform: string;

@@ -192,8 +192,10 @@ function setInputValue(id: string, value: string | number | boolean): void {
 
 export function renderSettingsForm(settings: SettingsState): void {
   currentSettings = settings;
+  setInputValue('input-connector-bind-mode', settings.connectorBindMode);
   setInputValue('input-connector-host', settings.connectorHost);
   setInputValue('input-connector-port', settings.connectorPort);
+  setInputValue('input-reachable-lan-url', settings.reachableLanUrl ?? 'Not available in local-only mode');
   setInputValue('input-auto-start', settings.autoStartConnector);
   setInputValue('input-health-poll', settings.healthPollIntervalMs);
   setInputValue('input-startup-timeout', settings.startupTimeoutMs);
@@ -207,6 +209,15 @@ export function renderSettingsForm(settings: SettingsState): void {
   const restartNotice = document.getElementById('settings-restart-notice');
   if (restartNotice) {
     restartNotice.className = settings.restartRequired ? 'form-note' : 'form-note hidden';
+  }
+
+  const hostInput = document.getElementById('input-connector-host') as HTMLInputElement | null;
+  if (hostInput) {
+    const isLocalOnly = settings.connectorBindMode === 'local-only';
+    hostInput.readOnly = isLocalOnly;
+    if (isLocalOnly) {
+      hostInput.value = '127.0.0.1';
+    }
   }
 }
 
@@ -233,6 +244,9 @@ export function renderValidationErrors(errors: readonly { field: string; message
 }
 
 function collectSettingsForm(): Record<string, unknown> {
+  const bindMode =
+    ((document.getElementById('input-connector-bind-mode') as HTMLSelectElement | null)?.value
+      ?? 'local-only') as 'local-only' | 'trusted-lan';
   const host = (document.getElementById('input-connector-host') as HTMLInputElement | null)?.value ?? '';
   const port = Number.parseInt((document.getElementById('input-connector-port') as HTMLInputElement | null)?.value ?? '8080', 10);
   const autoStart = (document.getElementById('input-auto-start') as HTMLInputElement | null)?.checked ?? true;
@@ -243,7 +257,8 @@ function collectSettingsForm(): Record<string, unknown> {
   const tallyPort = Number.parseInt((document.getElementById('input-tally-port') as HTMLInputElement | null)?.value ?? '9000', 10);
 
   return {
-    connectorHost: host,
+    connectorBindMode: bindMode,
+    connectorHost: bindMode === 'local-only' ? '127.0.0.1' : host,
     connectorPort: port,
     autoStartConnector: autoStart,
     healthPollIntervalMs: healthPoll,
@@ -520,6 +535,19 @@ async function runLifecycleAction(
 export function bindSettingsActions(): void {
   const form = document.getElementById('settings-form');
   form?.addEventListener('input', () => {
+    settingsDirty = true;
+  });
+  document.getElementById('input-connector-bind-mode')?.addEventListener('change', (event) => {
+    const target = event.target as HTMLSelectElement;
+    const hostInput = document.getElementById('input-connector-host') as HTMLInputElement | null;
+    if (!hostInput) {
+      return;
+    }
+    const isLocalOnly = target.value === 'local-only';
+    hostInput.readOnly = isLocalOnly;
+    if (isLocalOnly) {
+      hostInput.value = '127.0.0.1';
+    }
     settingsDirty = true;
   });
   form?.addEventListener('submit', (event) => {

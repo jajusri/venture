@@ -1,9 +1,10 @@
-import type { DesktopConfigV1, DesktopLogLevel } from './desktop-config-schema.js';
+import type { ConnectorBindMode, DesktopConfigV1, DesktopLogLevel } from './desktop-config-schema.js';
 import {
   buildConnectorBaseUrl,
   parseConnectorHostPort,
   validateDesktopConfig,
 } from './desktop-config-schema.js';
+import { isLoopbackConnectorHost } from './connector-network-binding.js';
 import type { ConnectorLifecycleConfig } from './connector-lifecycle-types.js';
 import { resolveConnectorLifecycleConfig } from './connector-lifecycle-config.js';
 
@@ -42,6 +43,14 @@ function readEnvLogLevel(name: string): DesktopLogLevel | undefined {
   return undefined;
 }
 
+function readEnvBindMode(name: string): ConnectorBindMode | undefined {
+  const value = process.env[name]?.toLowerCase();
+  if (value === 'local-only' || value === 'trusted-lan') {
+    return value;
+  }
+  return undefined;
+}
+
 export function applyEnvironmentOverrides(
   base: DesktopConfigV1,
 ): { config: DesktopConfigV1; sources: Partial<Record<keyof DesktopConfigV1, ConfigSource>> } {
@@ -53,23 +62,47 @@ export function applyEnvironmentOverrides(
   if (envUrl) {
     const parsed = parseConnectorHostPort(envUrl);
     if (parsed) {
-      config = { ...config, connectorHost: parsed.host, connectorPort: parsed.port };
+      config = {
+        ...config,
+        connectorHost: parsed.host,
+        connectorPort: parsed.port,
+        connectorBindMode: isLoopbackConnectorHost(parsed.host) ? 'local-only' : 'trusted-lan',
+      };
       sources.connectorHost = 'environment';
       sources.connectorPort = 'environment';
+      sources.connectorBindMode = 'environment';
       urlDerivedPort = parsed.port;
     }
   }
 
   const envHost = process.env.BUDCOM_CONNECTOR_HOST;
   if (envHost) {
-    config = { ...config, connectorHost: envHost };
+    config = {
+      ...config,
+      connectorHost: envHost,
+      connectorBindMode: isLoopbackConnectorHost(envHost) ? 'local-only' : 'trusted-lan',
+    };
     sources.connectorHost = 'environment';
+    sources.connectorBindMode = 'environment';
   }
 
   const envPort = readEnvNumber('BUDCOM_CONNECTOR_PORT');
   if (envPort !== undefined && urlDerivedPort === undefined) {
     config = { ...config, connectorPort: envPort };
     sources.connectorPort = 'environment';
+  }
+
+  const bindMode = readEnvBindMode('BUDCOM_CONNECTOR_BIND_MODE');
+  if (bindMode) {
+    config = {
+      ...config,
+      connectorBindMode: bindMode,
+      connectorHost: bindMode === 'local-only' ? '127.0.0.1' : config.connectorHost,
+    };
+    sources.connectorBindMode = 'environment';
+    if (bindMode === 'local-only') {
+      sources.connectorHost = 'environment';
+    }
   }
 
   const autoStart = readEnvBoolean('BUDCOM_CONNECTOR_AUTO_START');
@@ -133,6 +166,7 @@ export interface ResolveDesktopConfigOptions {
   readonly isPackaged?: boolean;
   readonly resourcesPath?: string;
   readonly connectorDatabaseDir?: string;
+  readonly connectorId?: string;
 }
 
 export function resolveDesktopConfig(
@@ -151,6 +185,7 @@ export function resolveDesktopConfig(
 
   const lifecycleConfig = resolveConnectorLifecycleConfig({
     connectorBaseUrl,
+    connectorBindMode: effective.connectorBindMode,
     connectorHost: effective.connectorHost,
     connectorPort: effective.connectorPort,
     autoStart: effective.autoStartConnector,
@@ -163,6 +198,7 @@ export function resolveDesktopConfig(
     isPackaged: options.isPackaged ?? false,
     resourcesPath: options.resourcesPath,
     connectorDatabaseDir: options.connectorDatabaseDir,
+    connectorId: options.connectorId,
   });
 
   return {

@@ -69,12 +69,32 @@ export class HttpHealthChecker implements HealthChecker {
   }
 }
 
+/**
+ * `internal` (local-only): this service owns its own bounded crash-reconnect loop, exactly as
+ * before — no eligibility concept applies to loopback.
+ * `external` (trusted-LAN): this service has NO authority to restart the child itself on an
+ * unexpected exit or a failed health check. It only notifies `onUnexpectedExit`; the owner
+ * (TrustedLanRebindCoordinator, via main.ts) decides whether/when to attempt recovery, after
+ * re-resolving the network and re-checking Public/unknown-profile eligibility fresh. This closes
+ * the bypass where a crash-triggered restart could re-expose a Connector that a Public-profile
+ * transition had already correctly blocked.
+ */
+export type ConnectorRestartOwnership = 'internal' | 'external';
+
 export interface ConnectorLifecycleServiceOptions {
   readonly config: ConnectorLifecycleConfig;
   readonly processSpawner: ProcessSpawner;
   readonly healthChecker: HealthChecker;
   readonly logService: LogService;
   readonly sleep?: (ms: number) => Promise<void>;
+  /** Defaults to 'internal'. */
+  readonly restartOwnership?: ConnectorRestartOwnership;
+  /**
+   * Fired in 'external' mode when the managed child exits unexpectedly or a health check fails
+   * and would otherwise trigger a restart. Carries no start authority — the receiver decides
+   * whether and how to recover; this service will not attempt to restart the child itself.
+   */
+  readonly onUnexpectedExit?: () => void;
   readonly onDiagnostic?: (
     stage:
       | 'connector_spawn_attempt'
@@ -93,6 +113,8 @@ export class ConnectorLifecycleService {
   private readonly healthChecker: HealthChecker;
   private readonly logService: LogService;
   private readonly sleep: (ms: number) => Promise<void>;
+  private readonly restartOwnership: ConnectorRestartOwnership;
+  private readonly onUnexpectedExit?: () => void;
   private readonly onDiagnostic?: ConnectorLifecycleServiceOptions['onDiagnostic'];
 
   private state: ConnectorLifecycleState = 'disconnected';
@@ -104,6 +126,7 @@ export class ConnectorLifecycleService {
   private restartAttempts = 0;
   private processExitCode: number | null = null;
   private healthTimer: NodeJS.Timeout | null = null;
+  private healthRefreshInFlight = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private startupInProgress = false;
   private stopping = false;
@@ -116,6 +139,8 @@ export class ConnectorLifecycleService {
     this.healthChecker = options.healthChecker;
     this.logService = options.logService;
     this.sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.restartOwnership = options.restartOwnership ?? 'internal';
+    this.onUnexpectedExit = options.onUnexpectedExit;
     this.onDiagnostic = options.onDiagnostic;
     this.runtimeIntegrityBlocked = Boolean(this.config.packagedRuntimeIntegrityCategory);
   }
@@ -138,10 +163,17 @@ export class ConnectorLifecycleService {
       connectorPort: this.config.connectorPort,
       userMessage: this.lastError,
       managedProcessPid: this.managedProcess?.pid ?? null,
+      bundledConnectorVersion: this.config.bundledConnectorVersion ?? null,
     };
   }
 
   async initialize(): Promise<void> {
+    if (this.config.bundledConnectorVersion) {
+      this.logService.append(
+        'information',
+        `[lifecycle:startup] Bundled connector version label: ${this.config.bundledConnectorVersion}`,
+      );
+    }
     this.startHealthMonitoring();
     if (this.config.autoStart) {
       await this.ensureConnectorRunning();
@@ -279,7 +311,10 @@ export class ConnectorLifecycleService {
         command: this.config.connectorExecutable,
         script: this.config.connectorArgs[0] ?? null,
         cwd: this.config.connectorCwd ?? null,
+        bindMode: this.config.connectorBindMode,
+        bindHost: this.config.connectorHost,
         port: this.config.connectorPort,
+        connectorBaseUrl: this.config.connectorBaseUrl,
         startupCorrelationId: this.config.startupCorrelationId ?? null,
       });
       const process = this.processSpawner.spawn({
@@ -355,7 +390,7 @@ export class ConnectorLifecycleService {
     });
     this.logLifecycle('crash_detected', mapLifecycleUserMessage('PROCESS_CRASH'));
 
-    if (this.restartAttempts >= this.config.maxRestartAttempts) {
+    if (this.restartOwnership === 'internal' && this.restartAttempts >= this.config.maxRestartAttempts) {
       this.lastError = mapLifecycleUserMessage('MAX_RESTARTS');
       this.transitionState('failed');
       return;
@@ -364,8 +399,22 @@ export class ConnectorLifecycleService {
     this.scheduleReconnect();
   }
 
+  /**
+   * 'internal': owns its own bounded backoff/retry loop, unchanged from before.
+   * 'external': has no restart authority — transitions to 'reconnecting' for visibility and
+   * hands off to `onUnexpectedExit`, which the owner uses to decide whether/when/how to recover
+   * (see the class doc on `ConnectorRestartOwnership`). No timer, no attempt counting, no bound
+   * enforcement happens here for 'external' — that responsibility moves entirely to the owner,
+   * which persists across the fresh service instances a coordinator-driven recovery creates.
+   */
   private scheduleReconnect(): void {
     if (this.runtimeIntegrityBlocked) {
+      return;
+    }
+    if (this.restartOwnership === 'external') {
+      this.clearReconnectTimer();
+      this.transitionState('reconnecting');
+      this.onUnexpectedExit?.();
       return;
     }
     this.clearReconnectTimer();
@@ -381,34 +430,39 @@ export class ConnectorLifecycleService {
   }
 
   private async refreshHealthState(): Promise<void> {
-    if (this.startupInProgress) {
+    if (this.startupInProgress || this.healthRefreshInFlight) {
       return;
     }
 
-    const healthy = await this.healthChecker.checkHealth();
-    if (healthy) {
-      this.markHealthy();
-      return;
-    }
+    this.healthRefreshInFlight = true;
+    try {
+      const healthy = await this.healthChecker.checkHealth();
+      if (healthy) {
+        this.markHealthy();
+        return;
+      }
 
-    const stale =
-      this.lastSuccessfulHealthCheck !== null &&
-      Date.now() - new Date(this.lastSuccessfulHealthCheck).getTime() > this.config.staleHealthThresholdMs;
+      const stale =
+        this.lastSuccessfulHealthCheck !== null &&
+        Date.now() - new Date(this.lastSuccessfulHealthCheck).getTime() > this.config.staleHealthThresholdMs;
 
-    if ((this.state === 'connected' && stale) || this.state === 'connected') {
-      this.transitionState('reconnecting');
-      if (this.managedByDesktop && !this.managedProcess) {
-        this.scheduleReconnect();
-      } else if (!this.managedByDesktop && this.config.autoStart) {
-        this.scheduleReconnect();
-      } else {
+      if ((this.state === 'connected' && stale) || this.state === 'connected') {
+        this.transitionState('reconnecting');
+        if (this.managedByDesktop && !this.managedProcess) {
+          this.scheduleReconnect();
+        } else if (!this.managedByDesktop && this.config.autoStart) {
+          this.scheduleReconnect();
+        } else {
+          this.transitionState('disconnected');
+        }
+        return;
+      }
+
+      if (this.state !== 'failed' && this.state !== 'reconnecting') {
         this.transitionState('disconnected');
       }
-      return;
-    }
-
-    if (this.state !== 'failed' && this.state !== 'reconnecting') {
-      this.transitionState('disconnected');
+    } finally {
+      this.healthRefreshInFlight = false;
     }
   }
 

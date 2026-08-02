@@ -47,6 +47,7 @@ function buildMinimalBundleInput(
     generatedAt: '2026-01-01T00:00:00.000Z',
     desktopVersion: '0.4.3',
     connectorVersion: '0.3.1',
+    bundledConnectorVersion: '0.4.0',
     electronVersion: 'test-electron',
     nodeVersion: process.versions.node,
     platform: process.platform,
@@ -140,6 +141,7 @@ function createDiagnosticsService(options: {
         externalProcessDetected: false,
         lastSuccessfulHealthCheck: '2026-01-01T00:00:00.000Z',
         managedProcessPid: 4242,
+        bundledConnectorVersion: '0.4.0',
       }),
     } as never,
     logService,
@@ -382,6 +384,7 @@ describe('diagnostic privacy allowlist (desktop)', () => {
     );
     expect(bundle.versions.desktop).toBe('0.4.3');
     expect(bundle.versions.connector).toBe('0.3.1');
+    expect(bundle.versions.bundledConnector).toBe('0.4.0');
     expect(bundle.connector.healthReachable).toBe(true);
     expect(bundle.connector.bindHost).toBe('127.0.0.1');
     expect(bundle.connector.healthStatus).toBe('ok');

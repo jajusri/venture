@@ -20,6 +20,23 @@ import {
   HttpHealthChecker,
 } from '../application/connector-lifecycle-service.js';
 import { DashboardService, DESKTOP_WINDOW_TITLE } from '../application/dashboard-service.js';
+import { ConnectorIdentityStore } from '../application/connector-identity-store.js';
+import { PowerShellRouteQuerier } from '../application/network/route-querier.js';
+import {
+  evaluateTrustedLanEligibility,
+  resolveActiveNetworkAdapter,
+  type ActiveNetworkAdapter,
+  type ActiveNetworkResolution,
+} from '../application/network/active-network-resolver.js';
+import { NetworkChangeWatcher } from '../application/network/network-change-watcher.js';
+import { applyRouteBackedHost } from '../application/network/route-backed-lifecycle-override.js';
+import {
+  TrustedLanRebindCoordinator,
+  type TrustedLanBindStatus,
+} from '../application/network/trusted-lan-rebind-coordinator.js';
+import { CrashRecoveryScheduler } from '../application/network/crash-recovery-scheduler.js';
+import type { ConnectorLifecycleStatus } from '../application/connector-lifecycle-types.js';
+import { MobileAccessStatusService, type RebindState } from '../application/mobile-access-status-service.js';
 import { FileLogWriter } from '../application/file-log-writer.js';
 import {
   assertAllowedIpcChannel,
@@ -120,7 +137,6 @@ const releaseMode = resolveReleaseMode({
 const isDevelopment = releaseMode === ReleaseMode.Development;
 
 let mainWindow: BrowserWindow | null = null;
-let pollTimer: NodeJS.Timeout | null = null;
 
 startupLog('main module loaded', `require.main === module: ${require.main === module}`);
 
@@ -173,6 +189,12 @@ const recoveryService = new RecoveryService(logService);
 const configLoadResult = configStore.loadFromDisk();
 recoveryService.handleConfigLoad(configLoadResult);
 
+// Stable Connector identity — generated once, persisted in Desktop's private configuration,
+// never derived from IP/MAC/username/machine name. Survives restarts, DHCP/Wi-Fi changes, and
+// application upgrades because this file is never touched by any of those.
+const connectorIdentityStore = new ConnectorIdentityStore({ userDataDir: appDataLayout.userDataRoot });
+const connectorIdentity = connectorIdentityStore.getOrCreateIdentity();
+
 const settingsService = new SettingsService({
   configStore,
   logService,
@@ -182,16 +204,49 @@ const settingsService = new SettingsService({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
     connectorDatabaseDir: appDataLayout.connectorDatabaseDir,
+    connectorId: connectorIdentity.connectorId,
   },
 });
 settingsService.setConfigStatus(configLoadResult.status);
 
 let resolved = settingsService.getResolvedConfig();
+logService.appendStructured({
+  level: 'information',
+  message: 'Connector lifecycle configuration resolved.',
+  event: 'connector_lifecycle_config_resolved',
+  component: 'startup',
+  metadata: {
+    configSource: Object.keys(resolved.sources).length > 0 ? 'mixed (env + persisted)' : 'persisted/default',
+    bindMode: resolved.effective.connectorBindMode,
+    bindHost: resolved.lifecycleConfig.connectorHost,
+    bindPort: resolved.lifecycleConfig.connectorPort,
+    reachableLanUrl: resolved.effective.connectorBindMode === 'trusted-lan'
+      ? `http://${resolved.lifecycleConfig.connectorHost}:${resolved.lifecycleConfig.connectorPort}`
+      : null,
+    connectorExecutable: resolved.lifecycleConfig.connectorExecutable,
+    connectorScript: resolved.lifecycleConfig.connectorArgs[0] ?? null,
+  },
+});
 let dashboardService = createDashboardService(resolved.connectorBaseUrl);
 let companyService = createCompanyService(resolved.connectorBaseUrl);
 let ledgerService = createLedgerService(resolved.connectorBaseUrl);
 let stockItemService = createStockItemService(resolved.connectorBaseUrl);
-let lifecycleService = createLifecycleService(resolved.lifecycleConfig);
+
+// Route-backed network state. activeNetworkAdapter feeds computeEffectiveLifecycleConfig() so a
+// trusted-LAN Connector is always spawned bound to the current default-route adapter, never a
+// stale hand-typed IP. desktopStartupComplete guards the very first network resolution (which
+// naturally differs from "no prior state") from triggering a redundant rebind before the initial
+// lifecycleService.initialize() has even run once.
+let activeNetworkAdapter: ActiveNetworkAdapter | null = null;
+let lastNetworkResolution: ActiveNetworkResolution = { adapter: null, rejectedReason: null };
+let rebindState: RebindState = { status: 'idle', at: null, message: null };
+let desktopStartupComplete = false;
+
+function computeEffectiveLifecycleConfig() {
+  return applyRouteBackedHost(resolved.lifecycleConfig, activeNetworkAdapter);
+}
+
+let lifecycleService = createLifecycleService();
 const diagnosticExportRetentionService = new DiagnosticExportRetentionService({
   log: (input) => logService.appendStructured(input),
 });
@@ -236,7 +291,9 @@ function createStockItemService(baseUrl: string): StockItemService {
   });
 }
 
-function createLifecycleService(config: ReturnType<typeof settingsService.getResolvedConfig>['lifecycleConfig']): ConnectorLifecycleService {
+function createLifecycleService(): ConnectorLifecycleService {
+  const config = computeEffectiveLifecycleConfig();
+  const isTrustedLan = resolved.effective.connectorBindMode === 'trusted-lan';
   const service = new ConnectorLifecycleService({
     config,
     processSpawner: new NodeProcessSpawner(),
@@ -245,6 +302,12 @@ function createLifecycleService(config: ReturnType<typeof settingsService.getRes
       expectedCorrelationId: config.startupCorrelationId,
     }),
     logService,
+    // Trusted-LAN children have no self-restart authority — an unexpected exit or failed health
+    // check only notifies handleUnexpectedConnectorExit, which asks trustedLanCoordinator to
+    // recover (fresh network resolve + eligibility check) rather than restarting directly.
+    // Local-only keeps its original bounded internal reconnect loop (loopback-only, no policy).
+    restartOwnership: isTrustedLan ? 'external' : 'internal',
+    onUnexpectedExit: isTrustedLan ? handleUnexpectedConnectorExit : undefined,
     onDiagnostic: (stage, detail) => {
       startupDiagnostics.record(stage, detail);
     },
@@ -253,6 +316,17 @@ function createLifecycleService(config: ReturnType<typeof settingsService.getRes
     notifyRenderer();
   });
   return service;
+}
+
+/**
+ * Fired when a trusted-LAN Connector child exits unexpectedly or a health check fails in a way
+ * that would previously have triggered a direct self-restart. Delegates bounded backoff/attempt
+ * limiting to crashRecoveryScheduler, which asks trustedLanCoordinator to recover — re-resolving
+ * the network and re-evaluating Public/unknown-profile eligibility fresh before ever starting a
+ * replacement child, exactly like a manual Start.
+ */
+function handleUnexpectedConnectorExit(): void {
+  crashRecoveryScheduler.scheduleRecovery();
 }
 
 function createDiagnosticsService(): DiagnosticsService {
@@ -271,19 +345,204 @@ function createDiagnosticsService(): DiagnosticsService {
   });
 }
 
-async function reinitializeRuntimeServices(): Promise<void> {
+/** Stops whatever trusted-LAN child is currently running. Safe to call when nothing is running. */
+async function stopManagedLanChild(): Promise<void> {
   await lifecycleService.shutdown();
-  resolved = settingsService.getResolvedConfig();
-  logService.setMinimumLevel(resolved.effective.logLevel);
+  diagnosticsService = createDiagnosticsService();
+}
+
+/**
+ * Starts a trusted-LAN child for an already-eligibility-checked resolution. Only ever invoked by
+ * trustedLanCoordinator, which is the sole place that decision is made — see its class doc.
+ */
+async function startManagedLanChildFor(resolution: ActiveNetworkResolution): Promise<void> {
+  activeNetworkAdapter = resolution.adapter;
   dashboardService = createDashboardService(resolved.connectorBaseUrl);
   companyService = createCompanyService(resolved.connectorBaseUrl);
   ledgerService = createLedgerService(resolved.connectorBaseUrl);
   stockItemService = createStockItemService(resolved.connectorBaseUrl);
-  lifecycleService = createLifecycleService(resolved.lifecycleConfig);
+  lifecycleService = createLifecycleService();
   diagnosticsService = createDiagnosticsService();
-  startPolling(resolved.effective.healthPollIntervalMs);
   await lifecycleService.initialize();
 }
+
+/**
+ * Re-resolves the active-route adapter fresh from Windows, bypassing whatever the periodic
+ * NetworkChangeWatcher last cached. Used only by manual Start/Restart so a button click is judged
+ * against the network as it is right now — not a value up to one poll interval (5s) stale — and
+ * updates the same module-level bookkeeping handleNetworkChange keeps, so status displays stay
+ * consistent regardless of which trigger last ran.
+ */
+async function resolveCurrentNetworkFresh(): Promise<ActiveNetworkResolution> {
+  const adapters = await routeQuerier.queryAdapters();
+  const resolution = resolveActiveNetworkAdapter(adapters);
+  activeNetworkAdapter = resolution.adapter;
+  lastNetworkResolution = resolution;
+  return resolution;
+}
+
+/**
+ * The single authoritative owner of trusted-LAN bind/rebind decisions: evaluates Public/unknown
+ * profile refusal (evaluateTrustedLanEligibility) and guarantees at most one stop/start
+ * transition runs at a time, with a newer network resolution always winning over a slower older
+ * one. See TrustedLanRebindCoordinator's class doc for the concurrency guarantees. This is the
+ * only object permitted to mutate the trusted-LAN child; the manual Start/Stop/Restart IPC
+ * handlers route through it instead of touching lifecycleService directly.
+ */
+const trustedLanCoordinator = new TrustedLanRebindCoordinator({
+  stopCurrentChild: stopManagedLanChild,
+  startChildFor: startManagedLanChildFor,
+  resolveCurrentNetwork: resolveCurrentNetworkFresh,
+  onStatusChanged: (status) => {
+    if (status.kind === 'connected') {
+      rebindState = { status: 'succeeded', at: new Date().toISOString(), message: null };
+      // A genuinely healthy connection — via any trigger, not just crash recovery — proves the
+      // crash-loop (if any) is over. Give a fresh bound of retries to any future, unrelated crash.
+      crashRecoveryScheduler.notifyRecovered();
+    } else if (status.kind === 'blocked') {
+      rebindState = { status: 'blocked', at: new Date().toISOString(), message: status.reason };
+    } else if (status.kind === 'stopped') {
+      rebindState = { status: 'idle', at: new Date().toISOString(), message: 'Stopped by user.' };
+      // A deliberate stop ends any in-progress crash-recovery context.
+      crashRecoveryScheduler.notifyStoppedIntentionally();
+    } else {
+      rebindState = { status: 'failed', at: new Date().toISOString(), message: status.message };
+    }
+    notifyRenderer();
+  },
+});
+
+/**
+ * Bounded backoff/attempt-limit policy for trusted-LAN crash recovery — see the class doc for why
+ * this must live here rather than inside ConnectorLifecycleService. Reused for every unexpected
+ * exit regardless of which ConnectorLifecycleService instance reports it.
+ */
+const crashRecoveryScheduler = new CrashRecoveryScheduler({
+  getMaxAttempts: () => computeEffectiveLifecycleConfig().maxRestartAttempts,
+  getBaseDelayMs: () => computeEffectiveLifecycleConfig().reconnectBaseDelayMs,
+  getGeneration: () => trustedLanCoordinator.getGeneration(),
+  recover: () => {
+    void trustedLanCoordinator.recoverFromUnexpectedExit();
+  },
+  onExhausted: () => {
+    rebindState = {
+      status: 'failed',
+      at: new Date().toISOString(),
+      message: 'The Connector crashed repeatedly and reached the maximum number of restart attempts.',
+    };
+    notifyRenderer();
+  },
+});
+
+/**
+ * Maps a coordinator result to the pre-existing ConnectorLifecycleStatus shape the renderer
+ * already understands (no IPC protocol/type change): base fields come from the real
+ * lifecycleService.getStatus() read (a non-mutating call), with state/userMessage overridden to
+ * reflect the coordinator's authoritative outcome for blocked/failed/stopped results.
+ */
+function toLifecycleStatusForManualCommand(status: TrustedLanBindStatus): ConnectorLifecycleStatus {
+  const base = lifecycleService.getStatus();
+  if (status.kind === 'blocked') {
+    return { ...base, state: 'disconnected', stateLabel: 'Disconnected', userMessage: status.reason };
+  }
+  if (status.kind === 'stopped') {
+    return { ...base, state: 'disconnected', stateLabel: 'Disconnected', userMessage: null };
+  }
+  if (status.kind === 'failed') {
+    return { ...base, userMessage: status.message };
+  }
+  return base;
+}
+
+/**
+ * Re-derives runtime services from current settings (user-initiated: save-settings, restore-
+ * defaults). For trusted-LAN mode this routes through trustedLanCoordinator exactly like a
+ * network-change rebind, so a user flipping bind mode to trusted-LAN while on a Public network
+ * is refused the same way an automatic rebind would be — one authoritative policy, every trigger.
+ */
+async function reinitializeRuntimeServices(): Promise<void> {
+  resolved = settingsService.getResolvedConfig();
+  logService.setMinimumLevel(resolved.effective.logLevel);
+
+  if (resolved.effective.connectorBindMode === 'trusted-lan') {
+    trustedLanCoordinator.requestEvaluation(lastNetworkResolution);
+    await trustedLanCoordinator.settle();
+    return;
+  }
+
+  await lifecycleService.shutdown();
+  dashboardService = createDashboardService(resolved.connectorBaseUrl);
+  companyService = createCompanyService(resolved.connectorBaseUrl);
+  ledgerService = createLedgerService(resolved.connectorBaseUrl);
+  stockItemService = createStockItemService(resolved.connectorBaseUrl);
+  lifecycleService = createLifecycleService();
+  diagnosticsService = createDiagnosticsService();
+  await lifecycleService.initialize();
+}
+
+/**
+ * Fires on every detected Windows network change (DHCP renewal, Wi-Fi switch, cable
+ * unplug/replug). Always records the new resolution for diagnostics/status. Only schedules a
+ * trusted-LAN rebind evaluation when: startup has already completed once (avoids racing the very
+ * first initialize()), and the Connector is configured for trusted-LAN mode (local-only installs
+ * always bind 127.0.0.1 regardless of the active adapter, so there is nothing to rebind).
+ * Scheduling is fire-and-forget-safe — trustedLanCoordinator serializes and de-duplicates.
+ */
+async function handleNetworkChange(resolution: ActiveNetworkResolution): Promise<void> {
+  activeNetworkAdapter = resolution.adapter;
+  lastNetworkResolution = resolution;
+  logService.appendStructured({
+    level: 'information',
+    message: 'Active network resolution changed.',
+    event: 'network_change_detected',
+    component: 'network',
+    metadata: {
+      adapterName: resolution.adapter?.adapterName ?? null,
+      ipv4: resolution.adapter?.ipv4 ?? null,
+      profileCategory: resolution.adapter?.profileCategory ?? null,
+      rejectedReason: resolution.rejectedReason,
+    },
+  });
+
+  if (!desktopStartupComplete || resolved.effective.connectorBindMode !== 'trusted-lan') {
+    notifyRenderer();
+    return;
+  }
+
+  rebindState = {
+    status: 'rebinding',
+    at: new Date().toISOString(),
+    message: 'Network changed — evaluating trusted-LAN rebind.',
+  };
+  notifyRenderer();
+  trustedLanCoordinator.requestEvaluation(resolution);
+}
+
+const routeQuerier = new PowerShellRouteQuerier();
+const networkWatcher = new NetworkChangeWatcher({
+  routeQuerier,
+  pollIntervalMs: 5_000,
+  onChange: (resolution) => {
+    void handleNetworkChange(resolution);
+  },
+  onError: (error) => {
+    logService.appendStructured({
+      level: 'warning',
+      message: 'Active network resolution failed.',
+      event: 'network_resolution_failed',
+      component: 'network',
+      metadata: { error: error instanceof Error ? error.message : String(error) },
+    });
+  },
+});
+
+const mobileAccessStatusService = new MobileAccessStatusService({
+  getConnectorBaseUrl: () => resolved.connectorBaseUrl,
+  getConnectorBindMode: () => resolved.effective.connectorBindMode,
+  getActiveNetwork: () => activeNetworkAdapter,
+  getTrustedLanEligibility: () => evaluateTrustedLanEligibility(lastNetworkResolution),
+  getRebindState: () => rebindState,
+});
 
 function notifyRenderer(): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -420,9 +679,29 @@ function registerIpcHandlers(): void {
     return result;
   });
   registerIpcHandler('desktop:get-lifecycle-status', async () => lifecycleService.getStatus());
-  registerIpcHandler('desktop:start-connector', async () => lifecycleService.ensureConnectorRunning());
-  registerIpcHandler('desktop:stop-connector', async () => lifecycleService.stopConnector());
+  registerIpcHandler('desktop:get-mobile-access-status', async () => mobileAccessStatusService.getStatus());
+  registerIpcHandler('desktop:start-connector', async () => {
+    if (resolved.effective.connectorBindMode === 'trusted-lan') {
+      const status = await trustedLanCoordinator.manualStart();
+      notifyRenderer();
+      return toLifecycleStatusForManualCommand(status);
+    }
+    return lifecycleService.ensureConnectorRunning();
+  });
+  registerIpcHandler('desktop:stop-connector', async () => {
+    if (resolved.effective.connectorBindMode === 'trusted-lan') {
+      const status = await trustedLanCoordinator.manualStop();
+      notifyRenderer();
+      return toLifecycleStatusForManualCommand(status);
+    }
+    return lifecycleService.stopConnector();
+  });
   registerIpcHandler('desktop:restart-connector', async () => {
+    if (resolved.effective.connectorBindMode === 'trusted-lan') {
+      const status = await trustedLanCoordinator.manualRestart();
+      notifyRenderer();
+      return toLifecycleStatusForManualCommand(status);
+    }
     const status = lifecycleService.getStatus();
     if (status.externalProcessDetected && !status.managedByDesktop) {
       return status;
@@ -527,13 +806,32 @@ function registerIpcHandlers(): void {
   });
 }
 
-function startPolling(intervalMs: number): void {
-  if (pollTimer) {
-    clearInterval(pollTimer);
+/**
+ * Resolves the current default-route adapter once before the first Connector spawn (so a
+ * trusted-LAN install's very first launch already binds to the route-backed address rather than
+ * a possibly-stale hand-typed one), then starts periodic network-change polling. Fire-and-forget
+ * from bootstrapApp() — matches the existing non-blocking connector-startup behavior; the
+ * Electron window shows immediately regardless of how long adapter resolution takes.
+ */
+async function startConnectorWithRouteResolution(): Promise<void> {
+  // start() resolves the current default-route adapter once (populating activeNetworkAdapter /
+  // lastNetworkResolution synchronously via handleNetworkChange, which no-ops its rebind trigger
+  // while desktopStartupComplete is still false) before arming its periodic poll — so the very
+  // first Connector spawn below already reflects the live network, not a stale hand-typed value.
+  await networkWatcher.start();
+
+  if (resolved.effective.connectorBindMode === 'trusted-lan') {
+    // Route the very first bind through the same authoritative eligibility check every later
+    // rebind uses — a Public/unknown-profile network must never get an initial LAN bind either.
+    trustedLanCoordinator.requestEvaluation(lastNetworkResolution);
+    await trustedLanCoordinator.settle();
+  } else {
+    lifecycleService = createLifecycleService();
+    diagnosticsService = createDiagnosticsService();
+    await lifecycleService.initialize();
   }
-  pollTimer = setInterval(() => {
-    notifyRenderer();
-  }, intervalMs);
+
+  desktopStartupComplete = true;
 }
 
 export function bootstrapApp(): void {
@@ -552,8 +850,7 @@ export function bootstrapApp(): void {
     startupDiagnostics.record('app_ready');
     startupLog('app ready');
     mainWindow = createMainWindow();
-    startPolling(resolved.effective.healthPollIntervalMs);
-    void lifecycleService.initialize();
+    void startConnectorWithRouteResolution();
     runDiagnosticExportRetentionCleanup();
 
     app.on('activate', () => {
@@ -577,10 +874,16 @@ export function bootstrapApp(): void {
 
   app.on('before-quit', () => {
     startupDiagnostics.record('before_quit');
-    if (pollTimer) {
-      clearInterval(pollTimer);
+    networkWatcher.stop();
+    crashRecoveryScheduler.notifyStoppedIntentionally();
+    // trustedLanCoordinator.shutdown() cancels any in-flight/queued rebind before stopping the
+    // child; calling lifecycleService.shutdown() directly here too would race it and could
+    // resurrect a child the coordinator just tore down.
+    if (resolved.effective.connectorBindMode === 'trusted-lan') {
+      void trustedLanCoordinator.shutdown();
+    } else {
+      void lifecycleService.shutdown();
     }
-    void lifecycleService.shutdown();
   });
 
   app.on('will-quit', () => {

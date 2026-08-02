@@ -48,6 +48,7 @@ const baseConfig: ConnectorLifecycleConfig = {
   maxRestartAttempts: 3,
   reconnectBaseDelayMs: 100,
   staleHealthThresholdMs: 5_000,
+  bundledConnectorVersion: '0.4.0',
 };
 
 function createService(options?: {
@@ -55,6 +56,8 @@ function createService(options?: {
   processSpawner?: MockProcessSpawner;
   config?: Partial<ConnectorLifecycleConfig>;
   sleep?: (ms: number) => Promise<void>;
+  restartOwnership?: 'internal' | 'external';
+  onUnexpectedExit?: () => void;
 }): {
   service: ConnectorLifecycleService;
   healthChecker: MockHealthChecker;
@@ -70,6 +73,8 @@ function createService(options?: {
     healthChecker,
     logService,
     sleep: options?.sleep ?? (async () => undefined),
+    restartOwnership: options?.restartOwnership,
+    onUnexpectedExit: options?.onUnexpectedExit,
   });
   return { service, healthChecker, processSpawner, logService };
 }
@@ -267,6 +272,148 @@ describe('ConnectorLifecycleService', () => {
 
     expect(service.getStatus().state).toBe('failed');
   });
+
+  describe("restartOwnership: 'external' (trusted-LAN crash-recovery bypass fix)", () => {
+    it('1. an unexpected exit notifies onUnexpectedExit instead of restarting directly', async () => {
+      const onUnexpectedExit = vi.fn();
+      const healthChecker = new MockHealthChecker();
+      healthChecker.checkHealthDetails
+        .mockResolvedValueOnce({ ready: false, owned: false })
+        .mockResolvedValue({ ready: true, owned: true });
+      const process = new MockManagedProcess();
+      const processSpawner = new MockProcessSpawner();
+      processSpawner.spawn.mockReturnValue(process);
+      const { service } = createService({
+        healthChecker,
+        processSpawner,
+        restartOwnership: 'external',
+        onUnexpectedExit,
+      });
+
+      await service.ensureConnectorRunning();
+      expect(processSpawner.spawn).toHaveBeenCalledTimes(1);
+
+      process.emitExit(1);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(onUnexpectedExit).toHaveBeenCalledTimes(1);
+      // No self-restart: spawn is never called a second time by the service itself.
+      expect(processSpawner.spawn).toHaveBeenCalledTimes(1);
+      expect(service.getStatus().state).toBe('reconnecting');
+    });
+
+    it('enforces no restart-attempt bound itself in external mode — that is the owner\'s job', async () => {
+      const onUnexpectedExit = vi.fn();
+      const healthChecker = new MockHealthChecker();
+      healthChecker.checkHealthDetails
+        .mockResolvedValueOnce({ ready: false, owned: false })
+        .mockResolvedValue({ ready: true, owned: true });
+      const process = new MockManagedProcess();
+      const processSpawner = new MockProcessSpawner();
+      processSpawner.spawn.mockReturnValue(process);
+      const { service } = createService({
+        healthChecker,
+        processSpawner,
+        config: { maxRestartAttempts: 1 },
+        restartOwnership: 'external',
+        onUnexpectedExit,
+      });
+
+      await service.ensureConnectorRunning();
+      process.emitExit(1);
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      // Never transitions to the internal-mode 'failed'/MAX_RESTARTS terminal state — external
+      // mode has no attempt counter of its own, so maxRestartAttempts=1 does not apply here.
+      expect(service.getStatus().state).not.toBe('failed');
+      expect(onUnexpectedExit).toHaveBeenCalledTimes(1);
+    });
+
+    it('intentional stop does not notify onUnexpectedExit (the existing "stopping" guard still applies)', async () => {
+      const onUnexpectedExit = vi.fn();
+      const healthChecker = new MockHealthChecker();
+      healthChecker.checkHealthDetails
+        .mockResolvedValueOnce({ ready: false, owned: false })
+        .mockResolvedValue({ ready: true, owned: true });
+      const process = new MockManagedProcess();
+      const processSpawner = new MockProcessSpawner();
+      processSpawner.spawn.mockReturnValue(process);
+      process.kill = vi.fn(async () => {
+        process.emitExit(0, 'SIGTERM');
+      });
+      const { service } = createService({
+        healthChecker,
+        processSpawner,
+        restartOwnership: 'external',
+        onUnexpectedExit,
+      });
+
+      await service.ensureConnectorRunning();
+      expect(processSpawner.spawn).toHaveBeenCalledTimes(1);
+
+      await service.stopConnector();
+
+      expect(onUnexpectedExit).not.toHaveBeenCalled();
+      expect(service.getStatus().state).toBe('disconnected');
+    });
+
+    it('a health-check failure (not just a process exit) also routes through onUnexpectedExit, not a direct restart', async () => {
+      const onUnexpectedExit = vi.fn();
+      const healthChecker = new MockHealthChecker();
+      // Already healthy and externally owned (not spawned by Desktop) — ensureConnectorRunning
+      // takes the "mark external, take no spawn action" path.
+      healthChecker.checkHealthDetails.mockResolvedValue({ ready: true, owned: true });
+      const processSpawner = new MockProcessSpawner();
+      const { service } = createService({
+        healthChecker,
+        processSpawner,
+        config: { autoStart: true },
+        restartOwnership: 'external',
+        onUnexpectedExit,
+      });
+
+      await service.ensureConnectorRunning();
+      expect(service.getStatus().externalProcessDetected).toBe(true);
+      expect(processSpawner.spawn).not.toHaveBeenCalled();
+
+      // The external process now fails its health check — refreshHealthState (the health-poll
+      // interval's path, not a process-exit event) is what notices this.
+      healthChecker.checkHealth.mockResolvedValue(false);
+      const privateService = service as unknown as { refreshHealthState: () => Promise<void> };
+      await privateService.refreshHealthState();
+
+      expect(onUnexpectedExit).toHaveBeenCalled();
+      expect(processSpawner.spawn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("restartOwnership: 'internal' (default) is unaffected by the external-mode changes", () => {
+    it('an unexpected exit still restarts directly, exactly as before', async () => {
+      const onUnexpectedExit = vi.fn();
+      const healthChecker = new MockHealthChecker();
+      healthChecker.checkHealthDetails
+        .mockResolvedValueOnce({ ready: false, owned: false })
+        .mockResolvedValueOnce({ ready: true, owned: true })
+        .mockResolvedValueOnce({ ready: false, owned: false })
+        .mockResolvedValueOnce({ ready: true, owned: true });
+      const process = new MockManagedProcess();
+      const processSpawner = new MockProcessSpawner();
+      processSpawner.spawn.mockReturnValue(process);
+      const { service } = createService({
+        healthChecker,
+        processSpawner,
+        restartOwnership: 'internal',
+        onUnexpectedExit,
+      });
+
+      await service.ensureConnectorRunning();
+      process.emitExit(1);
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(processSpawner.spawn).toHaveBeenCalledTimes(2);
+      expect(onUnexpectedExit).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('ConnectorLifecycleService health monitoring', () => {
@@ -298,5 +445,29 @@ describe('ConnectorLifecycleService health monitoring', () => {
     await service.ensureConnectorRunning();
 
     expect(service.getStatus().lastSuccessfulHealthCheck).not.toBeNull();
+  });
+
+  it('does not overlap lifecycle health requests when a poll is still in flight', async () => {
+    const healthChecker = new MockHealthChecker();
+    let resolveHealth: ((healthy: boolean) => void) | null = null;
+    healthChecker.checkHealth.mockImplementation(
+      () => new Promise<boolean>((resolve) => {
+        resolveHealth = resolve;
+      }),
+    );
+    const { service } = createService({
+      healthChecker,
+      config: { healthPollIntervalMs: 1_000 },
+    });
+
+    service.startHealthMonitoring();
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    expect(healthChecker.checkHealth).toHaveBeenCalledTimes(1);
+    resolveHealth?.(true);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(healthChecker.checkHealth).toHaveBeenCalledTimes(2);
+    service.stopHealthMonitoring();
   });
 });

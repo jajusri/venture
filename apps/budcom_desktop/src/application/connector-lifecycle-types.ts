@@ -26,6 +26,7 @@ export type LifecycleLogEvent =
 
 export interface ConnectorLifecycleConfig {
   readonly connectorBaseUrl: string;
+  readonly connectorBindMode: 'local-only' | 'trusted-lan';
   readonly connectorHost: string;
   readonly connectorPort: number;
   readonly connectorExecutable: string;
@@ -34,6 +35,8 @@ export interface ConnectorLifecycleConfig {
   readonly childEnv?: Readonly<Record<string, string | undefined>>;
   readonly isPackaged?: boolean;
   readonly packagedRuntimeIntegrityCategory?: string | null;
+  /** Clear, actionable error when development-mode Node runtime resolution failed. */
+  readonly developmentRuntimeError?: string | null;
   readonly autoStart: boolean;
   readonly healthPollIntervalMs: number;
   readonly startupTimeoutMs: number;
@@ -42,6 +45,8 @@ export interface ConnectorLifecycleConfig {
   readonly reconnectBaseDelayMs: number;
   readonly staleHealthThresholdMs: number;
   readonly startupCorrelationId?: string | null;
+  /** Label from packaged VERSION.txt (or null when unavailable). */
+  readonly bundledConnectorVersion?: string | null;
 }
 
 export interface ConnectorLifecycleStatus {
@@ -57,6 +62,7 @@ export interface ConnectorLifecycleStatus {
   readonly connectorPort: number;
   readonly userMessage: string | null;
   readonly managedProcessPid: number | null;
+  readonly bundledConnectorVersion: string | null;
 }
 
 export interface SpawnSpec {

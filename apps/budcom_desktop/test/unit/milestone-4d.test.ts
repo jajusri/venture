@@ -188,6 +188,7 @@ describe('diagnostics service', () => {
           externalProcessDetected: false,
           lastSuccessfulHealthCheck: null,
           managedProcessPid: null,
+          bundledConnectorVersion: '0.4.0',
         }),
       } as never,
       logService: new LogService(),

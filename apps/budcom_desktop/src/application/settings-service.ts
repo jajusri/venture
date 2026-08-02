@@ -79,8 +79,13 @@ export class SettingsService {
 
   getSettingsState(): SettingsState {
     const effective = this.resolved.effective;
+    const reachableLanUrl = effective.connectorBindMode === 'trusted-lan'
+      ? `http://${effective.connectorHost}:${effective.connectorPort}`
+      : null;
     return {
       connectorUrl: this.resolved.connectorBaseUrl,
+      connectorBindMode: effective.connectorBindMode,
+      reachableLanUrl,
       connectorHost: effective.connectorHost,
       apiVersion: '1.0.0',
       desktopVersion: DESKTOP_VERSION,
@@ -116,6 +121,10 @@ export class SettingsService {
     return {
       ...this.getSettingsState(),
       connectorUrl: previewResolved.connectorBaseUrl,
+      connectorBindMode: preview.connectorBindMode,
+      reachableLanUrl: preview.connectorBindMode === 'trusted-lan'
+        ? `http://${preview.connectorHost}:${preview.connectorPort}`
+        : null,
       connectorHost: preview.connectorHost,
       connectorPort: preview.connectorPort,
       autoStartConnector: preview.autoStartConnector,

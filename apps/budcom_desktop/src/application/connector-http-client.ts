@@ -5,6 +5,7 @@ import type {
   CompanySelectionResult,
   ConnectorClientConfig,
   ConnectorErrorBody,
+  DeviceListResult,
   HealthResponse,
   LedgerListResult,
   LedgerStatisticsResult,
@@ -39,6 +40,11 @@ export class ConnectorHttpClient {
 
   async getSession(): Promise<SessionSnapshotResponse> {
     return this.getJsonWithRetry<SessionSnapshotResponse>('/session');
+  }
+
+  /** Paired-device count for the Mobile Access status model. Never includes tokens. */
+  async getDeviceList(): Promise<DeviceListResult> {
+    return this.getJsonWithRetry<DeviceListResult>('/device/list');
   }
 
   async validateSession(): Promise<SessionValidationResponse> {

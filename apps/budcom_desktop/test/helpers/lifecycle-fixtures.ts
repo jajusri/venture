@@ -11,6 +11,7 @@ export const lifecycleStatusFixture = {
   connectorPort: 8080,
   userMessage: null,
   managedProcessPid: null,
+  bundledConnectorVersion: '0.4.0',
 };
 
 export const settingsFixture = {
@@ -41,6 +42,7 @@ export const diagnosticsFixture = {
   generatedAt: '2026-07-23T00:00:00.000Z',
   desktopVersion: '0.4.3',
   connectorVersion: '0.3.1',
+  bundledConnectorVersion: '0.4.0',
   electronVersion: '33.0.0',
   nodeVersion: process.versions.node,
   platform: process.platform,
