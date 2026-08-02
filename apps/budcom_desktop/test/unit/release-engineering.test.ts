@@ -150,6 +150,15 @@ describe('connector packaged paths', () => {
     expect(env.SECRET_TOKEN).toBeUndefined();
     expect(env.BUDCOM_CONNECTOR_PORT).toBe('8080');
   });
+
+  it('passes Desktop-supplied stable Connector identity through to the child (BUDCOM_CONNECTOR_ID/NAME)', () => {
+    const env = buildConnectorChildEnvironment({ PATH: 'C:\\Windows' }, {
+      BUDCOM_CONNECTOR_ID: '9c98ff3c-3b1c-4429-a1a9-4055ef4c95e4',
+      BUDCOM_CONNECTOR_NAME: 'Front Desk',
+    });
+    expect(env.BUDCOM_CONNECTOR_ID).toBe('9c98ff3c-3b1c-4429-a1a9-4055ef4c95e4');
+    expect(env.BUDCOM_CONNECTOR_NAME).toBe('Front Desk');
+  });
 });
 
 describe('single instance ownership', () => {
