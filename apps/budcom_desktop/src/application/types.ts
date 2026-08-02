@@ -8,6 +8,8 @@ export interface HealthResponse {
   readonly tallyReachable: boolean;
   readonly readOnly: boolean;
   readonly bindPort?: number;
+  /** Actual bind host the running Connector reports listening on (runtime integrity checks). */
+  readonly bindHost?: string;
   readonly startupCorrelationId?: string | null;
   /** Stable Connector identity — not a secret, see docs/architecture. */
   readonly connectorId?: string;
@@ -16,6 +18,8 @@ export interface HealthResponse {
   readonly authenticatedLanAccessEnabled?: boolean;
   readonly discoveryAdvertising?: boolean;
   readonly services: readonly ServiceStatusDto[];
+  /** ISO timestamp the running Connector process actually started (runtime integrity checks). */
+  readonly processStartedAt?: string;
 }
 
 /** Connector `/device/list` response subset used by the Mobile Access status model. */
@@ -333,6 +337,7 @@ export interface LedgerStatisticsResult {
 export interface LedgerSyncProgressDto {
   readonly status: string;
   readonly syncRunId?: string | null;
+  readonly totalExpected?: number | null;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
   readonly durationMs: number | null;

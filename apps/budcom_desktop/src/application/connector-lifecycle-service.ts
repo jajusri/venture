@@ -1,5 +1,6 @@
 import { ConnectorHttpClient } from './connector-http-client.js';
 import type {
+  BindIntegrityCategory,
   ConnectorLifecycleConfig,
   ConnectorLifecycleState,
   ConnectorLifecycleStatus,
@@ -52,6 +53,11 @@ export class HttpHealthChecker implements HealthChecker {
         owned,
         bindPort: body.bindPort,
         startupCorrelationId: body.startupCorrelationId ?? null,
+        bindHost: body.bindHost,
+        networkExposure: body.networkExposure,
+        connectorId: body.connectorId,
+        connectorVersion: body.connectorVersion,
+        processStartedAt: body.processStartedAt,
       };
     } catch {
       return { ready: false, owned: false };
@@ -102,7 +108,8 @@ export interface ConnectorLifecycleServiceOptions {
       | 'connector_child_exit'
       | 'connector_health_check'
       | 'connector_startup_failure'
-      | 'packaged_runtime_integrity_failure',
+      | 'packaged_runtime_integrity_failure'
+      | 'bind_integrity_failure',
     detail: Record<string, string | number | boolean | null>,
   ) => void;
 }
@@ -132,6 +139,7 @@ export class ConnectorLifecycleService {
   private stopping = false;
   private onStatusChanged: (() => void) | null = null;
   private readonly runtimeIntegrityBlocked: boolean;
+  private bindIntegrityBlocked = false;
 
   constructor(options: ConnectorLifecycleServiceOptions) {
     this.config = options.config;
@@ -186,9 +194,18 @@ export class ConnectorLifecycleService {
     if (this.runtimeIntegrityBlocked) {
       return this.failRuntimeIntegrityBlocked();
     }
+    if (this.bindIntegrityBlocked) {
+      // Already blocked by a prior mismatch detection; state/lastError are already correct —
+      // never re-evaluate, never silently retry, never fall back to a different host.
+      return this.getStatus();
+    }
     if (this.managedProcess && this.managedByDesktop) {
       const details = await this.healthChecker.checkHealthDetails();
       if (details.ready && details.owned) {
+        const mismatch = this.evaluateBindIntegrity(details);
+        if (mismatch) {
+          return this.failBindIntegrityBlocked(mismatch, details, { terminateChild: true });
+        }
         this.markHealthy();
         return this.getStatus();
       }
@@ -196,6 +213,14 @@ export class ConnectorLifecycleService {
 
     const existingHealth = await this.healthChecker.checkHealthDetails();
     if (existingHealth.ready && existingHealth.owned) {
+      const mismatch = this.evaluateBindIntegrity(existingHealth);
+      if (mismatch) {
+        // Never adopt (and never kill — Desktop does not own this process either way here)
+        // a Connector whose actual binding disagrees with what this installation requested.
+        return this.failBindIntegrityBlocked(mismatch, existingHealth, {
+          terminateChild: this.managedByDesktop,
+        });
+      }
       if (!this.managedByDesktop) {
         this.markExternalRunning();
       } else {
@@ -344,14 +369,19 @@ export class ConnectorLifecycleService {
         void this.handleProcessExit(code, signal);
       });
 
-      const ready = await this.waitForHealth(this.config.startupTimeoutMs);
-      this.onDiagnostic?.('connector_health_check', { ready });
-      if (!ready) {
+      const readyDetails = await this.waitForHealth(this.config.startupTimeoutMs);
+      this.onDiagnostic?.('connector_health_check', { ready: readyDetails !== null });
+      if (!readyDetails) {
         this.lastError = mapLifecycleUserMessage('STARTUP_TIMEOUT');
         this.transitionState('failed');
         this.logLifecycle('startup_failure', this.lastError);
         this.onDiagnostic?.('connector_startup_failure', { message: this.lastError });
         return this.getStatus();
+      }
+
+      const mismatch = this.evaluateBindIntegrity(readyDetails);
+      if (mismatch) {
+        return this.failBindIntegrityBlocked(mismatch, readyDetails, { terminateChild: true });
       }
 
       this.restartAttempts = 0;
@@ -408,7 +438,7 @@ export class ConnectorLifecycleService {
    * which persists across the fresh service instances a coordinator-driven recovery creates.
    */
   private scheduleReconnect(): void {
-    if (this.runtimeIntegrityBlocked) {
+    if (this.runtimeIntegrityBlocked || this.bindIntegrityBlocked) {
       return;
     }
     if (this.restartOwnership === 'external') {
@@ -430,14 +460,19 @@ export class ConnectorLifecycleService {
   }
 
   private async refreshHealthState(): Promise<void> {
-    if (this.startupInProgress || this.healthRefreshInFlight) {
+    if (this.startupInProgress || this.healthRefreshInFlight || this.bindIntegrityBlocked) {
       return;
     }
 
     this.healthRefreshInFlight = true;
     try {
-      const healthy = await this.healthChecker.checkHealth();
-      if (healthy) {
+      const details = await this.healthChecker.checkHealthDetails();
+      if (details.ready && details.owned) {
+        const mismatch = this.evaluateBindIntegrity(details);
+        if (mismatch) {
+          await this.failBindIntegrityBlocked(mismatch, details, { terminateChild: this.managedByDesktop });
+          return;
+        }
         this.markHealthy();
         return;
       }
@@ -480,16 +515,17 @@ export class ConnectorLifecycleService {
     this.transitionState('connected');
   }
 
-  private async waitForHealth(timeoutMs: number): Promise<boolean> {
+  /** Returns the first `ready && owned` details, or null if the timeout elapses first. */
+  private async waitForHealth(timeoutMs: number): Promise<HealthCheckDetails | null> {
     const attempts = Math.max(1, Math.ceil(timeoutMs / 500));
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const details = await this.healthChecker.checkHealthDetails();
       if (details.ready && details.owned) {
-        return true;
+        return details;
       }
       await this.sleep(500);
     }
-    return false;
+    return null;
   }
 
   private async waitForHealthDown(timeoutMs: number): Promise<boolean> {
@@ -540,6 +576,85 @@ export class ConnectorLifecycleService {
     this.transitionState('failed');
     this.logLifecycle('startup_failure', message);
     this.onDiagnostic?.('packaged_runtime_integrity_failure', { category });
+    return this.getStatus();
+  }
+
+  /**
+   * Compares what this Desktop process actually requested (`this.config`) against what the
+   * Connector self-reports it is running as (`details`, from a real `/health` response — never
+   * from anything Desktop itself decided). Returns null when they agree. This is the only place
+   * that can catch a stale/mismatched installed build: a stale Desktop binary can mis-resolve its
+   * own *request*, but it cannot alter what a real, freshly-queried Connector process reports
+   * about itself.
+   */
+  private evaluateBindIntegrity(details: HealthCheckDetails): BindIntegrityCategory | null {
+    if (
+      this.config.bundledConnectorVersion
+      && details.connectorVersion
+      && details.connectorVersion !== this.config.bundledConnectorVersion
+    ) {
+      return 'PACKAGED_CONNECTOR_MISMATCH';
+    }
+
+    if (this.config.connectorBindMode === 'trusted-lan') {
+      if (details.networkExposure !== 'lan') {
+        return 'CONNECTOR_BIND_MISMATCH';
+      }
+      if (details.bindHost !== undefined && details.bindHost !== this.config.connectorHost) {
+        return 'CONNECTOR_BIND_MISMATCH';
+      }
+    } else if (this.config.connectorBindMode === 'local-only') {
+      if (details.networkExposure !== undefined && details.networkExposure !== 'loopback') {
+        return 'CONNECTOR_BIND_MISMATCH';
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Fail-closed entry point for a post-health bind-integrity mismatch. Never falls back to a
+   * different host — only blocks. `terminateChild` is honored solely when Desktop itself owns
+   * the process (`managedByDesktop`); an externally-detected process Desktop never spawned is
+   * never killed, only refused adoption.
+   */
+  private async failBindIntegrityBlocked(
+    category: BindIntegrityCategory,
+    details: HealthCheckDetails,
+    options: { readonly terminateChild?: boolean } = {},
+  ): Promise<ConnectorLifecycleStatus> {
+    const message =
+      category === 'PACKAGED_CONNECTOR_MISMATCH'
+        ? 'The running Connector does not match this Desktop installation’s bundled Connector version. The Desktop installation requires repair or upgrade.'
+        : 'The Connector is not bound to the network address this Desktop installation requested. The Desktop installation requires repair or upgrade.';
+
+    this.bindIntegrityBlocked = true;
+    this.lastError = message;
+    this.clearReconnectTimer();
+
+    if (options.terminateChild && this.managedProcess) {
+      try {
+        await this.managedProcess.kill('SIGTERM');
+      } catch {
+        // Best-effort: the child may already be gone. The blocked state stands regardless.
+      }
+      this.managedProcess = null;
+      this.managedByDesktop = false;
+    }
+
+    this.transitionState('failed');
+    this.logLifecycle('startup_failure', message);
+    this.onDiagnostic?.('bind_integrity_failure', {
+      category,
+      requestedBindMode: this.config.connectorBindMode,
+      requestedHost: this.config.connectorHost,
+      requestedPort: this.config.connectorPort,
+      actualNetworkExposure: details.networkExposure ?? null,
+      actualBindHost: details.bindHost ?? null,
+      actualBindPort: details.bindPort ?? null,
+      expectedConnectorVersion: this.config.bundledConnectorVersion ?? null,
+      actualConnectorVersion: details.connectorVersion ?? null,
+    });
     return this.getStatus();
   }
 }

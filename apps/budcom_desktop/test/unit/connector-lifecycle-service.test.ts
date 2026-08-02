@@ -58,6 +58,10 @@ function createService(options?: {
   sleep?: (ms: number) => Promise<void>;
   restartOwnership?: 'internal' | 'external';
   onUnexpectedExit?: () => void;
+  onDiagnostic?: (
+    stage: string,
+    detail: Record<string, string | number | boolean | null>,
+  ) => void;
 }): {
   service: ConnectorLifecycleService;
   healthChecker: MockHealthChecker;
@@ -75,6 +79,7 @@ function createService(options?: {
     sleep: options?.sleep ?? (async () => undefined),
     restartOwnership: options?.restartOwnership,
     onUnexpectedExit: options?.onUnexpectedExit,
+    onDiagnostic: options?.onDiagnostic as never,
   });
   return { service, healthChecker, processSpawner, logService };
 }
@@ -378,7 +383,7 @@ describe('ConnectorLifecycleService', () => {
 
       // The external process now fails its health check — refreshHealthState (the health-poll
       // interval's path, not a process-exit event) is what notices this.
-      healthChecker.checkHealth.mockResolvedValue(false);
+      healthChecker.checkHealthDetails.mockResolvedValue({ ready: false, owned: false });
       const privateService = service as unknown as { refreshHealthState: () => Promise<void> };
       await privateService.refreshHealthState();
 
@@ -449,9 +454,9 @@ describe('ConnectorLifecycleService health monitoring', () => {
 
   it('does not overlap lifecycle health requests when a poll is still in flight', async () => {
     const healthChecker = new MockHealthChecker();
-    let resolveHealth: ((healthy: boolean) => void) | null = null;
-    healthChecker.checkHealth.mockImplementation(
-      () => new Promise<boolean>((resolve) => {
+    let resolveHealth: ((details: { ready: boolean; owned: boolean }) => void) | null = null;
+    healthChecker.checkHealthDetails.mockImplementation(
+      () => new Promise((resolve) => {
         resolveHealth = resolve;
       }),
     );
@@ -463,11 +468,252 @@ describe('ConnectorLifecycleService health monitoring', () => {
     service.startHealthMonitoring();
     await vi.advanceTimersByTimeAsync(3_000);
 
-    expect(healthChecker.checkHealth).toHaveBeenCalledTimes(1);
-    resolveHealth?.(true);
+    expect(healthChecker.checkHealthDetails).toHaveBeenCalledTimes(1);
+    resolveHealth?.({ ready: true, owned: true });
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(healthChecker.checkHealth).toHaveBeenCalledTimes(2);
+    expect(healthChecker.checkHealthDetails).toHaveBeenCalledTimes(2);
     service.stopHealthMonitoring();
+  });
+});
+
+describe('ConnectorLifecycleService runtime integrity: bind and fingerprint verification', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('matching Desktop and Connector fingerprints: healthy, no block', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({
+      ready: true,
+      owned: true,
+      networkExposure: 'lan',
+      bindHost: '192.168.1.50',
+      connectorVersion: '0.4.0',
+    });
+    const { service } = createService({
+      healthChecker,
+      config: { connectorBindMode: 'trusted-lan', connectorHost: '192.168.1.50', bundledConnectorVersion: '0.4.0' },
+    });
+
+    const status = await service.ensureConnectorRunning();
+
+    expect(status.state).toBe('connected');
+    expect(status.lastError).toBeNull();
+  });
+
+  it('stale packaged Connector fingerprint: blocks with PACKAGED_CONNECTOR_MISMATCH', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({
+      ready: true,
+      owned: true,
+      networkExposure: 'loopback',
+      bindHost: '127.0.0.1',
+      connectorVersion: '0.3.1',
+    });
+    const diagnostics: Array<{ stage: string; detail: Record<string, unknown> }> = [];
+    const { service } = createService({
+      healthChecker,
+      config: { connectorBindMode: 'local-only', bundledConnectorVersion: '0.4.0' },
+      onDiagnostic: (stage, detail) => diagnostics.push({ stage, detail }),
+    });
+
+    const status = await service.ensureConnectorRunning();
+
+    expect(status.state).toBe('failed');
+    expect(status.userMessage).toMatch(/requires repair or upgrade/i);
+    expect(diagnostics.some((d) => d.stage === 'bind_integrity_failure' && d.detail.category === 'PACKAGED_CONNECTOR_MISMATCH')).toBe(true);
+  });
+
+  it('missing runtime fingerprint does not produce a false-positive mismatch', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({
+      ready: true,
+      owned: true,
+      networkExposure: 'loopback',
+      bindHost: '127.0.0.1',
+      // connectorVersion intentionally absent — an older Connector predating this field.
+    });
+    const { service } = createService({
+      healthChecker,
+      config: { connectorBindMode: 'local-only', bundledConnectorVersion: '0.4.0' },
+    });
+
+    const status = await service.ensureConnectorRunning();
+
+    expect(status.state).toBe('connected');
+  });
+
+  it('trusted-LAN requested but actual listener is loopback: blocks with CONNECTOR_BIND_MISMATCH', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({
+      ready: true,
+      owned: true,
+      networkExposure: 'loopback',
+      bindHost: '127.0.0.1',
+      connectorVersion: '0.4.0',
+    });
+    const diagnostics: Array<{ stage: string; detail: Record<string, unknown> }> = [];
+    const { service } = createService({
+      healthChecker,
+      config: { connectorBindMode: 'trusted-lan', connectorHost: '192.168.29.34', bundledConnectorVersion: '0.4.0' },
+      onDiagnostic: (stage, detail) => diagnostics.push({ stage, detail }),
+    });
+
+    const status = await service.ensureConnectorRunning();
+
+    expect(status.state).toBe('failed');
+    expect(status.userMessage).toMatch(/requires repair or upgrade/i);
+    const failure = diagnostics.find((d) => d.stage === 'bind_integrity_failure');
+    expect(failure?.detail.category).toBe('CONNECTOR_BIND_MISMATCH');
+    expect(failure?.detail.requestedBindMode).toBe('trusted-lan');
+    expect(failure?.detail.actualNetworkExposure).toBe('loopback');
+  });
+
+  it('trusted-LAN requested and actual listener matches: healthy, no block', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({
+      ready: true,
+      owned: true,
+      networkExposure: 'lan',
+      bindHost: '192.168.29.34',
+      connectorVersion: '0.4.0',
+    });
+    const { service } = createService({
+      healthChecker,
+      config: { connectorBindMode: 'trusted-lan', connectorHost: '192.168.29.34', bundledConnectorVersion: '0.4.0' },
+    });
+
+    const status = await service.ensureConnectorRunning();
+
+    expect(status.state).toBe('connected');
+  });
+
+  it('loopback requested and actual listener is loopback: healthy, no block', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({
+      ready: true,
+      owned: true,
+      networkExposure: 'loopback',
+      bindHost: '127.0.0.1',
+      connectorVersion: '0.4.0',
+    });
+    const { service } = createService({
+      healthChecker,
+      config: { connectorBindMode: 'local-only', bundledConnectorVersion: '0.4.0' },
+    });
+
+    const status = await service.ensureConnectorRunning();
+
+    expect(status.state).toBe('connected');
+  });
+
+  it('Connector acknowledgment differs from requested host while still reporting lan exposure: blocks', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({
+      ready: true,
+      owned: true,
+      networkExposure: 'lan',
+      // Bound to a different LAN interface than Desktop requested (multi-homed machine).
+      bindHost: '10.0.0.5',
+      connectorVersion: '0.4.0',
+    });
+    const { service } = createService({
+      healthChecker,
+      config: { connectorBindMode: 'trusted-lan', connectorHost: '192.168.29.34', bundledConnectorVersion: '0.4.0' },
+    });
+
+    const status = await service.ensureConnectorRunning();
+
+    expect(status.state).toBe('failed');
+    expect(status.userMessage).toMatch(/requires repair or upgrade/i);
+  });
+
+  it('one Desktop owns exactly one Connector child: a second ensureConnectorRunning call does not spawn again', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({ ready: false, owned: false });
+    const processSpawner = new MockProcessSpawner();
+    const { service } = createService({ healthChecker, processSpawner, config: { autoStart: true } });
+
+    const first = service.ensureConnectorRunning();
+    await vi.runOnlyPendingTimersAsync();
+    await first;
+    expect(processSpawner.spawn).toHaveBeenCalledTimes(1);
+
+    healthChecker.checkHealthDetails.mockResolvedValue({ ready: true, owned: true, networkExposure: undefined });
+    await service.ensureConnectorRunning();
+
+    expect(processSpawner.spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('no silent fallback after a mismatch: a subsequent call stays blocked with the same error, never retries', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({
+      ready: true,
+      owned: true,
+      networkExposure: 'loopback',
+      bindHost: '127.0.0.1',
+      connectorVersion: '0.4.0',
+    });
+    const processSpawner = new MockProcessSpawner();
+    const { service } = createService({
+      healthChecker,
+      processSpawner,
+      config: { connectorBindMode: 'trusted-lan', connectorHost: '192.168.29.34', bundledConnectorVersion: '0.4.0' },
+    });
+
+    const first = await service.ensureConnectorRunning();
+    expect(first.state).toBe('failed');
+    const firstMessage = first.userMessage;
+
+    const second = await service.ensureConnectorRunning();
+
+    expect(second.state).toBe('failed');
+    expect(second.userMessage).toBe(firstMessage);
+    expect(processSpawner.spawn).not.toHaveBeenCalled();
+  });
+
+  it('sanitized diagnostics for a bind mismatch contain only operational fields, never business data', async () => {
+    const healthChecker = new MockHealthChecker();
+    healthChecker.checkHealthDetails.mockResolvedValue({
+      ready: true,
+      owned: true,
+      networkExposure: 'loopback',
+      bindHost: '127.0.0.1',
+      connectorVersion: '0.4.0',
+    });
+    const diagnostics: Array<{ stage: string; detail: Record<string, unknown> }> = [];
+    const { service } = createService({
+      healthChecker,
+      config: { connectorBindMode: 'trusted-lan', connectorHost: '192.168.29.34', bundledConnectorVersion: '0.4.0' },
+      onDiagnostic: (stage, detail) => diagnostics.push({ stage, detail }),
+    });
+
+    await service.ensureConnectorRunning();
+
+    const failure = diagnostics.find((d) => d.stage === 'bind_integrity_failure');
+    expect(failure).toBeDefined();
+    const allowedKeys = new Set([
+      'category',
+      'requestedBindMode',
+      'requestedHost',
+      'requestedPort',
+      'actualNetworkExposure',
+      'actualBindHost',
+      'actualBindPort',
+      'expectedConnectorVersion',
+      'actualConnectorVersion',
+    ]);
+    for (const key of Object.keys(failure!.detail)) {
+      expect(allowedKeys.has(key)).toBe(true);
+    }
+    const serialized = JSON.stringify(failure!.detail).toLowerCase();
+    for (const forbidden of ['company', 'ledger', 'voucher', 'party', 'amount', 'password', 'token', 'gstin']) {
+      expect(serialized).not.toContain(forbidden);
+    }
   });
 });

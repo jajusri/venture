@@ -87,7 +87,21 @@ export interface HealthCheckDetails {
   readonly owned: boolean;
   readonly bindPort?: number;
   readonly startupCorrelationId?: string | null;
+  /** Actual bind host the running Connector reports (runtime integrity verification). */
+  readonly bindHost?: string;
+  readonly networkExposure?: 'loopback' | 'lan';
+  readonly connectorId?: string;
+  readonly connectorVersion?: string;
+  readonly processStartedAt?: string;
 }
+
+/**
+ * Fail-closed runtime-integrity blocked states. Distinct from
+ * `packagedRuntimeIntegrityCategory` (packaged Node runtime binary hash check, evaluated before
+ * any spawn): these are only knowable after the Connector has actually reported its own health,
+ * so they gate `markHealthy()`/`markExternalRunning()` rather than the pre-spawn path.
+ */
+export type BindIntegrityCategory = 'CONNECTOR_BIND_MISMATCH' | 'PACKAGED_CONNECTOR_MISMATCH';
 
 export interface HealthChecker {
   checkHealth(): Promise<boolean>;

@@ -30,6 +30,7 @@ export type StartupDiagnosticStage =
   | 'connector_health_check'
   | 'connector_startup_failure'
   | 'packaged_runtime_integrity_failure'
+  | 'bind_integrity_failure'
   | 'bootstrap_error';
 
 export interface StartupDiagnosticEntry {

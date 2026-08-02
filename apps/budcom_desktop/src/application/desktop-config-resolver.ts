@@ -1,4 +1,4 @@
-import type { ConnectorBindMode, DesktopConfigV1, DesktopLogLevel } from './desktop-config-schema.js';
+import type { ConfigValidationError, ConnectorBindMode, DesktopConfigV1, DesktopLogLevel } from './desktop-config-schema.js';
 import {
   buildConnectorBaseUrl,
   parseConnectorHostPort,
@@ -16,6 +16,15 @@ export interface ResolvedDesktopConfig {
   readonly sources: Partial<Record<keyof DesktopConfigV1, ConfigSource>>;
   readonly connectorBaseUrl: string;
   readonly lifecycleConfig: ConnectorLifecycleConfig;
+  /**
+   * False when the persisted desktop-config.json failed schema validation and `effective`/
+   * `persisted` above are therefore built-in defaults, not the user's actual configuration.
+   * Callers that must never silently operate on substituted defaults (see runtime-integrity
+   * enforcement) should treat `configValid: false` as a CONNECTOR_CONFIG_SCHEMA_MISMATCH
+   * blocked state rather than proceeding as if the defaults were the real request.
+   */
+  readonly configValid: boolean;
+  readonly configValidationErrors: readonly ConfigValidationError[];
 }
 
 function readEnvBoolean(name: string): boolean | undefined {
@@ -207,6 +216,8 @@ export function resolveDesktopConfig(
     sources: envApplied.sources,
     connectorBaseUrl,
     lifecycleConfig,
+    configValid: validatedPersisted.ok,
+    configValidationErrors: validatedPersisted.errors,
   };
 }
 

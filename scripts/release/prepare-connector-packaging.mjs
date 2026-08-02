@@ -80,6 +80,46 @@ function runProductionAudit() {
 }
 
 /**
+ * Pure comparison for the connector-version drift guard, kept separate from file I/O so it can be
+ * unit-tested without mutating real repository files.
+ */
+export function compareConnectorRuntimeVersion(packageVersion, runtimeVersion) {
+  const normalizedPackageVersion = typeof packageVersion === 'string' ? packageVersion.trim() : '';
+  const normalizedRuntimeVersion = typeof runtimeVersion === 'string' ? runtimeVersion.trim() : '';
+  if (!normalizedPackageVersion || !normalizedRuntimeVersion) {
+    throw new Error(
+      `Unable to resolve connector version for drift check (package.json: "${normalizedPackageVersion || '(empty)'}", `
+      + `defaults.ts CONNECTOR_VERSION: "${normalizedRuntimeVersion || '(empty)'}")`,
+    );
+  }
+  if (normalizedPackageVersion !== normalizedRuntimeVersion) {
+    throw new Error(
+      `Connector runtime version drift: package.json declares "${normalizedPackageVersion}" but `
+      + `src/config/defaults.ts CONNECTOR_VERSION is "${normalizedRuntimeVersion}". The running Connector's `
+      + '/health response would report a version that does not match the package being packaged. '
+      + 'Update CONNECTOR_VERSION in src/config/defaults.ts to match package.json.',
+    );
+  }
+  return { packageVersion: normalizedPackageVersion, runtimeVersion: normalizedRuntimeVersion };
+}
+
+/**
+ * Guard against the Connector's own runtime-reported version (CONNECTOR_VERSION, a hand-maintained
+ * literal in src/config/defaults.ts) drifting from package.json. This literal is what the running
+ * Connector actually reports via /health -> connectorVersion, which Desktop's runtime-integrity
+ * check compares against its bundled-version fingerprint. If the two sources disagree, that
+ * fingerprint check would be comparing against a value that no longer reflects the real build.
+ */
+export function assertConnectorRuntimeVersionMatchesPackage() {
+  const packageJsonPath = path.join(connectorRoot, 'package.json');
+  const defaultsPath = path.join(connectorRoot, 'src/config/defaults.ts');
+  const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+  const defaultsSource = fs.readFileSync(defaultsPath, 'utf8');
+  const match = defaultsSource.match(/export const CONNECTOR_VERSION\s*=\s*'([^']+)'/);
+  return compareConnectorRuntimeVersion(pkg.version, match?.[1] ?? '');
+}
+
+/**
  * Keep Desktop packaging VERSION.txt aligned with connector package.json.
  * Stale VERSION.txt previously caused packaged installs to advertise 0.3.1
  * while shipping newer connector JS (or the reverse).
@@ -133,6 +173,7 @@ export function prepareConnectorPackaging() {
   if (!fs.existsSync(path.join(connectorRoot, 'package-lock.json'))) {
     throw new Error('connector/budcom_connector/package-lock.json is required for deterministic packaging');
   }
+  assertConnectorRuntimeVersionMatchesPackage();
   const versionLabel = syncDesktopConnectorVersionLabel();
   const voucherRoutes = assertPackagedConnectorDistIncludesVouchers();
   fs.rmSync(outputRoot, { recursive: true, force: true });
