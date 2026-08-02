@@ -7,6 +7,7 @@ import com.budcom.android.feature.voucher.domain.model.VoucherDetails
 import com.budcom.android.feature.voucher.domain.model.VoucherInventoryLine
 import com.budcom.android.feature.voucher.domain.model.VoucherLedgerLine
 import com.budcom.android.feature.voucher.domain.model.VoucherMoney
+import com.budcom.android.feature.voucher.domain.model.VoucherCacheState
 
 data class VoucherDetailsUiState(
     val voucherId: String = "",
@@ -20,6 +21,8 @@ data class VoucherDetailsUiState(
     val isShareBusy: Boolean = false,
     val shareMessage: String? = null,
     val shareError: String? = null,
+    val cacheState: VoucherCacheState = VoucherCacheState.NoCache,
+    val lastSyncedAt: Long? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing
     val hasContent: Boolean get() = details != null

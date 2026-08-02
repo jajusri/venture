@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -106,6 +108,11 @@ fun VoucherBrowserScreen(
             ) {
                 if (!state.isOnline) {
                     MasterDataOfflineBanner(testTag = "voucher_offline_banner")
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(state.cacheState.statusText(state.lastSyncedAt), style = MaterialTheme.typography.labelMedium, modifier = Modifier.testTag("voucher_data_status"))
+                    Button(onClick = { onEvent(VoucherBrowserEvent.Refresh) }, enabled = !state.isBusy, modifier = Modifier.testTag("voucher_status_retry")) { Text("Refresh") }
                 }
 
                 Row(
@@ -245,32 +252,37 @@ private fun VoucherRowCard(
                 }
             },
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                text = stringResource(R.string.voucher_row_title, row.typeLabel, row.primaryLabel),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = stringResource(R.string.voucher_date_label, row.dateLabel),
+                text = row.primaryLabel,
                 style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Start,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
-            row.secondaryLabel?.let {
-                Text(
-                    text = it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
             Text(
-                text = stringResource(R.string.voucher_status_label, row.statusLabel),
-                style = MaterialTheme.typography.bodySmall,
+                text = row.partyName?.takeIf { it.isNotBlank() } ?: "—",
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
-            row.amountLabel?.let {
-                Text(
-                    text = stringResource(R.string.voucher_amount_label, it),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
+            Text(
+                text = row.dateLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }

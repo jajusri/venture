@@ -9,6 +9,7 @@ import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerEntity
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemDao
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemEntity
+import com.budcom.android.feature.voucher.data.local.*
 import com.budcom.android.core.connection.data.local.PairedConnectorDao
 import com.budcom.android.core.connection.data.local.PairedConnectorEntity
 
@@ -18,6 +19,11 @@ import com.budcom.android.core.connection.data.local.PairedConnectorEntity
         CompanyDiscoveryMetaEntity::class,
         LedgerEntity::class,
         StockItemEntity::class,
+        VoucherEntity::class,
+        VoucherDetailEntity::class,
+        VoucherLedgerLineEntity::class,
+        VoucherInventoryLineEntity::class,
+        VoucherCacheMetaEntity::class,
         PairedConnectorEntity::class,
     ],
     version = DatabaseConstants.VERSION,
@@ -27,5 +33,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun companyDao(): CompanyDao
     abstract fun ledgerDao(): LedgerDao
     abstract fun stockItemDao(): StockItemDao
+    abstract fun voucherDao(): VoucherDao
     abstract fun pairedConnectorDao(): PairedConnectorDao
 }

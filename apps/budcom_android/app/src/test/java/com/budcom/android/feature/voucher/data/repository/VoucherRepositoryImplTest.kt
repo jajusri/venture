@@ -7,6 +7,7 @@ import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkError
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.voucher.data.remote.VoucherRemoteDataSource
+import com.budcom.android.feature.voucher.data.local.VoucherLocalDataSource
 import com.budcom.android.feature.voucher.domain.model.VoucherDataQuality
 import com.budcom.android.feature.voucher.domain.model.VoucherDateRange
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
@@ -54,7 +55,7 @@ class VoucherRepositoryImplTest {
                 ),
             ),
         )
-        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val repo = repo(remote)
         val result = repo.listVouchers(
             VoucherQuery(
                 companyId = "estimation",
@@ -67,14 +68,14 @@ class VoucherRepositoryImplTest {
     @Test
     fun `maps offline failure`() = runTest(dispatcher) {
         val remote = FakeRemote(listResult = ApiResult.Failure(NetworkError.NoConnectivity))
-        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val repo = repo(remote)
         val result = repo.listVouchers(
             VoucherQuery(
                 companyId = "estimation",
                 dateRange = VoucherDateRange("2026-07-01", "2026-07-27"),
             ),
         ) as AppResult.Failure
-        assertTrue(result.error is AppError.Offline)
+        assertEquals(VoucherRepositoryImpl.NO_CACHE_MESSAGE, (result.error as AppError.Message).message)
     }
 
     @Test
@@ -90,7 +91,7 @@ class VoucherRepositoryImplTest {
             listResult = ApiResult.Failure(NetworkError.Unknown()),
             detailsResult = ApiResult.Success(details),
         )
-        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val repo = repo(remote)
         val result = repo.getVoucherDetails("estimation", "v-1") as AppResult.Success
         assertEquals("v-1", result.value.summary.identity.id)
         assertEquals("Paid", result.value.narration)
@@ -104,7 +105,7 @@ class VoucherRepositoryImplTest {
                 NetworkError.Http(404, "NOT_FOUND", "Voucher was not found."),
             ),
         )
-        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val repo = repo(remote)
         val result = repo.getVoucherDetails("estimation", "missing") as AppResult.Failure
         assertTrue(result.error is AppError.Remote)
         assertEquals(404, (result.error as AppError.Remote).httpStatus)
@@ -117,7 +118,7 @@ class VoucherRepositoryImplTest {
                 NetworkError.Http(400, "VALIDATION_ERROR", "Invalid voucher query."),
             ),
         )
-        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val repo = repo(remote)
         val result = repo.listVouchers(
             VoucherQuery(
                 companyId = "estimation",
@@ -143,7 +144,7 @@ class VoucherRepositoryImplTest {
                 ),
             ),
         )
-        val repo = VoucherRepositoryImpl(remote, errorMapper, dispatchers)
+        val repo = repo(remote)
         val result = repo.listVouchers(
             VoucherQuery(
                 companyId = "estimation",
@@ -154,12 +155,63 @@ class VoucherRepositoryImplTest {
         assertEquals(false, result.value.canLoadMore)
     }
 
+    @Test
+    fun `connector failure returns company scoped cached list`() = runTest(dispatcher) {
+        val cached = VoucherPage("company-a", listOf(sampleSummary()), 1, 50, 1, 1,
+            com.budcom.android.feature.voucher.domain.model.VoucherCacheState.Offline, 123L)
+        val local = FakeLocal(listValue = cached)
+        val result = repo(FakeRemote(ApiResult.Failure(NetworkError.NoConnectivity)), local).listVouchers(
+            VoucherQuery("company-a", VoucherDateRange("2026-07-01", "2026-07-27")),
+        ) as AppResult.Success
+        assertEquals(cached, result.value)
+        assertEquals("company-a", local.lastListCompany)
+    }
+
+    @Test
+    fun `parser failure returns cached details with inventory`() = runTest(dispatcher) {
+        val cached = VoucherDetails(sampleSummary(), "2026-07-27", "cached", emptyList(),
+            listOf(com.budcom.android.feature.voucher.domain.model.VoucherInventoryLine(1, "Item", "2 pcs", "10", null)),
+            com.budcom.android.feature.voucher.domain.model.VoucherCacheState.Offline, 321L)
+        val result = repo(
+            FakeRemote(ApiResult.Failure(NetworkError.Unknown()), ApiResult.Failure(NetworkError.Serialization("bad response"))),
+            FakeLocal(detailsValue = cached),
+        ).getVoucherDetails("company-a", "v-1") as AppResult.Success
+        assertEquals("cached", result.value.narration)
+        assertEquals("Item", result.value.inventoryEntries.single().itemName)
+    }
+
+    @Test
+    fun `successful fetch is persisted and failed refresh cannot replace it`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        repo(FakeRemote(ApiResult.Success(VoucherPage("company-a", listOf(sampleSummary()), 1, 50, 1, 1))), local)
+            .listVouchers(VoucherQuery("company-a", VoucherDateRange("2026-07-01", "2026-07-27")))
+        assertEquals(1, local.storedItems.size)
+        repo(FakeRemote(ApiResult.Failure(NetworkError.Timeout())), local)
+            .listVouchers(VoucherQuery("company-a", VoucherDateRange("2026-07-01", "2026-07-27")))
+        assertEquals("v-1", local.storedItems.single().identity.id)
+    }
+
     private class FakeRemote(
         private val listResult: ApiResult<VoucherPage>,
         private val detailsResult: ApiResult<VoucherDetails> = ApiResult.Failure(NetworkError.Unknown()),
     ) : VoucherRemoteDataSource {
         override suspend fun fetchVouchers(query: VoucherQuery) = listResult
         override suspend fun fetchVoucherDetails(companyId: String, voucherId: String) = detailsResult
+    }
+
+    private fun repo(remote: VoucherRemoteDataSource, local: VoucherLocalDataSource = FakeLocal()) =
+        VoucherRepositoryImpl(remote, errorMapper, dispatchers, local)
+
+    private class FakeLocal(
+        private val listValue: VoucherPage? = null,
+        private val detailsValue: VoucherDetails? = null,
+    ) : VoucherLocalDataSource {
+        var storedItems: List<VoucherSummary> = emptyList()
+        var lastListCompany: String? = null
+        override suspend fun storeList(companyId: String, items: List<VoucherSummary>, syncedAt: Long) { storedItems = items }
+        override suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long) = Unit
+        override suspend fun list(query: VoucherQuery): VoucherPage? { lastListCompany = query.companyId; return listValue?.takeIf { it.companyId == query.companyId } }
+        override suspend fun details(companyId: String, voucherId: String): VoucherDetails? = detailsValue
     }
 
     private fun sampleSummary() = VoucherSummary(

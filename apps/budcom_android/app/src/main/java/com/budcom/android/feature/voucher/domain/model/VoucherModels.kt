@@ -99,9 +99,13 @@ data class VoucherPage(
     val pageSize: Int,
     val totalItems: Int,
     val totalPages: Int,
+    val cacheState: VoucherCacheState = VoucherCacheState.Live,
+    val lastSyncedAt: Long? = null,
 ) {
     val canLoadMore: Boolean get() = page < totalPages
 }
+
+enum class VoucherCacheState { Live, Offline, NoCache }
 
 /**
  * Detail model for voucher details screens (Connector VoucherPublicDetails).
@@ -112,6 +116,8 @@ data class VoucherDetails(
     val narration: String?,
     val ledgerEntries: List<VoucherLedgerLine>,
     val inventoryEntries: List<VoucherInventoryLine>,
+    val cacheState: VoucherCacheState = VoucherCacheState.Live,
+    val lastSyncedAt: Long? = null,
 )
 
 data class VoucherLedgerLine(

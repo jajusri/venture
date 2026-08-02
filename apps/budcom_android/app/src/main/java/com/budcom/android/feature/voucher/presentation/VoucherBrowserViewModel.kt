@@ -157,6 +157,8 @@ class VoucherBrowserViewModel @Inject constructor(
                             totalPages = pageData.totalPages,
                             canLoadMore = pageData.canLoadMore,
                             error = null,
+                            cacheState = pageData.cacheState,
+                            lastSyncedAt = pageData.lastSyncedAt,
                         )
                     }
                 }
@@ -167,6 +169,7 @@ class VoucherBrowserViewModel @Inject constructor(
                             isRefreshing = false,
                             isLoadingMore = false,
                             error = result.error.toVoucherUiError(),
+                            cacheState = if (state.hasContent) state.cacheState else com.budcom.android.feature.voucher.domain.model.VoucherCacheState.NoCache,
                         )
                     }
                 }

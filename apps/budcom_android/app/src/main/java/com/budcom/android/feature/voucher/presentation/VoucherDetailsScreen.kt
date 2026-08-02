@@ -111,6 +111,11 @@ fun VoucherDetailsScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
+                        Text(
+                            state.cacheState.statusText(state.lastSyncedAt),
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.testTag("voucher_details_data_status"),
+                        )
                         if (!state.isOnline) {
                             MasterDataOfflineBanner(testTag = "voucher_details_offline_banner")
                         }
@@ -131,6 +136,12 @@ fun VoucherDetailsScreen(
                             .fillMaxSize()
                             .testTag("voucher_details_content"),
                     ) {
+                        item {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(state.cacheState.statusText(state.lastSyncedAt), style = MaterialTheme.typography.labelMedium, modifier = Modifier.testTag("voucher_details_data_status"))
+                                Button(onClick = { onEvent(VoucherDetailsEvent.Refresh) }, enabled = !state.isBusy, modifier = Modifier.testTag("voucher_details_status_retry")) { Text("Refresh") }
+                            }
+                        }
                         if (!state.isOnline) {
                             item {
                                 MasterDataOfflineBanner(testTag = "voucher_details_offline_banner")

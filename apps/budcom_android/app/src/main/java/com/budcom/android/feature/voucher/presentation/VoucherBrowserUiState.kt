@@ -7,6 +7,7 @@ import com.budcom.android.feature.voucher.domain.model.VoucherDateRange
 import com.budcom.android.feature.voucher.domain.model.VoucherDateRangeDefaults
 import com.budcom.android.feature.voucher.domain.model.VoucherPage
 import com.budcom.android.feature.voucher.domain.model.VoucherSummary
+import com.budcom.android.feature.voucher.domain.model.VoucherCacheState
 
 data class VoucherBrowserUiState(
     val isInitialLoading: Boolean = true,
@@ -24,6 +25,8 @@ data class VoucherBrowserUiState(
     val canLoadMore: Boolean = false,
     val isOnline: Boolean = true,
     val error: MasterDataUiError? = null,
+    val cacheState: VoucherCacheState = VoucherCacheState.NoCache,
+    val lastSyncedAt: Long? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isLoadingMore
     val hasContent: Boolean get() = vouchers.isNotEmpty()
@@ -36,6 +39,16 @@ data class VoucherBrowserUiState(
     }
 }
 
+internal fun VoucherCacheState.statusText(lastSyncedAt: Long?): String = when (this) {
+    VoucherCacheState.Live -> "Live"
+    VoucherCacheState.Offline -> "Offline · Last synced ${lastSyncedAt?.let(::formatSyncTime) ?: "unknown"}"
+    VoucherCacheState.NoCache -> "No offline data"
+}
+
+private fun formatSyncTime(value: Long): String = java.text.DateFormat.getDateTimeInstance(
+    java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT,
+).format(java.util.Date(value))
+
 data class VoucherRowUi(
     val id: String,
     val primaryLabel: String,
@@ -44,6 +57,7 @@ data class VoucherRowUi(
     val typeLabel: String,
     val statusLabel: String,
     val amountLabel: String?,
+    val partyName: String? = null,
 )
 
 sealed interface VoucherBrowserEvent {
@@ -77,6 +91,7 @@ internal fun VoucherSummary.toRowUi(): VoucherRowUi {
         typeLabel = type,
         statusLabel = status.name.lowercase().replaceFirstChar { it.titlecase() },
         amountLabel = amount,
+        partyName = partyName,
     )
 }
 

@@ -127,6 +127,8 @@ class VoucherDetailsViewModel @Inject constructor(
                             details = result.value.toContentUi(),
                             error = null,
                             canShareInvoice = result.value.isShareableInvoice(),
+                            cacheState = result.value.cacheState,
+                            lastSyncedAt = result.value.lastSyncedAt,
                         )
                     }
                 }

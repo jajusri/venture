@@ -5,6 +5,7 @@ import androidx.room.Room
 import com.budcom.android.feature.company.data.local.CompanyDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemDao
+import com.budcom.android.feature.voucher.data.local.VoucherDao
 import com.budcom.android.core.connection.data.local.PairedConnectorDao
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -30,7 +31,7 @@ object DatabaseModule {
         context,
         AppDatabase::class.java,
         DatabaseConstants.NAME,
-    ).addMigrations(MIGRATION_1_2)
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
         .build()
 
     @Provides
@@ -45,6 +46,9 @@ object DatabaseModule {
     @Provides
     fun providePairedConnectorDao(db: AppDatabase): PairedConnectorDao = db.pairedConnectorDao()
 
+    @Provides
+    fun provideVoucherDao(db: AppDatabase): VoucherDao = db.voucherDao()
+
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -53,6 +57,41 @@ object DatabaseModule {
                     "`lastKnownHost` TEXT NOT NULL, `lastKnownPort` INTEGER NOT NULL, " +
                     "`lastConnectedAtEpochMillis` INTEGER NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, " +
                     "PRIMARY KEY(`connectorId`))",
+            )
+        }
+    }
+
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `cached_vouchers` (" +
+                    "`companyId` TEXT NOT NULL, `voucherId` TEXT NOT NULL, `date` TEXT NOT NULL, " +
+                    "`type` TEXT NOT NULL, `number` TEXT, `partyName` TEXT, `referenceNumber` TEXT, " +
+                    "`amountValue` TEXT, `amountSide` TEXT, `status` TEXT NOT NULL, `dataQuality` TEXT NOT NULL, " +
+                    "`lastSyncedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `voucherId`))",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `cached_voucher_details` (" +
+                    "`companyId` TEXT NOT NULL, `voucherId` TEXT NOT NULL, `effectiveDate` TEXT, " +
+                    "`narration` TEXT, `lastSyncedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `voucherId`))",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `cached_voucher_ledger_lines` (" +
+                    "`companyId` TEXT NOT NULL, `voucherId` TEXT NOT NULL, `lineNumber` INTEGER NOT NULL, " +
+                    "`ledgerName` TEXT NOT NULL, `amountValue` TEXT NOT NULL, `amountSide` TEXT, " +
+                    "`isDeemedPositive` INTEGER, PRIMARY KEY(`companyId`, `voucherId`, `lineNumber`))",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `cached_voucher_inventory_lines` (" +
+                    "`companyId` TEXT NOT NULL, `voucherId` TEXT NOT NULL, `lineNumber` INTEGER NOT NULL, " +
+                    "`itemName` TEXT NOT NULL, `quantity` TEXT, `rate` TEXT, `amountValue` TEXT, " +
+                    "`amountSide` TEXT, PRIMARY KEY(`companyId`, `voucherId`, `lineNumber`))",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `voucher_cache_meta` (" +
+                    "`companyId` TEXT NOT NULL, `lastSyncedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`companyId`))",
             )
         }
     }
