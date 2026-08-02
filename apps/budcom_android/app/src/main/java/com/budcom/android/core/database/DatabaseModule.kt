@@ -5,6 +5,9 @@ import androidx.room.Room
 import com.budcom.android.feature.company.data.local.CompanyDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemDao
+import com.budcom.android.core.connection.data.local.PairedConnectorDao
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -27,7 +30,7 @@ object DatabaseModule {
         context,
         AppDatabase::class.java,
         DatabaseConstants.NAME,
-    ).fallbackToDestructiveMigration()
+    ).addMigrations(MIGRATION_1_2)
         .build()
 
     @Provides
@@ -38,4 +41,19 @@ object DatabaseModule {
 
     @Provides
     fun provideStockItemDao(db: AppDatabase): StockItemDao = db.stockItemDao()
+
+    @Provides
+    fun providePairedConnectorDao(db: AppDatabase): PairedConnectorDao = db.pairedConnectorDao()
+
+    val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `paired_connectors` (" +
+                    "`connectorId` TEXT NOT NULL, `friendlyName` TEXT NOT NULL, " +
+                    "`lastKnownHost` TEXT NOT NULL, `lastKnownPort` INTEGER NOT NULL, " +
+                    "`lastConnectedAtEpochMillis` INTEGER NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`connectorId`))",
+            )
+        }
+    }
 }

@@ -9,6 +9,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import retrofit2.HttpException
 import java.io.IOException
+import java.net.ConnectException
+import java.net.NoRouteToHostException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.concurrent.CancellationException
@@ -55,7 +57,21 @@ class DefaultErrorMapper @Inject constructor(
         if (throwable is UnknownHostException ||
             throwable.cause is UnknownHostException
         ) {
-            return NetworkError.NoConnectivity
+            return NetworkError.Unknown(
+                message = "Connector address could not be resolved. Check the desktop IP address and port.",
+                cause = throwable,
+            )
+        }
+
+        if (throwable is ConnectException ||
+            throwable.cause is ConnectException ||
+            throwable is NoRouteToHostException ||
+            throwable.cause is NoRouteToHostException
+        ) {
+            return NetworkError.Unknown(
+                message = "Connector is not reachable. Check that it is running, LAN-enabled, and allowed through Windows Firewall.",
+                cause = throwable,
+            )
         }
 
         if (throwable is kotlinx.serialization.SerializationException ||

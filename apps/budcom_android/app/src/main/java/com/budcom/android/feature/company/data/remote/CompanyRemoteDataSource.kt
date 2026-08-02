@@ -14,6 +14,7 @@ import com.budcom.android.feature.company.domain.model.SessionValidationOutcome
 import kotlinx.serialization.json.Json
 import retrofit2.HttpException
 import retrofit2.Response
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,7 +38,23 @@ class DefaultCompanyRemoteDataSource @Inject constructor(
     override suspend fun fetchCompanies(): ApiResult<CompanyDiscoverySnapshot> =
         withRetry(retryPolicy) {
             safeApiCall(errorMapper, connectivityObserver) {
-                api.getCompanies().toDomain()
+                runCatching { api.getCompanies().toDomain() }
+                    .onSuccess {
+                        Timber.tag("CompanyDiscovery").d(
+                            "response parsed status=%s companyCount=%d tallyReachable=%s",
+                            it.status,
+                            it.items.size,
+                            it.tallyReachable,
+                        )
+                    }
+                    .onFailure {
+                        Timber.tag("CompanyDiscovery").e(
+                            it,
+                            "response parsing failed exceptionType=%s",
+                            it.javaClass.simpleName,
+                        )
+                    }
+                    .getOrThrow()
             }
         }
 

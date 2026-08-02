@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.budcom.android.BuildConfig
+import com.budcom.android.core.connection.ConnectorConnectionOrchestrator
+import com.budcom.android.core.connection.ConnectorReconnectCoordinator
 import com.budcom.android.core.startup.ConnectorBaseUrlHydrator
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -16,8 +18,8 @@ import javax.inject.Inject
 /**
  * Application entry point for BUDCO Android.
  *
- * Owns process-wide setup: Hilt, Timber, WorkManager, and Connector base URL hydration
- * through the core [ConnectorBaseUrlHydrator] port (never feature data types).
+ * Owns process-wide setup: Hilt, Timber, WorkManager, Connector base URL hydration through
+ * the core [ConnectorBaseUrlHydrator] port, and identity-based Connector reconnection.
  */
 @HiltAndroidApp
 class BudcomApplication : Application(), Configuration.Provider {
@@ -28,12 +30,19 @@ class BudcomApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var baseUrlHydrator: ConnectorBaseUrlHydrator
 
+    @Inject
+    lateinit var connectionOrchestrator: ConnectorConnectionOrchestrator
+
+    @Inject
+    lateinit var reconnectCoordinator: ConnectorReconnectCoordinator
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
         plantTimber()
-        hydrateBaseUrlAsync()
+        hydrateThenResolveConnectionAsync()
+        reconnectCoordinator.start(applicationScope)
     }
 
     override val workManagerConfiguration: Configuration
@@ -47,9 +56,17 @@ class BudcomApplication : Application(), Configuration.Provider {
         }
     }
 
-    private fun hydrateBaseUrlAsync() {
+    /**
+     * Loads the persisted raw URL first (today's exact behavior, so any existing install
+     * keeps working even if resolution below finds nothing), then attempts identity-based
+     * resolution in the background. Bounded (single probe + single discovery pass) and never
+     * run on the main thread, so app startup is never blocked by it.
+     */
+    private fun hydrateThenResolveConnectionAsync() {
         applicationScope.launch(Dispatchers.IO) {
             baseUrlHydrator.hydrate()
+            runCatching { connectionOrchestrator.ensureConnected() }
+                .onFailure { Timber.tag("ConnectorOrchestrator").e(it, "ensureConnected threw") }
         }
     }
 }

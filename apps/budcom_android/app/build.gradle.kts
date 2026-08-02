@@ -67,6 +67,17 @@ android {
         animationsDisabled = true
         unitTests.isIncludeAndroidResources = true
     }
+
+    sourceSets {
+        // Room-exported schema JSON, required by androidx.room:room-testing's
+        // MigrationTestHelper to construct a real historical-version database for migration
+        // tests (see AppDatabaseMigrationTest).
+        getByName("androidTest").assets.srcDirs("$projectDir/schemas")
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -119,6 +130,7 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.room.runtime)
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.kotlinx.coroutines.android)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

@@ -13,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.HttpException
 import retrofit2.Response
+import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import kotlin.random.Random
@@ -40,7 +41,10 @@ class ErrorMapperTest {
     fun `maps timeout and unknown host`() {
         val mapper = DefaultErrorMapper(json, onlineObserver)
         assertTrue(mapper.toNetworkError(SocketTimeoutException("t")) is NetworkError.Timeout)
-        assertTrue(mapper.toNetworkError(UnknownHostException("h")) is NetworkError.NoConnectivity)
+        val unknownHost = mapper.toNetworkError(UnknownHostException("h")) as NetworkError.Unknown
+        assertTrue(unknownHost.message.contains("address"))
+        val refused = mapper.toNetworkError(ConnectException("refused")) as NetworkError.Unknown
+        assertTrue(refused.message.contains("not reachable"))
     }
 
     @Test

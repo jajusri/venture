@@ -72,6 +72,7 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(
         dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor,
+        diagnosticsInterceptor: NetworkDiagnosticsInterceptor,
         loggingInterceptor: HttpLoggingInterceptor,
     ): OkHttpClient {
         return OkHttpClient.Builder()
@@ -80,6 +81,7 @@ object NetworkModule {
             .writeTimeout(NetworkConstants.WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .callTimeout(NetworkConstants.CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .addInterceptor(dynamicBaseUrlInterceptor)
+            .addInterceptor(diagnosticsInterceptor)
             .addInterceptor(loggingInterceptor)
             .build()
     }
@@ -89,6 +91,7 @@ object NetworkModule {
     @SyncHttp
     fun provideSyncOkHttpClient(
         dynamicBaseUrlInterceptor: DynamicBaseUrlInterceptor,
+        diagnosticsInterceptor: NetworkDiagnosticsInterceptor,
         loggingInterceptor: HttpLoggingInterceptor,
     ): OkHttpClient {
         return OkHttpClient.Builder()
@@ -97,6 +100,7 @@ object NetworkModule {
             .writeTimeout(NetworkConstants.SYNC_WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .callTimeout(NetworkConstants.SYNC_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .addInterceptor(dynamicBaseUrlInterceptor)
+            .addInterceptor(diagnosticsInterceptor)
             .addInterceptor(loggingInterceptor)
             .build()
     }

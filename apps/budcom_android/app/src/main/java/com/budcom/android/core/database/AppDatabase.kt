@@ -9,6 +9,8 @@ import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerEntity
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemDao
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemEntity
+import com.budcom.android.core.connection.data.local.PairedConnectorDao
+import com.budcom.android.core.connection.data.local.PairedConnectorEntity
 
 @Database(
     entities = [
@@ -16,12 +18,14 @@ import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemEntit
         CompanyDiscoveryMetaEntity::class,
         LedgerEntity::class,
         StockItemEntity::class,
+        PairedConnectorEntity::class,
     ],
     version = DatabaseConstants.VERSION,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun companyDao(): CompanyDao
     abstract fun ledgerDao(): LedgerDao
     abstract fun stockItemDao(): StockItemDao
+    abstract fun pairedConnectorDao(): PairedConnectorDao
 }
