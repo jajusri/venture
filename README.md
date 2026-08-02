@@ -11,6 +11,8 @@ Authoritative references for AI-assisted and human development of the BUDCO Andr
 | Document | Purpose |
 |----------|---------|
 | [docs/PRODUCT_SOUL.md](docs/PRODUCT_SOUL.md) | Product manifesto and innovation pillars |
+| [docs/NON_NEGOTIABLES.md](docs/NON_NEGOTIABLES.md) | Permanent, technology-independent principles |
+| [docs/VISION_2030.md](docs/VISION_2030.md) | Long-term product vision through 2030 |
 | [docs/PROJECT_CONSTITUTION.md](docs/PROJECT_CONSTITUTION.md) | Normative engineering rules |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Android companion milestones |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Frozen technical decisions |
@@ -44,6 +46,11 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for the Android companion track. Broader 
 - [Melos](https://melos.invertase.dev/) (`dart pub global activate melos`) for the Dart workspace
 
 ## Quick start
+
+The MVP Android artifact is the native Compose application in
+`apps/budcom_android`. Open that directory as the Android Studio project when
+deploying to a device. The Flutter application in `apps/budcom_mobile` is an
+early parallel track and is not the MVP artifact.
 
 ```bash
 # Dart / Flutter workspace

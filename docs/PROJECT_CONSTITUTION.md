@@ -12,6 +12,11 @@ Supporting ADRs explain individual decisions; they do not replace this document.
 
 BUDCO is an intelligent Android business companion for the BudCom Connector. The ERP remains the system of record. The Connector implementation is the source of truth for routes, DTOs, behavior, and contracts. Never invent Connector endpoints or DTOs.
 
+Product soul and audience: [PRODUCT_SOUL.md](PRODUCT_SOUL.md) (including Who We Serve and Design Philosophy).  
+Permanent principles: [NON_NEGOTIABLES.md](NON_NEGOTIABLES.md).  
+Long-term product direction: [VISION_2030.md](VISION_2030.md).  
+This constitution governs **current** Android companion engineering. Vision documents may describe a broader multi-device future; they do not expand this constitution’s mandatory stack or scope until an explicit decision and roadmap milestone say so.
+
 ---
 
 ## Platform and stack (mandatory)
@@ -76,7 +81,7 @@ A feature is done when: confirmed Connector contracts used; correct vertical-sli
 
 ## AI implementation rules
 
-1. Read PRODUCT_SOUL, PROJECT_CONSTITUTION, DECISIONS, ROADMAP, relevant ADRs.
+1. Read NON_NEGOTIABLES, PRODUCT_SOUL, VISION_2030 (for direction), PROJECT_CONSTITUTION, DECISIONS, ROADMAP, relevant ADRs.
 2. Inspect Connector implementation; confirm routes and DTOs.
 3. Design one vertical slice; reuse ports; do not invent APIs.
 4. Implement; test; update ROADMAP/CHANGELOG when appropriate.

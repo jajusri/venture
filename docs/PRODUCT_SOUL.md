@@ -11,6 +11,8 @@ BUDCO is **not** merely an ERP mobile client.
 It is an intelligent Android business companion that removes friction between people, phone capabilities, business workflows, the BudCom Connector, and the ERP system of record.
 
 Engineering rules: [PROJECT_CONSTITUTION.md](PROJECT_CONSTITUTION.md)  
+Permanent principles: [NON_NEGOTIABLES.md](NON_NEGOTIABLES.md)  
+Long-term vision: [VISION_2030.md](VISION_2030.md)  
 Milestones: [ROADMAP.md](ROADMAP.md)  
 Decisions: [DECISIONS.md](DECISIONS.md)
 
@@ -32,9 +34,62 @@ Build the most intelligent and reliable Android companion for ERP users — not 
 
 ---
 
+## Who We Serve
+
+BUDCO is designed for **every business**, regardless of size.
+
+No organization is excluded because of how large or small it is, or which industry it belongs to. The same product soul must remain true for a single person running a home business and for a global enterprise.
+
+The platform must scale across the full spectrum of organizations:
+
+- Solo entrepreneur
+- Home business
+- Micro enterprise
+- Mini enterprise
+- Small business
+- Medium enterprise
+- Large enterprise
+- Global organizations
+
+It must serve people who create and deliver value in many forms. Examples include — and are **not limited to**:
+
+- Manufacturer
+- Trader
+- Reseller
+- Retailer
+- Kirana
+- Bakery
+- Tailor
+- Insurance advisor
+- Consultant
+- Service business
+- Educational institution
+- NGO
+- Research organization
+- Technology company
+- Aerospace company
+- Any organization that creates and delivers value
+
+These examples illustrate breadth. They are not a closed list, a target-market filter, or a reason to exclude anyone.
+
+---
+
 ## Long-term vision
 
 BUDCO becomes the application business users open first. The ERP remains the system of record in the background. The ERP stores information; BUDCO helps people use it.
+
+The decade-scale picture — local empowerment, intelligent companionship, open platform, multi-device reach, and global scalability — lives in [VISION_2030.md](VISION_2030.md).
+
+---
+
+## Design Philosophy
+
+- **Technology should scale down as well as scale up.** Enterprise power that only works for the largest teams has failed half of the mission.
+- **Small businesses deserve enterprise-grade capabilities.** Reliability, clarity, and intelligence are not luxuries reserved for corporations.
+- **Simplicity should never mean limited capability.** A calm surface can still rest on deep, trustworthy systems.
+- **The platform should grow with the business instead of forcing migration.** Today’s solo operator should not outgrow BUDCO and be forced to start over.
+- **We strengthen businesses rather than create dependency.** BUDCO should make the user’s own systems, relationships, and judgment stronger — not trap them inside a black box they cannot leave.
+- **We aim to reduce friction, not replace relationships.** Tools assist people. They do not replace trust, conversation, or accountability between humans.
 
 ---
 
