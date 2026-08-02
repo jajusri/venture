@@ -50,6 +50,17 @@ describe('packaged connector dependency inspection', () => {
     expect(fs.existsSync(path.join(output.outputModules, 'express'))).toBe(true);
     expect(output.audit.vulnerabilityCount).toBe(0);
     expect(output.productionDependencyCount).toBeGreaterThan(0);
+    expect(output.connectorVersion).toMatch(/^\d+\.\d+\.\d+/);
+    expect(fs.existsSync(output.voucherRoutes.vouchersRoute)).toBe(true);
+    const versionLabel = fs.readFileSync(
+      path.join(repoRoot, 'apps/budcom_desktop/build/VERSION.txt'),
+      'utf8',
+    ).trim();
+    expect(versionLabel).toBe(output.connectorVersion);
+    const connectorPkg = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, 'connector/budcom_connector/package.json'), 'utf8'),
+    ) as { version: string };
+    expect(versionLabel).toBe(connectorPkg.version);
   }, 120000);
 });
 
