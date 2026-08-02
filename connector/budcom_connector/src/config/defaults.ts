@@ -46,6 +46,14 @@ export interface ConnectorConfig {
   readonly syncRunHistoryMaxAgeDays: number;
   /** Bounded per-launch identifier exposed in /health diagnostics when set by desktop supervisor. */
   readonly startupCorrelationId: string | null;
+  /**
+   * Gate for the trusted-device bearer-token enforcement milestone. Defaults to false so every
+   * existing installation's request handling is byte-for-byte unchanged. Only takes effect when
+   * also bound off-loopback (networkExposure === 'lan'). See docs/architecture — this flag stays
+   * off until the Android pairing UI (QR/code + Keystore) ships; flipping it on before that would
+   * make LAN installs unusable, not more secure.
+   */
+  readonly requireDeviceAuthForLan: boolean;
 }
 
 export const TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
@@ -99,4 +107,5 @@ export const defaultConfig: ConnectorConfig = {
   syncRunHistoryMaxCount: SYNC_RUN_HISTORY_MAX_COUNT_DEFAULT,
   syncRunHistoryMaxAgeDays: SYNC_RUN_HISTORY_MAX_AGE_DAYS_DEFAULT,
   startupCorrelationId: null,
+  requireDeviceAuthForLan: false,
 };

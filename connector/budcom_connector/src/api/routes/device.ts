@@ -22,7 +22,24 @@ function requireRepository(repo: TrustedDeviceRepository | undefined): TrustedDe
   return repo;
 }
 
-export function createDeviceRouter(trustedDeviceRepository?: TrustedDeviceRepository): Router {
+/**
+ * Pairing-bootstrap routes only — reachable with no credentials, by necessity: a device has
+ * no token until it pairs, and a returning device must be able to check whether its stored
+ * token still works. Mounted in `server.ts` *before* `requireTrustedDeviceAuth`.
+ *
+ * Neither route discloses anything the caller didn't already possess:
+ *  - POST /device/pair only echoes back the companyId/companyName the caller itself supplied
+ *    in the request body — it never looks up or reveals a company the caller didn't already
+ *    name.
+ *  - POST /device/validate-token discloses companyId/companyName only when the caller already
+ *    holds the exact raw secret token (proof of a prior successful pairing); an invalid/unknown
+ *    token gets `{ valid: false }` and nothing else. It is self-gating by secret possession,
+ *    the same trust boundary a header-based bearer token provides, just carried in the body.
+ *
+ * Device-management routes that read back or mutate *other* devices' state (list, revoke,
+ * look up by installationId) are deliberately NOT here — see `createDeviceManagementRouter`.
+ */
+export function createDevicePairingRouter(trustedDeviceRepository?: TrustedDeviceRepository): Router {
   const router = Router();
 
   /**
@@ -94,6 +111,61 @@ export function createDeviceRouter(trustedDeviceRepository?: TrustedDeviceReposi
   );
 
   /**
+   * POST /device/validate-token
+   *
+   * Validates a bearer token and returns the bound company if valid.
+   * This is the mechanism Android uses on subsequent launches to attempt
+   * auto-connect. The Connector must still validate the session separately
+   * before returning any company data.
+   *
+   * Self-gating: only a caller already holding the exact raw token receives
+   * companyId/companyName. An invalid/unknown/revoked token returns
+   * `{ valid: false }` and nothing else — this route never lets an
+   * unauthenticated caller enumerate paired companies.
+   */
+  router.post(
+    '/device/validate-token',
+    asyncHandler(async (req, res) => {
+      const { token } = req.body ?? {};
+      if (!isNonEmptyString(token)) {
+        throw new AppError(ErrorCodes.VALIDATION_ERROR, 'token is required.', 400);
+      }
+
+      const record = requireRepository(trustedDeviceRepository).validateToken(token);
+      if (!record) {
+        res.status(401).json({
+          valid: false,
+          reason: 'Token is invalid or has been revoked.',
+        });
+        return;
+      }
+
+      res.json({
+        valid: true,
+        deviceRecordId: record.deviceRecordId,
+        companyId: record.companyId,
+        companyName: record.companyName,
+        autoConnectEnabled: record.autoConnectEnabled,
+      });
+    }),
+  );
+
+  return router;
+}
+
+/**
+ * Device-management routes: list, look up by installation, and revoke *other* devices'
+ * trust. These read back or mutate state the caller does not necessarily already hold
+ * proof of, so they must never be reachable without a valid trusted-device token when LAN
+ * enforcement is enabled. Mounted in `server.ts` *after* `requireTrustedDeviceAuth`, so on
+ * loopback (Desktop's own management UI) they behave exactly as before — the same
+ * middleware no-ops off-LAN — and on LAN they only open once both `networkExposure ===
+ * 'lan'` and `requireDeviceAuthForLan === true`.
+ */
+export function createDeviceManagementRouter(trustedDeviceRepository?: TrustedDeviceRepository): Router {
+  const router = Router();
+
+  /**
    * GET /device/trusted-companies?installationId=…
    *
    * Returns trusted company bindings for this installation so Android can
@@ -124,41 +196,6 @@ export function createDeviceRouter(trustedDeviceRepository?: TrustedDeviceReposi
           lastUsedAt: r.lastUsedAt,
           createdAt: r.createdAt,
         })),
-      });
-    }),
-  );
-
-  /**
-   * POST /device/validate-token
-   *
-   * Validates a bearer token and returns the bound company if valid.
-   * This is the mechanism Android uses on subsequent launches to attempt
-   * auto-connect. The Connector must still validate the session separately
-   * before returning any company data.
-   */
-  router.post(
-    '/device/validate-token',
-    asyncHandler(async (req, res) => {
-      const { token } = req.body ?? {};
-      if (!isNonEmptyString(token)) {
-        throw new AppError(ErrorCodes.VALIDATION_ERROR, 'token is required.', 400);
-      }
-
-      const record = requireRepository(trustedDeviceRepository).validateToken(token);
-      if (!record) {
-        res.status(401).json({
-          valid: false,
-          reason: 'Token is invalid or has been revoked.',
-        });
-        return;
-      }
-
-      res.json({
-        valid: true,
-        deviceRecordId: record.deviceRecordId,
-        companyId: record.companyId,
-        companyName: record.companyName,
-        autoConnectEnabled: record.autoConnectEnabled,
       });
     }),
   );

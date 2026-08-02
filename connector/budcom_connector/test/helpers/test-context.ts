@@ -13,6 +13,7 @@ import type { TallyDiagnosticsService } from '../../src/services/interfaces/tall
 import type { Logger } from '../../src/infrastructure/logging/logger.js';
 import type { ApplicationContext } from '../../src/bootstrap/register-services.js';
 import type { VoucherApplicationService } from '../../src/services/voucher/voucher-application.interface.js';
+import type { TrustedDeviceRepository } from '../../src/services/device/trusted-device-repository.js';
 
 export interface StartTestServicesOptions {
   readonly selectCompanyId?: string;
@@ -46,8 +47,17 @@ export function createTestApp(context: ApplicationContext = createTestContext())
   const voucherApplication = context.container.resolve<VoucherApplicationService>(
     ServiceTokens.VoucherApplication,
   );
+  // Only wired when LocalDatabase has already started (some tests intentionally build the app
+  // before starting services, to exercise 501/503 "service not available" paths).
+  let trustedDevices: TrustedDeviceRepository | undefined;
+  try {
+    trustedDevices = context.container.resolve<TrustedDeviceRepository>(ServiceTokens.TrustedDevices);
+  } catch {
+    trustedDevices = undefined;
+  }
   return createExpressApp({
     logger,
+    config: context.config,
     healthService,
     companyDiscovery,
     connectorSession,
@@ -56,6 +66,7 @@ export function createTestApp(context: ApplicationContext = createTestContext())
     stockItemSync,
     tallyDiagnostics,
     voucherApplication,
+    trustedDevices,
   });
 }
 

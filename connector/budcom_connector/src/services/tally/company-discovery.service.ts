@@ -32,6 +32,8 @@ export class CompanyDiscoveryServiceImpl implements CompanyDiscoveryService {
   }
 
   async discoverCompanies(): Promise<CompanyListResult> {
+    const startedAt = Date.now();
+    this.logger.info('company.discovery.started');
     if (!this.running) {
       throw new AppError(
         ErrorCodes.SERVICE_UNAVAILABLE,
@@ -40,7 +42,22 @@ export class CompanyDiscoveryServiceImpl implements CompanyDiscoveryService {
       );
     }
 
-    const discovery = await this.readPort.discoverCompanies();
+    let discovery: Awaited<ReturnType<ErpReadPort['discoverCompanies']>>;
+    try {
+      this.logger.info('company.discovery.tally.started');
+      discovery = await this.readPort.discoverCompanies();
+      this.logger.info('company.discovery.tally.finished', {
+        durationMs: Date.now() - startedAt,
+        status: discovery.status,
+        companyCount: discovery.items.length,
+      });
+    } catch (error) {
+      this.logger.error('company.discovery.failed', {
+        durationMs: Date.now() - startedAt,
+        errorType: error instanceof Error ? error.constructor.name : 'UnknownError',
+      });
+      throw error;
+    }
 
     if (discovery.status === 'DENIED') {
       throw new AppError(
@@ -77,6 +94,7 @@ export class CompanyDiscoveryServiceImpl implements CompanyDiscoveryService {
       status: discovery.status,
       companyCount: discovery.items.length,
       tallyReachable: discovery.tallyReachable,
+      durationMs: Date.now() - startedAt,
     });
 
     return {

@@ -11,6 +11,8 @@ import type { LocalDatabaseService } from '../interfaces/local-database.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
 import type { LicensingService } from '../interfaces/licensing.js';
 import type { SchedulerService } from '../interfaces/scheduler.js';
+import type { ConnectorIdentityRepository } from '../identity/connector-identity-repository.js';
+import type { MdnsAdvertiser } from '../discovery/mdns-advertiser.js';
 
 export interface HealthServiceDeps {
   readonly config: ConnectorConfig;
@@ -24,6 +26,8 @@ export interface HealthServiceDeps {
   readonly apiServer: ApiServerService;
   readonly licensing: LicensingService;
   readonly scheduler: SchedulerService;
+  readonly connectorIdentity: ConnectorIdentityRepository;
+  readonly mdnsAdvertiser?: MdnsAdvertiser;
   readonly voucherSynchronizationComposed: () => boolean;
   readonly voucherApplicationComposed: () => boolean;
 }
@@ -64,6 +68,8 @@ export class HealthService {
       status = 'unavailable';
     }
 
+    const identity = this.deps.connectorIdentity.getOrCreateIdentity();
+
     return {
       status,
       schemaVersion: this.deps.config.schemaVersion,
@@ -75,7 +81,11 @@ export class HealthService {
       networkExposure: this.deps.config.networkExposure,
       networkExposureWarning: this.deps.config.networkExposureWarning,
       networkPolicySatisfied,
-      authenticatedLanAccessEnabled: false,
+      authenticatedLanAccessEnabled:
+        this.deps.config.networkExposure === 'lan' && this.deps.config.requireDeviceAuthForLan,
+      connectorId: identity.connectorId,
+      connectorName: identity.connectorName,
+      discoveryAdvertising: this.deps.mdnsAdvertiser?.isRunning() ?? false,
       services,
       startupCorrelationId: this.deps.config.startupCorrelationId,
       repositoryAvailable,

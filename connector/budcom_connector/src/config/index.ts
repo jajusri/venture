@@ -208,6 +208,10 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
       'sync run history max age days',
     ),
     startupCorrelationId: process.env.BUDCOM_STARTUP_CORRELATION_ID?.trim() || null,
+    requireDeviceAuthForLan: parseBoolean(
+      process.env.BUDCOM_REQUIRE_DEVICE_AUTH_FOR_LAN,
+      defaultConfig.requireDeviceAuthForLan,
+    ),
     ...overrides,
   };
 

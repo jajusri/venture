@@ -34,6 +34,36 @@ describe('HealthService', () => {
 
     expect(report.startupCorrelationId).toBe('probe-correlation-123');
   });
+
+  it('exposes a stable connectorId and connectorName across repeated health reports', async () => {
+    const { fetchImpl } = createTallyMockFetch({ pingOk: false });
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
+    await startTestServices(context);
+    const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
+
+    const first = await healthService.getReport();
+    const second = await healthService.getReport();
+
+    expect(first.connectorId).toBeTruthy();
+    expect(first.connectorId).toBe(second.connectorId);
+    expect(second.connectorName).toBeTruthy();
+  });
+
+  it('reports authenticatedLanAccessEnabled false on loopback even if the flag is set', async () => {
+    const { fetchImpl } = createTallyMockFetch({ pingOk: false });
+    const context = createTestContext({
+      fetchImpl,
+      tallyRetryMaxAttempts: 1,
+      requireDeviceAuthForLan: true,
+    });
+    await startTestServices(context);
+    const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
+
+    const report = await healthService.getReport();
+
+    expect(report.networkExposure).toBe('loopback');
+    expect(report.authenticatedLanAccessEnabled).toBe(false);
+  });
 });
 
 describe('registerServices', () => {
@@ -51,6 +81,8 @@ describe('registerServices', () => {
       ServiceTokens.Licensing,
       ServiceTokens.Scheduler,
       ServiceTokens.HealthService,
+      ServiceTokens.ConnectorIdentity,
+      ServiceTokens.MdnsAdvertiser,
     ];
 
     for (const token of tokens) {

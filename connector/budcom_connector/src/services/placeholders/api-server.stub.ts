@@ -11,6 +11,7 @@ import type { MasterDataService } from '../extraction/master-data.service.js';
 import type { LedgerSyncService } from '../ledger/ledger-sync.service.js';
 import type { StockItemSyncService } from '../stock-item/stock-item-sync.service.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
+import type { TrustedDeviceRepository } from '../device/trusted-device-repository.js';
 import type {
   VoucherApplicationService,
   VoucherSnapshotSyncService,
@@ -26,6 +27,7 @@ export interface ApiServerDeps {
   readonly tallyDiagnostics: TallyDiagnosticsService;
   readonly voucherApplication: VoucherApplicationService;
   readonly voucherSynchronization?: VoucherSnapshotSyncService;
+  readonly trustedDevices?: TrustedDeviceRepository;
 }
 
 export class ApiServerStub implements ApiServerService {
@@ -44,6 +46,7 @@ export class ApiServerStub implements ApiServerService {
     const deps = this.getDeps();
     const app = createExpressApp({
       logger: this.logger,
+      config: this.config,
       healthService: deps.healthService,
       companyDiscovery: deps.companyDiscovery,
       connectorSession: deps.connectorSession,
@@ -53,6 +56,7 @@ export class ApiServerStub implements ApiServerService {
       tallyDiagnostics: deps.tallyDiagnostics,
       voucherApplication: deps.voucherApplication,
       voucherSynchronization: deps.voucherSynchronization,
+      trustedDevices: deps.trustedDevices,
     });
 
     await new Promise<void>((resolve, reject) => {

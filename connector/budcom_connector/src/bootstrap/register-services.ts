@@ -17,6 +17,10 @@ import type { TallyDiagnosticsService } from '../services/interfaces/tally-diagn
 import type { XmlImportService } from '../services/interfaces/xml-import.js';
 import { ApiServerStub } from '../services/placeholders/api-server.stub.js';
 import { LicensingStub } from '../services/placeholders/licensing.stub.js';
+import { TrustedDeviceRepository } from '../services/device/trusted-device-repository.js';
+import { ConnectorIdentityRepository } from '../services/identity/connector-identity-repository.js';
+import { MdnsAdvertiser } from '../services/discovery/mdns-advertiser.js';
+import { createBonjourMdnsPublisherFactory } from '../services/discovery/bonjour-mdns-publisher.js';
 import { SqliteStorageService } from '../storage/sqlite/storage-service.js';
 import { SchedulerStub } from '../services/placeholders/scheduler.stub.js';
 import { LedgerSyncServiceImpl } from '../services/ledger/ledger-sync.service.js';
@@ -171,6 +175,32 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
     ServiceTokens.LocalDatabase,
     () => new SqliteStorageService(config, logger.child({ service: 'LocalDatabase' })),
   );
+  container.registerFactory(
+    ServiceTokens.ConnectorIdentity,
+    () =>
+      new ConnectorIdentityRepository(
+        () => container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase).getBundle().database,
+      ),
+  );
+  container.registerFactory(
+    ServiceTokens.TrustedDevices,
+    () =>
+      new TrustedDeviceRepository(
+        container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase).getBundle().database,
+      ),
+  );
+  container.registerFactory(
+    ServiceTokens.MdnsAdvertiser,
+    () =>
+      new MdnsAdvertiser({
+        identity: container.resolve<ConnectorIdentityRepository>(ServiceTokens.ConnectorIdentity),
+        getPort: () => config.port,
+        getApiVersion: () => config.schemaVersion,
+        getAuthRequired: () => config.networkExposure === 'lan' && config.requireDeviceAuthForLan,
+        logger: logger.child({ service: 'MdnsAdvertiser' }),
+        createPublisher: createBonjourMdnsPublisherFactory(),
+      }),
+  );
   container.registerFactory(ServiceTokens.LedgerSync, () => {
     const storage = container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase);
     const service = new LedgerSyncServiceImpl(
@@ -216,6 +246,8 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         apiServer: container.resolve<ApiServerService>(ServiceTokens.ApiServer),
         licensing: container.resolve<LicensingService>(ServiceTokens.Licensing),
         scheduler: container.resolve<SchedulerService>(ServiceTokens.Scheduler),
+        connectorIdentity: container.resolve<ConnectorIdentityRepository>(ServiceTokens.ConnectorIdentity),
+        mdnsAdvertiser: container.resolve<MdnsAdvertiser>(ServiceTokens.MdnsAdvertiser),
         voucherSynchronizationComposed: () =>
           container.has(ServiceTokens.VoucherSynchronization),
         voucherApplicationComposed: () => container.has(ServiceTokens.VoucherApplication),
@@ -239,6 +271,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         voucherSynchronization: container.resolve<VoucherSnapshotSyncService>(
           ServiceTokens.VoucherSynchronization,
         ),
+        trustedDevices: container.resolve<TrustedDeviceRepository>(ServiceTokens.TrustedDevices),
       })),
   );
 
@@ -258,6 +291,7 @@ const STARTUP_ORDER: ServiceToken[] = [
   ServiceTokens.Licensing,
   ServiceTokens.Scheduler,
   ServiceTokens.ApiServer,
+  ServiceTokens.MdnsAdvertiser,
 ];
 
 const INITIALIZATION_ORDER: ServiceToken[] = [
@@ -265,6 +299,7 @@ const INITIALIZATION_ORDER: ServiceToken[] = [
 ];
 
 const SHUTDOWN_ORDER: ServiceToken[] = [
+  ServiceTokens.MdnsAdvertiser,
   ServiceTokens.ApiServer,
   ServiceTokens.Scheduler,
   ServiceTokens.SyncEngine,

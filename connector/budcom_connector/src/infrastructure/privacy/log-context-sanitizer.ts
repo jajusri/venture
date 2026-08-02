@@ -43,6 +43,8 @@ export const APPROVED_LOG_CONTEXT_KEYS = new Set([
   'event',
   'httpMethod',
   'httpRoute',
+  'httpPath',
+  'remoteClientIp',
   'bindHost',
   'bindPort',
   'outcome',
@@ -85,6 +87,8 @@ function sanitizeContextString(key: string, value: string): string {
     key === 'event' ||
     key === 'httpMethod' ||
     key === 'httpRoute' ||
+    key === 'httpPath' ||
+    key === 'remoteClientIp' ||
     key === 'bindHost' ||
     key === 'outcome' ||
     key === 'rollbackStatus' ||

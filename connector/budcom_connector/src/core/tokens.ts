@@ -26,6 +26,9 @@ export const ServiceTokens = {
   Licensing: 'Licensing',
   Scheduler: 'Scheduler',
   HealthService: 'HealthService',
+  ConnectorIdentity: 'ConnectorIdentity',
+  TrustedDevices: 'TrustedDevices',
+  MdnsAdvertiser: 'MdnsAdvertiser',
 } as const;
 
 export type ServiceToken = (typeof ServiceTokens)[keyof typeof ServiceTokens];
