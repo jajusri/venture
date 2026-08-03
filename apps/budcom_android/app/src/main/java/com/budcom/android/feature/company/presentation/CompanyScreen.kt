@@ -101,7 +101,8 @@ fun CompanyScreen(
                     )
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
+                            .weight(1f)
+                            .fillMaxWidth()
                             .pullRefresh(pullRefreshState)
                             .testTag("company_pull_refresh"),
                     ) {
