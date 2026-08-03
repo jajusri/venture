@@ -7,6 +7,7 @@ import android.net.Uri
  */
 object Routes {
     const val HOME = "home"
+    const val CONNECTOR_DISCOVERY = "connector_discovery"
     const val SERVER_CONFIG = "server_config"
     const val COMPANY = "company"
     const val MASTER_DATA = "master_data"

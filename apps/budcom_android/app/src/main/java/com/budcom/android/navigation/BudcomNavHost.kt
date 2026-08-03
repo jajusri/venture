@@ -1,7 +1,14 @@
 package com.budcom.android.navigation
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -11,6 +18,7 @@ import androidx.navigation.navArgument
 import com.budcom.android.feature.company.presentation.CompanyRoute
 import com.budcom.android.feature.dashboard.presentation.DashboardRoute
 import com.budcom.android.feature.diagnostics.presentation.DiagnosticsRoute
+import com.budcom.android.feature.discovery.presentation.ConnectorDiscoveryRoute
 import com.budcom.android.feature.masterdata.ledger.presentation.LedgerBrowserRoute
 import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
 import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
@@ -24,17 +32,41 @@ import com.budcom.android.feature.voucher.presentation.VoucherDetailsViewModel
 
 /**
  * Root navigation host for BUDCO Android.
+ *
+ * The start destination is resolved once via [AppRootViewModel]: first-install Connector
+ * discovery when nothing is paired yet on a physical device, Dashboard otherwise. This keeps
+ * Dashboard (and the business API calls its ViewModel fires on load) from ever composing
+ * before a Connector is paired.
  */
 @Composable
 fun BudcomNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
+    rootViewModel: AppRootViewModel = hiltViewModel(),
 ) {
+    val startDestination by rootViewModel.startDestination.collectAsStateWithLifecycle()
+    val resolvedStartDestination = startDestination
+    if (resolvedStartDestination == null) {
+        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
     NavHost(
         navController = navController,
-        startDestination = Routes.HOME,
+        startDestination = resolvedStartDestination,
         modifier = modifier,
     ) {
+        composable(route = Routes.CONNECTOR_DISCOVERY) {
+            ConnectorDiscoveryRoute(
+                onEnrolmentComplete = {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.CONNECTOR_DISCOVERY) { inclusive = true }
+                    }
+                },
+                onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
+            )
+        }
         composable(route = Routes.HOME) {
             DashboardRoute(
                 onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },

@@ -4,10 +4,14 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import com.budcom.android.core.connection.ConnectorConnectionOrchestrator
 import com.budcom.android.core.connection.ConnectorConnectionResolver
+import com.budcom.android.core.connection.ConnectorEnrolmentGate
+import com.budcom.android.core.connection.ConnectorEnrolmentService
 import com.budcom.android.core.connection.ConnectorHealthProbe
 import com.budcom.android.core.connection.ConnectorReconnectCoordinator
 import com.budcom.android.core.connection.DefaultConnectorConnectionOrchestrator
 import com.budcom.android.core.connection.DefaultConnectorConnectionResolver
+import com.budcom.android.core.connection.DefaultConnectorEnrolmentGate
+import com.budcom.android.core.connection.DefaultConnectorEnrolmentService
 import com.budcom.android.core.connection.DefaultConnectorReconnectCoordinator
 import com.budcom.android.core.connection.DefaultExistingUrlMigrationService
 import com.budcom.android.core.connection.ExistingUrlMigrationService
@@ -65,6 +69,18 @@ abstract class ConnectionBindModule {
     abstract fun bindConnectorReconnectCoordinator(
         impl: DefaultConnectorReconnectCoordinator,
     ): ConnectorReconnectCoordinator
+
+    @Binds
+    @Singleton
+    abstract fun bindConnectorEnrolmentGate(
+        impl: DefaultConnectorEnrolmentGate,
+    ): ConnectorEnrolmentGate
+
+    @Binds
+    @Singleton
+    abstract fun bindConnectorEnrolmentService(
+        impl: DefaultConnectorEnrolmentService,
+    ): ConnectorEnrolmentService
 }
 
 @Module

@@ -1,6 +1,8 @@
 package com.budcom.android.core.di
 
+import com.budcom.android.core.util.DefaultDeviceEnvironment
 import com.budcom.android.core.util.DefaultDispatcherProvider
+import com.budcom.android.core.util.DeviceEnvironment
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.core.util.SystemTimeProvider
 import com.budcom.android.core.util.TimeProvider
@@ -30,6 +32,12 @@ abstract class AppModule {
     abstract fun bindTimeProvider(
         impl: SystemTimeProvider,
     ): TimeProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindDeviceEnvironment(
+        impl: DefaultDeviceEnvironment,
+    ): DeviceEnvironment
 }
 
 @Module
