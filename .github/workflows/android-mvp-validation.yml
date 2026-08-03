@@ -1,0 +1,42 @@
+name: Android MVP validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, develop]
+    paths:
+      - "apps/budcom_android/**"
+      - ".github/workflows/android-mvp-validation.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "apps/budcom_android/**"
+      - ".github/workflows/android-mvp-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  native-android:
+    name: Native Compose app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/budcom_android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Validate and build the MVP Android app
+        run: ./gradlew :app:testDebugUnitTest :app:assembleDebug
+      - name: Upload native Android debug artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: budcom-native-android-debug
+          path: apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
