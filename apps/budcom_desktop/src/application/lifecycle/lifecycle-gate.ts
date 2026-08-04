@@ -6,6 +6,15 @@ import {
   isDistributableClassification,
 } from '../release/artifact-classification.js';
 
+/**
+ * Identity of the last approved controlled-pilot installer.
+ *
+ * Every field describes one specific, checksummed installer artifact and
+ * must be refreshed together as a single unit whenever a new candidate is
+ * packaged and approved — including connectorVersion and
+ * storageSchemaVersion. Updating any field in isolation would describe an
+ * installer that was never actually built, hashed, or verified.
+ */
 export const CONTROLLED_PILOT_CANDIDATE = {
   gitCommit: 'a9595af857546de3c65f1457775f3f65eb78ae77',
   shortCommit: 'a9595af',
