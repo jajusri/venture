@@ -3,7 +3,12 @@ import type {
   DashboardState,
   DiagnosticsSnapshot,
   LedgerPageState,
+  LedgerSyncProgressDto,
+  LedgerSyncProgressResult,
+  LedgerSyncResult,
   StockItemPageState,
+  StockItemSyncProgressResult,
+  StockItemSyncResult,
   LogEntry,
   SettingsSaveResult,
   SettingsState,
@@ -33,12 +38,12 @@ export interface DesktopBridge {
   runHealthCheck(): Promise<{ ok: boolean; message: string }>;
   reloadRenderer(): Promise<{ ok: boolean }>;
   getLedgers(payload?: { query?: string; page?: number; pageSize?: number }): Promise<LedgerPageState>;
-  syncLedgers(incremental?: boolean): Promise<unknown>;
-  cancelLedgerSync(): Promise<unknown>;
+  syncLedgers(incremental?: boolean): Promise<LedgerSyncResult>;
+  cancelLedgerSync(): Promise<LedgerSyncProgressResult>;
   clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
   getStockItems(payload?: { query?: string; page?: number; pageSize?: number }): Promise<StockItemPageState>;
-  syncStockItems(incremental?: boolean): Promise<unknown>;
-  cancelStockItemSync(): Promise<unknown>;
+  syncStockItems(incremental?: boolean): Promise<StockItemSyncResult>;
+  cancelStockItemSync(): Promise<StockItemSyncProgressResult>;
   clearStockItemCache(): Promise<{ ok: boolean; message: string }>;
   onStatusUpdated(listener: () => void): () => void;
 }
@@ -64,6 +69,14 @@ export interface UiLoadingState {
 }
 
 let refreshInFlight = false;
+let trailingRefreshQueued = false;
+let activeView: DesktopView = 'dashboard';
+let companySelectionInFlight = false;
+let latestDashboardState: DashboardState | null = null;
+let latestDiagnosticsSnapshot: DiagnosticsSnapshot | null = null;
+let transientStatus: { readonly label: string; readonly tone: string } | null = null;
+let lifecycleStatus: ConnectorLifecycleStatus['state'] | null = null;
+let confirmedCompanyName: string | null = null;
 let currentSettings: SettingsState | null = null;
 let settingsDirty = false;
 let ledgerPage = 1;
@@ -72,109 +85,216 @@ const ledgerPageSize = 25;
 let stockItemPage = 1;
 let stockItemQuery = '';
 const stockItemPageSize = 25;
+const SYNC_PROGRESS_POLL_INTERVAL_MS = 1_000;
+const TERMINAL_SYNC_STATUSES = new Set(['completed', 'cancelled', 'failed', 'interrupted']);
+let ledgerProgressPollActive = false;
+let ledgerProgressPollTimer: number | null = null;
+let ledgerProgressRequestInFlight = false;
+let ledgerSyncActionInFlight = false;
+let stockItemProgressPollActive = false;
+let stockItemProgressPollTimer: number | null = null;
+let stockItemProgressRequestInFlight = false;
+let stockItemSyncActionInFlight = false;
 
 export function setText(id: string, value: string): void {
   const element = document.getElementById(id);
-  if (element) {
+  if (element && element.textContent !== value) {
     element.textContent = value;
   }
 }
 
 export function setBanner(message: string | null, level: 'error' | 'warning' | 'information' = 'error'): void {
-  const banner = document.getElementById('global-banner');
-  if (!banner) {
+  const notification = document.getElementById('app-notification');
+  if (!notification) {
     return;
   }
   if (!message) {
-    banner.className = 'banner hidden';
-    banner.textContent = '';
+    notification.className = 'app-notification hidden';
+    notification.textContent = '';
     return;
   }
-  banner.className = `banner banner-${level}`;
-  banner.textContent = message;
+  const kindLabel = level === 'error' ? 'Error' : level === 'warning' ? 'Notice' : 'Success';
+  notification.className = `app-notification app-notification-${level}`;
+  notification.textContent = `${kindLabel}: ${message}`;
 }
 
 export function setLoading(state: Partial<UiLoadingState>, message = 'Loading…'): void {
-  const bar = document.getElementById('global-loading');
-  const label = document.getElementById('loading-message');
-  if (!bar || !label) {
+  if (state.dashboard === undefined && state.selecting === undefined) {
     return;
   }
-  const active = Boolean(
-    state.dashboard ||
-      state.companies ||
-      state.selecting ||
-      state.settings ||
-      state.diagnostics ||
-      state.ledgers ||
-      state.stockItems ||
-      state.syncing ||
-      state.syncingStockItems,
-  );
-  bar.className = active ? 'loading-bar' : 'loading-bar hidden';
+  const active = Boolean(state.dashboard || state.selecting);
+  let label = message;
+  let tone = 'refreshing';
   if (state.selecting) {
-    label.textContent = 'Selecting company…';
-  } else if (state.companies) {
-    label.textContent = 'Fetching companies…';
-  } else if (state.settings) {
-    label.textContent = 'Saving settings…';
-  } else if (state.diagnostics) {
-    label.textContent = 'Refreshing diagnostics…';
-  } else if (state.syncingStockItems) {
-    label.textContent = 'Syncing stock items…';
-  } else if (state.syncing) {
-    label.textContent = 'Syncing ledgers…';
-  } else if (state.stockItems) {
-    label.textContent = 'Loading stock items…';
-  } else if (state.ledgers) {
-    label.textContent = 'Loading ledgers…';
-  } else {
-    label.textContent = message;
+    label = 'Selecting company…';
+    tone = 'selecting';
   }
+  transientStatus = active ? { label, tone } : null;
+  renderConnectionDisplay();
 }
 
-export function renderDashboard(state: DashboardState): void {
+function formatLicenceStatus(status: string | undefined): string {
+  const normalized = status?.trim().toLowerCase() ?? '';
+  if (normalized.includes('evaluat')) return 'Licence: Evaluating…';
+  if (normalized === 'active' || normalized.includes('licensed')) return 'Licence: Active';
+  if (normalized.includes('expired')) return 'Licence: Expired';
+  if (normalized.includes('error') || normalized.includes('invalid')) return 'Licence: Needs attention';
+  return 'Licence: Checking…';
+}
+
+export interface DisplayConnectionState {
+  readonly label: 'Connected' | 'Starting connector…' | 'Reconnecting…' | 'Connecting…' | 'Not connected';
+  readonly tone: 'connected' | 'connecting' | 'disconnected';
+  readonly overall: 'Working normally' | 'Ready — select a company' | 'Connecting…' | 'Needs attention' | 'Not connected';
+}
+
+export function getDisplayConnectionState(): DisplayConnectionState {
+  const state = latestDashboardState;
+  const diagnostics = latestDiagnosticsSnapshot;
+  const health = (state?.healthStatus ?? diagnostics?.healthStatus ?? '').trim().toLowerCase();
+  const healthy = health === 'ok' || health === 'healthy' || health.startsWith('ok ');
+  const degraded = ['degraded', 'unhealthy', 'warning', 'error'].some((value) =>
+    health.includes(value));
+  const definitivelyDisconnected =
+    lifecycleStatus === 'disconnected' ||
+    lifecycleStatus === 'failed' ||
+    state?.connectorReachable === false ||
+    diagnostics?.healthReachable === false;
+  let display: DisplayConnectionState = {
+    label: 'Connecting…',
+    tone: 'connecting',
+    overall: 'Connecting…',
+  };
+  if (definitivelyDisconnected) {
+    display = { label: 'Not connected', tone: 'disconnected', overall: 'Not connected' };
+  } else if (
+    (lifecycleStatus === 'connected' ||
+      (lifecycleStatus === null && state?.connectionIndicator === 'connected')) &&
+    state?.connectorReachable === true &&
+    healthy
+  ) {
+    const activeCompany = state.sessionStatus === 'ACTIVE' && state.companyName !== '—';
+    display = {
+      label: 'Connected',
+      tone: 'connected',
+      overall: activeCompany ? 'Working normally' : 'Ready — select a company',
+    };
+  } else if (
+    lifecycleStatus === 'connected' &&
+    state?.connectorReachable === true &&
+    degraded
+  ) {
+    display = { label: 'Connected', tone: 'connecting', overall: 'Needs attention' };
+  }
+  if (lifecycleStatus === 'starting') {
+    display = { label: 'Starting connector…', tone: 'connecting', overall: 'Connecting…' };
+  }
+  if (lifecycleStatus === 'reconnecting') {
+    display = { label: 'Reconnecting…', tone: 'connecting', overall: 'Connecting…' };
+  }
+  if (
+    confirmedCompanyName &&
+    !definitivelyDisconnected &&
+    lifecycleStatus !== 'starting' &&
+    lifecycleStatus !== 'reconnecting'
+  ) {
+    display = { label: 'Connected', tone: 'connected', overall: 'Working normally' };
+  }
+  return display;
+}
+
+function renderConnectionDisplay(): void {
+  const state = latestDashboardState;
+  const display = getDisplayConnectionState();
+  const footerLabel = transientStatus?.label ?? display.label;
+  const footerTone = transientStatus?.tone ?? display.tone;
+  setText('header-connection-label', display.label);
+  setText('dashboard-connection', display.label);
+  setText('connection-detail-label', display.label);
+  setText('connection-detail-indicator', display.tone);
+  setText('diag-connector-status', display.label);
+  setText('diag-overall', display.overall);
+  const headerIndicator = document.getElementById('connection-indicator');
+  const headerIndicatorClass = `indicator indicator-${display.tone}`;
+  if (headerIndicator && headerIndicator.className !== headerIndicatorClass) {
+    headerIndicator.className = headerIndicatorClass;
+  }
+  setText('footer-connection-status', footerLabel);
+  const indicator = document.getElementById('footer-connection-indicator');
+  const indicatorClass = `status-dot status-${footerTone}`;
+  if (indicator && indicator.className !== indicatorClass) {
+    indicator.className = indicatorClass;
+  }
+  const company = confirmedCompanyName ?? state?.companyName;
+  setText('footer-company', company && company !== '—' ? `· ${company}` : '');
+  setText('footer-license', formatLicenceStatus(state?.licenseStatus));
+}
+
+function hasActiveCompany(): boolean {
+  return Boolean(
+    latestDashboardState?.sessionStatus === 'ACTIVE' &&
+    latestDashboardState.companyName !== '—',
+  );
+}
+
+function updateCompanyRequiredButton(buttonId: string, operationInFlight = false): void {
+  const button = document.getElementById(buttonId) as HTMLButtonElement | null;
+  if (!button) {
+    return;
+  }
+  const companyRequired = !hasActiveCompany();
+  button.disabled = operationInFlight || companyRequired;
+  button.title = companyRequired ? 'Select a company before synchronizing.' : '';
+}
+
+function updateCompanyRequiredActions(): void {
+  updateCompanyRequiredButton('btn-sync-ledgers', ledgerSyncActionInFlight);
+  updateCompanyRequiredButton('btn-sync-stock-items', stockItemSyncActionInFlight);
+}
+
+export function renderDashboard(
+  state: DashboardState,
+  options: {
+    readonly includeRefreshTimestamp?: boolean;
+    readonly showStatusFeedback?: boolean;
+  } = {},
+): void {
+  latestDashboardState = state;
+  confirmedCompanyName = null;
   setText('app-title', state.windowTitle);
   setText('header-version', state.connectorVersion);
-  setText('header-connection-label', state.connectionLabel);
-  setText('header-company', state.companyName);
+  const companyName = state.companyName !== '—' ? state.companyName : 'No company selected';
+  setText('header-company', companyName);
   setText('header-sync', state.syncLabel);
   setText('header-last-sync', state.lastSync);
 
-  const indicator = document.getElementById('connection-indicator');
-  if (indicator) {
-    indicator.className = `indicator indicator-${state.connectionIndicator}`;
-  }
-
-  setText('dashboard-connection', state.connectionLabel);
   setText('dashboard-health', `Health: ${state.healthStatus}`);
-  setText('dashboard-company-name', state.companyName);
+  setText('dashboard-company-name', companyName);
   setText('dashboard-company-id', state.companyId);
   setText('dashboard-selection-time', state.selectionTime);
   setText('dashboard-session-status', state.sessionStatus);
   setText('dashboard-erp-name', state.erpName);
-  setText('dashboard-last-refresh', state.lastRefresh);
+  if (options.includeRefreshTimestamp ?? true) {
+    setText('dashboard-last-refresh', state.lastRefresh);
+  }
   setText('dashboard-sync', state.syncLabel);
   setText('dashboard-last-sync', state.lastSync);
   setText('dashboard-version', state.connectorVersion);
   setText('dashboard-desktop-version', state.desktopVersion);
 
-  setText('connection-detail-indicator', state.connectionIndicator);
-  setText('connection-detail-label', state.connectionLabel);
   setText('connection-detail-reachable', String(state.connectorReachable));
   setText('connection-detail-health', state.healthStatus);
   setText('connection-detail-session', state.sessionStatus);
 
-  setText('footer-version', state.connectorVersion);
-  setText('footer-erp', state.erpType);
-  setText('footer-license', state.licenseStatus);
+  renderConnectionDisplay();
+  updateCompanyRequiredActions();
 
-  if (state.userMessage && !state.connectorReachable) {
-    setBanner(state.userMessage, 'warning');
-  } else if (state.userMessage) {
-    setBanner(state.userMessage, 'warning');
-  } else {
-    setBanner(null);
+  if (options.showStatusFeedback ?? true) {
+    if (state.userMessage) {
+      setBanner(state.userMessage, 'warning');
+    } else {
+      setBanner(null);
+    }
   }
 }
 
@@ -274,6 +394,8 @@ function collectSettingsForm(): Record<string, unknown> {
 }
 
 export function renderLifecycle(status: ConnectorLifecycleStatus): void {
+  lifecycleStatus = status.state;
+  renderConnectionDisplay();
   setText('lifecycle-state', status.stateLabel);
   setText('lifecycle-managed', status.managedByDesktop ? 'Yes' : 'No');
   setText('lifecycle-external', status.externalProcessDetected ? 'Yes' : 'No');
@@ -282,9 +404,6 @@ export function renderLifecycle(status: ConnectorLifecycleStatus): void {
   setText('lifecycle-exit-code', status.processExitCode === null ? '—' : String(status.processExitCode));
   setText('lifecycle-port', String(status.connectorPort));
 
-  if (status.userMessage && (status.state === 'failed' || status.state === 'reconnecting')) {
-    setBanner(status.userMessage, status.state === 'failed' ? 'error' : 'warning');
-  }
 }
 
 export const HOSTILE_HTML_SAMPLES = [
@@ -311,22 +430,66 @@ function renderLogList(containerId: string, entries: readonly LogEntry[]): void 
   if (!container) {
     return;
   }
-  clearElement(container);
+  const signature = entries.map((entry) => [
+    entry.id,
+    entry.timestamp,
+    entry.level,
+    entry.message,
+  ].join('\u0000')).join('\u0001');
+  if (container.dataset.logSignature === signature) {
+    return;
+  }
+
+  const previousScrollTop = container.scrollTop;
+  const previousScrollHeight = container.scrollHeight;
+  const wasAtTop = previousScrollTop <= 1;
+  const existing = new Map<string, HTMLElement>();
+  container.querySelectorAll<HTMLElement>('[data-log-id]').forEach((row) => {
+    const id = row.dataset.logId;
+    if (id) {
+      existing.set(id, row);
+    }
+  });
+
   if (entries.length === 0) {
+    clearElement(container);
     const empty = document.createElement('p');
     empty.className = 'empty-state';
     empty.textContent = 'No entries.';
     container.appendChild(empty);
+    container.dataset.logSignature = signature;
     return;
   }
-  for (const entry of entries) {
-    const row = document.createElement('div');
-    row.className = `log-entry log-${entry.level}`;
-    appendTextElement(row, 'span', 'log-time', `[${entry.timestamp}]`);
-    row.append(document.createTextNode(' '));
-    appendTextElement(row, 'span', 'log-level', entry.level.toUpperCase());
-    row.append(document.createTextNode(` ${entry.message}`));
-    container.appendChild(row);
+
+  container.querySelector('.empty-state')?.remove();
+  entries.forEach((entry, index) => {
+    const entrySignature = [entry.timestamp, entry.level, entry.message].join('\u0000');
+    let row = existing.get(entry.id);
+    if (!row) {
+      row = document.createElement('div');
+      row.dataset.logId = entry.id;
+    }
+    if (row.dataset.logEntrySignature !== entrySignature) {
+      clearElement(row);
+      row.dataset.logEntrySignature = entrySignature;
+      row.className = `log-entry log-${entry.level}`;
+      appendTextElement(row, 'span', 'log-time', `[${entry.timestamp}]`);
+      row.append(document.createTextNode(' '));
+      appendTextElement(row, 'span', 'log-level', entry.level.toUpperCase());
+      row.append(document.createTextNode(` ${entry.message}`));
+    }
+    const currentAtIndex = container.children.item(index);
+    if (currentAtIndex !== row) {
+      container.insertBefore(row, currentAtIndex);
+    }
+    existing.delete(entry.id);
+  });
+  for (const stale of existing.values()) {
+    stale.remove();
+  }
+  container.dataset.logSignature = signature;
+  if (!wasAtTop) {
+    container.scrollTop = previousScrollTop + (container.scrollHeight - previousScrollHeight);
   }
 }
 
@@ -335,20 +498,38 @@ export function renderLogs(entries: readonly LogEntry[]): void {
 }
 
 export function renderDiagnostics(snapshot: DiagnosticsSnapshot, message?: string): void {
+  latestDiagnosticsSnapshot = snapshot;
   setText('diag-desktop-version', snapshot.desktopVersion);
   setText('diag-connector-version', snapshot.connectorVersion ?? '—');
+  setText('diag-bundled-connector-version', snapshot.bundledConnectorVersion ?? '—');
   setText('diag-runtime-versions', `${snapshot.electronVersion} / ${snapshot.nodeVersion}`);
   setText('diag-os', `${snapshot.platform} ${snapshot.osRelease} (${snapshot.architecture})`);
   setText('diag-uptime', `${snapshot.uptimeSeconds}s`);
   setText('diag-connector-url', snapshot.connectorBaseUrl);
+  setText('diag-connector-host', snapshot.connectorBindHost);
+  try {
+    setText('diag-connector-port', new URL(snapshot.connectorBaseUrl).port || '—');
+  } catch {
+    setText('diag-connector-port', '—');
+  }
   setText('diag-process-state', snapshot.connectorProcessState);
   setText('diag-ownership', snapshot.connectorOwnership);
   setText('diag-pid', snapshot.connectorPid === null ? '—' : String(snapshot.connectorPid));
-  setText('diag-health', `${snapshot.healthStatus} (reachable=${snapshot.healthReachable})`);
-  setText('diag-last-health', snapshot.lastSuccessfulHealthCheck ?? '—');
+  setText('diag-health', snapshot.healthReachable ? 'Healthy' : 'Needs attention');
+  const lastHealth = snapshot.lastSuccessfulHealthCheck
+    ? new Date(snapshot.lastSuccessfulHealthCheck).toLocaleString()
+    : 'Not available';
+  setText('diag-last-health', lastHealth);
+  const company = latestDashboardState?.companyName;
+  setText(
+    'diag-selected-company',
+    snapshot.selectedCompanyPresent && company && company !== '—' ? company : 'None selected',
+  );
   setText('diag-session', snapshot.sessionDisplayLabel);
   setText('diag-config-status', `${snapshot.configStatus} · ${snapshot.configSource}`);
   setText('diag-log-file', snapshot.logFile.available ? (snapshot.logFile.basename ?? 'available') : 'unavailable');
+  setText('diag-generated-at', snapshot.generatedAt);
+  renderConnectionDisplay();
   renderLogList('diag-lifecycle-events', snapshot.recentLifecycleEvents);
   renderLogList('diag-recent-errors', snapshot.recentErrors);
   if (message) {
@@ -381,12 +562,16 @@ export function renderCompanyList(
 
   clearElement(container);
   for (const company of companies) {
+    const selected = company.id === selectedCompanyId;
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `company-item${company.id === selectedCompanyId ? ' selected' : ''}`;
+    button.className = `company-item${selected ? ' selected' : ''}`;
     button.dataset.companyId = company.id;
-    button.setAttribute('role', 'option');
-    button.setAttribute('aria-selected', String(company.id === selectedCompanyId));
+    button.setAttribute('role', 'radio');
+    button.setAttribute('aria-checked', String(selected));
+    button.tabIndex = selected || (!selectedCompanyId && container.children.length === 0) ? 0 : -1;
+    const radio = appendTextElement(button, 'span', 'company-radio', '');
+    radio.setAttribute('aria-hidden', 'true');
     appendTextElement(button, 'span', 'company-name', company.name);
     appendTextElement(button, 'span', 'company-id', company.id);
     container.appendChild(button);
@@ -394,6 +579,13 @@ export function renderCompanyList(
 }
 
 export function activateView(view: DesktopView): void {
+  activeView = view;
+  if (view !== 'ledgers') {
+    stopLedgerProgressPolling();
+  }
+  if (view !== 'stock-items') {
+    stopStockItemProgressPolling();
+  }
   document.querySelectorAll('.view').forEach((element) => element.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach((button) => button.classList.remove('active'));
 
@@ -411,28 +603,40 @@ export function activateView(view: DesktopView): void {
   }
 }
 
-export async function refreshUi(): Promise<void> {
+export async function refreshUi(options: { readonly showLoading?: boolean } = {}): Promise<void> {
   if (refreshInFlight) {
+    trailingRefreshQueued = true;
     return;
   }
   refreshInFlight = true;
-  setLoading({ dashboard: true }, 'Refreshing dashboard…');
+  const showLoading = options.showLoading ?? false;
+  if (showLoading) {
+    setLoading({ dashboard: true }, 'Refreshing…');
+  }
   try {
-    const bridge = window.budcomDesktop;
-    const [state, logs, settings, lifecycle] = await Promise.all([
-      bridge.getDashboardState(),
-      bridge.getLogs(),
-      bridge.getSettings(),
-      bridge.getLifecycleStatus(),
-    ]);
-    renderDashboard(state);
-    renderLogs(logs);
-    if (!settingsDirty) {
-      renderSettingsForm(settings);
-    }
-    renderLifecycle(lifecycle);
+    do {
+      trailingRefreshQueued = false;
+      const bridge = window.budcomDesktop;
+      const [state, logs, settings, lifecycle] = await Promise.all([
+        bridge.getDashboardState(),
+        bridge.getLogs(),
+        bridge.getSettings(),
+        bridge.getLifecycleStatus(),
+      ]);
+      renderDashboard(state, {
+        includeRefreshTimestamp: showLoading,
+        showStatusFeedback: showLoading,
+      });
+      renderLogs(logs);
+      if (!settingsDirty) {
+        renderSettingsForm(settings);
+      }
+      renderLifecycle(lifecycle);
+    } while (trailingRefreshQueued);
   } finally {
-    setLoading({ dashboard: false });
+    if (showLoading) {
+      setLoading({ dashboard: false });
+    }
     refreshInFlight = false;
   }
 }
@@ -441,7 +645,7 @@ export async function refreshDiagnostics(): Promise<void> {
   setLoading({ diagnostics: true });
   try {
     const snapshot = await window.budcomDesktop.refreshDiagnostics();
-    renderDiagnostics(snapshot, `Diagnostics refreshed at ${snapshot.generatedAt}`);
+    renderDiagnostics(snapshot, 'Diagnostics refreshed.');
   } catch {
     setText('diagnostics-status-message', 'Unable to refresh diagnostics.');
   } finally {
@@ -450,6 +654,11 @@ export async function refreshDiagnostics(): Promise<void> {
 }
 
 export async function loadCompanies(): Promise<void> {
+  const refreshBtn = document.getElementById('btn-refresh-companies') as HTMLButtonElement | null;
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.classList.add('busy');
+  }
   setLoading({ companies: true });
   try {
     const bridge = window.budcomDesktop;
@@ -468,39 +677,102 @@ export async function loadCompanies(): Promise<void> {
     setBanner('Unable to load companies from the connector.', 'error');
     renderCompanyList([], '', 'Company discovery failed.');
   } finally {
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.classList.remove('busy');
+    }
     setLoading({ companies: false });
   }
 }
 
 export async function handleCompanySelection(companyId: string): Promise<void> {
-  setLoading({ selecting: true });
+  if (companySelectionInFlight) {
+    return;
+  }
+  companySelectionInFlight = true;
+  const companyButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[data-company-id]'),
+  );
+  companyButtons.forEach((button) => {
+    button.disabled = true;
+  });
+  setText('company-list-status', 'Selecting company…');
+  transientStatus = { label: 'Selecting company…', tone: 'selecting' };
+  renderConnectionDisplay();
   try {
     const outcome = await window.budcomDesktop.selectCompany(companyId);
-    await refreshUi();
-    await loadCompanies();
     if (!outcome.ok) {
+      setText('company-list-status', outcome.userMessage);
       setBanner(outcome.userMessage, 'warning');
     } else {
-      setBanner(outcome.userMessage, 'information');
+      companyButtons.forEach((button) => {
+        const selected = button.dataset.companyId === companyId;
+        button.classList.toggle('selected', selected);
+        button.setAttribute('aria-checked', String(selected));
+        button.tabIndex = selected ? 0 : -1;
+      });
+      setText('company-list-status', outcome.userMessage);
+      const selectedCompany = companyButtons.find(
+        (button) => button.dataset.companyId === companyId,
+      )?.textContent?.trim();
+      confirmedCompanyName = selectedCompany || null;
+      if (latestDashboardState) {
+        latestDashboardState = {
+          ...latestDashboardState,
+          companyId,
+          companyName: selectedCompany || latestDashboardState.companyName,
+          connectionIndicator: 'connected',
+          connectionLabel: 'Connected',
+          connectorReachable: true,
+        };
+      }
     }
   } catch {
+    setText('company-list-status', 'Company selection failed. Please try again.');
     setBanner('Company selection failed. Please try again.', 'error');
   } finally {
-    setLoading({ selecting: false });
+    transientStatus = null;
+    renderConnectionDisplay();
+    companyButtons.forEach((button) => {
+      button.disabled = false;
+    });
+    companySelectionInFlight = false;
   }
 }
 
 export async function handleClearCompany(): Promise<void> {
+  const clearBtn = document.getElementById('btn-clear-company') as HTMLButtonElement | null;
+  if (clearBtn) {
+    clearBtn.disabled = true;
+    clearBtn.classList.add('busy');
+  }
   setLoading({ selecting: true });
   try {
     await window.budcomDesktop.clearCompany();
-    setBanner('Company selection cleared.', 'information');
-    await refreshUi();
+    await refreshUi({ showLoading: false });
     await loadCompanies();
+    setText('company-list-status', 'Company selection cleared.');
+    setBanner('Company selection cleared.', 'information');
   } catch {
+    setText('company-list-status', 'Unable to clear company selection. Please try again.');
     setBanner('Unable to clear company selection.', 'error');
   } finally {
+    if (clearBtn) {
+      clearBtn.disabled = false;
+      clearBtn.classList.remove('busy');
+    }
     setLoading({ selecting: false });
+  }
+}
+
+const LIFECYCLE_BUTTON_IDS = ['btn-start-connector', 'btn-stop-connector', 'btn-restart-connector'] as const;
+
+function setLifecycleBusy(busy: boolean): void {
+  for (const id of LIFECYCLE_BUTTON_IDS) {
+    const btn = document.getElementById(id) as HTMLButtonElement | null;
+    if (!btn) continue;
+    btn.disabled = busy;
+    btn.classList.toggle('busy', busy);
   }
 }
 
@@ -516,18 +788,32 @@ export function bindLifecycleActions(): void {
   });
 }
 
+function setLifecycleStatusMessage(message: string | null, isError: boolean): void {
+  const status = document.getElementById('lifecycle-status-message');
+  if (status) {
+    status.textContent = message ?? '';
+    status.className = isError ? 'panel-meta form-error' : 'panel-meta';
+  }
+}
+
 async function runLifecycleAction(
   message: string,
   action: () => Promise<ConnectorLifecycleStatus>,
 ): Promise<void> {
+  setLifecycleBusy(true);
   setLoading({ dashboard: true }, message);
   try {
     const status = await action();
     renderLifecycle(status);
-    await refreshUi();
+    setLifecycleStatusMessage(status.userMessage, status.state === 'failed');
+    setBanner(status.userMessage, status.state === 'failed' ? 'error' : 'information');
+    await refreshUi({ showLoading: false });
   } catch {
-    setBanner('Connector lifecycle action failed.', 'error');
+    const failureMessage = 'Connector action failed. Check the Logs view for details.';
+    setLifecycleStatusMessage(failureMessage, true);
+    setBanner(failureMessage, 'error');
   } finally {
+    setLifecycleBusy(false);
     setLoading({ dashboard: false });
   }
 }
@@ -579,7 +865,7 @@ async function saveSettings(): Promise<void> {
     renderSettingsForm(result.settings);
     renderSettingsStatus(result.message, false);
     setBanner(result.message, result.restartRequired ? 'warning' : 'information');
-    await refreshUi();
+    await refreshUi({ showLoading: false });
   } catch {
     renderSettingsStatus('Settings save failed.', true);
   } finally {
@@ -597,7 +883,7 @@ async function restoreSettings(): Promise<void> {
     }
     renderSettingsStatus(result.message, !result.ok);
     setBanner(result.message, result.restartRequired ? 'warning' : 'information');
-    await refreshUi();
+    await refreshUi({ showLoading: false });
   } catch {
     renderSettingsStatus('Unable to restore defaults.', true);
   } finally {
@@ -645,7 +931,7 @@ async function exportDiagnostics(): Promise<void> {
   setLoading({ diagnostics: true });
   try {
     const result = await window.budcomDesktop.exportDiagnosticsBundle();
-    setText('diagnostics-status-message', result.ok ? `${result.message} ${result.bundlePath ?? ''}` : result.message);
+    setText('diagnostics-status-message', result.message);
   } catch {
     setText('diagnostics-status-message', 'Diagnostics export failed.');
   } finally {
@@ -667,10 +953,82 @@ async function runHealthCheckAction(): Promise<void> {
 async function clearLogsAction(): Promise<void> {
   const result = await window.budcomDesktop.clearNonessentialLogs();
   setText('diagnostics-status-message', result.message);
-  await refreshUi();
+  await refreshUi({ showLoading: false });
 }
 
 const SYNC_BUSY_STATUSES = new Set(['running', 'cancelling', 'recovering']);
+
+function calculateSyncPercentage(progress: LedgerSyncProgressDto): number | null {
+  const total = progress.totalExpected;
+  if (total === undefined || total === null || total < 0) {
+    return null;
+  }
+  if (total === 0) {
+    return progress.status === 'completed' ? 100 : 0;
+  }
+  return Math.min(100, Math.max(0, Math.floor((progress.itemsProcessed / total) * 100)));
+}
+
+function formatSyncDuration(durationMs: number | null): string {
+  if (durationMs === null) {
+    return '—';
+  }
+  if (durationMs < 1_000) {
+    return `${durationMs} ms`;
+  }
+  return `${(durationMs / 1_000).toFixed(1)} s`;
+}
+
+function setModuleProgressError(module: 'ledger' | 'stock-item', message: string | null): void {
+  const error = document.getElementById(`${module}-progress-error`);
+  if (!error) {
+    return;
+  }
+  setText(`${module}-progress-error`, message ?? '');
+  error.classList.toggle('hidden', !message);
+}
+
+export function renderModuleSyncProgress(
+  module: 'ledger' | 'stock-item',
+  progress: LedgerSyncProgressDto,
+  lastSyncedAt: string | null,
+): void {
+  const label = module === 'ledger' ? 'Ledger' : 'Stock Item';
+  const percentage = calculateSyncPercentage(progress);
+  const total = progress.totalExpected;
+  const totalKnown = total !== undefined && total !== null && total >= 0;
+  let message = formatSyncStatusLabel(progress.status);
+  if (SYNC_BUSY_STATUSES.has(progress.status) && !totalKnown) {
+    message = 'Preparing synchronization…';
+  } else if (progress.status === 'completed') {
+    message = `✓ ${label} Synchronization Completed`;
+  }
+
+  setText(`${module}-progress-message`, message);
+  setText(
+    `${module}-progress-count`,
+    totalKnown ? `${progress.itemsProcessed} / ${total}` : `Processed: ${progress.itemsProcessed}`,
+  );
+  setText(`${module}-progress-percentage`, percentage === null ? '—' : `${percentage}%`);
+  setText(`${module}-progress-added`, String(progress.itemsAdded));
+  setText(`${module}-progress-updated`, String(progress.itemsUpdated));
+  setText(`${module}-progress-skipped`, String(progress.itemsSkipped));
+  setText(`${module}-progress-failed`, String(progress.itemsFailed));
+  setText(`${module}-progress-duration`, formatSyncDuration(progress.durationMs));
+  setText(`${module}-progress-last-sync`, lastSyncedAt ?? 'Never');
+
+  const bar = document.getElementById(`${module}-progress-bar`);
+  const width = `${percentage ?? 0}%`;
+  if (bar && bar.style.width !== width) {
+    bar.style.width = width;
+  }
+  const track = bar?.parentElement;
+  if (track && track.getAttribute('aria-valuenow') !== String(percentage ?? 0)) {
+    track.setAttribute('aria-valuenow', String(percentage ?? 0));
+  }
+  const errorMessage = progress.status === 'failed' ? progress.lastError : null;
+  setModuleProgressError(module, errorMessage);
+}
 
 function formatSyncStatusLabel(status: string | undefined): string {
   switch (status) {
@@ -712,14 +1070,17 @@ export function renderLedgers(state: LedgerPageState): void {
       : '—',
   );
   setText('ledger-migration-status', state.storage?.migrationStatus ?? state.progress?.progress.migrationStatus ?? '—');
+  if (state.progress) {
+    renderModuleSyncProgress('ledger', state.progress.progress, stats?.lastSyncedAt ?? null);
+  }
 
-  const syncButton = document.getElementById('btn-sync-ledgers') as HTMLButtonElement | null;
   const cancelButton = document.getElementById('btn-cancel-ledger-sync');
   const busy = SYNC_BUSY_STATUSES.has(syncStatus ?? '');
-  if (syncButton) {
-    syncButton.disabled = busy;
-  }
+  updateCompanyRequiredButton('btn-sync-ledgers', busy || ledgerSyncActionInFlight);
   cancelButton?.classList.toggle('hidden', !busy);
+  if (busy && activeView === 'ledgers') {
+    startLedgerProgressPolling();
+  }
 
   const list = document.getElementById('ledger-list');
   const meta = document.getElementById('ledger-list-meta');
@@ -748,8 +1109,11 @@ export function renderLedgers(state: LedgerPageState): void {
   setText('ledger-page-label', `Page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`);
 }
 
-export async function loadLedgers(): Promise<void> {
-  setLoading({ ledgers: true });
+export async function loadLedgers(options: { readonly showLoading?: boolean } = {}): Promise<void> {
+  const showLoading = options.showLoading ?? true;
+  if (showLoading) {
+    setLoading({ ledgers: true });
+  }
   try {
     const state = await window.budcomDesktop.getLedgers({
       query: ledgerQuery,
@@ -763,37 +1127,100 @@ export async function loadLedgers(): Promise<void> {
   } catch {
     setBanner('Unable to load ledgers.', 'error');
   } finally {
-    setLoading({ ledgers: false });
+    if (showLoading) {
+      setLoading({ ledgers: false });
+    }
   }
 }
 
-async function handleLedgerSync(): Promise<void> {
-  setLoading({ syncing: true });
-  const progress = document.getElementById('ledger-progress');
-  progress?.classList.remove('hidden');
+function stopLedgerProgressPolling(): void {
+  ledgerProgressPollActive = false;
+  if (ledgerProgressPollTimer !== null) {
+    window.clearTimeout(ledgerProgressPollTimer);
+    ledgerProgressPollTimer = null;
+  }
+}
+
+async function pollLedgerProgress(): Promise<void> {
+  if (!ledgerProgressPollActive || activeView !== 'ledgers' || ledgerProgressRequestInFlight) {
+    return;
+  }
+  ledgerProgressRequestInFlight = true;
   try {
-    await window.budcomDesktop.syncLedgers(false);
-    await loadLedgers();
-    await refreshUi();
+    const state = await window.budcomDesktop.getLedgers({
+      query: ledgerQuery,
+      page: ledgerPage,
+      pageSize: ledgerPageSize,
+    });
+    if (state.progress) {
+      renderModuleSyncProgress(
+        'ledger',
+        state.progress.progress,
+        state.statistics?.statistics.lastSyncedAt ?? null,
+      );
+      if (TERMINAL_SYNC_STATUSES.has(state.progress.progress.status)) {
+        stopLedgerProgressPolling();
+        return;
+      }
+    }
   } catch {
-    setBanner('Ledger sync failed.', 'error');
+    setText('ledger-progress-message', 'Progress temporarily unavailable.');
   } finally {
-    progress?.classList.add('hidden');
-    setLoading({ syncing: false });
+    ledgerProgressRequestInFlight = false;
+  }
+  if (ledgerProgressPollActive) {
+    ledgerProgressPollTimer = window.setTimeout(() => void pollLedgerProgress(), SYNC_PROGRESS_POLL_INTERVAL_MS);
+  }
+}
+
+export function startLedgerProgressPolling(): void {
+  if (ledgerProgressPollActive || activeView !== 'ledgers') {
+    return;
+  }
+  ledgerProgressPollActive = true;
+  ledgerProgressPollTimer = window.setTimeout(
+    () => void pollLedgerProgress(),
+    SYNC_PROGRESS_POLL_INTERVAL_MS,
+  );
+}
+
+async function handleLedgerSync(): Promise<void> {
+  if (ledgerSyncActionInFlight) {
+    return;
+  }
+  ledgerSyncActionInFlight = true;
+  const syncButton = document.getElementById('btn-sync-ledgers') as HTMLButtonElement | null;
+  if (syncButton) {
+    syncButton.disabled = true;
+  }
+  setText('ledger-progress-message', 'Preparing synchronization…');
+  setModuleProgressError('ledger', null);
+  startLedgerProgressPolling();
+  try {
+    const result = await window.budcomDesktop.syncLedgers(false);
+    renderModuleSyncProgress('ledger', result.progress, result.statistics.lastSyncedAt);
+    await loadLedgers({ showLoading: false });
+  } catch {
+    const message = 'Ledger sync failed.';
+    setModuleProgressError('ledger', message);
+    setBanner(message, 'error');
+  } finally {
+    ledgerSyncActionInFlight = false;
+    stopLedgerProgressPolling();
+    updateCompanyRequiredButton('btn-sync-ledgers');
   }
 }
 
 async function handleCancelLedgerSync(): Promise<void> {
-  setLoading({ syncing: true });
   try {
-    await window.budcomDesktop.cancelLedgerSync();
-    await loadLedgers();
-    await refreshUi();
+    const result = await window.budcomDesktop.cancelLedgerSync();
+    renderModuleSyncProgress('ledger', result.progress, null);
+    await loadLedgers({ showLoading: false });
     setBanner('Ledger sync cancellation requested.', 'information');
   } catch {
-    setBanner('Unable to cancel ledger sync.', 'error');
-  } finally {
-    setLoading({ syncing: false });
+    const message = 'Unable to cancel ledger sync.';
+    setModuleProgressError('ledger', message);
+    setBanner(message, 'error');
   }
 }
 
@@ -862,14 +1289,17 @@ export function renderStockItems(state: StockItemPageState): void {
     'stock-item-migration-status',
     state.storage?.migrationStatus ?? state.progress?.progress.migrationStatus ?? '—',
   );
+  if (state.progress) {
+    renderModuleSyncProgress('stock-item', state.progress.progress, stats?.lastSyncedAt ?? null);
+  }
 
-  const syncButton = document.getElementById('btn-sync-stock-items') as HTMLButtonElement | null;
   const cancelButton = document.getElementById('btn-cancel-stock-item-sync');
   const busy = SYNC_BUSY_STATUSES.has(syncStatus ?? '');
-  if (syncButton) {
-    syncButton.disabled = busy;
-  }
+  updateCompanyRequiredButton('btn-sync-stock-items', busy || stockItemSyncActionInFlight);
   cancelButton?.classList.toggle('hidden', !busy);
+  if (busy && activeView === 'stock-items') {
+    startStockItemProgressPolling();
+  }
 
   const list = document.getElementById('stock-item-list');
   const meta = document.getElementById('stock-item-list-meta');
@@ -898,8 +1328,11 @@ export function renderStockItems(state: StockItemPageState): void {
   setText('stock-item-page-label', `Page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`);
 }
 
-export async function loadStockItems(): Promise<void> {
-  setLoading({ stockItems: true });
+export async function loadStockItems(options: { readonly showLoading?: boolean } = {}): Promise<void> {
+  const showLoading = options.showLoading ?? true;
+  if (showLoading) {
+    setLoading({ stockItems: true });
+  }
   try {
     const state = await window.budcomDesktop.getStockItems({
       query: stockItemQuery,
@@ -913,37 +1346,108 @@ export async function loadStockItems(): Promise<void> {
   } catch {
     setBanner('Unable to load stock items.', 'error');
   } finally {
-    setLoading({ stockItems: false });
+    if (showLoading) {
+      setLoading({ stockItems: false });
+    }
   }
 }
 
-async function handleStockItemSync(): Promise<void> {
-  setLoading({ syncingStockItems: true });
-  const progress = document.getElementById('stock-item-progress');
-  progress?.classList.remove('hidden');
+function stopStockItemProgressPolling(): void {
+  stockItemProgressPollActive = false;
+  if (stockItemProgressPollTimer !== null) {
+    window.clearTimeout(stockItemProgressPollTimer);
+    stockItemProgressPollTimer = null;
+  }
+}
+
+export function disposeSyncProgressPolling(): void {
+  stopLedgerProgressPolling();
+  stopStockItemProgressPolling();
+}
+
+async function pollStockItemProgress(): Promise<void> {
+  if (!stockItemProgressPollActive || activeView !== 'stock-items' || stockItemProgressRequestInFlight) {
+    return;
+  }
+  stockItemProgressRequestInFlight = true;
   try {
-    await window.budcomDesktop.syncStockItems(false);
-    await loadStockItems();
-    await refreshUi();
+    const state = await window.budcomDesktop.getStockItems({
+      query: stockItemQuery,
+      page: stockItemPage,
+      pageSize: stockItemPageSize,
+    });
+    if (state.progress) {
+      renderModuleSyncProgress(
+        'stock-item',
+        state.progress.progress,
+        state.statistics?.statistics.lastSyncedAt ?? null,
+      );
+      if (TERMINAL_SYNC_STATUSES.has(state.progress.progress.status)) {
+        stopStockItemProgressPolling();
+        return;
+      }
+    }
   } catch {
-    setBanner('Stock item sync failed.', 'error');
+    setText('stock-item-progress-message', 'Progress temporarily unavailable.');
   } finally {
-    progress?.classList.add('hidden');
-    setLoading({ syncingStockItems: false });
+    stockItemProgressRequestInFlight = false;
+  }
+  if (stockItemProgressPollActive) {
+    stockItemProgressPollTimer = window.setTimeout(
+      () => void pollStockItemProgress(),
+      SYNC_PROGRESS_POLL_INTERVAL_MS,
+    );
+  }
+}
+
+export function startStockItemProgressPolling(): void {
+  if (stockItemProgressPollActive || activeView !== 'stock-items') {
+    return;
+  }
+  stockItemProgressPollActive = true;
+  stockItemProgressPollTimer = window.setTimeout(
+    () => void pollStockItemProgress(),
+    SYNC_PROGRESS_POLL_INTERVAL_MS,
+  );
+}
+
+async function handleStockItemSync(): Promise<void> {
+  if (stockItemSyncActionInFlight) {
+    return;
+  }
+  stockItemSyncActionInFlight = true;
+  const syncButton = document.getElementById('btn-sync-stock-items') as HTMLButtonElement | null;
+  if (syncButton) {
+    syncButton.disabled = true;
+  }
+  setText('stock-item-progress-message', 'Preparing synchronization…');
+  setModuleProgressError('stock-item', null);
+  startStockItemProgressPolling();
+  try {
+    const result = await window.budcomDesktop.syncStockItems(false);
+    renderModuleSyncProgress('stock-item', result.progress, result.statistics.lastSyncedAt);
+    await loadStockItems({ showLoading: false });
+  } catch {
+    const message = 'Stock item sync failed.';
+    setModuleProgressError('stock-item', message);
+    setBanner(message, 'error');
+  } finally {
+    stockItemSyncActionInFlight = false;
+    stopStockItemProgressPolling();
+    updateCompanyRequiredButton('btn-sync-stock-items');
   }
 }
 
 async function handleCancelStockItemSync(): Promise<void> {
-  setLoading({ syncingStockItems: true });
   try {
-    await window.budcomDesktop.cancelStockItemSync();
-    await loadStockItems();
-    await refreshUi();
+    const result = await window.budcomDesktop.cancelStockItemSync();
+    renderModuleSyncProgress('stock-item', result.progress, null);
+    await loadStockItems({ showLoading: false });
     setBanner('Stock item sync cancellation requested.', 'information');
   } catch {
-    setBanner('Unable to cancel stock item sync.', 'error');
-  } finally {
-    setLoading({ syncingStockItems: false });
+    const message = 'Unable to cancel stock item sync.';
+    setModuleProgressError('stock-item', message);
+    setBanner(message, 'error');
   }
 }
 
@@ -1005,6 +1509,36 @@ export function bindCompanyActions(): void {
       void handleCompanySelection(companyId);
     }
   });
+  document.getElementById('company-list')?.addEventListener('keydown', (event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    const target = (event.target as HTMLElement).closest<HTMLButtonElement>('[role="radio"]');
+    if (!target) {
+      return;
+    }
+    const radios = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('#company-list [role="radio"]:not(:disabled)'),
+    );
+    const currentIndex = radios.indexOf(target);
+    if (keyboardEvent.key === ' ' || keyboardEvent.key === 'Enter') {
+      keyboardEvent.preventDefault();
+      target.click();
+      return;
+    }
+    const direction = keyboardEvent.key === 'ArrowDown' || keyboardEvent.key === 'ArrowRight'
+      ? 1
+      : keyboardEvent.key === 'ArrowUp' || keyboardEvent.key === 'ArrowLeft'
+        ? -1
+        : 0;
+    if (direction === 0 || radios.length === 0) {
+      return;
+    }
+    keyboardEvent.preventDefault();
+    const next = radios[(currentIndex + direction + radios.length) % radios.length];
+    radios.forEach((radio) => {
+      radio.tabIndex = radio === next ? 0 : -1;
+    });
+    next?.focus();
+  });
 }
 
 export function bindNavigation(): void {
@@ -1026,11 +1560,14 @@ export async function startDesktopShell(): Promise<void> {
   bindLifecycleActions();
   bindSettingsActions();
   bindDiagnosticsActions();
-  await refreshUi();
+  await refreshUi({ showLoading: false });
   await loadCompanies();
   window.budcomDesktop.onStatusUpdated(() => {
-    void refreshUi();
+    void refreshUi({ showLoading: false });
   });
+  window.addEventListener('beforeunload', () => {
+    disposeSyncProgressPolling();
+  }, { once: true });
 }
 
 if (typeof window !== 'undefined' && window.budcomDesktop) {

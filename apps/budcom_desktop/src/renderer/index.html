@@ -27,12 +27,6 @@
         </div>
       </header>
 
-      <div id="global-banner" class="banner hidden" role="alert"></div>
-      <div id="global-loading" class="loading-bar hidden" aria-live="polite">
-        <span class="spinner" aria-hidden="true"></span>
-        <span id="loading-message">Loading…</span>
-      </div>
-
       <nav class="top-nav" aria-label="Primary">
         <button class="nav-btn active" data-view="dashboard">Dashboard</button>
         <button class="nav-btn" data-view="connection">Connection</button>
@@ -45,6 +39,7 @@
       </nav>
 
       <main class="app-main">
+        <div id="app-notification" class="app-notification hidden" role="status" aria-live="polite" aria-atomic="true"></div>
         <section id="view-dashboard" class="view active">
           <div class="card-grid">
             <article class="card" id="card-connection">
@@ -55,9 +50,6 @@
             <article class="card" id="card-company">
               <h2>Company</h2>
               <p class="card-value" id="dashboard-company-name">—</p>
-              <p class="card-meta">ID: <span id="dashboard-company-id">—</span></p>
-              <p class="card-meta">Selected: <span id="dashboard-selection-time">—</span></p>
-              <p class="card-meta">Session: <span id="dashboard-session-status">—</span></p>
               <p class="card-meta">ERP: <span id="dashboard-erp-name">—</span></p>
               <p class="card-meta">Last Refresh: <span id="dashboard-last-refresh">—</span></p>
             </article>
@@ -82,13 +74,14 @@
               </div>
             </div>
             <p id="company-list-status" class="panel-meta">Load companies from the connector to begin.</p>
-            <div id="company-list" class="company-list" role="listbox" aria-label="Available companies"></div>
+            <div id="company-list" class="company-list" role="radiogroup" aria-label="Available companies"></div>
           </article>
         </section>
 
         <section id="view-connection" class="view">
           <article class="panel">
             <h2>Connector Lifecycle</h2>
+            <p id="lifecycle-status-message" class="panel-meta" aria-live="polite"></p>
             <dl class="detail-list">
               <dt>Lifecycle State</dt><dd id="lifecycle-state">—</dd>
               <dt>Managed By Desktop</dt><dd id="lifecycle-managed">—</dd>
@@ -141,9 +134,24 @@
               <label>Search<input id="ledger-search-input" type="search" placeholder="Search ledgers" /></label>
               <span id="ledger-list-meta" class="panel-meta">Load ledgers after selecting a company.</span>
             </div>
-            <div id="ledger-progress" class="ledger-progress hidden" aria-live="polite">
-              <span class="spinner" aria-hidden="true"></span>
-              <span id="ledger-progress-message">Syncing ledgers…</span>
+            <div id="ledger-progress" class="sync-progress-panel" aria-live="polite">
+              <div class="sync-progress-heading">
+                <strong id="ledger-progress-message">Ready</strong>
+                <span id="ledger-progress-percentage">—</span>
+              </div>
+              <div class="sync-progress-track" role="progressbar" aria-label="Ledger synchronization progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="ledger-progress-bar" class="sync-progress-bar"></div>
+              </div>
+              <div class="sync-progress-details">
+                <span id="ledger-progress-count">Processed: 0</span>
+                <span>Added: <strong id="ledger-progress-added">0</strong></span>
+                <span>Updated: <strong id="ledger-progress-updated">0</strong></span>
+                <span>Skipped: <strong id="ledger-progress-skipped">0</strong></span>
+                <span>Failed: <strong id="ledger-progress-failed">0</strong></span>
+                <span>Duration: <strong id="ledger-progress-duration">—</strong></span>
+                <span>Last Sync: <strong id="ledger-progress-last-sync">Never</strong></span>
+              </div>
+              <p id="ledger-progress-error" class="panel-meta form-error hidden"></p>
             </div>
             <div id="ledger-list" class="ledger-list" role="table" aria-label="Synced ledgers"></div>
             <div class="ledger-pagination">
@@ -179,9 +187,24 @@
               <label>Search<input id="stock-item-search-input" type="search" placeholder="Search stock items" /></label>
               <span id="stock-item-list-meta" class="panel-meta">Load stock items after selecting a company.</span>
             </div>
-            <div id="stock-item-progress" class="ledger-progress hidden" aria-live="polite">
-              <span class="spinner" aria-hidden="true"></span>
-              <span id="stock-item-progress-message">Syncing stock items…</span>
+            <div id="stock-item-progress" class="sync-progress-panel" aria-live="polite">
+              <div class="sync-progress-heading">
+                <strong id="stock-item-progress-message">Ready</strong>
+                <span id="stock-item-progress-percentage">—</span>
+              </div>
+              <div class="sync-progress-track" role="progressbar" aria-label="Stock item synchronization progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="stock-item-progress-bar" class="sync-progress-bar"></div>
+              </div>
+              <div class="sync-progress-details">
+                <span id="stock-item-progress-count">Processed: 0</span>
+                <span>Added: <strong id="stock-item-progress-added">0</strong></span>
+                <span>Updated: <strong id="stock-item-progress-updated">0</strong></span>
+                <span>Skipped: <strong id="stock-item-progress-skipped">0</strong></span>
+                <span>Failed: <strong id="stock-item-progress-failed">0</strong></span>
+                <span>Duration: <strong id="stock-item-progress-duration">—</strong></span>
+                <span>Last Sync: <strong id="stock-item-progress-last-sync">Never</strong></span>
+              </div>
+              <p id="stock-item-progress-error" class="panel-meta form-error hidden"></p>
             </div>
             <div id="stock-item-list" class="ledger-list" role="table" aria-label="Synced stock items"></div>
             <div class="ledger-pagination">
@@ -203,24 +226,42 @@
           <article class="panel">
             <div class="panel-header">
               <h2>Settings</h2>
-              <p id="settings-status-message" class="panel-meta">Load settings from the desktop supervisor.</p>
+              <p id="settings-status-message" class="panel-meta">Application settings</p>
             </div>
             <form id="settings-form" class="settings-form">
-              <label>Connector Host<input id="input-connector-host" name="connectorHost" type="text" required /></label>
-              <label>Connector Port<input id="input-connector-port" name="connectorPort" type="number" min="1" max="65535" required /></label>
               <label class="checkbox-row"><input id="input-auto-start" name="autoStartConnector" type="checkbox" /> Auto-start connector</label>
-              <label>Health Poll Interval (ms)<input id="input-health-poll" name="healthPollIntervalMs" type="number" min="1000" max="300000" required /></label>
-              <label>Startup Timeout (ms)<input id="input-startup-timeout" name="startupTimeoutMs" type="number" min="5000" max="300000" required /></label>
-              <label>Log Level
-                <select id="input-log-level" name="logLevel">
-                  <option value="debug">debug</option>
-                  <option value="info">info</option>
-                  <option value="warn">warn</option>
-                  <option value="error">error</option>
-                </select>
-              </label>
-              <label>Tally Host<input id="input-tally-host" name="tallyHost" type="text" required /></label>
-              <label>Tally Port<input id="input-tally-port" name="tallyPort" type="number" min="1" max="65535" required /></label>
+              <details id="advanced-connector-settings" class="advanced-section">
+                <summary>Advanced Connector Settings</summary>
+                <p class="form-note">Change these settings only when instructed by support.</p>
+                <div class="advanced-section-content">
+                  <label>Connector bind mode
+                    <select id="input-connector-bind-mode" name="connectorBindMode">
+                      <option value="local-only">local-only</option>
+                      <option value="trusted-lan">trusted-lan</option>
+                    </select>
+                  </label>
+                  <label>Connector host<input id="input-connector-host" name="connectorHost" type="text" required /></label>
+                  <label>Connector port<input id="input-connector-port" name="connectorPort" type="number" min="1" max="65535" required /></label>
+                  <label>Reachable LAN URL<input id="input-reachable-lan-url" type="text" readonly /></label>
+                  <label>Health check interval (ms)<input id="input-health-poll" name="healthPollIntervalMs" type="number" min="1000" max="300000" required /></label>
+                  <label>Startup timeout (ms)<input id="input-startup-timeout" name="startupTimeoutMs" type="number" min="5000" max="300000" required /></label>
+                  <label>Diagnostic log detail
+                    <select id="input-log-level" name="logLevel">
+                      <option value="debug">debug</option>
+                      <option value="info">info</option>
+                      <option value="warn">warn</option>
+                      <option value="error">error</option>
+                    </select>
+                  </label>
+                  <label>Tally host<input id="input-tally-host" name="tallyHost" type="text" required /></label>
+                  <label>Tally port<input id="input-tally-port" name="tallyPort" type="number" min="1" max="65535" required /></label>
+                  <dl class="detail-list compact-settings-meta">
+                    <dt>Desktop version</dt><dd id="settings-desktop-version">—</dd>
+                    <dt>Configuration source</dt><dd id="settings-config-source">—</dd>
+                    <dt>Configuration status</dt><dd id="settings-config-status">—</dd>
+                  </dl>
+                </div>
+              </details>
               <p id="settings-restart-notice" class="form-note hidden">Restart required for some changes to take effect.</p>
               <p id="settings-validation-errors" class="form-error hidden"></p>
               <div class="panel-actions">
@@ -228,11 +269,6 @@
                 <button id="btn-restore-settings" class="action-btn secondary" type="button">Restore Defaults</button>
               </div>
             </form>
-            <dl class="detail-list compact-settings-meta">
-              <dt>Desktop Version</dt><dd id="settings-desktop-version">—</dd>
-              <dt>Config Source</dt><dd id="settings-config-source">—</dd>
-              <dt>Config Status</dt><dd id="settings-config-status">—</dd>
-            </dl>
           </article>
         </section>
 
@@ -245,36 +281,48 @@
                 <button id="btn-copy-diagnostics" class="action-btn secondary" type="button">Copy Summary</button>
                 <button id="btn-export-diagnostics" class="action-btn secondary" type="button">Export Bundle</button>
                 <button id="btn-run-health-check" class="action-btn secondary" type="button">Run Health Check</button>
-                <button id="btn-open-logs-folder" class="action-btn secondary" type="button">Open Logs Folder</button>
-                <button id="btn-clear-logs" class="action-btn secondary" type="button">Clear Nonessential Logs</button>
-                <button id="btn-reload-renderer" class="action-btn secondary" type="button">Reload UI</button>
               </div>
             </div>
-            <p id="diagnostics-status-message" class="panel-meta">Refresh diagnostics to load runtime details.</p>
+            <p id="diagnostics-status-message" class="panel-meta">Checking connector status…</p>
             <dl class="detail-list">
-              <dt>Desktop Version</dt><dd id="diag-desktop-version">—</dd>
-              <dt>Connector Version</dt><dd id="diag-connector-version">—</dd>
-              <dt>Electron / Node</dt><dd id="diag-runtime-versions">—</dd>
-              <dt>Operating System</dt><dd id="diag-os">—</dd>
-              <dt>Uptime</dt><dd id="diag-uptime">—</dd>
-              <dt>Connector URL</dt><dd id="diag-connector-url">—</dd>
-              <dt>Process State</dt><dd id="diag-process-state">—</dd>
-              <dt>Ownership</dt><dd id="diag-ownership">—</dd>
-              <dt>PID</dt><dd id="diag-pid">—</dd>
-              <dt>Health</dt><dd id="diag-health">—</dd>
-              <dt>Last Health Check</dt><dd id="diag-last-health">—</dd>
-              <dt>Session</dt><dd id="diag-session">—</dd>
-              <dt>Config Status</dt><dd id="diag-config-status">—</dd>
-              <dt>Log File</dt><dd id="diag-log-file">—</dd>
+              <dt>Overall</dt><dd id="diag-overall">Checking…</dd>
+              <dt>Connector status</dt><dd id="diag-connector-status">Connecting…</dd>
+              <dt>Health status</dt><dd id="diag-health">Checking…</dd>
+              <dt>Selected company</dt><dd id="diag-selected-company">None selected</dd>
+              <dt>Last health check</dt><dd id="diag-last-health">—</dd>
+              <dt>Desktop version</dt><dd id="diag-desktop-version">—</dd>
+              <dt>Connector version</dt><dd id="diag-connector-version">—</dd>
+              <dt>Bundled connector version</dt><dd id="diag-bundled-connector-version">—</dd>
             </dl>
-          </article>
-          <article class="panel">
-            <h2>Recent Lifecycle Events</h2>
-            <div id="diag-lifecycle-events" class="log-list compact-log-list"></div>
-          </article>
-          <article class="panel">
-            <h2>Recent Errors</h2>
-            <div id="diag-recent-errors" class="log-list compact-log-list"></div>
+            <details id="advanced-technical-details" class="advanced-section">
+              <summary>Advanced Technical Details</summary>
+              <div class="advanced-section-content">
+                <dl class="detail-list">
+                  <dt>Electron / Node versions</dt><dd id="diag-runtime-versions">—</dd>
+                  <dt>Operating system</dt><dd id="diag-os">—</dd>
+                  <dt>Connector URL</dt><dd id="diag-connector-url">—</dd>
+                  <dt>Connector host</dt><dd id="diag-connector-host">—</dd>
+                  <dt>Connector port</dt><dd id="diag-connector-port">—</dd>
+                  <dt>Process state</dt><dd id="diag-process-state">—</dd>
+                  <dt>Ownership mode</dt><dd id="diag-ownership">—</dd>
+                  <dt>Process ID</dt><dd id="diag-pid">—</dd>
+                  <dt>Session details</dt><dd id="diag-session">—</dd>
+                  <dt>Configuration status</dt><dd id="diag-config-status">—</dd>
+                  <dt>Log file</dt><dd id="diag-log-file">—</dd>
+                  <dt>Runtime uptime</dt><dd id="diag-uptime">—</dd>
+                  <dt>Snapshot generated</dt><dd id="diag-generated-at">—</dd>
+                </dl>
+                <div class="panel-actions">
+                  <button id="btn-open-logs-folder" class="action-btn secondary" type="button">Open Logs Folder</button>
+                  <button id="btn-clear-logs" class="action-btn secondary" type="button">Clear Nonessential Logs</button>
+                  <button id="btn-reload-renderer" class="action-btn secondary" type="button">Reload UI</button>
+                </div>
+                <h3>Recent lifecycle events</h3>
+                <div id="diag-lifecycle-events" class="log-list compact-log-list"></div>
+                <h3>Recent errors</h3>
+                <div id="diag-recent-errors" class="log-list compact-log-list"></div>
+              </div>
+            </details>
           </article>
         </section>
 
@@ -288,10 +336,13 @@
         </section>
       </main>
 
-      <footer class="app-footer">
-        <span>Connector <strong id="footer-version">—</strong></span>
-        <span>ERP <strong id="footer-erp">tally</strong></span>
-        <span>License <strong id="footer-license">—</strong></span>
+      <footer class="app-footer" aria-live="polite">
+        <div class="footer-connection">
+          <span id="footer-connection-indicator" class="status-dot status-unknown" aria-hidden="true"></span>
+          <strong id="footer-connection-status">Not connected</strong>
+          <span id="footer-company" class="footer-company"></span>
+        </div>
+        <strong id="footer-license">Licence: Evaluating…</strong>
       </footer>
     </div>
     <script type="module" src="./scripts/app.js"></script>
