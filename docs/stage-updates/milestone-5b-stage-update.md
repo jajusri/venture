@@ -2377,3 +2377,167 @@ Report: `release/controlled-pilot/0.4.3/reports/precommit-hardening-installed-ev
 | `node scripts/lifecycle/precommit-hardening-packaged-verify.mjs …/win-unpacked` | PASS |
 | `node scripts/lifecycle/installed-first-launch-probe.mjs …/BudcomDesktop-0.4.3-x64-setup.exe` | **PASS** |
 | `node scripts/lifecycle/candidate-integrity.mjs` | FAIL on evidence SHA (expected — official RC path not replaced) |
+
+---
+
+## §37 — Desktop packaged Connector alignment to 0.4.x (2026-07-29)
+
+### Requirement addressed
+
+Physical Android validation confirmed Android Voucher Browser requires Connector **0.4.x** with `/api/v1/vouchers`. The installed Budcom Desktop still shipped Connector **0.3.1**. Align Desktop packaging so the embedded Connector matches the development Connector (0.4.0).
+
+No Desktop UI redesign. No Android changes. No auto-commit.
+
+### Root cause
+
+1. `apps/budcom_desktop/build/VERSION.txt` was hardcoded to `0.3.1` and copied into the installer as `connector/VERSION.txt`.
+2. `dist:win` did not rebuild the Connector before packaging (stale `connector/budcom_connector/dist` risk).
+3. Controlled-pilot candidate / build-info schema pin lagged (storage schema 8 vs current 11).
+4. `readBundledConnectorVersion()` existed but was unused in lifecycle/diagnostics reporting.
+
+Runtime `GET /health.connectorVersion` comes from Connector JS (`CONNECTOR_VERSION`), not `VERSION.txt` — labels and binaries could diverge.
+
+### Implementation status
+
+**COMPLETE (packaging + version reporting)** — official controlled-pilot candidate SHA/size/gitCommit still point at the prior 0.3.1-era installer until a new candidate build refreshes `CONTROLLED_PILOT_CANDIDATE`.
+
+### Files changed
+
+| Area | Change |
+|------|--------|
+| `apps/budcom_desktop/build/VERSION.txt` | Synced to `0.4.0` |
+| `apps/budcom_desktop/package.json` `dist:win` | Rebuild Connector before packaging |
+| `scripts/release/prepare-connector-packaging.mjs` | Sync `VERSION.txt` from Connector `package.json`; assert voucher routes in dist |
+| `scripts/release/generate-build-info.mjs` | Read `STORAGE_SCHEMA_VERSION` from schema source (11) |
+| `lifecycle-gate.ts` | Candidate `connectorVersion: 0.4.0`, `storageSchemaVersion: 11` |
+| Lifecycle + diagnostics | Expose `bundledConnectorVersion` in status, logs, Diagnostics UI, export bundle |
+| Desktop tests | Fixtures + packaging assertions for version/voucher gate |
+
+### Version strategy
+
+| Surface | Value | Source |
+|---------|-------|--------|
+| Desktop | `0.4.3` | `apps/budcom_desktop/package.json` |
+| Connector | `0.4.0` | `connector/budcom_connector/package.json` + `CONNECTOR_VERSION` |
+| API schema | `1.0.0` | `GET /health` `schemaVersion` |
+| Storage schema | `11` | `STORAGE_SCHEMA_VERSION` |
+| Bundled label | `VERSION.txt` | Synced at packaging time from Connector package version |
+| Live runtime | `GET /health` `connectorVersion` | Running Connector process |
+
+No separate `GET /version` added — `/health` already reports `connectorVersion` and `schemaVersion`.
+
+### Validation evidence
+
+| Check | Result |
+|-------|--------|
+| Connector `npm run build` | PASS |
+| Desktop `npm run build` | PASS |
+| Desktop vitest | **341/341 PASS** |
+| `prepare-connector-packaging.mjs` | PASS (`connectorVersion: 0.4.0`, vouchers present, 0 audit vulns) |
+| `electron-builder --win --dir` | PASS → `release/controlled-pilot/0.4.3/artifacts/win-unpacked` |
+| Packaged `VERSION.txt` / `CONNECTOR_VERSION` | `0.4.0` |
+| Packaged `dist/api/routes/vouchers.js` | Present; server registers `createVouchersRouter` |
+| Stale `0.3.1` in packaged connector dist/package | Absent (only unrelated third-party dep strings) |
+| Duplicate connector folders | Single `resources/connector` |
+| Packaged smoke `GET /health` | `connectorVersion: 0.4.0` |
+| Packaged smoke `GET /api/v1/vouchers` | Route present (400 without session — expected) |
+| Packaged smoke `/companies`, `/session`, `/ready`, sync status | 200 |
+| Restart + no orphan listener | PASS |
+| Installed LocalAppData Desktop (pre-reinstall) | Still `0.3.1` / no vouchers — confirms packaging was the blocker |
+| Android validation | **Not claimed** |
+
+Connector unit suite reported 3 environment-sensitive failures (`BUDCOM_CONNECTOR_HOST=192.168.29.160` on this machine); unrelated to packaging changes.
+
+### Known risks / deferred
+
+- `CONTROLLED_PILOT_CANDIDATE` sha256/sizeBytes/gitCommit still describe the previous installer; refresh after the next official controlled-pilot build.
+- Machine env `BUDCOM_CONNECTOR_HOST=192.168.29.160` / port `8081` can bind LAN and conflict with packaging smoke unless overridden.
+- Existing installed Desktop must be reinstalled/upgraded to pick up packaged 0.4.0.
+- Full NSIS installer + candidate integrity refresh not executed in this gate (`--dir` unpack used).
+
+### Production-readiness level
+
+Packaging alignment **ready for commit review**. Controlled-pilot candidate identity refresh and signed installer remain release gates.
+
+---
+
+## §38 — NSIS installer verification for Connector 0.4.0 (2026-07-29)
+
+### Requirement addressed
+
+Final installer verification after Desktop packaging alignment to Connector 0.4.0 (`win-unpacked` already validated in §37).
+
+### Implementation status
+
+**UNVERIFIED — installer identity not corroborated.** The SHA-256 recorded below for `BudcomDesktop-0.4.3-x64-setup.exe` is identical to the artifact quarantined in `release/controlled-pilot/0.4.3/STALE-DO-NOT-DISTRIBUTE.md` (built from commit `10a3e280439d27632d529eea6f3f0d8cf0d1ba60`, embedding Connector 0.3.1, confirmed missing the multi-phase voucher-extraction modules). No retained installer, checksum file, or manifest remains in this repository to confirm the checks below instead describe a genuine Connector 0.4.0 build. The session log is preserved as an unverified record. Final installer verification is pending a fresh clean-source rebuild, metadata inspection, and checksum/release-manifest update before an installer from this alignment work can be promoted or used for device re-validation.
+
+### Installer artifact (as recorded during this session — identity unverified, see above)
+
+| Field | Value |
+|-------|-------|
+| Path | `release/controlled-pilot/0.4.3/artifacts/BudcomDesktop-0.4.3-x64-setup.exe` |
+| Size | 104,773,185 bytes |
+| SHA-256 | `7B84106F9A49BF8E3F8762BADA8BF23EEC4B6333F95E4BDC89A2DFC9E2116F42` |
+| Signed | No (expected for controlled pilot) |
+
+### Clean-install simulation (session log — installer identity unverified)
+
+Quiet uninstall of prior LocalAppData install → silent `/S` install of new NSIS → inspect `%LOCALAPPDATA%\Programs\Budcom Desktop`.
+
+| Check | Result |
+|-------|--------|
+| Installer exit | 0 |
+| Install path | `%LOCALAPPDATA%\Programs\Budcom Desktop` |
+| `connector/VERSION.txt` | `0.4.0` |
+| `connector/package.json` | `0.4.0` |
+| `CONNECTOR_VERSION` in defaults.js | `0.4.0` |
+| `dist/api/routes/vouchers.js` | Present |
+| Bundled `node/node.exe` | Present |
+| Duplicate connector folders | 1 (expected) |
+| Uninstaller leftover empty dir | Observed; force-removed before reinstall (minor) |
+
+### Runtime (installed exe — session log, installer identity unverified)
+
+Isolated user-data + loopback port `18090` (machine has `BUDCOM_CONNECTOR_HOST=192.168.29.160`).
+
+| Check | Result |
+|-------|--------|
+| Auto-start Connector | PASS (1 managed `resources\node\node.exe` + packaged `main.js`) |
+| `GET /health` `connectorVersion` | `0.4.0` |
+| `/ready`, `/companies`, `/session`, sync status | 200 |
+| `/api/v1/vouchers` | Present (400 without company session) |
+| `/ledgers`, `/stock-items` | 400 without session (expected) |
+| Shutdown / restart / final orphans | Clean |
+
+No retained evidence-report files exist for this session; the two report filenames previously referenced here were not found anywhere in the repository and have been removed rather than replaced.
+
+### Recommendation
+
+**Not ready for Android re-validation.** Final installer verification is pending a clean-source rebuild, a freshly generated checksum, and a `CONTROLLED_PILOT_CANDIDATE` refresh once that rebuild is reviewed and approved.
+
+### Remaining risks
+
+- Unsigned installer; default Electron icon
+- `CONTROLLED_PILOT_CANDIDATE` SHA/size still pin the historical `a9595af` installer (Connector 0.3.1, schema 8) until a verified new candidate build is produced and approved
+- Machine LAN `BUDCOM_CONNECTOR_*` env can override loopback if not cleared
+- This session's installer SHA-256 collides with the quarantined `10a3e280` build; the collision must be resolved (re-verify against a fresh build, or confirm as a recording error) before this artifact path is reused
+
+---
+
+## §39 — Android voucher re-validation vs Desktop 0.4.3 / Connector 0.4.0 (2026-07-29)
+
+### Outcome
+
+**Partial validation** — Android Voucher Browser empty/session/invalid-date paths exercised on physical device. Content-dependent list/detail/paging stopped: live Tally voucher export for `Budcom-Test-01` (2026-07-27) returns **malformed XML** after size-cap fix (~1.06 MiB payload).
+
+### Product fixes applied (Connector)
+
+1. Resolve company **name** for Tally extraction while storing under company **id** (parity with ledger sync).
+2. Raise VOUCHERS `maxResponseBytes` to **5 MiB** (live single-day export exceeded 1 MiB).
+
+### Android observations (no Android code changes)
+
+- Base URL `http://192.168.29.160:8081/` Connected/Ready.
+- Remembered company with invalid session → clear banner; **Validate session** recovers.
+- Empty list message correct; invalid date range local validation PASS.
+- No FATAL in Logcat during exercised flows.
