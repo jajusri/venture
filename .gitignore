@@ -78,5 +78,6 @@ connector/budcom_connector/test/**/*.js
 connector/budcom_connector/test/**/*.js.map
 
 # Claude local and runtime state
+/.claude/settings.json
 /.claude/settings.local.json
 /.claude/scheduled_tasks.lock
