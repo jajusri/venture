@@ -2,7 +2,7 @@
 
 **Module:** Connector Lifecycle Supervisor  
 **Milestone:** 4C (base), 4D (integration)  
-**Last updated:** 2026-07-23  
+**Last updated:** 2026-08-02  
 **Path:** `apps/budcom_desktop/src/application/connector-lifecycle-*.ts`
 
 ---
@@ -13,6 +13,7 @@
 |------|---------|
 | 2026-07-23 | Milestone 4C — initial lifecycle supervisor |
 | 2026-07-23 | Milestone 4D — config-driven lifecycle, PID in diagnostics, external connector guards |
+| 2026-08-02 | Report `bundledConnectorVersion` from packaged `VERSION.txt` in status/logs/diagnostics |
 
 ---
 
