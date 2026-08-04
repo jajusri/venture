@@ -2380,7 +2380,7 @@ Report: `release/controlled-pilot/0.4.3/reports/precommit-hardening-installed-ev
 
 ---
 
-## §37 — Desktop packaged Connector alignment to 0.4.x (2026-07-29)
+## §37 — Desktop packaged Connector alignment to 0.4.x (2026-07-30)
 
 ### Requirement addressed
 
