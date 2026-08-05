@@ -127,6 +127,7 @@ dependencies {
     testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.serialization.json)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.okhttp.tls)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.room.runtime)
