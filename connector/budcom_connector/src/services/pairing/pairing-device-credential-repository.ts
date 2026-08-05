@@ -125,6 +125,34 @@ export class PairingDeviceCredentialRepository {
     return mapRow({ ...row, last_used_at: now });
   }
 
+  /**
+   * Read-only lookup by raw token — INCLUDES revoked rows and never mutates last_used_at.
+   * Used by PairingCredentialAuthenticator so a failed authentication attempt (unknown token,
+   * revoked token, or wrong-Connector token) never updates last_used_at; only touchLastUsed()
+   * below does that, and only after every check has fully passed. Distinct from validateToken()
+   * above (unchanged, still available for any other caller) precisely so this repository can
+   * support "check everything, mutate nothing until fully authenticated" callers without
+   * changing validateToken()'s existing single-step contract.
+   */
+  findByToken(rawToken: string): PairingDeviceCredentialRecord | null {
+    const tokenHash = hashToken(rawToken);
+    const row = this.db
+      .getDatabase()
+      .prepare('SELECT * FROM pairing_device_credentials WHERE token_hash = ?')
+      .get(tokenHash) as PairingDeviceCredentialRow | undefined;
+    return row ? mapRow(row) : null;
+  }
+
+  /** Updates last_used_at for a credential that has already passed every authentication check. */
+  touchLastUsed(credentialId: string): string {
+    const now = new Date().toISOString();
+    this.db
+      .getDatabase()
+      .prepare('UPDATE pairing_device_credentials SET last_used_at = ? WHERE credential_id = ? AND revoked_at IS NULL')
+      .run(now, credentialId);
+    return now;
+  }
+
   revoke(credentialId: string): boolean {
     const result = this.db
       .getDatabase()

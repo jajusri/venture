@@ -11,9 +11,48 @@ import {
   type RedeemPairingSessionOutcome,
 } from '../../services/pairing/pairing-session-repository.js';
 import type { PairingDeviceCredentialRepository } from '../../services/pairing/pairing-device-credential-repository.js';
+import { PairingCredentialAuthenticator } from '../../services/pairing/pairing-credential-authenticator.js';
 import type { ConnectorTransportIdentityService } from '../../services/transport/connector-transport-identity.js';
 import { createRequireDesktopControlTokenMiddleware } from '../middleware/require-desktop-control-token.js';
 import { createPairingRedeemRateLimiter } from '../middleware/pairing-redeem-rate-limit.js';
+
+/**
+ * Generic, sanitized 401 for every pairing-credential authentication failure — missing header,
+ * malformed header, unknown token, revoked token, or a token that belongs to a different
+ * Connector all produce this exact same body. See PairingCredentialAuthenticator's doc comment
+ * for why the reason is never echoed to the caller.
+ */
+function sendPairingCredentialUnauthorized(res: import('express').Response): void {
+  res.status(401).json({
+    code: 'UNAUTHORIZED',
+    message: 'The pairing credential could not be verified.',
+  });
+}
+
+/**
+ * Unconditional LAN+HTTPS enforcement for the Android-facing self-status/self-revoke routes.
+ * Deliberately NOT conditioned on secureTransportEnabled (unlike the pre-existing redeem guard
+ * above, which stays conditional for backward compatibility with installations that predate
+ * secure transport): these are brand-new routes with no legacy plaintext caller to preserve, and
+ * a reusable bearer credential must never cross a LAN in plaintext, full stop. Loopback traffic
+ * (req.secure irrelevant) and non-'lan' networkExposure deployments are unaffected, matching the
+ * existing redeem guard's loopback exemption.
+ */
+function rejectInsecureLan(
+  req: import('express').Request,
+  res: import('express').Response,
+  config: Pick<ConnectorConfig, 'networkExposure'>,
+): boolean {
+  if (config.networkExposure === 'lan' && !req.secure) {
+    res.status(400).json({
+      ok: false,
+      code: 'INSECURE_TRANSPORT',
+      message: 'This request requires a secure (HTTPS) connection.',
+    });
+    return true;
+  }
+  return false;
+}
 
 /** Bumped only if the pairing-payload's transport fields (protocol/port/fingerprint/algorithm) change shape. */
 const TRANSPORT_IDENTITY_VERSION = 1;
@@ -439,6 +478,86 @@ export function createPairingBootstrapRouter(deps: PairingBootstrapRouterDeps): 
         return;
       }
       res.json({ ok: true });
+    }),
+  );
+
+  /**
+   * GET /device/pairing-credential/self
+   *
+   * Android-facing: the future secure-pairing client's post-redemption proof that it reached the
+   * intended pinned Connector and that its credential is accepted and belongs to that Connector.
+   * Authenticated by the device's OWN bearer pairing credential (Authorization: Bearer <token>)
+   * — never by the Desktop control token (see PairingCredentialAuthenticator; the bearer parser
+   * in pairing-credential-bearer.ts never reads query/body/cookie/path values). Requires HTTPS on
+   * a LAN-exposed Connector unconditionally — see rejectInsecureLan above.
+   *
+   * Returns ONLY sanitized fields: credentialId, deviceId, deviceLabel, connectorId, createdAt,
+   * lastUsedAt, status. Never the token, token hash, pairing secret/short code, or any
+   * customer/company/accounting data — matching the same sanitization boundary as the
+   * Desktop-facing GET /device/pairing-credentials listing below, but scoped to exactly one
+   * credential: the caller's own.
+   */
+  router.get(
+    '/device/pairing-credential/self',
+    requirePairingEnabled,
+    asyncHandler(async (req, res) => {
+      if (rejectInsecureLan(req, res, deps.config)) {
+        return;
+      }
+
+      const authenticator = new PairingCredentialAuthenticator(
+        requireCredentials(deps.pairingCredentials),
+        deps.connectorIdentity,
+      );
+      const result = authenticator.authenticate(req);
+      if (!result.ok) {
+        sendPairingCredentialUnauthorized(res);
+        return;
+      }
+
+      res.json({
+        credentialId: result.principal.credentialId,
+        deviceId: result.principal.deviceId,
+        deviceLabel: result.principal.deviceLabel,
+        connectorId: result.principal.connectorId,
+        createdAt: result.principal.createdAt,
+        lastUsedAt: result.principal.lastUsedAt,
+        status: 'active',
+      });
+    }),
+  );
+
+  /**
+   * POST /device/pairing-credential/self/revoke
+   *
+   * Android-facing device self-revocation: lets a device retire its own credential (e.g. on
+   * uninstall/logout) without any Desktop involvement. Authenticated the same way as self-status
+   * above, by the device's own bearer pairing credential — deliberately a SEPARATE authorization
+   * model from POST /device/pairing-credential/revoke below (Desktop control token + explicit
+   * credentialId), which this route does not reuse or merge with.
+   *
+   * Reads no credentialId (or any other target identifier) from the request body at all — the
+   * only credential that can ever be revoked here is the one that authenticated the request, so
+   * one device can never revoke another's credential even if it tried to supply one.
+   */
+  router.post(
+    '/device/pairing-credential/self/revoke',
+    requirePairingEnabled,
+    asyncHandler(async (req, res) => {
+      if (rejectInsecureLan(req, res, deps.config)) {
+        return;
+      }
+
+      const credentials = requireCredentials(deps.pairingCredentials);
+      const authenticator = new PairingCredentialAuthenticator(credentials, deps.connectorIdentity);
+      const result = authenticator.authenticate(req);
+      if (!result.ok) {
+        sendPairingCredentialUnauthorized(res);
+        return;
+      }
+
+      credentials.revoke(result.principal.credentialId);
+      res.json({ ok: true, message: 'Device credential revoked.' });
     }),
   );
 

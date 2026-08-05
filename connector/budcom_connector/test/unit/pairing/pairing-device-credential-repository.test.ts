@@ -114,4 +114,55 @@ describe('PairingDeviceCredentialRepository', () => {
     const record = credentials.listByConnector(connectorId)[0];
     expect(record?.deviceId).toBeNull();
   });
+
+  describe('findByToken (read-only, includes revoked rows, never mutates)', () => {
+    it('finds an active credential without mutating last_used_at', async () => {
+      const { credentials, pairingSessionId, connectorId } = await setup();
+      const { rawToken, credentialId } = credentials.issue({ pairingSessionId, connectorId });
+
+      const found = credentials.findByToken(rawToken);
+      expect(found?.credentialId).toBe(credentialId);
+      expect(found?.lastUsedAt).toBeNull();
+    });
+
+    it('finds a revoked credential (unlike validateToken, which excludes it)', async () => {
+      const { credentials, pairingSessionId, connectorId } = await setup();
+      const { rawToken, credentialId } = credentials.issue({ pairingSessionId, connectorId });
+      credentials.revoke(credentialId);
+
+      expect(credentials.validateToken(rawToken)).toBeNull();
+      const found = credentials.findByToken(rawToken);
+      expect(found?.credentialId).toBe(credentialId);
+      expect(found?.revokedAt).not.toBeNull();
+    });
+
+    it('returns null for an unknown token', async () => {
+      const { credentials, pairingSessionId, connectorId } = await setup();
+      credentials.issue({ pairingSessionId, connectorId });
+
+      expect(credentials.findByToken('not-a-real-token')).toBeNull();
+    });
+  });
+
+  describe('touchLastUsed', () => {
+    it('sets last_used_at for an active credential', async () => {
+      const { credentials, pairingSessionId, connectorId } = await setup();
+      const { credentialId } = credentials.issue({ pairingSessionId, connectorId });
+
+      const touchedAt = credentials.touchLastUsed(credentialId);
+      const record = credentials.listByConnector(connectorId).find((c) => c.credentialId === credentialId);
+      expect(record?.lastUsedAt).toBe(touchedAt);
+    });
+
+    it('does not resurrect a revoked credential', async () => {
+      const { credentials, pairingSessionId, connectorId } = await setup();
+      const { credentialId } = credentials.issue({ pairingSessionId, connectorId });
+      credentials.revoke(credentialId);
+
+      credentials.touchLastUsed(credentialId);
+      const record = credentials.listByConnector(connectorId)[0];
+      expect(record?.lastUsedAt).toBeNull();
+      expect(record?.revokedAt).not.toBeNull();
+    });
+  });
 });

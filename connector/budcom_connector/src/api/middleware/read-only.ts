@@ -6,6 +6,7 @@ const ALLOWED_WRITE_ROUTES = new Set([
   'POST /device/pairing-session/redeem',
   'POST /device/pairing-session/cancel',
   'POST /device/pairing-credential/revoke',
+  'POST /device/pairing-credential/self/revoke',
   'POST /session/company',
   'DELETE /session/company',
   'POST /session/validate',
