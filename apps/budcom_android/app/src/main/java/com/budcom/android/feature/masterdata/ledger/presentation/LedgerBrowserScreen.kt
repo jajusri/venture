@@ -14,6 +14,7 @@ import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -21,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -150,7 +152,10 @@ fun LedgerBrowserScreen(
                                 .testTag("ledger_list"),
                         ) {
                             items(state.ledgers, key = { it.id }) { row ->
-                                LedgerRowCard(row = row)
+                                LedgerRowCard(
+                                    row = row,
+                                    onClick = { onEvent(LedgerBrowserEvent.LedgerTapped(row.id)) },
+                                )
                             }
                             if (state.isLoadingMore) {
                                 item {
@@ -178,11 +183,27 @@ fun LedgerBrowserScreen(
             )
         }
     }
+
+    state.selectedLedgerNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = { onEvent(LedgerBrowserEvent.DismissLedgerNotice) },
+            confirmButton = {
+                TextButton(
+                    onClick = { onEvent(LedgerBrowserEvent.DismissLedgerNotice) },
+                    modifier = Modifier.testTag("ledger_notice_dismiss"),
+                ) { Text("OK") }
+            },
+            text = { Text(notice, modifier = Modifier.testTag("ledger_notice_message")) },
+            modifier = Modifier.testTag("ledger_notice_dialog"),
+        )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LedgerRowCard(row: LedgerRowUi) {
+private fun LedgerRowCard(row: LedgerRowUi, onClick: () -> Unit) {
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .testTag("ledger_row_${row.id}")

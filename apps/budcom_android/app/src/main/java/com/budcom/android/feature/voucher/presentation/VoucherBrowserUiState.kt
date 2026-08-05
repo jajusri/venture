@@ -25,6 +25,8 @@ data class VoucherBrowserUiState(
     val canLoadMore: Boolean = false,
     val isOnline: Boolean = true,
     val error: MasterDataUiError? = null,
+    /** Set only when a manual refresh fails while cached rows remain visible; cleared on the next successful refresh/load. */
+    val refreshError: String? = null,
     val cacheState: VoucherCacheState = VoucherCacheState.NoCache,
     val lastSyncedAt: Long? = null,
 ) {
@@ -44,6 +46,9 @@ internal fun VoucherCacheState.statusText(lastSyncedAt: Long?): String = when (t
     VoucherCacheState.Offline -> "Offline · Last synced ${lastSyncedAt?.let(::formatSyncTime) ?: "unknown"}"
     VoucherCacheState.NoCache -> "No offline data"
 }
+
+internal fun refreshFailedMessage(lastSyncedAt: Long?): String =
+    "Could not refresh · Showing data last synced at ${lastSyncedAt?.let(::formatSyncTime) ?: "unknown"}"
 
 private fun formatSyncTime(value: Long): String = java.text.DateFormat.getDateTimeInstance(
     java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT,

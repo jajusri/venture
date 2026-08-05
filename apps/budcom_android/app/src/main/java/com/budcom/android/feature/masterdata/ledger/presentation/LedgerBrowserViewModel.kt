@@ -63,6 +63,19 @@ class LedgerBrowserViewModel @Inject constructor(
                     load(page = 1, append = false, refreshing = false)
                 }
             }
+            is LedgerBrowserEvent.LedgerTapped -> {
+                val notice = if (event.ledgerId.isBlank()) {
+                    "Unable to open this ledger: its identifier is missing."
+                } else if (_uiState.value.ledgers.none { it.id == event.ledgerId }) {
+                    "Unable to open this ledger: it is no longer in the current list."
+                } else {
+                    "Ledger details are not available in this release."
+                }
+                _uiState.update { it.copy(selectedLedgerNotice = notice) }
+            }
+            LedgerBrowserEvent.DismissLedgerNotice -> {
+                _uiState.update { it.copy(selectedLedgerNotice = null) }
+            }
         }
     }
 

@@ -21,6 +21,9 @@ data class LedgerBrowserUiState(
     val dataFreshnessAt: String? = null,
     val isOnline: Boolean = true,
     val error: MasterDataUiError? = null,
+    /** Set when the user taps a ledger row; ledger details are not yet implemented, so this
+     * gives an explicit, non-silent response instead of a dead tap. Cleared on dismissal. */
+    val selectedLedgerNotice: String? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isLoadingMore
     val hasContent: Boolean get() = ledgers.isNotEmpty()
@@ -40,6 +43,8 @@ sealed interface LedgerBrowserEvent {
     data object Retry : LedgerBrowserEvent
     data object LoadNextPage : LedgerBrowserEvent
     data class SearchChanged(val query: String) : LedgerBrowserEvent
+    data class LedgerTapped(val ledgerId: String) : LedgerBrowserEvent
+    data object DismissLedgerNotice : LedgerBrowserEvent
 }
 
 /** @deprecated Prefer [MasterDataUiError]; retained as alias for ledger call sites. */

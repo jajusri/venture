@@ -44,6 +44,15 @@ class InvoiceShareContentTest {
     }
 
     @Test
+    fun `ineligible vouchers expose a concise reason and eligible vouchers expose none`() {
+        assertEquals(null, details().shareIneligibilityReason())
+        assertTrue(details().copy(summary = details().summary.copy(type = "Payment")).shareIneligibilityReason()!!.isNotBlank())
+        assertTrue(details().copy(summary = details().summary.copy(status = VoucherStatus.Cancelled)).shareIneligibilityReason()!!.isNotBlank())
+        assertTrue(details().copy(summary = details().summary.copy(dataQuality = VoucherDataQuality.Incomplete)).shareIneligibilityReason()!!.isNotBlank())
+        assertTrue(details().copy(summary = details().summary.copy(number = null)).shareIneligibilityReason()!!.isNotBlank())
+    }
+
+    @Test
     fun `estimate uses exact heading labels columns and footer`() {
         assertEquals("ESTIMATE", EstimatePdfText.HEADING)
         assertEquals("Est. Voucher No.", EstimatePdfText.VOUCHER_LABEL)

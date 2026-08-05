@@ -177,7 +177,25 @@ fun VoucherBrowserScreen(
                         )
                     }
                     else -> {
-                        if (state.error != null) {
+                        if (state.refreshError != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = state.refreshError,
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f).testTag("voucher_refresh_error"),
+                                )
+                                Button(
+                                    onClick = { onEvent(VoucherBrowserEvent.Refresh) },
+                                    enabled = !state.isBusy,
+                                    modifier = Modifier.testTag("voucher_refresh_error_retry"),
+                                ) { Text("Retry") }
+                            }
+                        } else if (state.error != null) {
                             Text(
                                 text = state.error.displayMessage(),
                                 color = MaterialTheme.colorScheme.error,

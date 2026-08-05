@@ -8,11 +8,13 @@ import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.voucher.domain.usecase.GetVoucherDetailsUseCase
+import com.budcom.android.feature.voucher.domain.usecase.RefreshVoucherDetailsUseCase
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
 import com.budcom.android.feature.voucher.sharing.InvoiceShareCoordinator
 import com.budcom.android.feature.voucher.sharing.InvoiceShareResult
 import com.budcom.android.feature.voucher.sharing.PreparedInvoicePdf
 import com.budcom.android.feature.voucher.sharing.isShareableInvoice
+import com.budcom.android.feature.voucher.sharing.shareIneligibilityReason
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +34,7 @@ import javax.inject.Inject
 class VoucherDetailsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getVoucherDetails: GetVoucherDetailsUseCase,
+    private val refreshVoucherDetails: RefreshVoucherDetailsUseCase,
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
     private val invoiceShareCoordinator: InvoiceShareCoordinator,
@@ -111,13 +114,18 @@ class VoucherDetailsViewModel @Inject constructor(
 
             _uiState.update {
                 when {
-                    refreshing -> it.copy(isRefreshing = true, error = null)
-                    it.hasContent -> it.copy(isRefreshing = true, error = null)
+                    refreshing -> it.copy(isRefreshing = true, refreshError = null)
+                    it.hasContent -> it.copy(isRefreshing = true, refreshError = null)
                     else -> it.copy(isInitialLoading = true, error = null)
                 }
             }
 
-            when (val result = getVoucherDetails(companyId, voucherId)) {
+            val result = if (refreshing) {
+                refreshVoucherDetails(companyId, voucherId)
+            } else {
+                getVoucherDetails(companyId, voucherId)
+            }
+            when (result) {
                 is AppResult.Success -> {
                     loadedDetails = result.value
                     _uiState.update {
@@ -126,19 +134,31 @@ class VoucherDetailsViewModel @Inject constructor(
                             isRefreshing = false,
                             details = result.value.toContentUi(),
                             error = null,
+                            refreshError = null,
                             canShareInvoice = result.value.isShareableInvoice(),
+                            shareUnavailableReason = result.value.shareIneligibilityReason(),
                             cacheState = result.value.cacheState,
                             lastSyncedAt = result.value.lastSyncedAt,
                         )
                     }
                 }
                 is AppResult.Failure -> {
-                    _uiState.update {
-                        it.copy(
-                            isInitialLoading = false,
-                            isRefreshing = false,
-                            error = result.error.toVoucherDetailsUiError(),
-                        )
+                    _uiState.update { state ->
+                        if (refreshing && state.hasContent) {
+                            // A failed refresh must never hide or replace valid cached details.
+                            state.copy(
+                                isInitialLoading = false,
+                                isRefreshing = false,
+                                refreshError = refreshFailedMessage(state.lastSyncedAt),
+                                cacheState = com.budcom.android.feature.voucher.domain.model.VoucherCacheState.Offline,
+                            )
+                        } else {
+                            state.copy(
+                                isInitialLoading = false,
+                                isRefreshing = false,
+                                error = result.error.toVoucherDetailsUiError(),
+                            )
+                        }
                     }
                 }
             }

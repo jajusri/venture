@@ -18,10 +18,12 @@ import com.budcom.android.feature.voucher.domain.model.VoucherMoney
 import com.budcom.android.feature.voucher.domain.model.VoucherMoneySide
 import com.budcom.android.feature.voucher.domain.model.VoucherPage
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
+import com.budcom.android.feature.voucher.domain.model.VoucherCacheState
 import com.budcom.android.feature.voucher.domain.model.VoucherStatus
 import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
 import com.budcom.android.feature.voucher.domain.usecase.GetVoucherDetailsUseCase
+import com.budcom.android.feature.voucher.domain.usecase.RefreshVoucherDetailsUseCase
 import com.budcom.android.feature.voucher.sharing.InvoiceShareCoordinator
 import com.budcom.android.feature.voucher.sharing.InvoiceShareCacheBoundary
 import com.budcom.android.feature.voucher.sharing.InvoiceShareCachePolicy
@@ -77,6 +79,7 @@ class VoucherDetailsViewModelTest {
     private fun createVm(voucherId: String = "v-1") = VoucherDetailsViewModel(
         savedStateHandle = SavedStateHandle(mapOf(VoucherDetailsViewModel.VOUCHER_ID_ARG to voucherId)),
         getVoucherDetails = GetVoucherDetailsUseCase(repository),
+        refreshVoucherDetails = RefreshVoucherDetailsUseCase(repository),
         companySession = companySession,
         connectivityObserver = connectivity,
         invoiceShareCoordinator = shareCoordinator,
@@ -128,14 +131,77 @@ class VoucherDetailsViewModelTest {
     }
 
     @Test
-    fun `refresh retains content on failure`() = runTest(dispatcher) {
+    fun `refresh retains content on failure and sets a distinct refresh error, not the blocking error`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
-        repository.result = AppResult.Failure(AppError.Timeout())
+        repository.refreshResult = AppResult.Failure(AppError.Timeout())
         vm.onEvent(VoucherDetailsEvent.Refresh)
         advanceUntilIdle()
         assertEquals("S-1", vm.uiState.value.details?.numberLabel)
-        assertTrue(vm.uiState.value.error is MasterDataUiError.Timeout)
+        assertEquals(null, vm.uiState.value.error)
+        assertTrue(vm.uiState.value.refreshError?.startsWith("Could not refresh") == true)
+    }
+
+    @Test
+    fun `Load never calls refreshVoucherDetails`() = runTest(dispatcher) {
+        createVm()
+        advanceUntilIdle()
+        assertEquals(1, repository.calls)
+        assertEquals(0, repository.refreshCalls)
+    }
+
+    @Test
+    fun `cached voucher details open via the cache-only path even when refresh would fail`() = runTest(dispatcher) {
+        repository.refreshResult = AppResult.Failure(AppError.Offline())
+        val vm = createVm()
+        advanceUntilIdle()
+        assertEquals("S-1", vm.uiState.value.details?.numberLabel)
+        assertEquals(0, repository.refreshCalls)
+    }
+
+    @Test
+    fun `a later successful refresh clears the previous refresh error`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        repository.refreshResult = AppResult.Failure(AppError.Timeout())
+        vm.onEvent(VoucherDetailsEvent.Refresh)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.refreshError != null)
+
+        repository.refreshResult = AppResult.Success(sampleDetails().copy(cacheState = VoucherCacheState.Live, lastSyncedAt = 555L))
+        vm.onEvent(VoucherDetailsEvent.Refresh)
+        advanceUntilIdle()
+        assertEquals(null, vm.uiState.value.refreshError)
+        assertEquals(VoucherCacheState.Live, vm.uiState.value.cacheState)
+    }
+
+    @Test
+    fun `reopening voucher details ten times returns the same deterministic cached content`() = runTest(dispatcher) {
+        repeat(10) {
+            val vm = createVm()
+            advanceUntilIdle()
+            assertEquals("S-1", vm.uiState.value.details?.numberLabel)
+        }
+        assertEquals(10, repository.calls)
+        assertEquals(0, repository.refreshCalls)
+    }
+
+    @Test
+    fun `ineligible voucher exposes a concise unavailable reason instead of silently hiding the action`() =
+        runTest(dispatcher) {
+            repository.result = AppResult.Success(sampleDetails().copy(summary = sampleDetails().summary.copy(type = "Payment")))
+            val vm = createVm()
+            advanceUntilIdle()
+            assertFalse(vm.uiState.value.canShareInvoice)
+            assertTrue(vm.uiState.value.shareUnavailableReason != null)
+        }
+
+    @Test
+    fun `eligible voucher has no unavailable reason`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.canShareInvoice)
+        assertEquals(null, vm.uiState.value.shareUnavailableReason)
     }
 
     @Test
@@ -156,6 +222,19 @@ class VoucherDetailsViewModelTest {
         val unsupported = createVm("v-2")
         advanceUntilIdle()
         assertFalse(unsupported.uiState.value.canShareInvoice)
+    }
+
+    @Test
+    fun `sharing never calls the Connector at share time`() = runTest(dispatcher) {
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(prepared("share-no-network"))
+        val vm = createVm()
+        advanceUntilIdle()
+        val callsBefore = repository.calls
+        val refreshCallsBefore = repository.refreshCalls
+        vm.onEvent(VoucherDetailsEvent.SharePdf)
+        advanceUntilIdle()
+        assertEquals(callsBefore, repository.calls)
+        assertEquals(refreshCallsBefore, repository.refreshCalls)
     }
 
     @Test
@@ -336,14 +415,24 @@ private class FakeInvoiceShareCoordinator : InvoiceShareCoordinator {
 
 private class FakeDetailsRepository : VoucherRepository {
     var result: AppResult<VoucherDetails> = AppResult.Success(sampleDetails())
+    var refreshResult: AppResult<VoucherDetails> = result
     var calls = 0
+    var refreshCalls = 0
 
     override suspend fun listVouchers(query: VoucherQuery): AppResult<VoucherPage> =
+        AppResult.Failure(AppError.Message("unused"))
+
+    override suspend fun refreshVouchers(query: VoucherQuery): AppResult<VoucherPage> =
         AppResult.Failure(AppError.Message("unused"))
 
     override suspend fun getVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> {
         calls += 1
         return result
+    }
+
+    override suspend fun refreshVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> {
+        refreshCalls += 1
+        return refreshResult
     }
 }
 

@@ -147,7 +147,27 @@ fun VoucherDetailsScreen(
                                 MasterDataOfflineBanner(testTag = "voucher_details_offline_banner")
                             }
                         }
-                        if (state.error != null) {
+                        if (state.refreshError != null) {
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = state.refreshError,
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f).testTag("voucher_details_refresh_error"),
+                                    )
+                                    Button(
+                                        onClick = { onEvent(VoucherDetailsEvent.Refresh) },
+                                        enabled = !state.isBusy,
+                                        modifier = Modifier.testTag("voucher_details_refresh_error_retry"),
+                                    ) { Text("Retry") }
+                                }
+                            }
+                        } else if (state.error != null) {
                             item {
                                 Text(
                                     text = state.error.displayMessage(),
@@ -173,6 +193,22 @@ fun VoucherDetailsScreen(
                                     enabled = !state.isShareBusy,
                                     modifier = Modifier.fillMaxWidth().testTag("share_invoice"),
                                 ) { Text("Share invoice") }
+                            }
+                        } else if (state.shareUnavailableReason != null) {
+                            item {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Button(
+                                        onClick = {},
+                                        enabled = false,
+                                        modifier = Modifier.fillMaxWidth().testTag("share_invoice_unavailable"),
+                                    ) { Text("Share invoice") }
+                                    Text(
+                                        text = state.shareUnavailableReason,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.testTag("share_invoice_unavailable_reason"),
+                                    )
+                                }
                             }
                         }
                         item {

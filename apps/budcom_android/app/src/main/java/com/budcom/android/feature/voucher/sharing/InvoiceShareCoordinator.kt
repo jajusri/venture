@@ -25,12 +25,31 @@ sealed interface InvoiceShareResult<out T> {
     data class Failure(val message: String) : InvoiceShareResult<Nothing>
 }
 
-fun VoucherDetails.isShareableInvoice(): Boolean =
-    summary.type.trim().equals("sales", ignoreCase = true) &&
-        summary.status == VoucherStatus.Active &&
-        summary.dataQuality == VoucherDataQuality.Complete &&
-        !summary.number.isNullOrBlank() &&
-        summary.date.isNotBlank()
+fun VoucherDetails.isShareableInvoice(): Boolean = shareIneligibilityReason() == null
+
+/**
+ * Concise, honest reason sharing is unavailable for this voucher, or `null` when it is
+ * eligible. Mirrors the conditions in [isShareableInvoice] so the UI can explain an
+ * ineligible voucher instead of silently hiding the share action.
+ */
+fun VoucherDetails.shareIneligibilityReason(): String? {
+    if (!summary.type.trim().equals("sales", ignoreCase = true)) {
+        return "Only sales vouchers can be shared as an invoice."
+    }
+    if (summary.status != VoucherStatus.Active) {
+        return "Cancelled vouchers cannot be shared as an invoice."
+    }
+    if (summary.dataQuality != VoucherDataQuality.Complete) {
+        return "This voucher's synced data is incomplete, so it cannot be shared as an invoice."
+    }
+    if (summary.number.isNullOrBlank()) {
+        return "This voucher is missing a voucher number, so it cannot be shared as an invoice."
+    }
+    if (summary.date.isBlank()) {
+        return "This voucher is missing a date, so it cannot be shared as an invoice."
+    }
+    return null
+}
 
 fun sanitizedInvoiceFilename(invoiceNumber: String): String {
     val safe = invoiceNumber

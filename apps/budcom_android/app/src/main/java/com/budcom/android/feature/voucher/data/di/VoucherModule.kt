@@ -2,6 +2,7 @@ package com.budcom.android.feature.voucher.data.di
 
 import com.budcom.android.feature.voucher.data.remote.DefaultVoucherRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.VoucherApi
+import com.budcom.android.feature.voucher.data.remote.VoucherRefreshTimeoutPolicy
 import com.budcom.android.feature.voucher.data.remote.VoucherRemoteDataSource
 import com.budcom.android.feature.voucher.data.local.RoomVoucherLocalDataSource
 import com.budcom.android.feature.voucher.data.local.VoucherLocalDataSource
@@ -51,4 +52,8 @@ object VoucherProvideModule {
     @Singleton
     fun provideVoucherApi(retrofit: Retrofit): VoucherApi =
         retrofit.create(VoucherApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideVoucherRefreshTimeoutPolicy(): VoucherRefreshTimeoutPolicy = VoucherRefreshTimeoutPolicy.Default
 }

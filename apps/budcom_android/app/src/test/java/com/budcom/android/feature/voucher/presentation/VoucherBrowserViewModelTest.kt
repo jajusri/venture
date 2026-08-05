@@ -8,6 +8,7 @@ import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
+import com.budcom.android.feature.voucher.domain.model.VoucherCacheState
 import com.budcom.android.feature.voucher.domain.model.VoucherDataQuality
 import com.budcom.android.feature.voucher.domain.model.VoucherIdentity
 import com.budcom.android.feature.voucher.domain.model.VoucherPage
@@ -30,10 +31,16 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
+/**
+ * Covers the Phase 3E offline-voucher-reliability contract: Load must read the cache
+ * immediately without ever calling refresh, a failed Refresh must never clear or hide
+ * valid cached rows, and repeated navigation must return the same deterministic rows.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoucherBrowserViewModelTest {
     private val dispatcher = StandardTestDispatcher()
@@ -69,7 +76,25 @@ class VoucherBrowserViewModelTest {
         assertFalse(vm.uiState.value.isInitialLoading)
         assertEquals(1, vm.uiState.value.vouchers.size)
         assertEquals("S-1", vm.uiState.value.vouchers[0].primaryLabel)
-        assertEquals("estimation", repository.lastQuery?.companyId)
+        assertEquals("estimation", repository.lastListQuery?.companyId)
+    }
+
+    @Test
+    fun `Load never calls the refresh path`() = runTest(dispatcher) {
+        createVm()
+        advanceUntilIdle()
+        assertEquals(0, repository.refreshCalls)
+        assertEquals(1, repository.listCalls)
+    }
+
+    @Test
+    fun `Refresh never bypasses the cache read on the next Load`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(VoucherBrowserEvent.Refresh)
+        advanceUntilIdle()
+        assertEquals(1, repository.refreshCalls)
+        assertEquals(1, repository.listCalls) // Refresh itself never calls listVouchers
     }
 
     @Test
@@ -78,12 +103,12 @@ class VoucherBrowserViewModelTest {
         val vm = createVm()
         advanceUntilIdle()
         assertTrue(vm.uiState.value.error is MasterDataUiError.Message)
-        assertEquals(0, repository.calls)
+        assertEquals(0, repository.listCalls)
     }
 
     @Test
     fun `empty result`() = runTest(dispatcher) {
-        repository.result = AppResult.Success(
+        repository.listResult = AppResult.Success(
             VoucherPage("estimation", emptyList(), 1, 50, 0, 1),
         )
         val vm = createVm()
@@ -93,22 +118,81 @@ class VoucherBrowserViewModelTest {
     }
 
     @Test
+    fun `true no-cache load failure surfaces the first-sync message, not a generic error`() = runTest(dispatcher) {
+        repository.listResult = AppResult.Failure(
+            AppError.Message("No offline data available. Connect to BUDCOM Desktop and synchronize once."),
+        )
+        val vm = createVm()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.error is MasterDataUiError.Message)
+        assertTrue(vm.uiState.value.vouchers.isEmpty())
+    }
+
+    @Test
     fun `offline without content`() = runTest(dispatcher) {
-        repository.result = AppResult.Failure(AppError.Offline())
+        repository.listResult = AppResult.Failure(AppError.Offline())
         val vm = createVm()
         advanceUntilIdle()
         assertTrue(vm.uiState.value.error is MasterDataUiError.Offline)
     }
 
     @Test
-    fun `refresh retains content on failure`() = runTest(dispatcher) {
+    fun `a slow or failing refresh can never replace valid cached rows with an empty state`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
-        repository.result = AppResult.Failure(AppError.Timeout())
+        repository.refreshResult = AppResult.Failure(AppError.Timeout())
         vm.onEvent(VoucherBrowserEvent.Refresh)
         advanceUntilIdle()
         assertEquals(1, vm.uiState.value.vouchers.size)
-        assertTrue(vm.uiState.value.error is MasterDataUiError.Timeout)
+        assertNull(vm.uiState.value.error)
+    }
+
+    @Test
+    fun `refresh failure with content sets a distinct non-blocking refresh error using the real last-synced time`() =
+        runTest(dispatcher) {
+            val vm = createVm()
+            advanceUntilIdle()
+            repository.listResult = AppResult.Success(
+                VoucherPage("estimation", listOf(sampleSummary()), 1, 50, 1, 1, VoucherCacheState.Offline, 1_700_000_000_000L),
+            )
+            vm.onEvent(VoucherBrowserEvent.Load)
+            advanceUntilIdle()
+            repository.refreshResult = AppResult.Failure(AppError.Timeout())
+            vm.onEvent(VoucherBrowserEvent.Refresh)
+            advanceUntilIdle()
+            val message = vm.uiState.value.refreshError
+            assertTrue(message != null && message.startsWith("Could not refresh"))
+            assertEquals(1, vm.uiState.value.vouchers.size)
+        }
+
+    @Test
+    fun `a later successful refresh clears the previous refresh error`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        repository.refreshResult = AppResult.Failure(AppError.Timeout())
+        vm.onEvent(VoucherBrowserEvent.Refresh)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.refreshError != null)
+
+        repository.refreshResult = AppResult.Success(
+            VoucherPage("estimation", listOf(sampleSummary()), 1, 50, 1, 1, VoucherCacheState.Live, 123L),
+        )
+        vm.onEvent(VoucherBrowserEvent.Refresh)
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.refreshError)
+        assertEquals(VoucherCacheState.Live, vm.uiState.value.cacheState)
+    }
+
+    @Test
+    fun `revisiting the voucher screen ten times returns the same deterministic cached rows`() = runTest(dispatcher) {
+        repeat(10) {
+            val vm = createVm()
+            advanceUntilIdle()
+            assertEquals(1, vm.uiState.value.vouchers.size)
+            assertEquals("S-1", vm.uiState.value.vouchers[0].primaryLabel)
+        }
+        assertEquals(10, repository.listCalls)
+        assertEquals(0, repository.refreshCalls)
     }
 
     @Test
@@ -117,12 +201,12 @@ class VoucherBrowserViewModelTest {
         advanceUntilIdle()
         vm.onEvent(VoucherBrowserEvent.SearchChanged("acme"))
         advanceUntilIdle()
-        assertEquals("acme", repository.lastQuery?.searchText)
+        assertEquals("acme", repository.lastListQuery?.searchText)
     }
 }
 
 private class FakeVoucherRepository : VoucherRepository {
-    var result: AppResult<VoucherPage> = AppResult.Success(
+    var listResult: AppResult<VoucherPage> = AppResult.Success(
         VoucherPage(
             companyId = "estimation",
             items = listOf(sampleSummary()),
@@ -132,16 +216,27 @@ private class FakeVoucherRepository : VoucherRepository {
             totalPages = 1,
         ),
     )
-    var lastQuery: VoucherQuery? = null
-    var calls = 0
+    var refreshResult: AppResult<VoucherPage> = listResult
+    var lastListQuery: VoucherQuery? = null
+    var listCalls = 0
+    var refreshCalls = 0
 
     override suspend fun listVouchers(query: VoucherQuery): AppResult<VoucherPage> {
-        calls += 1
-        lastQuery = query
-        return result
+        listCalls += 1
+        lastListQuery = query
+        return listResult
+    }
+
+    override suspend fun refreshVouchers(query: VoucherQuery): AppResult<VoucherPage> {
+        refreshCalls += 1
+        lastListQuery = query
+        return refreshResult
     }
 
     override suspend fun getVoucherDetails(companyId: String, voucherId: String) =
+        AppResult.Failure(AppError.Message("unused"))
+
+    override suspend fun refreshVoucherDetails(companyId: String, voucherId: String) =
         AppResult.Failure(AppError.Message("unused"))
 }
 

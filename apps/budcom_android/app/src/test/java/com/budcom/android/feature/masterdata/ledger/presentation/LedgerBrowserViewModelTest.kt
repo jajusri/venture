@@ -105,6 +105,33 @@ class LedgerBrowserViewModelTest {
     }
 
     @Test
+    fun `tapping a ledger row triggers an explicit functional response instead of a dead tap`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        assertEquals(null, vm.uiState.value.selectedLedgerNotice)
+        vm.onEvent(LedgerBrowserEvent.LedgerTapped("guid:cash"))
+        assertTrue(vm.uiState.value.selectedLedgerNotice != null)
+    }
+
+    @Test
+    fun `tapping a ledger with a missing identifier does not fail silently`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(LedgerBrowserEvent.LedgerTapped(""))
+        assertTrue(vm.uiState.value.selectedLedgerNotice?.contains("identifier") == true)
+    }
+
+    @Test
+    fun `dismissing the ledger notice clears it`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(LedgerBrowserEvent.LedgerTapped("guid:cash"))
+        assertTrue(vm.uiState.value.selectedLedgerNotice != null)
+        vm.onEvent(LedgerBrowserEvent.DismissLedgerNotice)
+        assertEquals(null, vm.uiState.value.selectedLedgerNotice)
+    }
+
+    @Test
     fun `load next page appends`() = runTest(dispatcher) {
         repository.result = AppResult.Success(
             LedgerPage(

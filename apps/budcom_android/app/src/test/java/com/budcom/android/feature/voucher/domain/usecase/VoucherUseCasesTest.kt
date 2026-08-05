@@ -16,7 +16,7 @@ import org.junit.Test
 
 class VoucherUseCasesTest {
     @Test
-    fun `load refresh and details delegate to repository`() = runTest {
+    fun `load and refresh delegate to their own dedicated repository methods`() = runTest {
         val page = VoucherPage(
             companyId = "estimation",
             items = listOf(sampleSummary()),
@@ -34,9 +34,16 @@ class VoucherUseCasesTest {
         )
         val repo = object : VoucherRepository {
             var listCalls = 0
+            var refreshListCalls = 0
             var detailCalls = 0
+            var refreshDetailCalls = 0
             override suspend fun listVouchers(query: VoucherQuery): AppResult<VoucherPage> {
                 listCalls += 1
+                return AppResult.Success(page)
+            }
+
+            override suspend fun refreshVouchers(query: VoucherQuery): AppResult<VoucherPage> {
+                refreshListCalls += 1
                 return AppResult.Success(page)
             }
 
@@ -47,6 +54,14 @@ class VoucherUseCasesTest {
                 detailCalls += 1
                 return AppResult.Success(details)
             }
+
+            override suspend fun refreshVoucherDetails(
+                companyId: String,
+                voucherId: String,
+            ): AppResult<VoucherDetails> {
+                refreshDetailCalls += 1
+                return AppResult.Success(details)
+            }
         }
         val query = VoucherQuery(
             companyId = "estimation",
@@ -55,8 +70,13 @@ class VoucherUseCasesTest {
         assertEquals(page, (LoadVouchersUseCase(repo)(query) as AppResult.Success).value)
         assertEquals(page, (RefreshVouchersUseCase(repo)(query) as AppResult.Success).value)
         assertEquals(details, (GetVoucherDetailsUseCase(repo)("estimation", "v-1") as AppResult.Success).value)
-        assertEquals(2, repo.listCalls)
+        assertEquals(details, (RefreshVoucherDetailsUseCase(repo)("estimation", "v-1") as AppResult.Success).value)
+
+        // Load must never touch the refresh path, and refresh must never touch the cache-read path.
+        assertEquals(1, repo.listCalls)
+        assertEquals(1, repo.refreshListCalls)
         assertEquals(1, repo.detailCalls)
+        assertEquals(1, repo.refreshDetailCalls)
     }
 
     private fun sampleSummary() = VoucherSummary(

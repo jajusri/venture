@@ -5,20 +5,23 @@ import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.core.network.NetworkError
-import com.budcom.android.core.network.RetryPolicy
 import com.budcom.android.feature.voucher.domain.model.VoucherDateRange
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
 import com.budcom.android.feature.voucher.domain.model.VoucherSort
 import com.budcom.android.feature.voucher.domain.model.VoucherSortDirection
 import com.budcom.android.feature.voucher.domain.model.VoucherSortField
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class VoucherRemoteDataSourceTest {
     private val errorMapper = object : ErrorMapper {
         override fun toNetworkError(throwable: Throwable): NetworkError = when (throwable) {
@@ -47,7 +50,7 @@ class VoucherRemoteDataSourceTest {
     @Test
     fun `coerces paging and encodes sort and filters`() = runTest {
         val api = CapturingVoucherApi()
-        val remote = DefaultVoucherRemoteDataSource(api, errorMapper, online, RetryPolicy.None)
+        val remote = DefaultVoucherRemoteDataSource(api, errorMapper, online)
         val result = remote.fetchVouchers(
             VoucherQuery(
                 companyId = "budcom-test-01",
@@ -81,7 +84,7 @@ class VoucherRemoteDataSourceTest {
     @Test
     fun `maps null voucher body to not found`() = runTest {
         val api = CapturingVoucherApi(detailsNull = true)
-        val remote = DefaultVoucherRemoteDataSource(api, errorMapper, online, RetryPolicy.None)
+        val remote = DefaultVoucherRemoteDataSource(api, errorMapper, online)
         val result = remote.fetchVoucherDetails("budcom-test-01", "missing")
         assertTrue(result is ApiResult.Failure)
         val error = (result as ApiResult.Failure).error
@@ -97,7 +100,7 @@ class VoucherRemoteDataSourceTest {
             override val isOnline: Flow<Boolean> = flowOf(false)
             override fun current(): Boolean = false
         }
-        val remote = DefaultVoucherRemoteDataSource(api, errorMapper, offline, RetryPolicy.None)
+        val remote = DefaultVoucherRemoteDataSource(api, errorMapper, offline)
         val result = remote.fetchVouchers(
             VoucherQuery(
                 companyId = "budcom-test-01",
@@ -107,6 +110,65 @@ class VoucherRemoteDataSourceTest {
         assertTrue(result is ApiResult.Failure)
         assertTrue((result as ApiResult.Failure).error is NetworkError.NoConnectivity)
         assertEquals(0, api.listCalls)
+    }
+
+    @Test
+    fun `a stalled connector call is bounded by the attempt timeout, retries once, then fails`() = runTest {
+        val api = HangingVoucherApi()
+        val policy = VoucherRefreshTimeoutPolicy(attemptTimeoutMillis = 3_000L, retryDelayMillis = 300L, maxAttempts = 2)
+        val remote = DefaultVoucherRemoteDataSource(api, errorMapper, online, policy)
+        val result = remote.fetchVouchers(
+            VoucherQuery(companyId = "budcom-test-01", dateRange = VoucherDateRange("2026-07-01", "2026-07-27")),
+        )
+        assertTrue(result is ApiResult.Failure)
+        assertTrue((result as ApiResult.Failure).error is NetworkError.Timeout)
+        assertEquals(2, api.listCalls)
+        // Two bounded attempts plus one short retry delay: well under the 6-8s ceiling required for manual refresh.
+        assertEquals(6_300L, currentTime)
+    }
+
+    @Test
+    fun `a connector call that recovers on the retry succeeds without a third attempt`() = runTest {
+        val api = HangingVoucherApi(succeedsOnAttempt = 2)
+        val policy = VoucherRefreshTimeoutPolicy(attemptTimeoutMillis = 3_000L, retryDelayMillis = 300L, maxAttempts = 2)
+        val remote = DefaultVoucherRemoteDataSource(api, errorMapper, online, policy)
+        val result = remote.fetchVouchers(
+            VoucherQuery(companyId = "budcom-test-01", dateRange = VoucherDateRange("2026-07-01", "2026-07-27")),
+        )
+        assertTrue(result is ApiResult.Success)
+        assertEquals(2, api.listCalls)
+        assertEquals(3_300L, currentTime)
+    }
+
+    private class HangingVoucherApi(private val succeedsOnAttempt: Int? = null) : VoucherApi {
+        var listCalls = 0
+        override suspend fun listVouchers(
+            company: String,
+            from: String,
+            to: String,
+            page: Int,
+            pageSize: Int,
+            sort: String?,
+            query: String?,
+            voucherType: String?,
+            voucherNumber: String?,
+            partyName: String?,
+        ): VoucherListEnvelopeDto {
+            listCalls += 1
+            if (succeedsOnAttempt != null && listCalls >= succeedsOnAttempt) {
+                return VoucherListEnvelopeDto(
+                    schemaVersion = "1.0.0",
+                    data = VoucherListDataDto(
+                        companyId = company,
+                        items = emptyList(),
+                        pagination = VoucherPaginationDto(page = page, pageSize = pageSize, totalItems = 0, totalPages = 0),
+                    ),
+                )
+            }
+            awaitCancellation()
+        }
+
+        override suspend fun getVoucher(id: String, company: String): VoucherDetailsEnvelopeDto = awaitCancellation()
     }
 
     private class CapturingVoucherApi(

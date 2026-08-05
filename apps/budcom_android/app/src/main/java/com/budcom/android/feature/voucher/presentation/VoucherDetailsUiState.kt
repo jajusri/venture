@@ -16,7 +16,11 @@ data class VoucherDetailsUiState(
     val isOnline: Boolean = true,
     val details: VoucherDetailsContentUi? = null,
     val error: MasterDataUiError? = null,
+    /** Set only when a manual refresh fails while cached details remain visible; cleared on the next successful refresh/load. */
+    val refreshError: String? = null,
     val canShareInvoice: Boolean = false,
+    /** Concise reason sharing is unavailable, shown alongside a disabled share action; null when eligible. */
+    val shareUnavailableReason: String? = null,
     val showShareOptions: Boolean = false,
     val isShareBusy: Boolean = false,
     val shareMessage: String? = null,

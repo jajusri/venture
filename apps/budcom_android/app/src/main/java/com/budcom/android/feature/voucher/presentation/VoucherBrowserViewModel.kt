@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -47,7 +48,7 @@ class VoucherBrowserViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            companySession.observeSelectedCompanyId().collect { companyId ->
+            companySession.observeSelectedCompanyId().distinctUntilChanged().collect { companyId ->
                 _uiState.update { it.copy(companyId = companyId) }
                 onEvent(VoucherBrowserEvent.Load)
             }
@@ -122,9 +123,9 @@ class VoucherBrowserViewModel @Inject constructor(
 
             _uiState.update {
                 when {
-                    refreshing -> it.copy(isRefreshing = true, error = null, companyId = companyId)
+                    refreshing -> it.copy(isRefreshing = true, refreshError = null, companyId = companyId)
                     append -> it.copy(isLoadingMore = true, error = null, companyId = companyId)
-                    it.hasContent -> it.copy(isRefreshing = true, error = null, companyId = companyId)
+                    it.hasContent -> it.copy(isRefreshing = true, refreshError = null, companyId = companyId)
                     else -> it.copy(isInitialLoading = true, error = null, companyId = companyId)
                 }
             }
@@ -157,6 +158,7 @@ class VoucherBrowserViewModel @Inject constructor(
                             totalPages = pageData.totalPages,
                             canLoadMore = pageData.canLoadMore,
                             error = null,
+                            refreshError = null,
                             cacheState = pageData.cacheState,
                             lastSyncedAt = pageData.lastSyncedAt,
                         )
@@ -164,13 +166,24 @@ class VoucherBrowserViewModel @Inject constructor(
                 }
                 is AppResult.Failure -> {
                     _uiState.update { state ->
-                        state.copy(
-                            isInitialLoading = false,
-                            isRefreshing = false,
-                            isLoadingMore = false,
-                            error = result.error.toVoucherUiError(),
-                            cacheState = if (state.hasContent) state.cacheState else com.budcom.android.feature.voucher.domain.model.VoucherCacheState.NoCache,
-                        )
+                        if (refreshing && state.hasContent) {
+                            // A failed refresh must never hide or replace valid cached rows.
+                            state.copy(
+                                isInitialLoading = false,
+                                isRefreshing = false,
+                                isLoadingMore = false,
+                                refreshError = refreshFailedMessage(state.lastSyncedAt),
+                                cacheState = com.budcom.android.feature.voucher.domain.model.VoucherCacheState.Offline,
+                            )
+                        } else {
+                            state.copy(
+                                isInitialLoading = false,
+                                isRefreshing = false,
+                                isLoadingMore = false,
+                                error = result.error.toVoucherUiError(),
+                                cacheState = if (state.hasContent) state.cacheState else com.budcom.android.feature.voucher.domain.model.VoucherCacheState.NoCache,
+                            )
+                        }
                     }
                 }
             }
