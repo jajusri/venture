@@ -14,6 +14,9 @@ import type { Logger } from '../../src/infrastructure/logging/logger.js';
 import type { ApplicationContext } from '../../src/bootstrap/register-services.js';
 import type { VoucherApplicationService } from '../../src/services/voucher/voucher-application.interface.js';
 import type { TrustedDeviceRepository } from '../../src/services/device/trusted-device-repository.js';
+import type { ConnectorIdentityRepository } from '../../src/services/identity/connector-identity-repository.js';
+import type { PairingSessionRepository } from '../../src/services/pairing/pairing-session-repository.js';
+import type { PairingDeviceCredentialRepository } from '../../src/services/pairing/pairing-device-credential-repository.js';
 
 export interface StartTestServicesOptions {
   readonly selectCompanyId?: string;
@@ -55,6 +58,26 @@ export function createTestApp(context: ApplicationContext = createTestContext())
   } catch {
     trustedDevices = undefined;
   }
+  let pairingSessions: PairingSessionRepository | undefined;
+  try {
+    pairingSessions = context.container.resolve<PairingSessionRepository>(ServiceTokens.PairingSessions);
+  } catch {
+    pairingSessions = undefined;
+  }
+  let pairingCredentials: PairingDeviceCredentialRepository | undefined;
+  try {
+    pairingCredentials = context.container.resolve<PairingDeviceCredentialRepository>(
+      ServiceTokens.PairingCredentials,
+    );
+  } catch {
+    pairingCredentials = undefined;
+  }
+  // Always resolvable: ConnectorIdentityRepository's constructor only stores a lazy database
+  // getter closure, it never touches LocalDatabase at resolve time (unlike the repositories
+  // above, which eagerly call getBundle().database and can throw before LocalDatabase starts).
+  const connectorIdentity = context.container.resolve<ConnectorIdentityRepository>(
+    ServiceTokens.ConnectorIdentity,
+  );
   return createExpressApp({
     logger,
     config: context.config,
@@ -67,6 +90,9 @@ export function createTestApp(context: ApplicationContext = createTestContext())
     tallyDiagnostics,
     voucherApplication,
     trustedDevices,
+    connectorIdentity,
+    pairingSessions,
+    pairingCredentials,
   });
 }
 

@@ -54,6 +54,20 @@ export interface ConnectorConfig {
    * make LAN installs unusable, not more secure.
    */
   readonly requireDeviceAuthForLan: boolean;
+  /**
+   * Shared secret Desktop presents (header X-Budcom-Desktop-Control-Token) to start/cancel a
+   * pairing session. Defaults to null (no token configured), which makes
+   * requireDesktopControlToken fail closed on LAN — there is no legitimate caller until Desktop
+   * generates and sends one, which is deferred to the Desktop integration phase.
+   */
+  readonly desktopControlToken: string | null;
+  /**
+   * Gate for the entire secure local pairing (QR/one-time-code) bootstrap surface. Defaults to
+   * false so every pairing-session/-credential route responds with a consistent disabled result
+   * and no existing installation's behavior changes. Independent of requireDeviceAuthForLan,
+   * which gates business-route enforcement, not pairing-bootstrap availability.
+   */
+  readonly securePairingEnabled: boolean;
 }
 
 export const TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
@@ -108,4 +122,6 @@ export const defaultConfig: ConnectorConfig = {
   syncRunHistoryMaxAgeDays: SYNC_RUN_HISTORY_MAX_AGE_DAYS_DEFAULT,
   startupCorrelationId: null,
   requireDeviceAuthForLan: false,
+  desktopControlToken: null,
+  securePairingEnabled: false,
 };

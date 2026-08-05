@@ -19,6 +19,8 @@ import { ApiServerStub } from '../services/placeholders/api-server.stub.js';
 import { LicensingStub } from '../services/placeholders/licensing.stub.js';
 import { TrustedDeviceRepository } from '../services/device/trusted-device-repository.js';
 import { ConnectorIdentityRepository } from '../services/identity/connector-identity-repository.js';
+import { PairingSessionRepository } from '../services/pairing/pairing-session-repository.js';
+import { PairingDeviceCredentialRepository } from '../services/pairing/pairing-device-credential-repository.js';
 import { MdnsAdvertiser } from '../services/discovery/mdns-advertiser.js';
 import { createBonjourMdnsPublisherFactory } from '../services/discovery/bonjour-mdns-publisher.js';
 import { SqliteStorageService } from '../storage/sqlite/storage-service.js';
@@ -190,6 +192,20 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
       ),
   );
   container.registerFactory(
+    ServiceTokens.PairingSessions,
+    () =>
+      new PairingSessionRepository(
+        container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase).getBundle().database,
+      ),
+  );
+  container.registerFactory(
+    ServiceTokens.PairingCredentials,
+    () =>
+      new PairingDeviceCredentialRepository(
+        container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase).getBundle().database,
+      ),
+  );
+  container.registerFactory(
     ServiceTokens.MdnsAdvertiser,
     () =>
       new MdnsAdvertiser({
@@ -272,6 +288,9 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
           ServiceTokens.VoucherSynchronization,
         ),
         trustedDevices: container.resolve<TrustedDeviceRepository>(ServiceTokens.TrustedDevices),
+        connectorIdentity: container.resolve<ConnectorIdentityRepository>(ServiceTokens.ConnectorIdentity),
+        pairingSessions: container.resolve<PairingSessionRepository>(ServiceTokens.PairingSessions),
+        pairingCredentials: container.resolve<PairingDeviceCredentialRepository>(ServiceTokens.PairingCredentials),
       })),
   );
 

@@ -2,6 +2,10 @@ import type { NextFunction, Request, Response } from 'express';
 
 const ALLOWED_WRITE_ROUTES = new Set([
   'POST /device/pair',
+  'POST /device/pairing-session',
+  'POST /device/pairing-session/redeem',
+  'POST /device/pairing-session/cancel',
+  'POST /device/pairing-credential/revoke',
   'POST /session/company',
   'DELETE /session/company',
   'POST /session/validate',

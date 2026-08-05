@@ -1,4 +1,4 @@
-export const STORAGE_SCHEMA_VERSION = 11;
+export const STORAGE_SCHEMA_VERSION = 12;
 
 export const MIGRATION_001 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -597,4 +597,80 @@ CREATE INDEX idx_trusted_devices_company
 
 CREATE INDEX idx_trusted_devices_installation
   ON trusted_devices(installation_id);
+`;
+
+/**
+ * Secure local pairing: expiring bootstrap sessions (QR / one-time code) and the
+ * device-bootstrap credentials they issue on successful redemption.
+ *
+ * Design note — trust model: this is a PHYSICALLY TRUSTED BOOTSTRAP, not an
+ * offline-cryptographically-authenticated one. There is no pre-shared trust anchor a
+ * first-time device could verify a signature against — an HMAC keyed by a secret carried
+ * in the same payload it signs would be circular (whoever can read the payload can already
+ * recompute it) and must never be presented as an authenticity guarantee. Instead: every
+ * field the client submits at redemption (connector_id, host, port) is checked for an
+ * EXACT match against this stored row before the secret is even compared — see
+ * redeemBySessionId in pairing-session-repository.ts. That plus short expiry, single-use
+ * (redeemed_at), cancellable (cancelled_at), a bounded number of guesses (failed_attempts)
+ * before lockout, and constant-time secret comparison is the complete security model for
+ * this phase. It does not by itself prove the QR/code was never tampered with before the
+ * human scanned it — only that whatever the client is now presenting matches what was
+ * stored at creation time. The live /health connectorId cross-check after connecting is
+ * the future Android client's responsibility, not something this repository can perform
+ * on its behalf.
+ *
+ * - secret_hash / short_code_hash store SHA-256 hex digests only; the raw secret and raw
+ *   short code are returned once at creation time and never persisted.
+ * - host/port/schema_version are captured at creation time so a redemption attempt whose
+ *   submitted values don't match the session as originally created is rejected — counted
+ *   against the same failed_attempts budget as a wrong-secret guess, and reported to the
+ *   caller as one generic failure (see outcomeToHttpFailure in api/routes/pairing.ts) so
+ *   the external response never discloses which field was wrong.
+ * - Exactly one pairing session is active per Connector at a time: creating a new session
+ *   cancels any still-active prior session for the same connector_id (enforced in the
+ *   repository, not in SQL, so the cancellation is observable/testable). Expired-but-unused
+ *   sessions are opportunistically pruned on every create() call (no background timer).
+ * - connector_id is stamped from the Connector's own stable identity at creation time — a
+ *   session can never be created "for" a different connector.
+ * - pairing_device_credentials.device_id is the Android-supplied logical device identifier
+ *   (never IMEI/serial/Android ID) when the redeeming client provides one; nullable because
+ *   this phase does not yet require Android to send it.
+ */
+export const MIGRATION_012 = `
+CREATE TABLE pairing_sessions (
+  pairing_session_id TEXT PRIMARY KEY,
+  connector_id        TEXT NOT NULL,
+  connector_name      TEXT NOT NULL,
+  host                 TEXT NOT NULL,
+  port                 INTEGER NOT NULL,
+  schema_version       TEXT NOT NULL,
+  secret_hash          TEXT NOT NULL,
+  short_code_hash       TEXT NOT NULL,
+  failed_attempts      INTEGER NOT NULL DEFAULT 0,
+  created_at           TEXT NOT NULL,
+  expires_at           TEXT NOT NULL,
+  redeemed_at          TEXT,
+  cancelled_at         TEXT
+);
+
+CREATE INDEX idx_pairing_sessions_connector_active
+  ON pairing_sessions(connector_id, redeemed_at, cancelled_at);
+
+CREATE INDEX idx_pairing_sessions_expiry
+  ON pairing_sessions(expires_at);
+
+CREATE TABLE pairing_device_credentials (
+  credential_id       TEXT PRIMARY KEY,
+  pairing_session_id  TEXT NOT NULL REFERENCES pairing_sessions(pairing_session_id),
+  connector_id        TEXT NOT NULL,
+  device_id            TEXT,
+  token_hash           TEXT NOT NULL UNIQUE,
+  device_label         TEXT,
+  created_at           TEXT NOT NULL,
+  last_used_at         TEXT,
+  revoked_at           TEXT
+);
+
+CREATE INDEX idx_pairing_device_credentials_session
+  ON pairing_device_credentials(pairing_session_id);
 `;

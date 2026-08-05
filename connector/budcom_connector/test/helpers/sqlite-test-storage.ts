@@ -47,6 +47,8 @@ export function createTestConnectorConfig(basePath: string): ConnectorConfig {
     syncRunHistoryMaxAgeDays: 90,
     startupCorrelationId: null,
     requireDeviceAuthForLan: false,
+    desktopControlToken: null,
+    securePairingEnabled: false,
   };
 }
 

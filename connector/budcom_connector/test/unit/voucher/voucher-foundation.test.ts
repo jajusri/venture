@@ -67,7 +67,9 @@ describe('Voucher Phase 1 foundation', () => {
   });
 
   it('registers the immutable Voucher snapshot migration', () => {
-    expect(STORAGE_SCHEMA_VERSION).toBe(11);
+    // Pinned as a drift guard for this migration's place in the sequence — not a bound on the
+    // overall schema version, which has since advanced past 11 (see MIGRATION_012 for pairing).
+    expect(STORAGE_SCHEMA_VERSION).toBeGreaterThanOrEqual(11);
     expect(MIGRATION_009).toContain('CREATE TABLE voucher_snapshots');
     expect(MIGRATION_009).toContain('CREATE TABLE voucher_active_snapshots');
     expect(MIGRATION_010).toContain('CREATE TABLE voucher_sync_reservations');

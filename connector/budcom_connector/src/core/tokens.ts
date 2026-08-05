@@ -29,6 +29,8 @@ export const ServiceTokens = {
   ConnectorIdentity: 'ConnectorIdentity',
   TrustedDevices: 'TrustedDevices',
   MdnsAdvertiser: 'MdnsAdvertiser',
+  PairingSessions: 'PairingSessions',
+  PairingCredentials: 'PairingCredentials',
 } as const;
 
 export type ServiceToken = (typeof ServiceTokens)[keyof typeof ServiceTokens];

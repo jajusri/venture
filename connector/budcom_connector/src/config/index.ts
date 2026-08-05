@@ -212,6 +212,11 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
       process.env.BUDCOM_REQUIRE_DEVICE_AUTH_FOR_LAN,
       defaultConfig.requireDeviceAuthForLan,
     ),
+    desktopControlToken: process.env.BUDCOM_DESKTOP_CONTROL_TOKEN?.trim() || null,
+    securePairingEnabled: parseBoolean(
+      process.env.BUDCOM_SECURE_PAIRING_ENABLED,
+      defaultConfig.securePairingEnabled,
+    ),
     ...overrides,
   };
 

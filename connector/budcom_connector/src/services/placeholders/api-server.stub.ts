@@ -12,6 +12,9 @@ import type { LedgerSyncService } from '../ledger/ledger-sync.service.js';
 import type { StockItemSyncService } from '../stock-item/stock-item-sync.service.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
 import type { TrustedDeviceRepository } from '../device/trusted-device-repository.js';
+import type { ConnectorIdentityRepository } from '../identity/connector-identity-repository.js';
+import type { PairingSessionRepository } from '../pairing/pairing-session-repository.js';
+import type { PairingDeviceCredentialRepository } from '../pairing/pairing-device-credential-repository.js';
 import type {
   VoucherApplicationService,
   VoucherSnapshotSyncService,
@@ -28,6 +31,9 @@ export interface ApiServerDeps {
   readonly voucherApplication: VoucherApplicationService;
   readonly voucherSynchronization?: VoucherSnapshotSyncService;
   readonly trustedDevices?: TrustedDeviceRepository;
+  readonly connectorIdentity: ConnectorIdentityRepository;
+  readonly pairingSessions?: PairingSessionRepository;
+  readonly pairingCredentials?: PairingDeviceCredentialRepository;
 }
 
 export class ApiServerStub implements ApiServerService {
@@ -57,6 +63,9 @@ export class ApiServerStub implements ApiServerService {
       voucherApplication: deps.voucherApplication,
       voucherSynchronization: deps.voucherSynchronization,
       trustedDevices: deps.trustedDevices,
+      connectorIdentity: deps.connectorIdentity,
+      pairingSessions: deps.pairingSessions,
+      pairingCredentials: deps.pairingCredentials,
     });
 
     await new Promise<void>((resolve, reject) => {

@@ -45,6 +45,17 @@ export function createDevicePairingRouter(trustedDeviceRepository?: TrustedDevic
   /**
    * POST /device/pair
    *
+   * COMPATIBILITY-ONLY TECHNICAL DEBT: this route issues a company-bound bearer token to any
+   * caller who can reach it and already knows a companyId/companyName/installationId — with no
+   * expiring session, no one-time-secret challenge, and no exact-endpoint binding in front of
+   * it. It predates the pairing-session foundation added in this phase
+   * (pairing-session-repository.ts / api/routes/pairing.ts) and is kept only because the
+   * current Android flow has not yet been migrated to redeem through a pairing session first.
+   * Secure pairing is NOT complete while this route remains reachable unchanged — its
+   * restriction or removal belongs to the later integration phase, once Desktop and Android
+   * both use POST /device/pairing-session/redeem. Do not present this route's continued
+   * existence as evidence that pairing is secured end-to-end.
+   *
    * First-time pairing: the Connector creates a cryptographically random
    * bearer token, stores only its SHA-256 hash, and returns the raw token
    * once to the caller (Android). The caller must store it securely.

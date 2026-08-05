@@ -18,6 +18,7 @@ import {
   MIGRATION_009,
   MIGRATION_010,
   MIGRATION_011,
+  MIGRATION_012,
   STOCK_ITEM_COLUMN_UPGRADES,
   STORAGE_SCHEMA_VERSION,
 } from './schema.js';
@@ -261,6 +262,10 @@ export class SqliteDatabase {
       if (currentVersion < 11) {
         db.exec(MIGRATION_011);
         db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(11, now);
+      }
+      if (currentVersion < 12) {
+        db.exec(MIGRATION_012);
+        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, applied_at) VALUES (?, ?)').run(12, now);
       }
       db.exec('COMMIT;');
     } catch (error) {

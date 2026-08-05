@@ -29,10 +29,17 @@ import type {
   VoucherSnapshotSyncService,
 } from '../services/voucher/voucher-application.interface.js';
 import { createRequestLoggingMiddleware } from './middleware/request-logging.js';
+import { createPairingBootstrapRouter, createPairingCredentialManagementRouter } from './routes/pairing.js';
+import type { ConnectorIdentityRepository } from '../services/identity/connector-identity-repository.js';
+import type { PairingSessionRepository } from '../services/pairing/pairing-session-repository.js';
+import type { PairingDeviceCredentialRepository } from '../services/pairing/pairing-device-credential-repository.js';
 
 export interface ExpressAppDeps {
   readonly logger: Logger;
-  readonly config: Pick<ConnectorConfig, 'networkExposure' | 'requireDeviceAuthForLan'>;
+  readonly config: Pick<
+    ConnectorConfig,
+    'networkExposure' | 'requireDeviceAuthForLan' | 'desktopControlToken' | 'securePairingEnabled' | 'host' | 'port'
+  >;
   readonly healthService: HealthService;
   readonly companyDiscovery: CompanyDiscoveryService;
   readonly connectorSession: ConnectorSessionService;
@@ -44,6 +51,11 @@ export interface ExpressAppDeps {
   readonly voucherSynchronization?: VoucherSnapshotSyncService;
   /** Optional: when provided, device pairing routes are functional. */
   readonly trustedDevices?: TrustedDeviceRepository;
+  readonly connectorIdentity: ConnectorIdentityRepository;
+  /** Optional: when provided (and securePairingEnabled is true), pairing-session routes are functional. */
+  readonly pairingSessions?: PairingSessionRepository;
+  /** Optional: when provided (and securePairingEnabled is true), pairing-credential routes are functional. */
+  readonly pairingCredentials?: PairingDeviceCredentialRepository;
 }
 
 export function createExpressApp(deps: ExpressAppDeps): Express {
@@ -62,11 +74,28 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
   // point — including device *management* routes (list/lookup/revoke, which read back or
   // mutate other devices' state) — is gated by requireTrustedDeviceAuth.
   app.use(createDevicePairingRouter(deps.trustedDevices));
+  // New pairing-session (QR/one-time-code) bootstrap surface — see routes/pairing.ts. Mounted
+  // before the trusted-device gate for the same reason as createDevicePairingRouter above: an
+  // unpaired device has no credential yet. Every route inside is independently gated behind the
+  // securePairingEnabled feature flag (default false), so this addition is inert until that
+  // flag is explicitly turned on.
+  app.use(createPairingBootstrapRouter({
+    config: deps.config,
+    connectorIdentity: deps.connectorIdentity,
+    pairingSessions: deps.pairingSessions,
+    pairingCredentials: deps.pairingCredentials,
+  }));
   app.use(createRequireTrustedDeviceAuthMiddleware({
     config: deps.config,
     trustedDevices: deps.trustedDevices,
   }));
   app.use(createDeviceManagementRouter(deps.trustedDevices));
+  // Pairing-credential revocation mutates trust state like device management above, so it is
+  // mounted after the same trusted-device gate.
+  app.use(createPairingCredentialManagementRouter({
+    config: deps.config,
+    pairingCredentials: deps.pairingCredentials,
+  }));
   app.use(createCompaniesRouter(deps.companyDiscovery));
   app.use(createSessionRouter(deps.connectorSession));
   app.use(createMasterDataRouter(deps.masterData));
