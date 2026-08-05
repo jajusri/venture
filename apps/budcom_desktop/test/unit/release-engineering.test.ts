@@ -159,6 +159,36 @@ describe('connector packaged paths', () => {
     expect(env.BUDCOM_CONNECTOR_ID).toBe('9c98ff3c-3b1c-4429-a1a9-4055ef4c95e4');
     expect(env.BUDCOM_CONNECTOR_NAME).toBe('Front Desk');
   });
+
+  it('passes the secure-pairing child-env overrides through to the child when explicitly supplied (Phase 3L)', () => {
+    const env = buildConnectorChildEnvironment({ PATH: 'C:\\Windows' }, {
+      BUDCOM_SECURE_PAIRING_ENABLED: 'true',
+      BUDCOM_SECURE_TRANSPORT_ENABLED: 'true',
+      BUDCOM_SECURE_TRANSPORT_PORT: '8443',
+      BUDCOM_DESKTOP_CONTROL_TOKEN: 'a-fresh-per-launch-token',
+    });
+    expect(env.BUDCOM_SECURE_PAIRING_ENABLED).toBe('true');
+    expect(env.BUDCOM_SECURE_TRANSPORT_ENABLED).toBe('true');
+    expect(env.BUDCOM_SECURE_TRANSPORT_PORT).toBe('8443');
+    expect(env.BUDCOM_DESKTOP_CONTROL_TOKEN).toBe('a-fresh-per-launch-token');
+  });
+
+  it('does not pass the secure-pairing keys through at all when they are absent from overrides (default-off compatibility)', () => {
+    const env = buildConnectorChildEnvironment({ PATH: 'C:\\Windows' }, { BUDCOM_CONNECTOR_PORT: '8080' });
+    expect(env.BUDCOM_SECURE_PAIRING_ENABLED).toBeUndefined();
+    expect(env.BUDCOM_SECURE_TRANSPORT_ENABLED).toBeUndefined();
+    expect(env.BUDCOM_SECURE_TRANSPORT_PORT).toBeUndefined();
+    expect(env.BUDCOM_DESKTOP_CONTROL_TOKEN).toBeUndefined();
+  });
+
+  it('never passes an arbitrary, non-allowlisted secret-looking key through, even under a plausible name', () => {
+    const env = buildConnectorChildEnvironment({ PATH: 'C:\\Windows' }, {
+      BUDCOM_DESKTOP_CONTROL_TOKEN: 'real-token',
+      BUDCOM_SOME_OTHER_SECRET: 'must-not-copy',
+    } as Record<string, string>);
+    expect(env.BUDCOM_DESKTOP_CONTROL_TOKEN).toBe('real-token');
+    expect((env as Record<string, string | undefined>).BUDCOM_SOME_OTHER_SECRET).toBeUndefined();
+  });
 });
 
 describe('single instance ownership', () => {

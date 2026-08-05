@@ -107,6 +107,7 @@ export class SettingsService {
       configStatus: this.configStatus,
       restartRequired: false,
       hasUnsavedChanges: this.pendingDraft !== null,
+      secureMobilePairingEnabled: effective.secureMobilePairingEnabled,
     };
   }
 
@@ -137,6 +138,7 @@ export class SettingsService {
       diagnosticsRetentionDays: preview.diagnosticsRetentionDays,
       tallyHost: preview.tallyHost,
       tallyPort: preview.tallyPort,
+      secureMobilePairingEnabled: preview.secureMobilePairingEnabled,
       restartRequired: requiresRestart(this.resolved.effective, preview),
       hasUnsavedChanges: true,
     };

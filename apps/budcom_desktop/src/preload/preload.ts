@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type { ConnectorLifecycleStatus } from '../application/connector-lifecycle-types.js';
 import type {
+  ActivePairingSessionView,
   CompanyListResult,
   CompanySelectionOutcome,
   ConnectorSessionDto,
@@ -12,6 +13,8 @@ import type {
   LedgerPageState,
   LedgerSyncProgressResult,
   LedgerSyncResult,
+  SecurePairingCapability,
+  SettingsMutationResult,
   StockItemPageState,
   StockItemSyncProgressResult,
   StockItemSyncResult,
@@ -19,6 +22,7 @@ import type {
   SettingsSaveResult,
   SettingsState,
   SettingsValidationResult,
+  TrustedPairingDeviceSummary,
 } from '../application/types.js';
 
 export interface DesktopBridge {
@@ -51,6 +55,14 @@ export interface DesktopBridge {
   syncStockItems(incremental?: boolean): Promise<StockItemSyncResult>;
   cancelStockItemSync(): Promise<StockItemSyncProgressResult>;
   clearStockItemCache(): Promise<{ ok: boolean; message: string }>;
+  getSecurePairingCapability(): Promise<SecurePairingCapability>;
+  enableSecurePairing(): Promise<SettingsMutationResult>;
+  disableSecurePairing(): Promise<SettingsMutationResult>;
+  startPairing(): Promise<ActivePairingSessionView>;
+  getPairingStatus(): Promise<ActivePairingSessionView>;
+  cancelPairing(): Promise<ActivePairingSessionView>;
+  listTrustedPairingDevices(): Promise<readonly TrustedPairingDeviceSummary[]>;
+  revokeTrustedPairingDevice(credentialId: string): Promise<{ ok: boolean; message: string }>;
   onStatusUpdated(listener: () => void): () => void;
 }
 
@@ -84,6 +96,14 @@ const desktopBridge: DesktopBridge = {
   syncStockItems: (incremental = false) => ipcRenderer.invoke('desktop:sync-stock-items', { incremental }),
   cancelStockItemSync: () => ipcRenderer.invoke('desktop:cancel-stock-item-sync'),
   clearStockItemCache: () => ipcRenderer.invoke('desktop:clear-stock-item-cache'),
+  getSecurePairingCapability: () => ipcRenderer.invoke('desktop:get-secure-pairing-capability'),
+  enableSecurePairing: () => ipcRenderer.invoke('desktop:enable-secure-pairing'),
+  disableSecurePairing: () => ipcRenderer.invoke('desktop:disable-secure-pairing'),
+  startPairing: () => ipcRenderer.invoke('desktop:start-pairing'),
+  getPairingStatus: () => ipcRenderer.invoke('desktop:get-pairing-status'),
+  cancelPairing: () => ipcRenderer.invoke('desktop:cancel-pairing'),
+  listTrustedPairingDevices: () => ipcRenderer.invoke('desktop:list-trusted-pairing-devices'),
+  revokeTrustedPairingDevice: (credentialId) => ipcRenderer.invoke('desktop:revoke-trusted-pairing-device', credentialId),
   onStatusUpdated: (listener) => {
     const channel = 'desktop:status-updated';
     const wrapped = (): void => listener();

@@ -11,6 +11,9 @@ import type {
   LedgerStatisticsResult,
   LedgerSyncProgressResult,
   LedgerSyncResult,
+  PairingCredentialListResult,
+  PairingSessionCreateResult,
+  PairingSessionStatusResult,
   SessionSnapshotResponse,
   SessionValidationResponse,
   StockItemListResult,
@@ -19,12 +22,16 @@ import type {
   StockItemSyncResult,
 } from './types.js';
 
+/** Must match require-desktop-control-token.ts's CONTROL_TOKEN_HEADER on the Connector side. */
+export const DESKTOP_CONTROL_TOKEN_HEADER = 'x-budcom-desktop-control-token';
+
 export class ConnectorHttpClient {
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly maxAttempts: number;
   private readonly retryBaseDelayMs: number;
+  private readonly defaultHeaders: Readonly<Record<string, string>>;
 
   constructor(config: ConnectorClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, '');
@@ -32,6 +39,7 @@ export class ConnectorHttpClient {
     this.timeoutMs = config.timeoutMs ?? 10_000;
     this.maxAttempts = config.maxAttempts ?? 3;
     this.retryBaseDelayMs = config.retryBaseDelayMs ?? 500;
+    this.defaultHeaders = config.defaultHeaders ?? {};
   }
 
   async getHealth(): Promise<HealthResponse> {
@@ -45,6 +53,45 @@ export class ConnectorHttpClient {
   /** Paired-device count for the Mobile Access status model. Never includes tokens. */
   async getDeviceList(): Promise<DeviceListResult> {
     return this.getJsonWithRetry<DeviceListResult>('/device/list');
+  }
+
+  /**
+   * Creates a pairing session. Requires the Desktop control-token header (via `defaultHeaders`
+   * on this client instance) whenever the Connector is bound off-loopback — see
+   * require-desktop-control-token.ts on the Connector side. No retry: a pairing session must not
+   * be silently created twice by a transient-failure retry.
+   */
+  async createPairingSession(): Promise<PairingSessionCreateResult> {
+    const response = await this.request('/device/pairing-session', { method: 'POST', body: '{}' });
+    return this.parseJson<PairingSessionCreateResult>(response);
+  }
+
+  async getPairingSessionStatus(pairingSessionId: string): Promise<PairingSessionStatusResult> {
+    return this.getJsonWithRetry<PairingSessionStatusResult>(
+      `/device/pairing-session/status?pairingSessionId=${encodeURIComponent(pairingSessionId)}`,
+    );
+  }
+
+  /** No retry — cancellation must not be attempted twice on a transient network blip. */
+  async cancelPairingSession(pairingSessionId: string): Promise<{ ok: boolean }> {
+    const response = await this.request('/device/pairing-session/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ pairingSessionId }),
+    });
+    return this.parseJson<{ ok: boolean }>(response);
+  }
+
+  async listPairingCredentials(): Promise<PairingCredentialListResult> {
+    return this.getJsonWithRetry<PairingCredentialListResult>('/device/pairing-credentials');
+  }
+
+  /** No retry — revocation must not be attempted twice on a transient network blip. */
+  async revokePairingCredential(credentialId: string): Promise<{ ok: boolean; message: string }> {
+    const response = await this.request('/device/pairing-credential/revoke', {
+      method: 'POST',
+      body: JSON.stringify({ credentialId }),
+    });
+    return this.parseJson<{ ok: boolean; message: string }>(response);
   }
 
   async validateSession(): Promise<SessionValidationResponse> {
@@ -199,6 +246,7 @@ export class ConnectorHttpClient {
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
+          ...this.defaultHeaders,
           ...(requestInit.headers ?? {}),
         },
         signal: controller.signal,

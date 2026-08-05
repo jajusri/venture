@@ -36,6 +36,7 @@ export const settingsFixture = {
   configSource: 'persisted/default',
   configStatus: 'loaded',
   restartRequired: false,
+  secureMobilePairingEnabled: false,
 };
 
 export const diagnosticsFixture = {

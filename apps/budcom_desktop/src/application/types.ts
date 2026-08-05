@@ -210,6 +210,13 @@ export interface SettingsState {
   readonly configStatus: string;
   readonly restartRequired: boolean;
   readonly hasUnsavedChanges?: boolean;
+  readonly secureMobilePairingEnabled: boolean;
+}
+
+export interface SettingsMutationResult {
+  readonly ok: boolean;
+  readonly message: string;
+  readonly restartRequired: boolean;
 }
 
 export interface SettingsSaveResult {
@@ -291,6 +298,100 @@ export interface ConnectorClientConfig {
   readonly timeoutMs?: number;
   readonly maxAttempts?: number;
   readonly retryBaseDelayMs?: number;
+  /**
+   * Sent on every request from this client instance — used solely for the Desktop control-token
+   * header on pairing-control calls (see mobile-pairing-service.ts). Never used to carry a
+   * permanent device credential or any renderer-supplied value.
+   */
+  readonly defaultHeaders?: Readonly<Record<string, string>>;
+}
+
+/** Connector `POST /device/pairing-session` response — Desktop main process only, never IPC. */
+export interface PairingSessionCreateResult {
+  readonly schemaVersion: string;
+  readonly pairingSessionId: string;
+  readonly connectorId: string;
+  readonly connectorName: string;
+  readonly host: string;
+  readonly port: number;
+  readonly expiresAt: string;
+  /** One-time QR secret. Desktop main process only — never logged, persisted, or sent via IPC. */
+  readonly secret: string;
+  /** One-time human-enterable short code. Same handling rules as `secret`. */
+  readonly shortCode: string;
+  readonly transportProtocol?: 'https';
+  readonly securePort?: number;
+  readonly transportFingerprint?: string;
+  readonly fingerprintAlgorithm?: string;
+  readonly transportIdentityVersion?: number;
+}
+
+export interface PairingSessionStatusResult {
+  readonly ok: boolean;
+  readonly pairingSessionId: string;
+  readonly connectorId: string;
+  readonly connectorName: string;
+  readonly host: string;
+  readonly port: number;
+  readonly schemaVersion: string;
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly redeemed: boolean;
+  readonly cancelled: boolean;
+  readonly expired: boolean;
+}
+
+export interface PairingCredentialListItemDto {
+  readonly credentialId: string;
+  readonly deviceId: string | null;
+  readonly deviceLabel: string | null;
+  readonly createdAt: string;
+  readonly lastUsedAt: string | null;
+  readonly revokedAt: string | null;
+  readonly status: 'active' | 'revoked';
+}
+
+export interface PairingCredentialListResult {
+  readonly items: readonly PairingCredentialListItemDto[];
+}
+
+/** What the renderer actually receives for the trusted-device list — see mobile-pairing-service.ts. */
+export interface TrustedPairingDeviceSummary {
+  readonly credentialId: string;
+  readonly deviceLabel: string | null;
+  readonly firstPairedAt: string;
+  readonly lastUsedAt: string | null;
+  readonly status: 'active' | 'revoked';
+}
+
+export type SecurePairingCapabilityState = 'disabled' | 'restart_required' | 'unavailable' | 'ready';
+
+export interface SecurePairingCapability {
+  readonly state: SecurePairingCapabilityState;
+  readonly connectorName: string | null;
+  readonly transportFingerprint: string | null;
+  readonly trustedDeviceCount: number | null;
+  readonly userMessage: string | null;
+}
+
+export type PairingSessionUiState =
+  | 'idle'
+  | 'creating'
+  | 'active'
+  | 'redeemed'
+  | 'expired'
+  | 'cancelled'
+  | 'failed';
+
+/** Sanitized session status the renderer is allowed to see — never the secret/shortCode/token. */
+export interface ActivePairingSessionView {
+  readonly state: PairingSessionUiState;
+  readonly pairingSessionId: string | null;
+  readonly qrDataUrl: string | null;
+  readonly shortCode: string | null;
+  readonly expiresAt: string | null;
+  readonly redeemedDeviceLabel: string | null;
+  readonly userMessage: string | null;
 }
 
 export interface LedgerSummaryDto {

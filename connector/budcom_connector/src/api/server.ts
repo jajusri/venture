@@ -104,6 +104,7 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
   // mounted after the same trusted-device gate.
   app.use(createPairingCredentialManagementRouter({
     config: deps.config,
+    connectorIdentity: deps.connectorIdentity,
     pairingCredentials: deps.pairingCredentials,
   }));
   app.use(createCompaniesRouter(deps.companyDiscovery));

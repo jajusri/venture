@@ -39,6 +39,14 @@ export const ALLOWED_IPC_CHANNELS = [
   'desktop:cancel-stock-item-sync',
   'desktop:get-stock-item-statistics',
   'desktop:clear-stock-item-cache',
+  'desktop:get-secure-pairing-capability',
+  'desktop:enable-secure-pairing',
+  'desktop:disable-secure-pairing',
+  'desktop:start-pairing',
+  'desktop:get-pairing-status',
+  'desktop:cancel-pairing',
+  'desktop:list-trusted-pairing-devices',
+  'desktop:revoke-trusted-pairing-device',
 ] as const;
 
 export type AllowedIpcChannel = (typeof ALLOWED_IPC_CHANNELS)[number];
@@ -62,6 +70,17 @@ export function validateCompanyId(value: unknown): string {
   const trimmed = value.trim();
   if (!/^[a-zA-Z0-9._-]{1,128}$/.test(trimmed)) {
     throw new Error('Company id contains invalid characters.');
+  }
+  return trimmed;
+}
+
+export function validateCredentialId(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new Error('Credential id must be a string.');
+  }
+  const trimmed = value.trim();
+  if (!/^[a-zA-Z0-9._-]{1,128}$/.test(trimmed)) {
+    throw new Error('Credential id contains invalid characters.');
   }
   return trimmed;
 }

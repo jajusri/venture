@@ -535,4 +535,46 @@ body {
 .status-selecting { background: var(--yellow); }
 .status-disconnected,
 .status-error { background: var(--red); }
+
+.pairing-state { display: grid; gap: 0.75rem; margin-top: 0.5rem; }
+
+.pairing-session {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--card);
+  justify-items: start;
+}
+
+#pairing-qr-image {
+  border-radius: 0.4rem;
+  background: #fff;
+  padding: 0.5rem;
+}
+
+.pairing-device-list {
+  display: grid;
+  gap: 0.35rem;
+  min-height: 80px;
+}
+
+.pairing-device-row {
+  display: grid;
+  grid-template-columns: 1.5fr 2fr 0.75fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--card);
+}
+
+.pairing-device-label { font-weight: 600; }
+.pairing-device-meta { color: var(--muted); font-size: 0.85rem; }
+.pairing-device-status { font-size: 0.85rem; font-weight: 600; }
+.pairing-device-status-active { color: var(--green); }
+.pairing-device-status-revoked { color: var(--muted); }
 .status-unknown { background: var(--grey); }

@@ -78,6 +78,7 @@ export class DashboardService {
       configSource: 'runtime',
       configStatus: 'runtime',
       restartRequired: false,
+      secureMobilePairingEnabled: false,
       ...overrides,
     };
   }

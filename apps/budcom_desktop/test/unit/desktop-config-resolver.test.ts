@@ -19,6 +19,7 @@ const VALID_CONFIG: DesktopConfigV1 = {
   diagnosticsRetentionDays: 14,
   tallyHost: '127.0.0.1',
   tallyPort: 9000,
+  secureMobilePairingEnabled: false,
 };
 
 const DEFAULTS: DesktopConfigV1 = VALID_CONFIG;

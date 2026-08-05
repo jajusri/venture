@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Business OS Tally Connector</title>
     <link rel="stylesheet" href="./styles/main.css" />
@@ -32,6 +32,7 @@
         <button class="nav-btn" data-view="connection">Connection</button>
         <button class="nav-btn" data-view="ledgers">Ledgers</button>
         <button class="nav-btn" data-view="stock-items">Stock Items</button>
+        <button class="nav-btn" data-view="pairing">Mobile Pairing</button>
         <button class="nav-btn" data-view="logs">Logs</button>
         <button class="nav-btn" data-view="diagnostics">Diagnostics</button>
         <button class="nav-btn" data-view="settings">Settings</button>
@@ -211,6 +212,56 @@
               <button id="btn-stock-item-prev" class="action-btn secondary" type="button">Previous</button>
               <span id="stock-item-page-label">Page 1</span>
               <button id="btn-stock-item-next" class="action-btn secondary" type="button">Next</button>
+            </div>
+          </article>
+        </section>
+
+        <section id="view-pairing" class="view">
+          <article class="panel">
+            <h2>Secure Mobile Pairing</h2>
+
+            <div id="pairing-state-disabled" class="pairing-state hidden">
+              <p class="panel-meta">
+                Secure mobile pairing is off. A phone cannot be securely paired to this Connector until you
+                turn this on. This does not affect any device that is already connected over the existing
+                connection method.
+              </p>
+              <button id="btn-enable-secure-pairing" class="action-btn" type="button">Enable Secure Mobile Pairing</button>
+            </div>
+
+            <div id="pairing-state-unavailable" class="pairing-state hidden">
+              <p class="panel-meta form-error" id="pairing-unavailable-message"></p>
+            </div>
+
+            <div id="pairing-state-ready" class="pairing-state hidden">
+              <p class="panel-meta">
+                Connector: <strong id="pairing-connector-name">—</strong> ·
+                Trusted devices: <strong id="pairing-trusted-count">—</strong>
+              </p>
+              <button id="btn-start-pairing" class="action-btn" type="button">Start Pairing</button>
+
+              <div id="pairing-session-active" class="pairing-session hidden">
+                <img id="pairing-qr-image" alt="Pairing QR code" width="256" height="256" />
+                <p class="panel-meta">
+                  Short code: <strong id="pairing-short-code">—</strong>
+                  (works only once the phone already knows or has selected this Connector)
+                </p>
+                <p class="panel-meta">Expires in: <strong id="pairing-countdown">—</strong></p>
+                <button id="btn-cancel-pairing" class="action-btn secondary" type="button">Cancel</button>
+              </div>
+
+              <div id="pairing-session-redeemed" class="pairing-session hidden">
+                <p class="panel-meta" id="pairing-redeemed-message"></p>
+                <button id="btn-pairing-done-redeemed" class="action-btn secondary pairing-done-btn" type="button">Done</button>
+              </div>
+
+              <div id="pairing-session-ended" class="pairing-session hidden">
+                <p class="panel-meta" id="pairing-ended-message"></p>
+                <button id="btn-pairing-done-ended" class="action-btn secondary pairing-done-btn" type="button">Close</button>
+              </div>
+
+              <h3>Trusted Devices</h3>
+              <div id="pairing-device-list" class="pairing-device-list"></div>
             </div>
           </article>
         </section>

@@ -445,8 +445,12 @@ export function createPairingBootstrapRouter(deps: PairingBootstrapRouterDeps): 
   return router;
 }
 
+/** Hard cap on GET /device/pairing-credentials — an admin listing, not a general-purpose browse. */
+const MAX_LISTED_PAIRING_CREDENTIALS = 200;
+
 export interface PairingCredentialManagementRouterDeps {
   readonly config: Pick<ConnectorConfig, 'securePairingEnabled' | 'networkExposure' | 'desktopControlToken'>;
+  readonly connectorIdentity: ConnectorIdentityRepository;
   readonly pairingCredentials?: PairingDeviceCredentialRepository;
 }
 
@@ -494,6 +498,42 @@ export function createPairingCredentialManagementRouter(deps: PairingCredentialM
         return;
       }
       res.json({ ok: true, message: 'Device credential revoked.' });
+    }),
+  );
+
+  /**
+   * GET /device/pairing-credentials
+   *
+   * Sanitized administrator listing for the Desktop trusted-device panel. Restricted to Desktop's
+   * own control boundary, same as revoke — this is administrative visibility into trust state,
+   * not a general-purpose database browse. Scoped strictly to this Connector's own identity (a
+   * credential row is always issued against this Connector's connectorId — see
+   * pairing-device-credential-repository.ts — so no cross-Connector data is even reachable here).
+   *
+   * Never returns: token, token hash, pairing secret, short code, or any customer/company/
+   * accounting data — only the fields the Desktop trusted-device list needs to render.
+   */
+  router.get(
+    '/device/pairing-credentials',
+    requirePairingEnabled,
+    requireDesktopControlToken,
+    asyncHandler(async (_req, res) => {
+      const identity = deps.connectorIdentity.getOrCreateIdentity();
+      const records = requireCredentials(deps.pairingCredentials)
+        .listByConnector(identity.connectorId)
+        .slice(0, MAX_LISTED_PAIRING_CREDENTIALS);
+
+      res.json({
+        items: records.map((record) => ({
+          credentialId: record.credentialId,
+          deviceId: record.deviceId,
+          deviceLabel: record.deviceLabel,
+          createdAt: record.createdAt,
+          lastUsedAt: record.lastUsedAt,
+          revokedAt: record.revokedAt,
+          status: record.revokedAt ? 'revoked' : 'active',
+        })),
+      });
     }),
   );
 

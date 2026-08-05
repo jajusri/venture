@@ -133,10 +133,15 @@ export class PairingDeviceCredentialRepository {
     return (result.changes as number) > 0;
   }
 
+  /**
+   * `rowid DESC` as a secondary key breaks ties deterministically when two credentials are
+   * issued within the same millisecond (created_at has only millisecond resolution) — without
+   * it, same-millisecond rows have no defined relative order at all.
+   */
   listByConnector(connectorId: string): readonly PairingDeviceCredentialRecord[] {
     const rows = this.db
       .getDatabase()
-      .prepare('SELECT * FROM pairing_device_credentials WHERE connector_id = ? ORDER BY created_at DESC')
+      .prepare('SELECT *, rowid FROM pairing_device_credentials WHERE connector_id = ? ORDER BY created_at DESC, rowid DESC')
       .all(connectorId) as unknown as PairingDeviceCredentialRow[];
     return rows.map(mapRow);
   }

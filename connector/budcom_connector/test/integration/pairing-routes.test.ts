@@ -93,6 +93,13 @@ describe('secure local pairing — feature flag (default-off)', () => {
     expect(response.status).toBe(501);
   });
 
+  it('GET /device/pairing-credentials is unavailable while the flag is off', async () => {
+    const context = createTestContext();
+    await startTestServices(context);
+    const response = await request(createTestApp(context)).get('/device/pairing-credentials');
+    expect(response.status).toBe(501);
+  });
+
   it('enabling the flag exposes exactly the intended bootstrap routes and nothing else new', async () => {
     const context = await setupLoopbackContext();
     const app = createTestApp(context);
@@ -616,6 +623,158 @@ describe('secure local pairing — HTTP routes (flag enabled)', () => {
         .post('/device/pairing-credential/revoke')
         .send({ credentialId: '00000000-0000-0000-0000-000000000000' });
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe('GET /device/pairing-credentials — administrator listing', () => {
+    it('rejects a request with no Desktop control token on LAN', async () => {
+      const context = await setupLanContext();
+      const response = await request(createTestApp(context)).get('/device/pairing-credentials');
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('FORBIDDEN');
+    });
+
+    it('rejects a request with the wrong Desktop control token on LAN', async () => {
+      const context = await setupLanContext();
+      const response = await request(createTestApp(context))
+        .get('/device/pairing-credentials')
+        .set(CONTROL_TOKEN_HEADER, 'not-the-real-token');
+      expect(response.status).toBe(403);
+    });
+
+    it('is a pass-through on loopback (matches revoke/create/cancel behavior)', async () => {
+      const context = await setupLoopbackContext();
+      const response = await request(createTestApp(context)).get('/device/pairing-credentials');
+      expect(response.status).toBe(200);
+    });
+
+    it('returns a sanitized list: no token, token hash, secret, short code, or company data', async () => {
+      const context = await setupLoopbackContext();
+      const app = createTestApp(context);
+      const created = await request(app).post('/device/pairing-session').send({});
+      const redeemed = await request(app)
+        .post('/device/pairing-session/redeem')
+        .send({
+          pairingSessionId: created.body.pairingSessionId,
+          secret: created.body.secret,
+          connectorId: created.body.connectorId,
+          host: created.body.host,
+          port: created.body.port,
+          deviceId: 'device-uuid-list-001',
+          deviceLabel: "Sri's Phone",
+        });
+
+      const response = await request(app).get('/device/pairing-credentials');
+      expect(response.status).toBe(200);
+      const item = response.body.items.find((entry: { credentialId: string }) => entry.credentialId === redeemed.body.credentialId);
+      expect(item).toBeDefined();
+      expect(Object.keys(item).sort()).toEqual(
+        ['credentialId', 'deviceId', 'deviceLabel', 'createdAt', 'lastUsedAt', 'revokedAt', 'status'].sort(),
+      );
+      expect(item.deviceId).toBe('device-uuid-list-001');
+      expect(item.deviceLabel).toBe("Sri's Phone");
+      expect(item.status).toBe('active');
+      expect(item.revokedAt).toBeNull();
+
+      const serialized = JSON.stringify(response.body);
+      expect(serialized).not.toContain(redeemed.body.token);
+      expect(serialized).not.toMatch(/tokenHash|token_hash|secret|shortCode|company/i);
+    });
+
+    it('reflects revoked status after revocation, and active status before it', async () => {
+      const context = await setupLoopbackContext();
+      const app = createTestApp(context);
+      const created = await request(app).post('/device/pairing-session').send({});
+      const redeemed = await request(app)
+        .post('/device/pairing-session/redeem')
+        .send({
+          pairingSessionId: created.body.pairingSessionId,
+          secret: created.body.secret,
+          connectorId: created.body.connectorId,
+          host: created.body.host,
+          port: created.body.port,
+        });
+
+      const before = await request(app).get('/device/pairing-credentials');
+      const beforeItem = before.body.items.find((entry: { credentialId: string }) => entry.credentialId === redeemed.body.credentialId);
+      expect(beforeItem.status).toBe('active');
+
+      await request(app).post('/device/pairing-credential/revoke').send({ credentialId: redeemed.body.credentialId });
+
+      const after = await request(app).get('/device/pairing-credentials');
+      const afterItem = after.body.items.find((entry: { credentialId: string }) => entry.credentialId === redeemed.body.credentialId);
+      expect(afterItem.status).toBe('revoked');
+      expect(afterItem.revokedAt).not.toBeNull();
+    });
+
+    it('orders results deterministically (newest first) and is strictly scoped to this Connector', async () => {
+      const context = await setupLoopbackContext();
+      const identity = context.container.resolve<ConnectorIdentityRepository>(ServiceTokens.ConnectorIdentity);
+      const pairingCredentials = context.container.resolve<PairingDeviceCredentialRepository>(
+        ServiceTokens.PairingCredentials,
+      );
+      const pairingSessions = context.container.resolve<PairingSessionRepository>(ServiceTokens.PairingSessions);
+      const { connectorId } = identity.getOrCreateIdentity();
+
+      const session = pairingSessions.create({
+        connectorId,
+        connectorName: 'Test Connector',
+        host: '127.0.0.1',
+        port: 8080,
+      });
+      const first = pairingCredentials.issue({ pairingSessionId: session.pairingSessionId, connectorId, deviceLabel: 'first' });
+      const second = pairingCredentials.issue({ pairingSessionId: session.pairingSessionId, connectorId, deviceLabel: 'second' });
+      // A credential issued for a different connectorId must never appear in this listing.
+      pairingCredentials.issue({ pairingSessionId: session.pairingSessionId, connectorId: 'some-other-connector-id', deviceLabel: 'other' });
+
+      const response = await request(createTestApp(context)).get('/device/pairing-credentials');
+      const ids = response.body.items.map((item: { credentialId: string }) => item.credentialId);
+      expect(ids.indexOf(second.credentialId)).toBeLessThan(ids.indexOf(first.credentialId));
+      expect(ids).not.toContain('other');
+      expect(response.body.items.every((item: { deviceLabel: string | null }) => item.deviceLabel !== 'other')).toBe(true);
+    });
+
+    it('bounds the result count to a value suitable for MVP-1 (not a general-purpose browse)', async () => {
+      const context = await setupLoopbackContext();
+      const identity = context.container.resolve<ConnectorIdentityRepository>(ServiceTokens.ConnectorIdentity);
+      const pairingCredentials = context.container.resolve<PairingDeviceCredentialRepository>(
+        ServiceTokens.PairingCredentials,
+      );
+      const pairingSessions = context.container.resolve<PairingSessionRepository>(ServiceTokens.PairingSessions);
+      const { connectorId } = identity.getOrCreateIdentity();
+
+      const session = pairingSessions.create({ connectorId, connectorName: 'Test', host: '127.0.0.1', port: 8080 });
+      for (let i = 0; i < 205; i += 1) {
+        pairingCredentials.issue({ pairingSessionId: session.pairingSessionId, connectorId });
+      }
+
+      const response = await request(createTestApp(context)).get('/device/pairing-credentials');
+      expect(response.body.items.length).toBeLessThanOrEqual(200);
+    });
+
+    it('no secret, token, or control token appears in logs when listing credentials', async () => {
+      const context = await setupLanContext();
+      const logger = context.container.resolve<Logger>(ServiceTokens.Logger);
+      const entries: unknown[] = [];
+      const capture = (message: string, meta?: Record<string, unknown>) => {
+        entries.push({ message, meta });
+      };
+      logger.info = capture;
+      logger.warn = capture;
+      logger.error = capture;
+
+      const app = createTestApp(context);
+      const created = await request(app)
+        .post('/device/pairing-session')
+        .set(CONTROL_TOKEN_HEADER, DESKTOP_TOKEN)
+        .send({});
+      await request(app)
+        .get('/device/pairing-credentials')
+        .set(CONTROL_TOKEN_HEADER, DESKTOP_TOKEN);
+
+      const serializedLogs = JSON.stringify(entries);
+      expect(serializedLogs).not.toContain(created.body.secret);
+      expect(serializedLogs).not.toContain(DESKTOP_TOKEN);
     });
   });
 

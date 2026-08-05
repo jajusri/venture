@@ -37,11 +37,16 @@ import {
 import { CrashRecoveryScheduler } from '../application/network/crash-recovery-scheduler.js';
 import type { ConnectorLifecycleStatus } from '../application/connector-lifecycle-types.js';
 import { MobileAccessStatusService, type RebindState } from '../application/mobile-access-status-service.js';
+import { MobilePairingService } from '../application/mobile-pairing-service.js';
+import { generateDesktopControlToken } from '../application/desktop-control-token.js';
+import { buildSecurePairingChildEnvOverrides } from '../application/secure-pairing-child-env.js';
+import { buildConnectorChildEnvironment } from '../application/release/connector-packaged-paths.js';
 import { FileLogWriter } from '../application/file-log-writer.js';
 import {
   assertAllowedIpcChannel,
   assertBoundedIpcPayload,
   validateCompanyId,
+  validateCredentialId,
   validateExportDirectory,
   validateLedgerQuery,
   validateStockItemQuery,
@@ -246,6 +251,13 @@ function computeEffectiveLifecycleConfig() {
   return applyRouteBackedHost(resolved.lifecycleConfig, activeNetworkAdapter);
 }
 
+// Fresh per managed-Connector-launch Desktop control token — see desktop-control-token.ts.
+// Set inside createLifecycleService() (below) in lockstep with each new lifecycleService
+// instance; never persisted, logged, or exposed through IPC. Cleared to null wherever the
+// managed Connector is explicitly stopped (see stopManagedLanChild, the desktop:stop-connector
+// handler, and the app-quit handlers) so it never outlives the process it was generated for.
+let currentSecurePairingControlToken: string | null = null;
+
 let lifecycleService = createLifecycleService();
 const diagnosticExportRetentionService = new DiagnosticExportRetentionService({
   log: (input) => logService.appendStructured(input),
@@ -292,8 +304,32 @@ function createStockItemService(baseUrl: string): StockItemService {
 }
 
 function createLifecycleService(): ConnectorLifecycleService {
-  const config = computeEffectiveLifecycleConfig();
+  const baseConfig = computeEffectiveLifecycleConfig();
   const isTrustedLan = resolved.effective.connectorBindMode === 'trusted-lan';
+
+  // Secure-pairing child-env wiring (Phase 3L). Default-off: buildSecurePairingChildEnvOverrides
+  // returns {} whenever secureMobilePairingEnabled is false, so childEnv below is byte-for-byte
+  // identical to before this feature existed for every installation that hasn't opted in.
+  // A fresh token is generated for THIS spawn attempt specifically — if the Connector turns out
+  // to already be running externally (adopted as healthy rather than freshly spawned by this
+  // instance), getSecurePairingCapability() correctly reports 'restart_required' rather than
+  // trusting a token that was never actually handed to the running process (see
+  // mobile-pairing-service.ts, which only trusts this token when managedByDesktop is true).
+  const securePairingEnabled = resolved.effective.secureMobilePairingEnabled;
+  currentSecurePairingControlToken = securePairingEnabled ? generateDesktopControlToken() : null;
+  const config = securePairingEnabled
+    ? {
+        ...baseConfig,
+        childEnv: buildConnectorChildEnvironment(
+          baseConfig.childEnv ?? {},
+          buildSecurePairingChildEnvOverrides({
+            enabled: true,
+            controlToken: currentSecurePairingControlToken!,
+          }),
+        ),
+      }
+    : baseConfig;
+
   const service = new ConnectorLifecycleService({
     config,
     processSpawner: new NodeProcessSpawner(),
@@ -348,6 +384,7 @@ function createDiagnosticsService(): DiagnosticsService {
 /** Stops whatever trusted-LAN child is currently running. Safe to call when nothing is running. */
 async function stopManagedLanChild(): Promise<void> {
   await lifecycleService.shutdown();
+  currentSecurePairingControlToken = null;
   diagnosticsService = createDiagnosticsService();
 }
 
@@ -544,6 +581,29 @@ const mobileAccessStatusService = new MobileAccessStatusService({
   getRebindState: () => rebindState,
 });
 
+const mobilePairingService = new MobilePairingService({
+  getConnectorBaseUrl: () => resolved.connectorBaseUrl,
+  getSecureMobilePairingEnabled: () => resolved.effective.secureMobilePairingEnabled,
+  setSecureMobilePairingEnabled: (enabled) => {
+    // A minimal patch — merged by saveSettings() onto the actual persisted config (not the
+    // env-overridden "effective" one), so this never accidentally bakes a transient environment
+    // override into desktop-config.json for an unrelated field.
+    const result = settingsService.saveSettings({ secureMobilePairingEnabled: enabled });
+    if (result.ok && result.restartRequired) {
+      // Mirrors the exact desktop:save-settings IPC handler behavior for every other
+      // RESTART_REQUIRED_FIELDS setting (host/port/bind-mode/etc.) — secureMobilePairingEnabled
+      // is registered in that same list, so this reuses the existing, already-tested managed
+      // reinitialization path rather than introducing a second one.
+      void reinitializeRuntimeServices().then(() => notifyRenderer());
+    } else if (result.ok) {
+      resolved = settingsService.getResolvedConfig();
+    }
+    return { ok: result.ok, message: result.message, restartRequired: result.restartRequired };
+  },
+  getControlToken: () => currentSecurePairingControlToken,
+  getLifecycleStatus: () => lifecycleService.getStatus(),
+});
+
 function notifyRenderer(): void {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('desktop:status-updated');
@@ -680,6 +740,23 @@ function registerIpcHandlers(): void {
   });
   registerIpcHandler('desktop:get-lifecycle-status', async () => lifecycleService.getStatus());
   registerIpcHandler('desktop:get-mobile-access-status', async () => mobileAccessStatusService.getStatus());
+  registerIpcHandler('desktop:get-secure-pairing-capability', async () => mobilePairingService.getSecurePairingCapability());
+  registerIpcHandler('desktop:enable-secure-pairing', async () => {
+    const result = mobilePairingService.enableSecurePairing();
+    notifyRenderer();
+    return result;
+  });
+  registerIpcHandler('desktop:disable-secure-pairing', async () => {
+    const result = mobilePairingService.disableSecurePairing();
+    notifyRenderer();
+    return result;
+  });
+  registerIpcHandler('desktop:start-pairing', async () => mobilePairingService.startPairing());
+  registerIpcHandler('desktop:get-pairing-status', async () => mobilePairingService.getActivePairingStatus());
+  registerIpcHandler('desktop:cancel-pairing', async () => mobilePairingService.cancelPairing());
+  registerIpcHandler('desktop:list-trusted-pairing-devices', async () => mobilePairingService.listTrustedPairingDevices());
+  registerIpcHandler('desktop:revoke-trusted-pairing-device', async (credentialId: unknown) =>
+    mobilePairingService.revokeTrustedPairingDevice(validateCredentialId(credentialId)));
   registerIpcHandler('desktop:start-connector', async () => {
     if (resolved.effective.connectorBindMode === 'trusted-lan') {
       const status = await trustedLanCoordinator.manualStart();
@@ -691,10 +768,13 @@ function registerIpcHandlers(): void {
   registerIpcHandler('desktop:stop-connector', async () => {
     if (resolved.effective.connectorBindMode === 'trusted-lan') {
       const status = await trustedLanCoordinator.manualStop();
+      currentSecurePairingControlToken = null;
       notifyRenderer();
       return toLifecycleStatusForManualCommand(status);
     }
-    return lifecycleService.stopConnector();
+    const status = await lifecycleService.stopConnector();
+    currentSecurePairingControlToken = null;
+    return status;
   });
   registerIpcHandler('desktop:restart-connector', async () => {
     if (resolved.effective.connectorBindMode === 'trusted-lan') {
@@ -874,6 +954,7 @@ export function bootstrapApp(): void {
 
   app.on('before-quit', () => {
     startupDiagnostics.record('before_quit');
+    currentSecurePairingControlToken = null;
     networkWatcher.stop();
     crashRecoveryScheduler.notifyStoppedIntentionally();
     // trustedLanCoordinator.shutdown() cancels any in-flight/queued rebind before stopping the

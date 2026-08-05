@@ -1,4 +1,5 @@
 import type {
+  ActivePairingSessionView,
   CompanyListItemDto,
   DashboardState,
   DiagnosticsSnapshot,
@@ -6,12 +7,15 @@ import type {
   LedgerSyncProgressDto,
   LedgerSyncProgressResult,
   LedgerSyncResult,
+  SecurePairingCapability,
+  SettingsMutationResult,
   StockItemPageState,
   StockItemSyncProgressResult,
   StockItemSyncResult,
   LogEntry,
   SettingsSaveResult,
   SettingsState,
+  TrustedPairingDeviceSummary,
 } from '../../application/types.js';
 import type { ConnectorLifecycleStatus } from '../../application/connector-lifecycle-types.js';
 
@@ -45,6 +49,14 @@ export interface DesktopBridge {
   syncStockItems(incremental?: boolean): Promise<StockItemSyncResult>;
   cancelStockItemSync(): Promise<StockItemSyncProgressResult>;
   clearStockItemCache(): Promise<{ ok: boolean; message: string }>;
+  getSecurePairingCapability(): Promise<SecurePairingCapability>;
+  enableSecurePairing(): Promise<SettingsMutationResult>;
+  disableSecurePairing(): Promise<SettingsMutationResult>;
+  startPairing(): Promise<ActivePairingSessionView>;
+  getPairingStatus(): Promise<ActivePairingSessionView>;
+  cancelPairing(): Promise<ActivePairingSessionView>;
+  listTrustedPairingDevices(): Promise<readonly TrustedPairingDeviceSummary[]>;
+  revokeTrustedPairingDevice(credentialId: string): Promise<{ ok: boolean; message: string }>;
   onStatusUpdated(listener: () => void): () => void;
 }
 
@@ -54,7 +66,7 @@ declare global {
   }
 }
 
-export type DesktopView = 'dashboard' | 'connection' | 'ledgers' | 'stock-items' | 'logs' | 'diagnostics' | 'settings' | 'about';
+export type DesktopView = 'dashboard' | 'connection' | 'ledgers' | 'stock-items' | 'pairing' | 'logs' | 'diagnostics' | 'settings' | 'about';
 
 export interface UiLoadingState {
   readonly dashboard: boolean;
@@ -87,6 +99,16 @@ let stockItemQuery = '';
 const stockItemPageSize = 25;
 const SYNC_PROGRESS_POLL_INTERVAL_MS = 1_000;
 const TERMINAL_SYNC_STATUSES = new Set(['completed', 'cancelled', 'failed', 'interrupted']);
+const PAIRING_STATUS_POLL_INTERVAL_MS = 2_000;
+const PAIRING_SESSION_TERMINAL_STATES = new Set(['redeemed', 'expired', 'cancelled', 'failed']);
+let pairingCapability: SecurePairingCapability | null = null;
+let pairingSession: ActivePairingSessionView | null = null;
+let trustedPairingDevices: readonly TrustedPairingDeviceSummary[] = [];
+let pairingStatusPollActive = false;
+let pairingStatusPollTimer: number | null = null;
+let pairingStatusRequestInFlight = false;
+let pairingCountdownTimer: number | null = null;
+let pairingActionInFlight = false;
 let ledgerProgressPollActive = false;
 let ledgerProgressPollTimer: number | null = null;
 let ledgerProgressRequestInFlight = false;
@@ -586,6 +608,9 @@ export function activateView(view: DesktopView): void {
   if (view !== 'stock-items') {
     stopStockItemProgressPolling();
   }
+  if (view !== 'pairing') {
+    stopPairingStatusPolling();
+  }
   document.querySelectorAll('.view').forEach((element) => element.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach((button) => button.classList.remove('active'));
 
@@ -600,6 +625,9 @@ export function activateView(view: DesktopView): void {
   }
   if (view === 'stock-items') {
     void loadStockItems();
+  }
+  if (view === 'pairing') {
+    void loadPairingPanel();
   }
 }
 
@@ -1363,6 +1391,333 @@ function stopStockItemProgressPolling(): void {
 export function disposeSyncProgressPolling(): void {
   stopLedgerProgressPolling();
   stopStockItemProgressPolling();
+  stopPairingStatusPolling();
+}
+
+// ---------------------------------------------------------------------------
+// Secure Mobile Pairing panel
+// ---------------------------------------------------------------------------
+
+function stopPairingCountdown(): void {
+  if (pairingCountdownTimer !== null) {
+    window.clearInterval(pairingCountdownTimer);
+    pairingCountdownTimer = null;
+  }
+}
+
+function startPairingCountdown(expiresAt: string): void {
+  stopPairingCountdown();
+  const tick = (): void => {
+    const remainingMs = new Date(expiresAt).getTime() - Date.now();
+    const el = document.getElementById('pairing-countdown');
+    if (!el) {
+      return;
+    }
+    if (remainingMs <= 0) {
+      el.textContent = 'Expired';
+      stopPairingCountdown();
+      return;
+    }
+    const totalSeconds = Math.ceil(remainingMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    el.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
+  tick();
+  pairingCountdownTimer = window.setInterval(tick, 1_000);
+}
+
+function stopPairingStatusPolling(): void {
+  pairingStatusPollActive = false;
+  stopPairingCountdown();
+  if (pairingStatusPollTimer !== null) {
+    window.clearTimeout(pairingStatusPollTimer);
+    pairingStatusPollTimer = null;
+  }
+}
+
+async function pollPairingStatus(): Promise<void> {
+  if (!pairingStatusPollActive || activeView !== 'pairing' || pairingStatusRequestInFlight) {
+    return;
+  }
+  if (!pairingSession || PAIRING_SESSION_TERMINAL_STATES.has(pairingSession.state)) {
+    stopPairingStatusPolling();
+    return;
+  }
+  pairingStatusRequestInFlight = true;
+  try {
+    pairingSession = await window.budcomDesktop.getPairingStatus();
+    renderPairingSession();
+    if (PAIRING_SESSION_TERMINAL_STATES.has(pairingSession.state)) {
+      stopPairingStatusPolling();
+      if (pairingSession.state === 'redeemed') {
+        await loadTrustedPairingDevices();
+      }
+      return;
+    }
+  } catch {
+    // A single missed poll must not interrupt an otherwise-active session — the countdown timer
+    // and the next tick continue independently.
+  } finally {
+    pairingStatusRequestInFlight = false;
+  }
+  if (pairingStatusPollActive) {
+    pairingStatusPollTimer = window.setTimeout(() => void pollPairingStatus(), PAIRING_STATUS_POLL_INTERVAL_MS);
+  }
+}
+
+export function startPairingStatusPolling(): void {
+  if (pairingStatusPollActive || activeView !== 'pairing') {
+    return;
+  }
+  pairingStatusPollActive = true;
+  pairingStatusPollTimer = window.setTimeout(() => void pollPairingStatus(), PAIRING_STATUS_POLL_INTERVAL_MS);
+}
+
+function renderPairingCapability(): void {
+  const disabledEl = document.getElementById('pairing-state-disabled');
+  const readyEl = document.getElementById('pairing-state-ready');
+  const unavailableEl = document.getElementById('pairing-state-unavailable');
+  if (!pairingCapability) {
+    return;
+  }
+  const state = pairingCapability.state;
+  disabledEl?.classList.toggle('hidden', state !== 'disabled');
+  readyEl?.classList.toggle('hidden', state !== 'ready');
+  unavailableEl?.classList.toggle(
+    'hidden',
+    state !== 'unavailable' && state !== 'restart_required',
+  );
+
+  if (state === 'ready') {
+    setText('pairing-connector-name', pairingCapability.connectorName ?? 'This Connector');
+    setText(
+      'pairing-trusted-count',
+      pairingCapability.trustedDeviceCount !== null ? String(pairingCapability.trustedDeviceCount) : '—',
+    );
+  }
+  if (state === 'unavailable' || state === 'restart_required') {
+    setText(
+      'pairing-unavailable-message',
+      pairingCapability.userMessage
+        ?? (state === 'restart_required'
+          ? 'Restart the Connector for secure mobile pairing to take effect.'
+          : 'The Connector is not currently available.'),
+    );
+  }
+
+  const startButton = document.getElementById('btn-start-pairing') as HTMLButtonElement | null;
+  if (startButton) {
+    startButton.disabled = state !== 'ready' || pairingActionInFlight;
+  }
+}
+
+function renderPairingSession(): void {
+  const activeEl = document.getElementById('pairing-session-active');
+  const redeemedEl = document.getElementById('pairing-session-redeemed');
+  const endedEl = document.getElementById('pairing-session-ended');
+  if (!pairingSession) {
+    activeEl?.classList.add('hidden');
+    redeemedEl?.classList.add('hidden');
+    endedEl?.classList.add('hidden');
+    return;
+  }
+
+  const state = pairingSession.state;
+  activeEl?.classList.toggle('hidden', state !== 'active');
+  redeemedEl?.classList.toggle('hidden', state !== 'redeemed');
+  endedEl?.classList.toggle('hidden', state !== 'expired' && state !== 'cancelled' && state !== 'failed');
+
+  if (state === 'active') {
+    const qrImage = document.getElementById('pairing-qr-image') as HTMLImageElement | null;
+    if (qrImage && pairingSession.qrDataUrl) {
+      qrImage.src = pairingSession.qrDataUrl;
+    }
+    setText('pairing-short-code', pairingSession.shortCode ?? '—');
+    if (pairingSession.expiresAt) {
+      startPairingCountdown(pairingSession.expiresAt);
+    }
+  } else {
+    stopPairingCountdown();
+  }
+
+  if (state === 'redeemed') {
+    setText(
+      'pairing-redeemed-message',
+      pairingSession.redeemedDeviceLabel
+        ? `Paired successfully: ${pairingSession.redeemedDeviceLabel}`
+        : 'Device paired successfully.',
+    );
+  }
+
+  if (state === 'expired' || state === 'cancelled' || state === 'failed') {
+    const label = state === 'expired'
+      ? 'This pairing session expired.'
+      : state === 'cancelled'
+        ? 'Pairing was cancelled.'
+        : (pairingSession.userMessage ?? 'Pairing failed.');
+    setText('pairing-ended-message', label);
+  }
+}
+
+function renderTrustedPairingDevices(): void {
+  const list = document.getElementById('pairing-device-list');
+  if (!list) {
+    return;
+  }
+  clearElement(list);
+  if (trustedPairingDevices.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'No devices paired yet.';
+    list.appendChild(empty);
+    return;
+  }
+  for (const device of trustedPairingDevices) {
+    const row = document.createElement('div');
+    row.className = 'pairing-device-row';
+
+    const label = document.createElement('span');
+    label.className = 'pairing-device-label';
+    label.textContent = device.deviceLabel ?? 'Unnamed device';
+    row.appendChild(label);
+
+    const meta = document.createElement('span');
+    meta.className = 'pairing-device-meta';
+    meta.textContent = `Paired ${device.firstPairedAt} · Last used ${device.lastUsedAt ?? 'never'}`;
+    row.appendChild(meta);
+
+    const status = document.createElement('span');
+    status.className = `pairing-device-status pairing-device-status-${device.status}`;
+    status.textContent = device.status === 'active' ? 'Active' : 'Revoked';
+    row.appendChild(status);
+
+    if (device.status === 'active') {
+      const revokeButton = document.createElement('button');
+      revokeButton.type = 'button';
+      revokeButton.className = 'action-btn secondary';
+      revokeButton.textContent = 'Revoke';
+      revokeButton.setAttribute('data-credential-id', device.credentialId);
+      row.appendChild(revokeButton);
+    }
+
+    list.appendChild(row);
+  }
+}
+
+async function loadTrustedPairingDevices(): Promise<void> {
+  try {
+    trustedPairingDevices = await window.budcomDesktop.listTrustedPairingDevices();
+  } catch {
+    trustedPairingDevices = [];
+  }
+  renderTrustedPairingDevices();
+}
+
+export async function loadPairingPanel(): Promise<void> {
+  try {
+    pairingCapability = await window.budcomDesktop.getSecurePairingCapability();
+  } catch {
+    pairingCapability = {
+      state: 'unavailable',
+      connectorName: null,
+      transportFingerprint: null,
+      trustedDeviceCount: null,
+      userMessage: 'Unable to reach the Connector.',
+    };
+  }
+  renderPairingCapability();
+  if (pairingCapability.state === 'ready') {
+    await loadTrustedPairingDevices();
+  }
+}
+
+async function handleEnableSecurePairing(): Promise<void> {
+  if (pairingActionInFlight) {
+    return;
+  }
+  pairingActionInFlight = true;
+  try {
+    const result = await window.budcomDesktop.enableSecurePairing();
+    setBanner(result.message, result.ok ? 'information' : 'error');
+    await loadPairingPanel();
+  } catch {
+    setBanner('Unable to enable secure mobile pairing.', 'error');
+  } finally {
+    pairingActionInFlight = false;
+  }
+}
+
+async function handleStartPairing(): Promise<void> {
+  if (pairingActionInFlight) {
+    return;
+  }
+  pairingActionInFlight = true;
+  try {
+    pairingSession = await window.budcomDesktop.startPairing();
+    renderPairingSession();
+    if (pairingSession.state === 'active') {
+      startPairingStatusPolling();
+    } else if (pairingSession.userMessage) {
+      setBanner(pairingSession.userMessage, 'error');
+    }
+  } catch {
+    setBanner('Unable to start pairing.', 'error');
+  } finally {
+    pairingActionInFlight = false;
+    renderPairingCapability();
+  }
+}
+
+async function handleCancelPairing(): Promise<void> {
+  try {
+    pairingSession = await window.budcomDesktop.cancelPairing();
+    renderPairingSession();
+  } catch {
+    setBanner('Unable to cancel pairing.', 'error');
+  } finally {
+    stopPairingStatusPolling();
+  }
+}
+
+async function handleRevokeTrustedDevice(credentialId: string): Promise<void> {
+  if (!window.confirm('Revoke this device? It will immediately lose access to this Connector.')) {
+    return;
+  }
+  try {
+    const result = await window.budcomDesktop.revokeTrustedPairingDevice(credentialId);
+    setBanner(result.message, result.ok ? 'information' : 'warning');
+    await loadTrustedPairingDevices();
+    await loadPairingPanel();
+  } catch {
+    setBanner('Unable to revoke device.', 'error');
+  }
+}
+
+export function bindPairingActions(): void {
+  document.getElementById('btn-enable-secure-pairing')?.addEventListener('click', () => {
+    void handleEnableSecurePairing();
+  });
+  document.getElementById('btn-start-pairing')?.addEventListener('click', () => {
+    void handleStartPairing();
+  });
+  document.getElementById('btn-cancel-pairing')?.addEventListener('click', () => {
+    void handleCancelPairing();
+  });
+  document.querySelectorAll('.pairing-done-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      pairingSession = null;
+      renderPairingSession();
+    });
+  });
+  document.getElementById('pairing-device-list')?.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement;
+    const button = target.closest('[data-credential-id]') as HTMLElement | null;
+    const credentialId = button?.getAttribute('data-credential-id');
+    if (credentialId) {
+      void handleRevokeTrustedDevice(credentialId);
+    }
+  });
 }
 
 async function pollStockItemProgress(): Promise<void> {
@@ -1560,6 +1915,7 @@ export async function startDesktopShell(): Promise<void> {
   bindLifecycleActions();
   bindSettingsActions();
   bindDiagnosticsActions();
+  bindPairingActions();
   await refreshUi({ showLoading: false });
   await loadCompanies();
   window.budcomDesktop.onStatusUpdated(() => {

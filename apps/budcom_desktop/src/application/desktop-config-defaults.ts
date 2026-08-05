@@ -16,6 +16,7 @@ export const PRODUCTION_DEFAULTS: DesktopConfigV1 = {
   diagnosticsRetentionDays: 14,
   tallyHost: 'localhost',
   tallyPort: 9000,
+  secureMobilePairingEnabled: false,
 };
 
 export const DEVELOPMENT_DEFAULTS: DesktopConfigV1 = {

@@ -18,6 +18,14 @@ export interface DesktopConfigV1 {
   readonly diagnosticsRetentionDays: number;
   readonly tallyHost: string;
   readonly tallyPort: number;
+  /**
+   * Local, non-secret activation switch for the Secure Mobile Pairing feature. Defaults to
+   * false so existing Connector launch behaviour (plain HTTP, no pairing routes reachable) is
+   * unchanged for every installation until a user explicitly opts in via Settings. Contains no
+   * secret itself — the Desktop control token is generated fresh in memory per Connector launch
+   * (see desktop-control-token.ts) and is never persisted here or anywhere else.
+   */
+  readonly secureMobilePairingEnabled: boolean;
 }
 
 export type PersistedDesktopConfig = DesktopConfigV1;
@@ -161,6 +169,7 @@ export function validateDesktopConfig(input: unknown): ConfigValidationResult {
 
   const tallyHost = readString(input.tallyHost, 'tallyHost', errors);
   const tallyPort = readNumber(input.tallyPort, 'tallyPort', errors, 1, 65535);
+  const secureMobilePairingEnabled = readBoolean(input.secureMobilePairingEnabled, 'secureMobilePairingEnabled', errors);
 
   if (connectorHost && !/^[a-zA-Z0-9.-]+$/.test(connectorHost)) {
     errors.push({ field: 'connectorHost', message: 'connectorHost contains invalid characters.' });
@@ -205,6 +214,7 @@ export function validateDesktopConfig(input: unknown): ConfigValidationResult {
       diagnosticsRetentionDays: diagnosticsRetentionDays!,
       tallyHost: tallyHost!,
       tallyPort: tallyPort!,
+      secureMobilePairingEnabled: secureMobilePairingEnabled!,
     },
     errors: [],
   };
@@ -241,6 +251,7 @@ export const RESTART_REQUIRED_FIELDS: readonly (keyof DesktopConfigV1)[] = [
   'reconnectBaseDelayMs',
   'tallyHost',
   'tallyPort',
+  'secureMobilePairingEnabled',
 ];
 
 export function requiresRestart(
