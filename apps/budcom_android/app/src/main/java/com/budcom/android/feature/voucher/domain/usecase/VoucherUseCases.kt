@@ -4,6 +4,7 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
 import com.budcom.android.feature.voucher.domain.model.VoucherPage
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
+import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
 import javax.inject.Inject
 
@@ -37,4 +38,12 @@ class RefreshVoucherDetailsUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(companyId: String, voucherId: String): AppResult<VoucherDetails> =
         repository.refreshVoucherDetails(companyId, voucherId)
+}
+
+/** Best-effort local header lookup, usable even before full details have been downloaded. Never contacts the Connector. */
+class GetCachedVoucherSummaryUseCase @Inject constructor(
+    private val repository: VoucherRepository,
+) {
+    suspend operator fun invoke(companyId: String, voucherId: String): VoucherSummary? =
+        repository.getCachedVoucherSummary(companyId, voucherId)
 }

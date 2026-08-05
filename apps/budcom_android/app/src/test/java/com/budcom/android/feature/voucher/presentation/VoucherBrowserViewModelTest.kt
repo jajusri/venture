@@ -238,6 +238,8 @@ private class FakeVoucherRepository : VoucherRepository {
 
     override suspend fun refreshVoucherDetails(companyId: String, voucherId: String) =
         AppResult.Failure(AppError.Message("unused"))
+
+    override suspend fun getCachedVoucherSummary(companyId: String, voucherId: String) = null
 }
 
 private class FakeCompanySession(initial: String?) : CompanySessionPort {

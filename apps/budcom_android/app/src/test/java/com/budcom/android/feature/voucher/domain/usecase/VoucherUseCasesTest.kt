@@ -37,6 +37,7 @@ class VoucherUseCasesTest {
             var refreshListCalls = 0
             var detailCalls = 0
             var refreshDetailCalls = 0
+            var summaryCalls = 0
             override suspend fun listVouchers(query: VoucherQuery): AppResult<VoucherPage> {
                 listCalls += 1
                 return AppResult.Success(page)
@@ -62,6 +63,11 @@ class VoucherUseCasesTest {
                 refreshDetailCalls += 1
                 return AppResult.Success(details)
             }
+
+            override suspend fun getCachedVoucherSummary(companyId: String, voucherId: String): VoucherSummary? {
+                summaryCalls += 1
+                return sampleSummary()
+            }
         }
         val query = VoucherQuery(
             companyId = "estimation",
@@ -71,12 +77,14 @@ class VoucherUseCasesTest {
         assertEquals(page, (RefreshVouchersUseCase(repo)(query) as AppResult.Success).value)
         assertEquals(details, (GetVoucherDetailsUseCase(repo)("estimation", "v-1") as AppResult.Success).value)
         assertEquals(details, (RefreshVoucherDetailsUseCase(repo)("estimation", "v-1") as AppResult.Success).value)
+        assertEquals(sampleSummary(), GetCachedVoucherSummaryUseCase(repo)("estimation", "v-1"))
 
         // Load must never touch the refresh path, and refresh must never touch the cache-read path.
         assertEquals(1, repo.listCalls)
         assertEquals(1, repo.refreshListCalls)
         assertEquals(1, repo.detailCalls)
         assertEquals(1, repo.refreshDetailCalls)
+        assertEquals(1, repo.summaryCalls)
     }
 
     private fun sampleSummary() = VoucherSummary(

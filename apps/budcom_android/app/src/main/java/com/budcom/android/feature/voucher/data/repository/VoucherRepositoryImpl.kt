@@ -12,6 +12,7 @@ import com.budcom.android.feature.voucher.domain.model.VoucherCacheState
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
 import com.budcom.android.feature.voucher.domain.model.VoucherPage
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
+import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -76,6 +77,9 @@ class VoucherRepositoryImpl @Inject constructor(
                 is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(result.error))
             }
         }
+
+    override suspend fun getCachedVoucherSummary(companyId: String, voucherId: String): VoucherSummary? =
+        withContext(dispatchers.io) { localDataSource.summary(companyId, voucherId) }
 
     companion object {
         const val NO_CACHE_MESSAGE = "No offline data available. Connect to BUDCOM Desktop and synchronize once."

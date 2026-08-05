@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.ExperimentalMaterialApi
@@ -17,6 +18,7 @@ import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.Card
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -103,6 +105,9 @@ fun VoucherDetailsScreen(
             when {
                 state.isInitialLoading && !state.hasContent -> {
                     MasterDataLoadingIndicator(testTag = "voucher_details_loading")
+                }
+                state.detailsNotStored -> {
+                    VoucherDetailsNotStoredContent(state = state, onEvent = onEvent)
                 }
                 state.error != null && !state.hasContent -> {
                     Column(
@@ -272,6 +277,68 @@ fun VoucherDetailsScreen(
         }
     }
     ShareInvoiceOptions(state, onEvent)
+}
+
+@Composable
+private fun VoucherDetailsNotStoredContent(
+    state: VoucherDetailsUiState,
+    onEvent: (VoucherDetailsEvent) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+            .testTag("voucher_details_not_stored"),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (!state.isOnline) {
+            MasterDataOfflineBanner(testTag = "voucher_details_offline_banner")
+        }
+        state.knownSummary?.let { summary ->
+            Card(modifier = Modifier.fillMaxWidth().testTag("voucher_details_known_summary")) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "${summary.typeLabel} ${summary.primaryLabel}",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(text = summary.dateLabel, style = MaterialTheme.typography.bodyMedium)
+                    summary.partyName?.let {
+                        Text(text = it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        Text(
+            text = if (state.isOnline) {
+                "Voucher details are not stored on this device."
+            } else {
+                "Voucher details are not stored on this device. Connect to BUDCOM Desktop to download them."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.testTag("voucher_details_not_stored_message"),
+        )
+        state.downloadError?.let { message ->
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.testTag("voucher_details_download_error"),
+            )
+        }
+        Button(
+            onClick = { onEvent(VoucherDetailsEvent.DownloadDetails) },
+            enabled = !state.isDownloadingDetails,
+            modifier = Modifier.testTag("voucher_details_download_action"),
+        ) {
+            if (state.isDownloadingDetails) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Downloading…")
+            } else {
+                Text("Download details")
+            }
+        }
+    }
 }
 
 @Composable

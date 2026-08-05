@@ -7,6 +7,8 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
+import com.budcom.android.feature.masterdata.presentation.displayMessage
+import com.budcom.android.feature.voucher.domain.usecase.GetCachedVoucherSummaryUseCase
 import com.budcom.android.feature.voucher.domain.usecase.GetVoucherDetailsUseCase
 import com.budcom.android.feature.voucher.domain.usecase.RefreshVoucherDetailsUseCase
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
@@ -35,6 +37,7 @@ class VoucherDetailsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getVoucherDetails: GetVoucherDetailsUseCase,
     private val refreshVoucherDetails: RefreshVoucherDetailsUseCase,
+    private val getCachedVoucherSummary: GetCachedVoucherSummaryUseCase,
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
     private val invoiceShareCoordinator: InvoiceShareCoordinator,
@@ -50,6 +53,7 @@ class VoucherDetailsViewModel @Inject constructor(
     val shareEffects: SharedFlow<VoucherDetailsShareEffect> = _shareEffects.asSharedFlow()
 
     private var loadJob: Job? = null
+    private var downloadJob: Job? = null
     private var shareJob: Job? = null
     private var loadedDetails: VoucherDetails? = null
     private var pendingSavePdf: PreparedInvoicePdf? = null
@@ -71,8 +75,14 @@ class VoucherDetailsViewModel @Inject constructor(
     fun onEvent(event: VoucherDetailsEvent) {
         when (event) {
             VoucherDetailsEvent.Load -> load(refreshing = false)
-            VoucherDetailsEvent.Refresh -> load(refreshing = true)
+            VoucherDetailsEvent.Refresh -> {
+                // Once details exist, keep the classic "refresh in background" flow. Before that,
+                // there is nothing to refresh — route through the same explicit download path
+                // DownloadDetails uses, so pull-to-refresh on the not-stored screen behaves the same way.
+                if (_uiState.value.hasContent) load(refreshing = true) else downloadDetails()
+            }
             VoucherDetailsEvent.Retry -> load(refreshing = false)
+            VoucherDetailsEvent.DownloadDetails -> downloadDetails()
             VoucherDetailsEvent.OpenShareOptions -> {
                 if (_uiState.value.canShareInvoice) _uiState.update { it.copy(showShareOptions = true) }
             }
@@ -143,22 +153,87 @@ class VoucherDetailsViewModel @Inject constructor(
                     }
                 }
                 is AppResult.Failure -> {
-                    _uiState.update { state ->
-                        if (refreshing && state.hasContent) {
-                            // A failed refresh must never hide or replace valid cached details.
+                    if (!refreshing) {
+                        // The cache-only path's only failure mode, once the id/company guards above
+                        // have passed, is "Room has no stored details for this voucher yet" — never a
+                        // network condition. Show the explicit not-stored state, not a generic error.
+                        loadedDetails = null
+                        val knownSummary = getCachedVoucherSummary(companyId, voucherId)
+                        _uiState.update { state ->
                             state.copy(
                                 isInitialLoading = false,
                                 isRefreshing = false,
-                                refreshError = refreshFailedMessage(state.lastSyncedAt),
-                                cacheState = com.budcom.android.feature.voucher.domain.model.VoucherCacheState.Offline,
-                            )
-                        } else {
-                            state.copy(
-                                isInitialLoading = false,
-                                isRefreshing = false,
-                                error = result.error.toVoucherDetailsUiError(),
+                                details = null,
+                                error = null,
+                                detailsNotStored = true,
+                                knownSummary = knownSummary?.toRowUi(),
+                                canShareInvoice = false,
+                                shareUnavailableReason = null,
                             )
                         }
+                    } else {
+                        _uiState.update { state ->
+                            if (state.hasContent) {
+                                // A failed refresh must never hide or replace valid cached details.
+                                state.copy(
+                                    isInitialLoading = false,
+                                    isRefreshing = false,
+                                    refreshError = refreshFailedMessage(state.lastSyncedAt),
+                                    cacheState = com.budcom.android.feature.voucher.domain.model.VoucherCacheState.Offline,
+                                )
+                            } else {
+                                // Defensive fallback; normal navigation routes a no-content refresh through downloadDetails().
+                                state.copy(
+                                    isInitialLoading = false,
+                                    isRefreshing = false,
+                                    error = result.error.toVoucherDetailsUiError(),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun downloadDetails() {
+        if (downloadJob?.isActive == true) return
+        downloadJob = viewModelScope.launch {
+            if (voucherId.isBlank()) return@launch
+            val companyId = companySession.observeSelectedCompanyId().first()
+            if (companyId.isNullOrBlank()) return@launch
+            if (!_uiState.value.isOnline) {
+                // Android already knows there is no network path; don't wait through a timeout.
+                _uiState.update {
+                    it.copy(
+                        downloadError = "Voucher details are not stored on this device. Connect to BUDCOM Desktop to download them.",
+                    )
+                }
+                return@launch
+            }
+            _uiState.update { it.copy(isDownloadingDetails = true, downloadError = null) }
+            when (val result = refreshVoucherDetails(companyId, voucherId)) {
+                is AppResult.Success -> {
+                    loadedDetails = result.value
+                    _uiState.update {
+                        it.copy(
+                            isDownloadingDetails = false,
+                            detailsNotStored = false,
+                            downloadError = null,
+                            details = result.value.toContentUi(),
+                            canShareInvoice = result.value.isShareableInvoice(),
+                            shareUnavailableReason = result.value.shareIneligibilityReason(),
+                            cacheState = result.value.cacheState,
+                            lastSyncedAt = result.value.lastSyncedAt,
+                        )
+                    }
+                }
+                is AppResult.Failure -> {
+                    _uiState.update {
+                        it.copy(
+                            isDownloadingDetails = false,
+                            downloadError = result.error.toVoucherDetailsUiError().displayMessage(),
+                        )
                     }
                 }
             }

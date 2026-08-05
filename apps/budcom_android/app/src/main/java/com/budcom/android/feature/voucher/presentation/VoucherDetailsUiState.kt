@@ -18,6 +18,14 @@ data class VoucherDetailsUiState(
     val error: MasterDataUiError? = null,
     /** Set only when a manual refresh fails while cached details remain visible; cleared on the next successful refresh/load. */
     val refreshError: String? = null,
+    /** True when Room genuinely has no stored details for this voucher yet — distinct from a generic [error]. */
+    val detailsNotStored: Boolean = false,
+    /** Best-effort header info (from the list sync) shown while details are not yet stored. */
+    val knownSummary: VoucherRowUi? = null,
+    /** True while an explicit first-time detail download is in flight. */
+    val isDownloadingDetails: Boolean = false,
+    /** Concise reason the most recent explicit download attempt failed; cleared on the next attempt or success. */
+    val downloadError: String? = null,
     val canShareInvoice: Boolean = false,
     /** Concise reason sharing is unavailable, shown alongside a disabled share action; null when eligible. */
     val shareUnavailableReason: String? = null,
@@ -28,7 +36,7 @@ data class VoucherDetailsUiState(
     val cacheState: VoucherCacheState = VoucherCacheState.NoCache,
     val lastSyncedAt: Long? = null,
 ) {
-    val isBusy: Boolean get() = isInitialLoading || isRefreshing
+    val isBusy: Boolean get() = isInitialLoading || isRefreshing || isDownloadingDetails
     val hasContent: Boolean get() = details != null
 }
 
@@ -69,6 +77,8 @@ sealed interface VoucherDetailsEvent {
     data object Load : VoucherDetailsEvent
     data object Refresh : VoucherDetailsEvent
     data object Retry : VoucherDetailsEvent
+    /** Explicit first-time detail download from the "not stored locally" state. Always calls the Connector-backed refresh, never the cache-only load. */
+    data object DownloadDetails : VoucherDetailsEvent
     data object OpenShareOptions : VoucherDetailsEvent
     data object DismissShareOptions : VoucherDetailsEvent
     data object SharePdf : VoucherDetailsEvent

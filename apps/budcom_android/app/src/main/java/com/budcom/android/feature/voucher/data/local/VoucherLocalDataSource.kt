@@ -8,6 +8,8 @@ interface VoucherLocalDataSource {
     suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long)
     suspend fun list(query: VoucherQuery): VoucherPage?
     suspend fun details(companyId: String, voucherId: String): VoucherDetails?
+    /** Best-effort header lookup, available even when full details have not been downloaded yet. */
+    suspend fun summary(companyId: String, voucherId: String): VoucherSummary?
 }
 
 class RoomVoucherLocalDataSource @Inject constructor(private val dao: VoucherDao) : VoucherLocalDataSource {
@@ -51,6 +53,9 @@ class RoomVoucherLocalDataSource @Inject constructor(private val dao: VoucherDao
             VoucherCacheState.Offline, detail.lastSyncedAt,
         )
     }
+
+    override suspend fun summary(companyId: String, voucherId: String): VoucherSummary? =
+        dao.voucher(companyId, voucherId)?.domain()
 }
 
 private fun VoucherSummary.entity(companyId: String, syncedAt: Long) = VoucherEntity(companyId, identity.id, date, type, number, partyName, referenceNumber, amount?.value, amount?.side?.name, status.name, dataQuality.name, syncedAt)

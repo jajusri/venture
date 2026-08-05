@@ -162,6 +162,29 @@ class VoucherRepositoryImplTest {
         assertEquals("Item", result.value.inventoryEntries.single().itemName)
     }
 
+    @Test
+    fun `getCachedVoucherSummary never calls the remote data source`() = runTest(dispatcher) {
+        val remote = FakeRemote()
+        val local = FakeLocal(summaryValue = sampleSummary())
+        repo(remote, local).getCachedVoucherSummary("company-a", "v-1")
+        assertEquals(0, remote.listCalls)
+        assertEquals(0, remote.detailCalls)
+    }
+
+    @Test
+    fun `getCachedVoucherSummary returns the header even when full details are not stored`() = runTest(dispatcher) {
+        val local = FakeLocal(summaryValue = sampleSummary(), detailsValue = null)
+        val result = repo(FakeRemote(), local).getCachedVoucherSummary("company-a", "v-1")
+        assertEquals("v-1", result?.identity?.id)
+    }
+
+    @Test
+    fun `getCachedVoucherSummary returns null when the voucher is not known locally at all`() = runTest(dispatcher) {
+        val local = FakeLocal(summaryValue = null)
+        val result = repo(FakeRemote(), local).getCachedVoucherSummary("company-a", "unknown")
+        assertEquals(null, result)
+    }
+
     private class FakeRemote(
         private val listResult: ApiResult<VoucherPage> = ApiResult.Failure(NetworkError.Unknown()),
         private val detailsResult: ApiResult<VoucherDetails> = ApiResult.Failure(NetworkError.Unknown()),
@@ -184,6 +207,7 @@ class VoucherRepositoryImplTest {
     private class FakeLocal(
         private val listValue: VoucherPage? = null,
         private val detailsValue: VoucherDetails? = null,
+        private val summaryValue: VoucherSummary? = null,
     ) : VoucherLocalDataSource {
         var storedItems: List<VoucherSummary> = emptyList()
         var storeListCalls = 0
@@ -195,6 +219,7 @@ class VoucherRepositoryImplTest {
         override suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long) = Unit
         override suspend fun list(query: VoucherQuery): VoucherPage? { lastListCompany = query.companyId; return listValue?.takeIf { it.companyId == query.companyId } }
         override suspend fun details(companyId: String, voucherId: String): VoucherDetails? = detailsValue
+        override suspend fun summary(companyId: String, voucherId: String): VoucherSummary? = summaryValue
     }
 
     private fun query() = VoucherQuery("company-a", VoucherDateRange("2026-07-01", "2026-07-27"))

@@ -22,6 +22,7 @@ import com.budcom.android.feature.voucher.domain.model.VoucherCacheState
 import com.budcom.android.feature.voucher.domain.model.VoucherStatus
 import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
+import com.budcom.android.feature.voucher.domain.usecase.GetCachedVoucherSummaryUseCase
 import com.budcom.android.feature.voucher.domain.usecase.GetVoucherDetailsUseCase
 import com.budcom.android.feature.voucher.domain.usecase.RefreshVoucherDetailsUseCase
 import com.budcom.android.feature.voucher.sharing.InvoiceShareCoordinator
@@ -80,6 +81,7 @@ class VoucherDetailsViewModelTest {
         savedStateHandle = SavedStateHandle(mapOf(VoucherDetailsViewModel.VOUCHER_ID_ARG to voucherId)),
         getVoucherDetails = GetVoucherDetailsUseCase(repository),
         refreshVoucherDetails = RefreshVoucherDetailsUseCase(repository),
+        getCachedVoucherSummary = GetCachedVoucherSummaryUseCase(repository),
         companySession = companySession,
         connectivityObserver = connectivity,
         invoiceShareCoordinator = shareCoordinator,
@@ -123,12 +125,16 @@ class VoucherDetailsViewModelTest {
     }
 
     @Test
-    fun `not found error`() = runTest(dispatcher) {
-        repository.result = AppResult.Failure(AppError.Remote(404, "NOT_FOUND", "Voucher was not found."))
-        val vm = createVm()
-        advanceUntilIdle()
-        assertTrue(vm.uiState.value.error is MasterDataUiError.Remote)
-    }
+    fun `a cache-only load failure always means details are not stored locally, never a generic blocking error`() =
+        runTest(dispatcher) {
+            // getVoucherDetails() is Room-only; post Phase 3E its only failure mode (once id/company
+            // guards pass) is "not cached yet" — regardless of what AppError a stale caller might return.
+            repository.result = AppResult.Failure(AppError.Remote(404, "NOT_FOUND", "Voucher was not found."))
+            val vm = createVm()
+            advanceUntilIdle()
+            assertEquals(null, vm.uiState.value.error)
+            assertTrue(vm.uiState.value.detailsNotStored)
+        }
 
     @Test
     fun `refresh retains content on failure and sets a distinct refresh error, not the blocking error`() = runTest(dispatcher) {
@@ -205,11 +211,142 @@ class VoucherDetailsViewModelTest {
     }
 
     @Test
-    fun `offline without content`() = runTest(dispatcher) {
-        repository.result = AppResult.Failure(AppError.Offline())
+    fun `offline without content still resolves to the not-stored state, not a generic offline error`() =
+        runTest(dispatcher) {
+            repository.result = AppResult.Failure(AppError.Offline())
+            val vm = createVm()
+            advanceUntilIdle()
+            assertEquals(null, vm.uiState.value.error)
+            assertTrue(vm.uiState.value.detailsNotStored)
+        }
+
+    @Test
+    fun `not-stored state exposes the locally known summary and no share action`() = runTest(dispatcher) {
+        repository.result = AppResult.Failure(AppError.Message("unused"))
+        repository.summaryResult = sampleDetails().summary
         val vm = createVm()
         advanceUntilIdle()
-        assertTrue(vm.uiState.value.error is MasterDataUiError.Offline)
+        assertTrue(vm.uiState.value.detailsNotStored)
+        assertEquals("S-1", vm.uiState.value.knownSummary?.primaryLabel)
+        assertFalse(vm.uiState.value.canShareInvoice)
+        assertEquals(null, vm.uiState.value.shareUnavailableReason)
+    }
+
+    @Test
+    fun `DownloadDetails calls the network-backed refresh, never the cache-only path again`() = runTest(dispatcher) {
+        repository.result = AppResult.Failure(AppError.Message("unused"))
+        val vm = createVm()
+        advanceUntilIdle()
+        val cacheCallsBefore = repository.calls
+        vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+        advanceUntilIdle()
+        assertEquals(cacheCallsBefore, repository.calls)
+        assertEquals(1, repository.refreshCalls)
+    }
+
+    @Test
+    fun `duplicate download taps cannot start a second concurrent download`() = runTest(dispatcher) {
+        repository.result = AppResult.Failure(AppError.Message("unused"))
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+        vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+        advanceUntilIdle()
+        assertEquals(1, repository.refreshCalls)
+    }
+
+    @Test
+    fun `known-offline download attempt never calls the Connector and shows guidance immediately`() =
+        runTest(dispatcher) {
+            repository.result = AppResult.Failure(AppError.Message("unused"))
+            connectivity.set(false)
+            val vm = createVm()
+            advanceUntilIdle()
+            vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+            advanceUntilIdle()
+            assertEquals(0, repository.refreshCalls)
+            assertTrue(vm.uiState.value.downloadError?.contains("Connect to BUDCOM Desktop") == true)
+            assertFalse(vm.uiState.value.isDownloadingDetails)
+        }
+
+    @Test
+    fun `successful download persists, clears not-stored, and shows the downloaded details`() = runTest(dispatcher) {
+        repository.result = AppResult.Failure(AppError.Message("unused"))
+        val vm = createVm()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.detailsNotStored)
+
+        repository.refreshResult = AppResult.Success(sampleDetails())
+        vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.detailsNotStored)
+        assertEquals("S-1", vm.uiState.value.details?.numberLabel)
+        assertEquals(null, vm.uiState.value.downloadError)
+    }
+
+    @Test
+    fun `successful download makes eligible sharing available immediately`() = runTest(dispatcher) {
+        repository.result = AppResult.Failure(AppError.Message("unused"))
+        val vm = createVm()
+        advanceUntilIdle()
+
+        repository.refreshResult = AppResult.Success(sampleDetails())
+        vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.canShareInvoice)
+    }
+
+    @Test
+    fun `failed download keeps the not-stored state and known summary, without inventing partial details`() =
+        runTest(dispatcher) {
+            repository.result = AppResult.Failure(AppError.Message("unused"))
+            repository.summaryResult = sampleDetails().summary
+            val vm = createVm()
+            advanceUntilIdle()
+
+            repository.refreshResult = AppResult.Failure(AppError.Timeout())
+            vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+            advanceUntilIdle()
+
+            assertTrue(vm.uiState.value.detailsNotStored)
+            assertEquals(null, vm.uiState.value.details)
+            assertEquals("S-1", vm.uiState.value.knownSummary?.primaryLabel)
+            assertTrue(vm.uiState.value.downloadError != null)
+        }
+
+    @Test
+    fun `a later successful download clears the previous download failure`() = runTest(dispatcher) {
+        repository.result = AppResult.Failure(AppError.Message("unused"))
+        val vm = createVm()
+        advanceUntilIdle()
+
+        repository.refreshResult = AppResult.Failure(AppError.Timeout())
+        vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.downloadError != null)
+
+        repository.refreshResult = AppResult.Success(sampleDetails())
+        vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+        advanceUntilIdle()
+        assertEquals(null, vm.uiState.value.downloadError)
+        assertFalse(vm.uiState.value.detailsNotStored)
+    }
+
+    @Test
+    fun `download retry can be attempted again after a failure`() = runTest(dispatcher) {
+        repository.result = AppResult.Failure(AppError.Message("unused"))
+        val vm = createVm()
+        advanceUntilIdle()
+
+        repository.refreshResult = AppResult.Failure(AppError.Timeout())
+        vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+        advanceUntilIdle()
+        vm.onEvent(VoucherDetailsEvent.DownloadDetails)
+        advanceUntilIdle()
+
+        assertEquals(2, repository.refreshCalls)
     }
 
     @Test
@@ -416,8 +553,10 @@ private class FakeInvoiceShareCoordinator : InvoiceShareCoordinator {
 private class FakeDetailsRepository : VoucherRepository {
     var result: AppResult<VoucherDetails> = AppResult.Success(sampleDetails())
     var refreshResult: AppResult<VoucherDetails> = result
+    var summaryResult: VoucherSummary? = sampleDetails().summary
     var calls = 0
     var refreshCalls = 0
+    var summaryCalls = 0
 
     override suspend fun listVouchers(query: VoucherQuery): AppResult<VoucherPage> =
         AppResult.Failure(AppError.Message("unused"))
@@ -434,6 +573,11 @@ private class FakeDetailsRepository : VoucherRepository {
         refreshCalls += 1
         return refreshResult
     }
+
+    override suspend fun getCachedVoucherSummary(companyId: String, voucherId: String): VoucherSummary? {
+        summaryCalls += 1
+        return summaryResult
+    }
 }
 
 private class DetailsFakeCompanySession(initial: String?) : CompanySessionPort {
@@ -449,6 +593,7 @@ private class DetailsFakeConnectivity(online: Boolean) : NetworkConnectivityObse
     private val flow = MutableStateFlow(online)
     override val isOnline: Flow<Boolean> = flow
     override fun current(): Boolean = flow.value
+    fun set(online: Boolean) { flow.value = online }
 }
 
 private fun sampleDetails() = VoucherDetails(

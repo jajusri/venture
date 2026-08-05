@@ -4,6 +4,7 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
 import com.budcom.android.feature.voucher.domain.model.VoucherPage
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
+import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 
 interface VoucherRepository {
     /** Reads the locally cached page immediately. Never contacts the Connector. */
@@ -17,4 +18,7 @@ interface VoucherRepository {
 
     /** Attempts a bounded Connector fetch and persists it on success. Never falls back to cache on failure. */
     suspend fun refreshVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails>
+
+    /** Best-effort local header lookup (e.g. from the list sync) even when full details are not yet stored. Never contacts the Connector. */
+    suspend fun getCachedVoucherSummary(companyId: String, voucherId: String): VoucherSummary?
 }
