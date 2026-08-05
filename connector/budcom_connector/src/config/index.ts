@@ -226,6 +226,10 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
       defaultConfig.secureTransportPort,
     ),
     transportIdentityDir: process.env.BUDCOM_TRANSPORT_IDENTITY_DIR ?? defaultConfig.transportIdentityDir,
+    secureLanRouteProtectionEnabled: parseBoolean(
+      process.env.BUDCOM_SECURE_LAN_ROUTE_PROTECTION_ENABLED,
+      defaultConfig.secureLanRouteProtectionEnabled,
+    ),
     ...overrides,
   };
 

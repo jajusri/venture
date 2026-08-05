@@ -1,8 +1,11 @@
+import type { RequestHandler } from 'express';
 import { Router } from 'express';
 
 import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import { asyncHandler } from '../../infrastructure/errors/error-handler.js';
+import type { ConnectorConfig } from '../../config/defaults.js';
 import type { TrustedDeviceRepository } from '../../services/device/trusted-device-repository.js';
+import { createRequireDesktopControlTokenMiddleware } from '../middleware/require-desktop-control-token.js';
 
 const MIN_INSTALLATION_ID_LENGTH = 16;
 const MAX_FRIENDLY_NAME_LENGTH = 64;
@@ -164,16 +167,84 @@ export function createDevicePairingRouter(trustedDeviceRepository?: TrustedDevic
   return router;
 }
 
+export interface DeviceManagementRouterDeps {
+  readonly trustedDevices?: TrustedDeviceRepository;
+  readonly config: Pick<ConnectorConfig, 'networkExposure' | 'desktopControlToken' | 'secureLanRouteProtectionEnabled'>;
+}
+
+/**
+ * Gates GET /device/list and DELETE /device/:deviceRecordId with the existing Desktop
+ * control-token boundary, but ONLY once secureLanRouteProtectionEnabled is true — while it's
+ * false (the default), this is a no-op and these routes continue to rely solely on whatever the
+ * shared gate mounted ahead of this router (server.ts) decides, exactly as before this phase.
+ *
+ * Once active, createRequireBusinessRouteAuthMiddleware deliberately exempts these two exact
+ * routes from its own device-credential check (see DESKTOP_CONTROL_ONLY_ROUTES there) so this
+ * middleware — not a device credential — is the sole gate: enumerating or revoking another
+ * device's trust is an administrative action restricted to Desktop's own control boundary, never
+ * satisfiable by an Android device principal. createRequireDesktopControlTokenMiddleware already
+ * passes through unconditionally off-LAN, so loopback (Desktop's own management UI) is
+ * unaffected regardless of the flag.
+ */
+function createConditionalDesktopControlTokenMiddleware(
+  config: Pick<ConnectorConfig, 'networkExposure' | 'desktopControlToken' | 'secureLanRouteProtectionEnabled'>,
+): RequestHandler {
+  const requireDesktopControlToken = createRequireDesktopControlTokenMiddleware({ config });
+  return (req, res, next) => {
+    if (!config.secureLanRouteProtectionEnabled) {
+      next();
+      return;
+    }
+    requireDesktopControlToken(req, res, next);
+  };
+}
+
+/**
+ * Restricts GET /device/trusted-companies to a LegacyTrustedDevicePrincipal once
+ * secureLanRouteProtectionEnabled is true and the shared gate authenticated on LAN — never a
+ * bare PairingCredentialPrincipal, which carries no companyId/installationId and so cannot
+ * satisfy this route's company-authorization contract without fabricating an identity mapping.
+ * Reads the principal the shared gate already attached to `req` (see
+ * require-business-route-auth.ts) rather than re-validating the credential a second time, so
+ * this is a pure authorization-tier check, not an additional authentication step.
+ *
+ * A no-op whenever `req.deviceAuthPrincipal` is unset — while the flag is off, or on loopback
+ * (the shared gate never authenticates loopback traffic), this route's behavior is unchanged.
+ */
+function requireLegacyTrustedDevicePrincipalForTrustedCompanies(
+  config: Pick<ConnectorConfig, 'secureLanRouteProtectionEnabled'>,
+): RequestHandler {
+  return (req, res, next) => {
+    if (!config.secureLanRouteProtectionEnabled) {
+      next();
+      return;
+    }
+    if (req.deviceAuthPrincipal && req.deviceAuthPrincipal.kind !== 'trusted-device') {
+      res.status(403).json({
+        code: 'FORBIDDEN',
+        message: 'This route requires a company-bound trusted-device credential.',
+      });
+      return;
+    }
+    next();
+  };
+}
+
 /**
  * Device-management routes: list, look up by installation, and revoke *other* devices'
  * trust. These read back or mutate state the caller does not necessarily already hold
  * proof of, so they must never be reachable without a valid trusted-device token when LAN
- * enforcement is enabled. Mounted in `server.ts` *after* `requireTrustedDeviceAuth`, so on
- * loopback (Desktop's own management UI) they behave exactly as before — the same
- * middleware no-ops off-LAN — and on LAN they only open once both `networkExposure ===
- * 'lan'` and `requireDeviceAuthForLan === true`.
+ * enforcement is enabled. Mounted in `server.ts` *after* `requireTrustedDeviceAuth`
+ * (or, once secureLanRouteProtectionEnabled is true, after createRequireBusinessRouteAuthMiddleware),
+ * so on loopback (Desktop's own management UI) they behave exactly as before — the same
+ * middleware no-ops off-LAN — and on LAN they only open once enforcement is actually enabled.
  */
-export function createDeviceManagementRouter(trustedDeviceRepository?: TrustedDeviceRepository): Router {
+export function createDeviceManagementRouter(deps: DeviceManagementRouterDeps): Router {
+  const trustedDeviceRepository = deps.trustedDevices;
+  const requireDesktopControlTokenIfPolicyActive = createConditionalDesktopControlTokenMiddleware(deps.config);
+  const requireLegacyPrincipalForTrustedCompanies = requireLegacyTrustedDevicePrincipalForTrustedCompanies(
+    deps.config,
+  );
   const router = Router();
 
   /**
@@ -186,6 +257,7 @@ export function createDeviceManagementRouter(trustedDeviceRepository?: TrustedDe
    */
   router.get(
     '/device/trusted-companies',
+    requireLegacyPrincipalForTrustedCompanies,
     asyncHandler(async (req, res) => {
       const installationId = req.query['installationId'];
       if (!isNonEmptyString(installationId) || installationId.trim().length < MIN_INSTALLATION_ID_LENGTH) {
@@ -219,6 +291,7 @@ export function createDeviceManagementRouter(trustedDeviceRepository?: TrustedDe
    */
   router.delete(
     '/device/:deviceRecordId',
+    requireDesktopControlTokenIfPolicyActive,
     asyncHandler(async (req, res) => {
       const { deviceRecordId } = req.params;
       if (!isNonEmptyString(deviceRecordId)) {
@@ -242,6 +315,7 @@ export function createDeviceManagementRouter(trustedDeviceRepository?: TrustedDe
    */
   router.get(
     '/device/list',
+    requireDesktopControlTokenIfPolicyActive,
     asyncHandler(async (_req, res) => {
       const records = requireRepository(trustedDeviceRepository).listAll();
       res.json({

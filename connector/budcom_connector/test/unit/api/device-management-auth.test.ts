@@ -1,14 +1,54 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
 import request from 'supertest';
 
 import { createRequireTrustedDeviceAuthMiddleware } from '../../../src/api/middleware/require-trusted-device-auth.js';
+import type { DeviceAuthPrincipal } from '../../../src/services/auth/device-credential-authenticator.js';
+import '../../../src/api/middleware/require-business-route-auth.js';
 import {
   createDeviceManagementRouter,
   createDevicePairingRouter,
 } from '../../../src/api/routes/device.js';
 import { TrustedDeviceRepository } from '../../../src/services/device/trusted-device-repository.js';
 import { cleanupTestSqliteStorage, createTestSqliteStorage } from '../../helpers/sqlite-test-storage.js';
+
+const CONTROL_TOKEN_HEADER = 'X-Budcom-Desktop-Control-Token';
+const DESKTOP_TOKEN = 'test-desktop-control-token-3q01';
+
+/**
+ * Simulates the principal createRequireBusinessRouteAuthMiddleware would have already attached
+ * to `req` (see require-business-route-auth.ts's module augmentation, imported above purely for
+ * its side effect of declaring `req.deviceAuthPrincipal`) once policy is active on LAN. Lets
+ * these tests exercise createDeviceManagementRouter's own per-route authorization logic in
+ * isolation, without re-running the full shared-gate authentication machinery.
+ */
+function withSimulatedPrincipal(principal: DeviceAuthPrincipal | undefined) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    req.deviceAuthPrincipal = principal;
+    next();
+  };
+}
+
+async function buildAppWithPolicyOn(
+  principal?: DeviceAuthPrincipal,
+  configOverrides: { desktopControlToken?: string | null } = {},
+) {
+  const { storage } = await createTestSqliteStorage();
+  const trustedDevices = new TrustedDeviceRepository(storage.getBundle().database);
+  const app = express();
+  app.use(express.json());
+  app.use(withSimulatedPrincipal(principal));
+  app.use(createDeviceManagementRouter({
+    trustedDevices,
+    config: {
+      networkExposure: 'lan',
+      desktopControlToken: configOverrides.desktopControlToken ?? DESKTOP_TOKEN,
+      secureLanRouteProtectionEnabled: true,
+    },
+  }));
+  return { app, trustedDevices };
+}
 
 /**
  * Proves the device-route disclosure found in review is closed: GET /device/list and
@@ -28,7 +68,10 @@ async function buildApp(config: { networkExposure: 'loopback' | 'lan'; requireDe
   app.use(express.json());
   app.use(createDevicePairingRouter(trustedDevices));
   app.use(createRequireTrustedDeviceAuthMiddleware({ config, trustedDevices }));
-  app.use(createDeviceManagementRouter(trustedDevices));
+  app.use(createDeviceManagementRouter({
+    trustedDevices,
+    config: { ...config, desktopControlToken: null, secureLanRouteProtectionEnabled: false },
+  }));
   return { app, trustedDevices };
 }
 
@@ -184,5 +227,96 @@ describe('pairing-bootstrap routes disclose nothing to a caller without a valid 
     expect(response.status).toBe(201);
     expect(response.body.companyId).toBe('caller-supplied-id');
     expect(response.body.companyName).toBe('Caller Supplied Name');
+  });
+});
+
+describe('device-management routes under secureLanRouteProtectionEnabled — Desktop-control-token boundary', () => {
+  it('GET /device/list requires the Desktop control token once the new policy is active, not a device credential', async () => {
+    const { app, trustedDevices } = await buildAppWithPolicyOn();
+    pairOneDevice(trustedDevices);
+
+    const withoutToken = await request(app).get('/device/list');
+    expect(withoutToken.status).toBe(403);
+
+    const withToken = await request(app).get('/device/list').set(CONTROL_TOKEN_HEADER, DESKTOP_TOKEN);
+    expect(withToken.status).toBe(200);
+    expect(withToken.body.items).toHaveLength(1);
+  });
+
+  it('DELETE /device/:deviceRecordId requires the Desktop control token once the new policy is active', async () => {
+    const { app, trustedDevices } = await buildAppWithPolicyOn();
+    const { deviceRecordId } = pairOneDevice(trustedDevices);
+
+    const withoutToken = await request(app).delete(`/device/${deviceRecordId}`);
+    expect(withoutToken.status).toBe(403);
+
+    const withToken = await request(app)
+      .delete(`/device/${deviceRecordId}`)
+      .set(CONTROL_TOKEN_HEADER, DESKTOP_TOKEN);
+    expect(withToken.status).toBe(200);
+  });
+
+  it('GET /device/list is a no-op (delegates entirely to whatever ran before it) while the new policy stays off, even with a Desktop control token configured', async () => {
+    const { storage } = await createTestSqliteStorage();
+    const trustedDevices = new TrustedDeviceRepository(storage.getBundle().database);
+    pairOneDevice(trustedDevices);
+    const app = express();
+    app.use(createDeviceManagementRouter({
+      trustedDevices,
+      config: { networkExposure: 'lan', desktopControlToken: DESKTOP_TOKEN, secureLanRouteProtectionEnabled: false },
+    }));
+
+    const response = await request(app).get('/device/list');
+    expect(response.status).toBe(200);
+  });
+
+  it('GET /device/trusted-companies rejects a bare pairing-credential principal — it cannot satisfy this route\'s company-authorization contract', async () => {
+    const { app } = await buildAppWithPolicyOn({
+      kind: 'pairing-credential',
+      credentialId: 'cred-1',
+      connectorId: 'connector-1',
+      deviceId: null,
+      deviceLabel: null,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: new Date().toISOString(),
+    });
+
+    const response = await request(app)
+      .get('/device/trusted-companies')
+      .query({ installationId: 'install-0000000000000000' });
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('FORBIDDEN');
+  });
+
+  it('GET /device/trusted-companies accepts a legacy trusted-device principal', async () => {
+    const { app, trustedDevices } = await buildAppWithPolicyOn({
+      kind: 'trusted-device',
+      deviceRecordId: 'device-1',
+      companyId: 'acme-001',
+      installationId: 'install-0000000000000000',
+      friendlyName: null,
+      createdAt: new Date().toISOString(),
+      lastUsedAt: null,
+    });
+    pairOneDevice(trustedDevices);
+
+    const response = await request(app)
+      .get('/device/trusted-companies')
+      .query({ installationId: 'install-0000000000000000' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(1);
+  });
+
+  it('GET /device/trusted-companies is unaffected when no principal was attached upstream (e.g. loopback, where the shared gate never authenticates)', async () => {
+    const { app, trustedDevices } = await buildAppWithPolicyOn(undefined);
+    pairOneDevice(trustedDevices);
+
+    const response = await request(app)
+      .get('/device/trusted-companies')
+      .query({ installationId: 'install-0000000000000000' });
+
+    expect(response.status).toBe(200);
   });
 });

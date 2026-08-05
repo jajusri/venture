@@ -84,6 +84,19 @@ export interface ConnectorConfig {
    * in SQLite (see services/transport/connector-transport-identity.ts).
    */
   readonly transportIdentityDir: string;
+  /**
+   * Gate for the dormant secure LAN business-route policy (see
+   * api/middleware/require-business-route-auth.ts). Defaults to false so every existing
+   * installation's request handling toward companies/session/master-data/ledgers/stock-items/
+   * vouchers/api-stubs is byte-for-byte unchanged. Deliberately a separate flag from
+   * requireDeviceAuthForLan (the pre-existing, still-independent legacy gate this flag
+   * supersedes only when true), securePairingEnabled (bootstrap-surface availability, not
+   * business-route enforcement), and secureTransportEnabled (whether the HTTPS listener exists
+   * at all). Only takes effect when also bound off-loopback (networkExposure === 'lan'); once
+   * active there, protected routes additionally require HTTPS regardless of
+   * secureTransportEnabled's value — see the middleware's own doc comment.
+   */
+  readonly secureLanRouteProtectionEnabled: boolean;
 }
 
 export const TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
@@ -143,4 +156,5 @@ export const defaultConfig: ConnectorConfig = {
   secureTransportEnabled: false,
   secureTransportPort: 8443,
   transportIdentityDir: './data/transport',
+  secureLanRouteProtectionEnabled: false,
 };

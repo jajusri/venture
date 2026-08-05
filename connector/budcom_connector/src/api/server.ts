@@ -3,7 +3,7 @@ import express, { type Express } from 'express';
 import type { Logger } from '../infrastructure/logging/logger.js';
 import { createErrorMiddleware } from '../infrastructure/errors/error-handler.js';
 import type { ConnectorConfig } from '../config/defaults.js';
-import { createRequireTrustedDeviceAuthMiddleware } from './middleware/require-trusted-device-auth.js';
+import { createRequireBusinessRouteAuthMiddleware } from './middleware/require-business-route-auth.js';
 import type { CompanyDiscoveryService } from '../services/interfaces/company-discovery.js';
 import type { ConnectorSessionService } from '../services/interfaces/connector-session.js';
 import type { HealthService } from '../services/health/health-service.js';
@@ -47,6 +47,7 @@ export interface ExpressAppDeps {
     | 'port'
     | 'secureTransportEnabled'
     | 'secureTransportPort'
+    | 'secureLanRouteProtectionEnabled'
   >;
   readonly healthService: HealthService;
   readonly companyDiscovery: CompanyDiscoveryService;
@@ -81,7 +82,9 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
   // credentials until it pairs. Neither pairing-bootstrap route discloses anything the
   // caller didn't already supply/possess (see device.ts). Everything mounted after this
   // point — including device *management* routes (list/lookup/revoke, which read back or
-  // mutate other devices' state) — is gated by requireTrustedDeviceAuth.
+  // mutate other devices' state) — is gated by createRequireBusinessRouteAuthMiddleware, which
+  // itself delegates unchanged to the legacy requireTrustedDeviceAuth behavior while
+  // secureLanRouteProtectionEnabled stays false (the default).
   app.use(createDevicePairingRouter(deps.trustedDevices));
   // New pairing-session (QR/one-time-code) bootstrap surface — see routes/pairing.ts. Mounted
   // before the trusted-device gate for the same reason as createDevicePairingRouter above: an
@@ -95,11 +98,16 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     pairingCredentials: deps.pairingCredentials,
     transportIdentity: deps.transportIdentity,
   }));
-  app.use(createRequireTrustedDeviceAuthMiddleware({
+  app.use(createRequireBusinessRouteAuthMiddleware({
     config: deps.config,
     trustedDevices: deps.trustedDevices,
+    pairingCredentials: deps.pairingCredentials,
+    connectorIdentity: deps.connectorIdentity,
   }));
-  app.use(createDeviceManagementRouter(deps.trustedDevices));
+  app.use(createDeviceManagementRouter({
+    trustedDevices: deps.trustedDevices,
+    config: deps.config,
+  }));
   // Pairing-credential revocation mutates trust state like device management above, so it is
   // mounted after the same trusted-device gate.
   app.use(createPairingCredentialManagementRouter({
