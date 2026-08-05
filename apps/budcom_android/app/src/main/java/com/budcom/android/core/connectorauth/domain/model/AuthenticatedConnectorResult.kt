@@ -1,0 +1,61 @@
+package com.budcom.android.core.connectorauth.domain.model
+
+/**
+ * A bounded, immutable UTF-8 JSON payload from a successful authenticated response. Deserializing
+ * feature-specific DTOs out of this is deferred to the Phase 3S repository cutover — core
+ * networking stays payload-shape-agnostic.
+ */
+data class AuthenticatedConnectorResponsePayload(val rawJson: String)
+
+/**
+ * Outcome of one [com.budcom.android.core.connectorauth.data.remote.AuthenticatedConnectorApiPort]
+ * call. Distinguishes context-resolution failures (no request was ever attempted — see
+ * [com.budcom.android.core.connectorauth.domain.AuthenticatedConnectorContextResolution]) from
+ * transport-level and HTTP-status outcomes, and never collapses a 401/403 into a generic failure.
+ */
+sealed class AuthenticatedConnectorResult {
+
+    data class Success(val payload: AuthenticatedConnectorResponsePayload) : AuthenticatedConnectorResult()
+
+    /** No secure-pairing credential has ever been stored on this device. Zero network calls made. */
+    data object Unpaired : AuthenticatedConnectorResult()
+
+    /** Redeemed but not yet proven. Zero network calls made. */
+    data object PendingVerification : AuthenticatedConnectorResult()
+
+    /** Known revoked/unusable — device must re-pair. Zero network calls made. */
+    data object RePairRequired : AuthenticatedConnectorResult()
+
+    /** ACTIVE record exists but decryption failed (Keystore loss/tamper). Zero network calls made. */
+    data object CredentialUnavailable : AuthenticatedConnectorResult()
+
+    /** HTTP 401 — the presented credential itself was rejected. */
+    data object Unauthorized : AuthenticatedConnectorResult()
+
+    /** HTTP 403 — credential accepted, but not authorized for this route. */
+    data object Forbidden : AuthenticatedConnectorResult()
+
+    /** HTTP 404. */
+    data object NotFound : AuthenticatedConnectorResult()
+
+    /** HTTP 409. */
+    data object Conflict : AuthenticatedConnectorResult()
+
+    /** HTTP 429. */
+    data object RateLimited : AuthenticatedConnectorResult()
+
+    /** HTTP 400 — a bounded, sanitized Connector error code only; never the raw response body. */
+    data class ValidationFailure(val sanitizedCode: String?) : AuthenticatedConnectorResult()
+
+    /** HTTP 5xx. */
+    data class ServerFailure(val httpStatus: Int) : AuthenticatedConnectorResult()
+
+    /** TLS/pin/hostname/socket/timeout failure, or any other transport-level `IOException`. */
+    data object TransportFailure : AuthenticatedConnectorResult()
+
+    /** A 2xx body that was not well-formed JSON, or exceeded the bounded read size. */
+    data object MalformedResponse : AuthenticatedConnectorResult()
+
+    /** The calling coroutine was cancelled while the request was in flight. */
+    data object Cancelled : AuthenticatedConnectorResult()
+}
