@@ -121,6 +121,7 @@ dependencies {
 
     implementation(libs.timber)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.zxing.android.embedded)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

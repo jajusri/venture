@@ -39,6 +39,23 @@ sealed class SecurePairingRevocationOutcome {
 }
 
 /**
+ * Validates a raw scanned/pasted QR payload WITHOUT redeeming it — the narrow seam a presentation
+ * layer uses to show an explicit Connector/fingerprint confirmation step before any network call
+ * is made. [RedeemSecurePairingSession] parses the payload again internally when the caller
+ * confirms (validation is cheap and side-effect-free, so re-validating at confirm-time is
+ * deliberate defense against a payload going stale between scan and confirm, e.g. its expiry
+ * elapsing) rather than trusting a `Valid` result carried across that gap.
+ */
+class ValidateSecurePairingPayload @Inject constructor(
+    private val parser: SecurePairingQrPayloadParser,
+) {
+    operator fun invoke(
+        rawPayload: String,
+        policy: SecurePairingQrValidationPolicy = SecurePairingQrValidationPolicy(),
+    ): SecurePairingQrPayloadParseResult = parser.parse(rawPayload, policy)
+}
+
+/**
  * The shared "prove a pending credential" step used by both a fresh redemption
  * ([RedeemSecurePairingSession]) and a retried verification after interruption
  * ([RetryPendingCredentialVerification]) — kept as one class so the promote/demote vault-state
