@@ -43,12 +43,21 @@ export function validateStartupConfiguration(config: ConnectorConfig): void {
   requireInteger(config.gracefulShutdownMs, 1, Number.MAX_SAFE_INTEGER, 'shutdown timeout', diagnostics);
   requireInteger(config.sessionTtlMs, 1, Number.MAX_SAFE_INTEGER, 'session TTL', diagnostics);
 
+  requireInteger(config.secureTransportPort, 1, 65_535, 'secure transport port', diagnostics);
+
   if (diagnostics.length === 0) {
     validateWritableDirectory(config.databasePath, 'database directory', diagnostics);
     if (config.tallyRequestAuditEnabled) {
       validateWritableDirectory(
         path.dirname(path.resolve(config.tallyRequestAuditPath)),
         'Tally request audit directory',
+        diagnostics,
+      );
+    }
+    if (config.secureTransportEnabled) {
+      validateWritableDirectory(
+        path.resolve(config.transportIdentityDir),
+        'transport identity directory',
         diagnostics,
       );
     }

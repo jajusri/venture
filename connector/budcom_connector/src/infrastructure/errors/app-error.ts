@@ -7,6 +7,7 @@ export const ErrorCodes = {
   READ_ONLY_VIOLATION: 'READ_ONLY_VIOLATION',
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   CONFIG_ERROR: 'CONFIG_ERROR',
+  TRANSPORT_IDENTITY_ERROR: 'TRANSPORT_IDENTITY_ERROR',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

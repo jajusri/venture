@@ -21,6 +21,7 @@ import { TrustedDeviceRepository } from '../services/device/trusted-device-repos
 import { ConnectorIdentityRepository } from '../services/identity/connector-identity-repository.js';
 import { PairingSessionRepository } from '../services/pairing/pairing-session-repository.js';
 import { PairingDeviceCredentialRepository } from '../services/pairing/pairing-device-credential-repository.js';
+import { ConnectorTransportIdentityService } from '../services/transport/connector-transport-identity.js';
 import { MdnsAdvertiser } from '../services/discovery/mdns-advertiser.js';
 import { createBonjourMdnsPublisherFactory } from '../services/discovery/bonjour-mdns-publisher.js';
 import { SqliteStorageService } from '../storage/sqlite/storage-service.js';
@@ -206,6 +207,10 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
       ),
   );
   container.registerFactory(
+    ServiceTokens.TransportIdentity,
+    () => new ConnectorTransportIdentityService(config.transportIdentityDir, logger.child({ service: 'TransportIdentity' })),
+  );
+  container.registerFactory(
     ServiceTokens.MdnsAdvertiser,
     () =>
       new MdnsAdvertiser({
@@ -291,7 +296,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         connectorIdentity: container.resolve<ConnectorIdentityRepository>(ServiceTokens.ConnectorIdentity),
         pairingSessions: container.resolve<PairingSessionRepository>(ServiceTokens.PairingSessions),
         pairingCredentials: container.resolve<PairingDeviceCredentialRepository>(ServiceTokens.PairingCredentials),
-      })),
+      }), container.resolve<ConnectorTransportIdentityService>(ServiceTokens.TransportIdentity)),
   );
 
   return { container, config, logger };

@@ -217,6 +217,15 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
       process.env.BUDCOM_SECURE_PAIRING_ENABLED,
       defaultConfig.securePairingEnabled,
     ),
+    secureTransportEnabled: parseBoolean(
+      process.env.BUDCOM_SECURE_TRANSPORT_ENABLED,
+      defaultConfig.secureTransportEnabled,
+    ),
+    secureTransportPort: parsePort(
+      process.env.BUDCOM_SECURE_TRANSPORT_PORT,
+      defaultConfig.secureTransportPort,
+    ),
+    transportIdentityDir: process.env.BUDCOM_TRANSPORT_IDENTITY_DIR ?? defaultConfig.transportIdentityDir,
     ...overrides,
   };
 
@@ -233,6 +242,14 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
   }
   if (resolved.tallyPort < 1 || resolved.tallyPort > 65535) {
     throw new Error(`Invalid port value: ${resolved.tallyPort}`);
+  }
+  if (resolved.secureTransportPort < 1 || resolved.secureTransportPort > 65535) {
+    throw new Error(`Invalid port value: ${resolved.secureTransportPort}`);
+  }
+  if (resolved.secureTransportEnabled && resolved.secureTransportPort === resolved.port) {
+    throw new Error(
+      `secureTransportPort (${resolved.secureTransportPort}) must differ from the HTTP API port (${resolved.port}).`,
+    );
   }
   if (
     resolved.env === 'production' &&

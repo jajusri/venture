@@ -7,6 +7,7 @@ import { ServiceTokens } from '../../src/core/tokens.js';
 import { PairingDeviceCredentialRepository } from '../../src/services/pairing/pairing-device-credential-repository.js';
 import { PairingSessionRepository } from '../../src/services/pairing/pairing-session-repository.js';
 import { ConnectorIdentityRepository } from '../../src/services/identity/connector-identity-repository.js';
+import { ConnectorTransportIdentityService } from '../../src/services/transport/connector-transport-identity.js';
 import { createPairingBootstrapRouter } from '../../src/api/routes/pairing.js';
 import { createPairingRedeemRateLimiter } from '../../src/api/middleware/pairing-redeem-rate-limit.js';
 import type { Logger } from '../../src/infrastructure/logging/logger.js';
@@ -520,6 +521,9 @@ describe('secure local pairing — HTTP routes (flag enabled)', () => {
       const pairingCredentials = context.container.resolve<PairingDeviceCredentialRepository>(
         ServiceTokens.PairingCredentials,
       );
+      const transportIdentity = context.container.resolve<ConnectorTransportIdentityService>(
+        ServiceTokens.TransportIdentity,
+      );
 
       const app = express();
       app.use(express.json());
@@ -531,10 +535,13 @@ describe('secure local pairing — HTTP routes (flag enabled)', () => {
             securePairingEnabled: true,
             host: '127.0.0.1',
             port: 8080,
+            secureTransportEnabled: false,
+            secureTransportPort: 8443,
           },
           connectorIdentity: identity,
           pairingSessions,
           pairingCredentials,
+          transportIdentity,
           redeemRateLimiter: createPairingRedeemRateLimiter({ maxAttempts: 1, windowMs: 60_000 }),
         }),
       );
@@ -679,6 +686,28 @@ describe('secure local pairing — HTTP routes (flag enabled)', () => {
       // pairing surface must not have changed this. Any response other than 401 proves the
       // trusted-device gate was not accidentally tightened by this phase's wiring changes.
       expect(response.status).not.toBe(401);
+    });
+
+    it('securePairingEnabled still defaults to false even with secureTransportEnabled overridden true', async () => {
+      const context = createTestContext({ secureTransportEnabled: true });
+      expect(context.config.securePairingEnabled).toBe(false);
+      expect(context.config.secureTransportEnabled).toBe(true);
+    });
+
+    it('legacy POST /device/pair and GET /session are unaffected by secureTransportEnabled being on', async () => {
+      const context = createTestContext({ secureTransportEnabled: true, securePairingEnabled: true });
+      await startTestServices(context);
+      const app = createTestApp(context);
+
+      const legacyPair = await request(app).post('/device/pair').send({
+        companyId: 'acme-002',
+        companyName: 'Acme Corp',
+        installationId: 'install-1111111111111111',
+      });
+      expect(legacyPair.status).toBe(201);
+
+      const session = await request(app).get('/session');
+      expect(session.status).not.toBe(401);
     });
   });
 });

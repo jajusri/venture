@@ -11,8 +11,12 @@ import {
   type RedeemPairingSessionOutcome,
 } from '../../services/pairing/pairing-session-repository.js';
 import type { PairingDeviceCredentialRepository } from '../../services/pairing/pairing-device-credential-repository.js';
+import type { ConnectorTransportIdentityService } from '../../services/transport/connector-transport-identity.js';
 import { createRequireDesktopControlTokenMiddleware } from '../middleware/require-desktop-control-token.js';
 import { createPairingRedeemRateLimiter } from '../middleware/pairing-redeem-rate-limit.js';
+
+/** Bumped only if the pairing-payload's transport fields (protocol/port/fingerprint/algorithm) change shape. */
+const TRANSPORT_IDENTITY_VERSION = 1;
 
 const MAX_DEVICE_LABEL_LENGTH = 64;
 const MAX_DEVICE_ID_LENGTH = 128;
@@ -109,14 +113,41 @@ function outcomeToHttpFailure(outcome: Exclude<RedeemPairingSessionOutcome, { ki
   }
 }
 
+async function buildTransportFields(
+  transportIdentity: ConnectorTransportIdentityService,
+  securePort: number,
+): Promise<{
+  transportProtocol: 'https';
+  securePort: number;
+  transportFingerprint: string;
+  fingerprintAlgorithm: string;
+  transportIdentityVersion: number;
+}> {
+  const identity = await transportIdentity.getIdentity();
+  return {
+    transportProtocol: 'https',
+    securePort,
+    transportFingerprint: identity.fingerprint,
+    fingerprintAlgorithm: identity.fingerprintAlgorithm,
+    transportIdentityVersion: TRANSPORT_IDENTITY_VERSION,
+  };
+}
+
 export interface PairingBootstrapRouterDeps {
   readonly config: Pick<
     ConnectorConfig,
-    'networkExposure' | 'desktopControlToken' | 'securePairingEnabled' | 'host' | 'port'
+    | 'networkExposure'
+    | 'desktopControlToken'
+    | 'securePairingEnabled'
+    | 'host'
+    | 'port'
+    | 'secureTransportEnabled'
+    | 'secureTransportPort'
   >;
   readonly connectorIdentity: ConnectorIdentityRepository;
   readonly pairingSessions?: PairingSessionRepository;
   readonly pairingCredentials?: PairingDeviceCredentialRepository;
+  readonly transportIdentity: ConnectorTransportIdentityService;
   /** Test-only override; defaults to a fresh createPairingRedeemRateLimiter() instance. */
   readonly redeemRateLimiter?: RequestHandler;
 }
@@ -162,6 +193,14 @@ export function createPairingBootstrapRouter(deps: PairingBootstrapRouterDeps): 
    * Response fields are exactly what the QR/short-code payload needs: no business or Tally
    * data, no reusable long-term credential (the returned `secret`/`shortCode` are single-use
    * and burned on redemption), and no other device's identity.
+   *
+   * When secureTransportEnabled is also true, the response additionally carries the pinned-HTTPS
+   * fields (transportProtocol, securePort, transportFingerprint, fingerprintAlgorithm,
+   * transportIdentityVersion) so the QR payload can point the client at the HTTPS endpoint and
+   * let it pin the Connector's stable public-key fingerprint at first trust — see
+   * connector-transport-identity.ts for the trust model. These fields are omitted entirely (not
+   * present as null) while secure transport is disabled, so the response shape is unchanged from
+   * before this phase for every installation that hasn't turned it on.
    */
   router.post(
     '/device/pairing-session',
@@ -176,6 +215,10 @@ export function createPairingBootstrapRouter(deps: PairingBootstrapRouterDeps): 
         port: deps.config.port,
       });
 
+      const transportFields = deps.config.secureTransportEnabled
+        ? await buildTransportFields(deps.transportIdentity, deps.config.secureTransportPort)
+        : {};
+
       res.status(201).json({
         schemaVersion: result.schemaVersion,
         pairingSessionId: result.pairingSessionId,
@@ -188,6 +231,7 @@ export function createPairingBootstrapRouter(deps: PairingBootstrapRouterDeps): 
         // rendered into the QR/short-code UI and not persisted anywhere by the caller.
         secret: result.secret,
         shortCode: result.shortCode,
+        ...transportFields,
       });
     }),
   );
@@ -253,12 +297,31 @@ export function createPairingBootstrapRouter(deps: PairingBootstrapRouterDeps): 
    * and returns it once. The caller must still verify the returned connectorId against a live
    * /health call to the endpoint it actually connected to before trusting this response — this
    * route cannot perform that check on the caller's behalf.
+   *
+   * INSECURE-TRANSPORT GUARD: once an operator has explicitly turned on secureTransportEnabled
+   * for a LAN-exposed Connector, a permanent device credential must never be issued over a plain
+   * HTTP connection on that same LAN — see the architectural principles in Phase 3K ("pairing
+   * credentials must never cross a LAN in plaintext"). This check runs before any session
+   * lookup, so a rejected insecure attempt never consumes a valid one-time session or its attempt
+   * budget. Loopback deployments are exempt (this connection is already local-machine-only, and
+   * existing Desktop-local tooling has no HTTPS client), and so is any deployment that hasn't
+   * turned secureTransportEnabled on at all — this guard adds a requirement, it does not by
+   * itself force HTTPS to exist.
    */
   router.post(
     '/device/pairing-session/redeem',
     requirePairingEnabled,
     redeemRateLimiter,
     asyncHandler(async (req, res) => {
+      if (deps.config.networkExposure === 'lan' && deps.config.secureTransportEnabled && !req.secure) {
+        res.status(400).json({
+          ok: false,
+          code: 'INSECURE_TRANSPORT',
+          message: 'Pairing redemption over an insecure LAN connection is not permitted while secure transport is enabled. Retry over HTTPS.',
+        });
+        return;
+      }
+
       const { schemaVersion, pairingSessionId, secret, connectorId, host, port, shortCode, deviceId, deviceLabel } =
         req.body ?? {};
 
@@ -383,7 +446,7 @@ export function createPairingBootstrapRouter(deps: PairingBootstrapRouterDeps): 
 }
 
 export interface PairingCredentialManagementRouterDeps {
-  readonly config: Pick<ConnectorConfig, 'securePairingEnabled'>;
+  readonly config: Pick<ConnectorConfig, 'securePairingEnabled' | 'networkExposure' | 'desktopControlToken'>;
   readonly pairingCredentials?: PairingDeviceCredentialRepository;
 }
 
@@ -392,20 +455,33 @@ export interface PairingCredentialManagementRouterDeps {
  * *after* `requireTrustedDeviceAuth`, matching createDeviceManagementRouter (device.ts) — these
  * mutate trust state and must never be reachable without a valid token when LAN enforcement is
  * enabled. Also gated by requireSecurePairingEnabled, like the bootstrap router.
+ *
+ * INTERIM HARDENING (Phase 3K): requireTrustedDeviceAuth alone is not a sufficient gate here,
+ * because requireDeviceAuthForLan remains intentionally false during this compatibility phase
+ * (see require-trusted-device-auth.ts) — meaning that gate is a no-op on a default LAN
+ * deployment. Revocation is an administrative action (it can lock out another device), so this
+ * route additionally requires the same Desktop-control-token boundary as pairing-session
+ * create/cancel, independent of requireDeviceAuthForLan. This is a narrow interim rule, not a
+ * general device-administration API: a device revoking *its own* credential (self-revoke) is a
+ * distinct, not-yet-implemented route reserved for a later phase, authenticated by the device's
+ * own credential rather than the Desktop control token.
  */
 export function createPairingCredentialManagementRouter(deps: PairingCredentialManagementRouterDeps): Router {
   const router = Router();
   const requirePairingEnabled = requireSecurePairingEnabled({ config: deps.config });
+  const requireDesktopControlToken = createRequireDesktopControlTokenMiddleware({ config: deps.config });
 
   /**
    * POST /device/pairing-credential/revoke
    *
    * Body: { credentialId }. Revokes immediately; subsequent token validation for this
-   * credential returns null (unauthenticated).
+   * credential returns null (unauthenticated). Restricted to Desktop's own control boundary —
+   * see the class-level doc comment above.
    */
   router.post(
     '/device/pairing-credential/revoke',
     requirePairingEnabled,
+    requireDesktopControlToken,
     asyncHandler(async (req, res) => {
       const { credentialId } = req.body ?? {};
       if (!isNonEmptyString(credentialId)) {

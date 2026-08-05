@@ -49,6 +49,9 @@ export function createTestConnectorConfig(basePath: string): ConnectorConfig {
     requireDeviceAuthForLan: false,
     desktopControlToken: null,
     securePairingEnabled: false,
+    secureTransportEnabled: false,
+    secureTransportPort: 8443,
+    transportIdentityDir: path.join(basePath, 'transport'),
   };
 }
 

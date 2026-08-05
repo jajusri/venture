@@ -68,6 +68,22 @@ export interface ConnectorConfig {
    * which gates business-route enforcement, not pairing-bootstrap availability.
    */
   readonly securePairingEnabled: boolean;
+  /**
+   * Gate for the pinned-HTTPS transport listener. Defaults to false so the existing HTTP-only
+   * runtime behavior is byte-for-byte unchanged. Independent of securePairingEnabled and
+   * requireDeviceAuthForLan — this flag controls whether a second, TLS-terminated listener
+   * exists at all, not pairing-bootstrap availability or business-route enforcement. Never
+   * auto-enabled merely because secure pairing is enabled.
+   */
+  readonly secureTransportEnabled: boolean;
+  /** Bind port for the optional HTTPS listener, on the same host as the HTTP listener. */
+  readonly secureTransportPort: number;
+  /**
+   * Directory (created if missing) holding the Connector's persisted transport keypair and
+   * self-signed certificate. Separate from databasePath — the private key must never be stored
+   * in SQLite (see services/transport/connector-transport-identity.ts).
+   */
+  readonly transportIdentityDir: string;
 }
 
 export const TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
@@ -124,4 +140,7 @@ export const defaultConfig: ConnectorConfig = {
   requireDeviceAuthForLan: false,
   desktopControlToken: null,
   securePairingEnabled: false,
+  secureTransportEnabled: false,
+  secureTransportPort: 8443,
+  transportIdentityDir: './data/transport',
 };

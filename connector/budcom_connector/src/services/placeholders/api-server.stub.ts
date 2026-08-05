@@ -1,6 +1,8 @@
 import type { Server } from 'node:http';
+import https from 'node:https';
 
 import { createExpressApp } from '../../api/server.js';
+import type { ConnectorTransportIdentityService } from '../transport/connector-transport-identity.js';
 import type { ConnectorConfig } from '../../config/defaults.js';
 import type { Logger } from '../../infrastructure/logging/logger.js';
 import type { CompanyDiscoveryService } from '../interfaces/company-discovery.js';
@@ -38,12 +40,14 @@ export interface ApiServerDeps {
 
 export class ApiServerStub implements ApiServerService {
   private server: Server | null = null;
+  private secureServer: https.Server | null = null;
   private running = false;
 
   constructor(
     private readonly config: ConnectorConfig,
     private readonly logger: Logger,
     private readonly getDeps: () => ApiServerDeps,
+    private readonly transportIdentity: ConnectorTransportIdentityService,
   ) {}
 
   async start(): Promise<void> {
@@ -66,13 +70,13 @@ export class ApiServerStub implements ApiServerService {
       connectorIdentity: deps.connectorIdentity,
       pairingSessions: deps.pairingSessions,
       pairingCredentials: deps.pairingCredentials,
+      transportIdentity: this.transportIdentity,
     });
 
     await new Promise<void>((resolve, reject) => {
       const server = app.listen(this.config.port, this.config.host, () => {
         server.off('error', reject);
         this.server = server;
-        this.running = true;
         this.logger.info('API server listening', {
           host: this.config.host,
           port: this.config.port,
@@ -89,20 +93,74 @@ export class ApiServerStub implements ApiServerService {
       });
       server.once('error', reject);
     });
+
+    // Same Express app/routes as the HTTP listener above — this is deliberately not a second,
+    // independent business-logic stack, just a second TLS-terminated entry point into it. Any
+    // failure here (including a corrupt/mismatched persisted transport identity, surfaced by
+    // getServerCredentials()) fails startup clearly rather than silently falling back to
+    // HTTP-only. Since this is mid-flight inside this same start() call, the HTTP listener
+    // opened just above would otherwise dangle uncleaned (the register-services.ts STARTUP_ORDER
+    // unwind only closes services whose start() already *returned*, not one still throwing) —
+    // so on failure here the HTTP listener is closed before rethrowing.
+    if (this.config.secureTransportEnabled) {
+      try {
+        const credentials = await this.transportIdentity.getServerCredentials();
+        await new Promise<void>((resolve, reject) => {
+          const secureServer = https.createServer({ key: credentials.key, cert: credentials.cert }, app);
+          secureServer.listen(this.config.secureTransportPort, this.config.host, () => {
+            secureServer.off('error', reject);
+            this.secureServer = secureServer;
+            this.logger.info('secure API server listening', {
+              host: this.config.host,
+              port: this.config.secureTransportPort,
+              networkExposure: this.config.networkExposure,
+            });
+            resolve();
+          });
+          secureServer.once('error', reject);
+        });
+      } catch (error) {
+        await this.closeHttpListener();
+        throw error;
+      }
+    }
+
+    this.running = true;
   }
 
   async stop(): Promise<void> {
-    if (!this.server || !this.running) return;
+    if (!this.running) return;
 
+    await this.closeHttpListener();
+    await this.closeSecureListener();
+
+    this.running = false;
+    this.logger.info('API server stopped');
+  }
+
+  private async closeHttpListener(): Promise<void> {
+    if (!this.server) return;
     await new Promise<void>((resolve, reject) => {
       this.server?.close((error) => {
         if (error) {
           reject(error);
           return;
         }
-        this.running = false;
         this.server = null;
-        this.logger.info('API server stopped');
+        resolve();
+      });
+    });
+  }
+
+  private async closeSecureListener(): Promise<void> {
+    if (!this.secureServer) return;
+    await new Promise<void>((resolve, reject) => {
+      this.secureServer?.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        this.secureServer = null;
         resolve();
       });
     });
@@ -114,6 +172,10 @@ export class ApiServerStub implements ApiServerService {
 
   getServer(): Server | null {
     return this.server;
+  }
+
+  getSecureServer(): https.Server | null {
+    return this.secureServer;
   }
 
   getStatus() {

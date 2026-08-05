@@ -1,4 +1,5 @@
 import { createExpressApp } from '../../src/api/server.js';
+import type { ExpressAppDeps } from '../../src/api/server.js';
 import { registerServices } from '../../src/bootstrap/register-services.js';
 import type { RegisterServicesOptions } from '../../src/bootstrap/register-services.js';
 import type { ServiceLifecycle } from '../../src/core/types.js';
@@ -17,6 +18,7 @@ import type { TrustedDeviceRepository } from '../../src/services/device/trusted-
 import type { ConnectorIdentityRepository } from '../../src/services/identity/connector-identity-repository.js';
 import type { PairingSessionRepository } from '../../src/services/pairing/pairing-session-repository.js';
 import type { PairingDeviceCredentialRepository } from '../../src/services/pairing/pairing-device-credential-repository.js';
+import type { ConnectorTransportIdentityService } from '../../src/services/transport/connector-transport-identity.js';
 
 export interface StartTestServicesOptions {
   readonly selectCompanyId?: string;
@@ -32,7 +34,12 @@ export function createTestContext(configOverrides: RegisterServicesOptions = {})
   });
 }
 
-export function createTestApp(context: ApplicationContext = createTestContext()) {
+/**
+ * Resolves the same dependency set `createTestApp` wires into `createExpressApp` — extracted so
+ * tests that need a real `ApiServerStub` instance (not just the in-process Express app) can
+ * reuse it without duplicating this resolution logic.
+ */
+export function resolveApiServerDeps(context: ApplicationContext): Omit<ExpressAppDeps, 'config'> {
   const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
   const companyDiscovery = context.container.resolve<CompanyDiscoveryService>(
     ServiceTokens.CompanyDiscovery,
@@ -78,9 +85,13 @@ export function createTestApp(context: ApplicationContext = createTestContext())
   const connectorIdentity = context.container.resolve<ConnectorIdentityRepository>(
     ServiceTokens.ConnectorIdentity,
   );
-  return createExpressApp({
+  // Same reasoning as connectorIdentity above: construction only stores a directory path and
+  // logger, no filesystem access until getServerCredentials()/getIdentity() is actually called.
+  const transportIdentity = context.container.resolve<ConnectorTransportIdentityService>(
+    ServiceTokens.TransportIdentity,
+  );
+  return {
     logger,
-    config: context.config,
     healthService,
     companyDiscovery,
     connectorSession,
@@ -93,7 +104,13 @@ export function createTestApp(context: ApplicationContext = createTestContext())
     connectorIdentity,
     pairingSessions,
     pairingCredentials,
-  });
+    transportIdentity,
+  };
+}
+
+export function createTestApp(context: ApplicationContext = createTestContext()) {
+  const deps = resolveApiServerDeps(context);
+  return createExpressApp({ ...deps, config: context.config });
 }
 
 export async function startTestServices(

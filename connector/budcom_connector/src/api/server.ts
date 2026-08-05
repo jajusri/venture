@@ -33,12 +33,20 @@ import { createPairingBootstrapRouter, createPairingCredentialManagementRouter }
 import type { ConnectorIdentityRepository } from '../services/identity/connector-identity-repository.js';
 import type { PairingSessionRepository } from '../services/pairing/pairing-session-repository.js';
 import type { PairingDeviceCredentialRepository } from '../services/pairing/pairing-device-credential-repository.js';
+import type { ConnectorTransportIdentityService } from '../services/transport/connector-transport-identity.js';
 
 export interface ExpressAppDeps {
   readonly logger: Logger;
   readonly config: Pick<
     ConnectorConfig,
-    'networkExposure' | 'requireDeviceAuthForLan' | 'desktopControlToken' | 'securePairingEnabled' | 'host' | 'port'
+    | 'networkExposure'
+    | 'requireDeviceAuthForLan'
+    | 'desktopControlToken'
+    | 'securePairingEnabled'
+    | 'host'
+    | 'port'
+    | 'secureTransportEnabled'
+    | 'secureTransportPort'
   >;
   readonly healthService: HealthService;
   readonly companyDiscovery: CompanyDiscoveryService;
@@ -56,6 +64,7 @@ export interface ExpressAppDeps {
   readonly pairingSessions?: PairingSessionRepository;
   /** Optional: when provided (and securePairingEnabled is true), pairing-credential routes are functional. */
   readonly pairingCredentials?: PairingDeviceCredentialRepository;
+  readonly transportIdentity: ConnectorTransportIdentityService;
 }
 
 export function createExpressApp(deps: ExpressAppDeps): Express {
@@ -84,6 +93,7 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
     connectorIdentity: deps.connectorIdentity,
     pairingSessions: deps.pairingSessions,
     pairingCredentials: deps.pairingCredentials,
+    transportIdentity: deps.transportIdentity,
   }));
   app.use(createRequireTrustedDeviceAuthMiddleware({
     config: deps.config,
