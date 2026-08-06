@@ -2,6 +2,8 @@ package com.budcom.android.feature.masterdata.ledger.data.di
 
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerLocalDataSource
 import com.budcom.android.feature.masterdata.ledger.data.local.RoomLedgerLocalDataSource
+import com.budcom.android.feature.masterdata.ledger.data.remote.AuthenticatedLedgerRemoteDataSource
+import com.budcom.android.feature.masterdata.ledger.data.remote.DefaultAuthenticatedLedgerRemoteDataSource
 import com.budcom.android.feature.masterdata.ledger.data.remote.DefaultLedgerRemoteDataSource
 import com.budcom.android.feature.masterdata.ledger.data.remote.LedgerApi
 import com.budcom.android.feature.masterdata.ledger.data.remote.LedgerRemoteDataSource
@@ -26,6 +28,12 @@ abstract class LedgerBindModule {
     abstract fun bindLedgerRemoteDataSource(
         impl: DefaultLedgerRemoteDataSource,
     ): LedgerRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthenticatedLedgerRemoteDataSource(
+        impl: DefaultAuthenticatedLedgerRemoteDataSource,
+    ): AuthenticatedLedgerRemoteDataSource
 
     @Binds
     @Singleton
