@@ -1,6 +1,8 @@
 package com.budcom.android.feature.sync.data.di
 
 import com.budcom.android.core.network.SyncHttp
+import com.budcom.android.feature.sync.data.remote.AuthenticatedSyncRemoteDataSource
+import com.budcom.android.feature.sync.data.remote.DefaultAuthenticatedSyncRemoteDataSource
 import com.budcom.android.feature.sync.data.remote.DefaultSyncRemoteDataSource
 import com.budcom.android.feature.sync.data.remote.SyncApi
 import com.budcom.android.feature.sync.data.remote.SyncRemoteDataSource
@@ -23,6 +25,12 @@ abstract class SyncBindModule {
     abstract fun bindSyncRemoteDataSource(
         impl: DefaultSyncRemoteDataSource,
     ): SyncRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthenticatedSyncRemoteDataSource(
+        impl: DefaultAuthenticatedSyncRemoteDataSource,
+    ): AuthenticatedSyncRemoteDataSource
 
     @Binds
     @Singleton
