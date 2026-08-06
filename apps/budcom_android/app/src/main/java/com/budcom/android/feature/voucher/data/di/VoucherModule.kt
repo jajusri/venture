@@ -1,6 +1,8 @@
 package com.budcom.android.feature.voucher.data.di
 
+import com.budcom.android.feature.voucher.data.remote.AuthenticatedVoucherDetailRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.AuthenticatedVoucherListRemoteDataSource
+import com.budcom.android.feature.voucher.data.remote.DefaultAuthenticatedVoucherDetailRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.DefaultAuthenticatedVoucherListRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.DefaultVoucherRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.VoucherApi
@@ -35,6 +37,12 @@ abstract class VoucherBindModule {
     abstract fun bindAuthenticatedVoucherListRemoteDataSource(
         impl: DefaultAuthenticatedVoucherListRemoteDataSource,
     ): AuthenticatedVoucherListRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthenticatedVoucherDetailRemoteDataSource(
+        impl: DefaultAuthenticatedVoucherDetailRemoteDataSource,
+    ): AuthenticatedVoucherDetailRemoteDataSource
 
     @Binds
     @Singleton

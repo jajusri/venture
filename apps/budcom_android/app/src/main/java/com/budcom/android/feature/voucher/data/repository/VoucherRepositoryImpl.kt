@@ -8,6 +8,7 @@ import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.core.util.TimeProvider
+import com.budcom.android.feature.voucher.data.remote.AuthenticatedVoucherDetailRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.AuthenticatedVoucherListRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.VoucherRemoteDataSource
 import com.budcom.android.feature.voucher.data.local.VoucherLocalDataSource
@@ -34,9 +35,11 @@ import javax.inject.Singleton
  * selected. [query]'s `companyId`/`dateRange` are the sole scope used for both dispatch and
  * persistence for the entire call: neither is ever re-read from any mutable store, so a company
  * or scope change elsewhere in the app while a refresh is in flight can never mislabel that
- * refresh's write. [refreshVoucherDetails] is unchanged by this phase — [GetVoucherById] has no
- * `queryParams` support yet for the Connector-required `company` parameter, deferred to a later
- * phase.
+ * refresh's write. [refreshVoucherDetails] resolves the same gate independently (Phase 3S-D2) and
+ * routes through [AuthenticatedVoucherDetailRemoteDataSource] on AUTHENTICATED — a separate
+ * adapter boundary from the list one, since [voucherId]/[companyId] are this method's own
+ * parameters (not read from [query]), matching [AuthenticatedConnectorOperation.GetVoucherById]'s
+ * now-corrected `voucherId`+`companyId` contract.
  */
 @Singleton
 class VoucherRepositoryImpl @Inject constructor(
@@ -47,6 +50,7 @@ class VoucherRepositoryImpl @Inject constructor(
     private val timeProvider: TimeProvider,
     private val transportGate: ConnectorTransportSelectionGate,
     private val authenticatedRemoteDataSource: AuthenticatedVoucherListRemoteDataSource,
+    private val authenticatedDetailRemoteDataSource: AuthenticatedVoucherDetailRemoteDataSource,
 ) : VoucherRepository {
 
     override suspend fun listVouchers(query: VoucherQuery): AppResult<VoucherPage> =
@@ -92,15 +96,26 @@ class VoucherRepositoryImpl @Inject constructor(
         voucherId: String,
     ): AppResult<VoucherDetails> =
         withContext(dispatchers.io) {
-            when (val result = remoteDataSource.fetchVoucherDetails(companyId, voucherId)) {
-                is ApiResult.Success -> {
-                    val syncedAt = timeProvider.nowEpochMillis()
-                    localDataSource.storeDetails(companyId, result.data, syncedAt)
-                    AppResult.Success(result.data.copy(cacheState = VoucherCacheState.Live, lastSyncedAt = syncedAt))
+            when (transportGate.resolve()) {
+                ConnectorTransportSelection.LEGACY -> when (val result = remoteDataSource.fetchVoucherDetails(companyId, voucherId)) {
+                    is ApiResult.Success -> persistDetailsAndReturn(companyId, result.data)
+                    is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(result.error))
                 }
-                is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(result.error))
+
+                ConnectorTransportSelection.AUTHENTICATED -> when (
+                    val result = authenticatedDetailRemoteDataSource.fetchVoucherDetails(companyId, voucherId)
+                ) {
+                    is AppResult.Success -> persistDetailsAndReturn(companyId, result.value)
+                    is AppResult.Failure -> result
+                }
             }
         }
+
+    private suspend fun persistDetailsAndReturn(companyId: String, details: VoucherDetails): AppResult<VoucherDetails> {
+        val syncedAt = timeProvider.nowEpochMillis()
+        localDataSource.storeDetails(companyId, details, syncedAt)
+        return AppResult.Success(details.copy(cacheState = VoucherCacheState.Live, lastSyncedAt = syncedAt))
+    }
 
     override suspend fun getCachedVoucherSummary(companyId: String, voucherId: String): VoucherSummary? =
         withContext(dispatchers.io) { localDataSource.summary(companyId, voucherId) }

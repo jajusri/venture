@@ -11,6 +11,7 @@ import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkError
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.core.util.TimeProvider
+import com.budcom.android.feature.voucher.data.remote.AuthenticatedVoucherDetailRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.AuthenticatedVoucherListRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.VoucherRemoteDataSource
 import com.budcom.android.feature.voucher.data.local.VoucherLocalDataSource
@@ -38,12 +39,12 @@ import org.junit.Test
  * failed [VoucherRepositoryImpl.refreshVouchers] / [VoucherRepositoryImpl.refreshVoucherDetails] replace
  * or hide valid cached rows. See Phase 3E offline-voucher-reliability root cause notes.
  *
- * [refreshVouchers] additionally resolves [ConnectorTransportSelectionGate] (Phase 3S-D1) — see the
- * "authenticated transport" section below for its non-downgrading, no-dual-transport, and
- * credential-identity coverage. [refreshVoucherDetails] is untouched by this phase; every
- * pre-existing test below is retained exactly, exercised via the new production constructor's
- * LEGACY-gate + Unreachable-authenticated-adapter test defaults, which incidentally prove the
- * authenticated transport is never reached by unrelated repository methods.
+ * [refreshVouchers] resolves [ConnectorTransportSelectionGate] independently from
+ * [refreshVoucherDetails] (Phase 3S-D1 / Phase 3S-D2 respectively) — see the "authenticated
+ * transport" sections below for each method's non-downgrading, no-dual-transport, and
+ * credential-identity coverage. Every pre-existing test is retained exactly, exercised via the
+ * production constructor's test-only LEGACY-gate + Unreachable-authenticated-adapter defaults,
+ * which incidentally prove neither authenticated transport is reached by unrelated methods.
  */
 class VoucherRepositoryImplTest {
     private val dispatcher = StandardTestDispatcher()
@@ -199,7 +200,7 @@ class VoucherRepositoryImplTest {
         assertEquals(null, result)
     }
 
-    // ============================== Authenticated transport (Phase 3S-D1) ==============================
+    // ============================== Authenticated list transport (Phase 3S-D1) ==============================
 
     @Test
     fun `empty vault (LEGACY) refresh calls legacy exactly once and never touches the authenticated adapter`() = runTest(dispatcher) {
@@ -213,12 +214,13 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `ACTIVE selection routes to the authenticated adapter exactly once and never touches legacy`() = runTest(dispatcher) {
+    fun `ACTIVE selection routes list refresh to the authenticated adapter exactly once and never touches legacy`() = runTest(dispatcher) {
         val local = FakeLocal(listValue = samplePage())
-        val authenticated = FakeAuthenticatedRemote(AppResult.Success(samplePage()))
-        val repository = VoucherRepositoryImpl(
-            UnreachableRemote, errorMapper, dispatchers, local, timeProvider,
-            FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticated,
+        val authenticated = FakeAuthenticatedListRemote(AppResult.Success(samplePage()))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = authenticated,
         )
 
         val result = repository.refreshVouchers(query()) as AppResult.Success
@@ -230,20 +232,20 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `PENDING_VERIFICATION and RE_PAIR_REQUIRED stay authenticated and never fall back to legacy`() = runTest(dispatcher) {
+    fun `list PENDING_VERIFICATION and RE_PAIR_REQUIRED stay authenticated and never fall back to legacy`() = runTest(dispatcher) {
         val localVaultStateError = AppError.Remote(httpStatus = null, code = AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, message = "re-pair")
-        val repository = VoucherRepositoryImpl(
-            UnreachableRemote, errorMapper, dispatchers, FakeLocal(), timeProvider,
-            FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), FakeAuthenticatedRemote(AppResult.Failure(localVaultStateError)),
+        val repository = repo(
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = FakeAuthenticatedListRemote(AppResult.Failure(localVaultStateError)),
         )
 
-        // UnreachableRemote throws if ever called — reaching here proves it wasn't.
+        // Default `remote` is UnreachableRemote — throws if ever called; reaching here proves it wasn't.
         val result = repository.refreshVouchers(query()) as AppResult.Failure
         assertEquals(localVaultStateError, result.error)
     }
 
     @Test
-    fun `the transport gate is resolved on every refresh call, not cached`() = runTest(dispatcher) {
+    fun `the list transport gate is resolved on every refresh call, not cached`() = runTest(dispatcher) {
         val gate = CountingTransportGate(ConnectorTransportSelection.LEGACY)
         val repository = repo(FakeRemote(listResult = ApiResult.Success(samplePage())), transportGate = gate)
 
@@ -254,11 +256,11 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `a changed secure state is observed by the very next refresh call`() = runTest(dispatcher) {
+    fun `a changed secure state is observed by the very next list refresh call`() = runTest(dispatcher) {
         val gate = MutableTransportGate(ConnectorTransportSelection.LEGACY)
         val legacy = FakeRemote(listResult = ApiResult.Success(samplePage()))
-        val authenticated = FakeAuthenticatedRemote(AppResult.Success(samplePage()))
-        val repository = VoucherRepositoryImpl(legacy, errorMapper, dispatchers, FakeLocal(), timeProvider, gate, authenticated)
+        val authenticated = FakeAuthenticatedListRemote(AppResult.Success(samplePage()))
+        val repository = repo(legacy, transportGate = gate, authenticatedListRemote = authenticated)
 
         repository.refreshVouchers(query())
         gate.selection = ConnectorTransportSelection.AUTHENTICATED
@@ -269,7 +271,7 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `every non-authentication authenticated failure leaves Room unchanged and remains a failure result`() = runTest(dispatcher) {
+    fun `every non-authentication authenticated list failure leaves Room unchanged and remains a failure result`() = runTest(dispatcher) {
         val nonAuthFailures = listOf(
             AppError.Offline(),
             AppError.Serialization("bad json"),
@@ -283,9 +285,10 @@ class VoucherRepositoryImplTest {
 
         nonAuthFailures.forEach { error ->
             val local = FakeLocal(listValue = samplePage())
-            val repository = VoucherRepositoryImpl(
-                UnreachableRemote, errorMapper, dispatchers, local, timeProvider,
-                FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), FakeAuthenticatedRemote(AppResult.Failure(error)),
+            val repository = repo(
+                local = local,
+                transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+                authenticatedListRemote = FakeAuthenticatedListRemote(AppResult.Failure(error)),
             )
 
             val result = repository.refreshVouchers(query())
@@ -296,12 +299,13 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `CredentialUnavailable, Unpaired, PendingVerification and RePairRequired never call legacy and never touch Room`() = runTest(dispatcher) {
+    fun `list CredentialUnavailable, Unpaired, PendingVerification and RePairRequired never call legacy and never touch Room`() = runTest(dispatcher) {
         val localVaultStateError = AppError.Remote(httpStatus = null, code = AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, message = "re-pair")
         val local = FakeLocal(listValue = samplePage())
-        val repository = VoucherRepositoryImpl(
-            UnreachableRemote, errorMapper, dispatchers, local, timeProvider,
-            FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), FakeAuthenticatedRemote(AppResult.Failure(localVaultStateError)),
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = FakeAuthenticatedListRemote(AppResult.Failure(localVaultStateError)),
         )
 
         val result = repository.refreshVouchers(query()) as AppResult.Failure
@@ -311,12 +315,13 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `401 never calls legacy, preserves Room, and returns SecurePairingRequired`() = runTest(dispatcher) {
+    fun `list 401 never calls legacy, preserves Room, and returns SecurePairingRequired`() = runTest(dispatcher) {
         val rejection = AppError.Remote(httpStatus = 401, code = AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, message = "re-pair")
         val local = FakeLocal(listValue = samplePage())
-        val repository = VoucherRepositoryImpl(
-            UnreachableRemote, errorMapper, dispatchers, local, timeProvider,
-            FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), FakeAuthenticatedRemote(AppResult.Failure(rejection)),
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = FakeAuthenticatedListRemote(AppResult.Failure(rejection)),
         )
 
         val result = repository.refreshVouchers(query()) as AppResult.Failure
@@ -329,12 +334,13 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `403 never calls legacy, does not mutate credential state, preserves Room, and returns AccessDenied`() = runTest(dispatcher) {
+    fun `list 403 never calls legacy, does not mutate credential state, preserves Room, and returns AccessDenied`() = runTest(dispatcher) {
         val rejection = AppError.Remote(httpStatus = 403, code = AUTHENTICATED_ACCESS_DENIED_CODE, message = "forbidden")
         val local = FakeLocal(listValue = samplePage())
-        val repository = VoucherRepositoryImpl(
-            UnreachableRemote, errorMapper, dispatchers, local, timeProvider,
-            FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), FakeAuthenticatedRemote(AppResult.Failure(rejection)),
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = FakeAuthenticatedListRemote(AppResult.Failure(rejection)),
         )
 
         val result = repository.refreshVouchers(query()) as AppResult.Failure
@@ -345,13 +351,14 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `an authenticated company-A response writes only company-A rows and leaves company-B rows untouched`() = runTest(dispatcher) {
+    fun `an authenticated company-A list response writes only company-A rows and leaves company-B rows untouched`() = runTest(dispatcher) {
         val local = FakeLocal()
         local.stored["company-b"] = mutableListOf(sampleSummary(id = "b-row"))
-        val authenticated = FakeAuthenticatedRemote(AppResult.Success(samplePage(companyId = "company-a")))
-        val repository = VoucherRepositoryImpl(
-            UnreachableRemote, errorMapper, dispatchers, local, timeProvider,
-            FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticated,
+        val authenticated = FakeAuthenticatedListRemote(AppResult.Success(samplePage(companyId = "company-a")))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = authenticated,
         )
 
         repository.refreshVouchers(query(companyId = "company-a"))
@@ -361,16 +368,17 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `request company and date scope are taken from the immutable query, never re-read after the response`() = runTest(dispatcher) {
+    fun `list request company and date scope are taken from the immutable query, never re-read after the response`() = runTest(dispatcher) {
         // VoucherRepositoryImpl has no SelectedCompanyStore/date-scope dependency at all — company
         // and date range are fields of the VoucherQuery parameter itself, so there is nothing to
         // "capture before dispatch": the same immutable value is used for the request and for
         // persistence by construction. This test pins that structural guarantee.
         val local = FakeLocal()
-        val authenticated = FakeAuthenticatedRemote(AppResult.Success(samplePage(companyId = "company-a")))
-        val repository = VoucherRepositoryImpl(
-            UnreachableRemote, errorMapper, dispatchers, local, timeProvider,
-            FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticated,
+        val authenticated = FakeAuthenticatedListRemote(AppResult.Success(samplePage(companyId = "company-a")))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = authenticated,
         )
         val scopedQuery = query(companyId = "company-a").copy(dateRange = VoucherDateRange("2026-06-01", "2026-06-30"))
 
@@ -382,12 +390,13 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `a failed company-A refresh does not affect company-B rows`() = runTest(dispatcher) {
+    fun `a failed company-A list refresh does not affect company-B rows`() = runTest(dispatcher) {
         val local = FakeLocal()
         local.stored["company-b"] = mutableListOf(sampleSummary(id = "b-row"))
-        val repository = VoucherRepositoryImpl(
-            UnreachableRemote, errorMapper, dispatchers, local, timeProvider,
-            FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), FakeAuthenticatedRemote(AppResult.Failure(AppError.Offline())),
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = FakeAuthenticatedListRemote(AppResult.Failure(AppError.Offline())),
         )
 
         repository.refreshVouchers(query(companyId = "company-a"))
@@ -396,13 +405,14 @@ class VoucherRepositoryImplTest {
     }
 
     @Test
-    fun `an authoritative empty authenticated success still advances freshness, matching legacy semantics`() = runTest(dispatcher) {
+    fun `an authoritative empty authenticated list success still advances freshness, matching legacy semantics`() = runTest(dispatcher) {
         val local = FakeLocal(listValue = samplePage().copy(items = emptyList(), totalItems = 0, totalPages = 0))
         val emptyPage = samplePage().copy(items = emptyList(), totalItems = 0, totalPages = 0)
-        val authenticated = FakeAuthenticatedRemote(AppResult.Success(emptyPage))
-        val repository = VoucherRepositoryImpl(
-            UnreachableRemote, errorMapper, dispatchers, local, timeProvider,
-            FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticated,
+        val authenticated = FakeAuthenticatedListRemote(AppResult.Success(emptyPage))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = authenticated,
         )
 
         val result = repository.refreshVouchers(query()) as AppResult.Success
@@ -411,14 +421,253 @@ class VoucherRepositoryImplTest {
         assertEquals(999_000L, result.value.lastSyncedAt)
     }
 
+    // ============================== Authenticated detail transport (Phase 3S-D2) ==============================
+
+    @Test
+    fun `empty vault (LEGACY) detail refresh calls legacy exactly once and never touches the authenticated detail adapter`() = runTest(dispatcher) {
+        val remote = FakeRemote(detailsResult = ApiResult.Success(sampleDetails()))
+        val local = FakeLocal()
+        val result = repo(remote, local, transportGate = FakeTransportGate(ConnectorTransportSelection.LEGACY))
+            .refreshVoucherDetails("company-a", "v-1") as AppResult.Success
+
+        assertEquals("v-1", result.value.summary.identity.id)
+        assertEquals(1, remote.detailCalls)
+        assertEquals(1, local.storeDetailsCalls)
+    }
+
+    @Test
+    fun `ACTIVE selection routes detail refresh to the authenticated adapter exactly once and never touches legacy`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val authenticated = FakeAuthenticatedDetailRemote(AppResult.Success(sampleDetails()))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = authenticated,
+        )
+
+        val result = repository.refreshVoucherDetails("company-a", "v-1") as AppResult.Success
+
+        assertEquals("v-1", result.value.summary.identity.id)
+        assertEquals(1, authenticated.callCount)
+        assertEquals(1, local.storeDetailsCalls)
+        assertEquals("company-a", local.lastStoreDetailsCompany)
+    }
+
+    @Test
+    fun `detail PENDING_VERIFICATION and RE_PAIR_REQUIRED stay authenticated and never fall back to legacy`() = runTest(dispatcher) {
+        val localVaultStateError = AppError.Remote(httpStatus = null, code = AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, message = "re-pair")
+        val repository = repo(
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = FakeAuthenticatedDetailRemote(AppResult.Failure(localVaultStateError)),
+        )
+
+        // Default `remote` is UnreachableRemote — throws if ever called; reaching here proves it wasn't.
+        val result = repository.refreshVoucherDetails("company-a", "v-1") as AppResult.Failure
+        assertEquals(localVaultStateError, result.error)
+    }
+
+    @Test
+    fun `the detail transport gate is resolved on every refresh call, not cached`() = runTest(dispatcher) {
+        val gate = CountingTransportGate(ConnectorTransportSelection.LEGACY)
+        val repository = repo(FakeRemote(detailsResult = ApiResult.Success(sampleDetails())), transportGate = gate)
+
+        repository.refreshVoucherDetails("company-a", "v-1")
+        repository.refreshVoucherDetails("company-a", "v-1")
+
+        assertEquals(2, gate.resolveCount)
+    }
+
+    @Test
+    fun `a changed secure state is observed by the very next detail refresh call`() = runTest(dispatcher) {
+        val gate = MutableTransportGate(ConnectorTransportSelection.LEGACY)
+        val legacy = FakeRemote(detailsResult = ApiResult.Success(sampleDetails()))
+        val authenticated = FakeAuthenticatedDetailRemote(AppResult.Success(sampleDetails()))
+        val repository = repo(legacy, transportGate = gate, authenticatedDetailRemote = authenticated)
+
+        repository.refreshVoucherDetails("company-a", "v-1")
+        gate.selection = ConnectorTransportSelection.AUTHENTICATED
+        repository.refreshVoucherDetails("company-a", "v-1")
+
+        assertEquals(1, legacy.detailCalls)
+        assertEquals(1, authenticated.callCount)
+    }
+
+    @Test
+    fun `every non-authentication authenticated detail failure leaves Room unchanged and remains a failure result`() = runTest(dispatcher) {
+        val nonAuthFailures = listOf(
+            AppError.Offline(),
+            AppError.Serialization("bad json"),
+            AppError.Remote(400, "INVALID_QUERY", "bad request"),
+            AppError.Remote(500, null, "server error"),
+            AppError.Remote(429, null, "rate limited"),
+            AppError.Remote(409, null, "conflict"),
+            AppError.Remote(404, "NOT_FOUND", "not found"),
+            AppError.Message("cancelled"),
+        )
+
+        nonAuthFailures.forEach { error ->
+            val local = FakeLocal(detailsValue = sampleDetails())
+            val repository = repo(
+                local = local,
+                transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+                authenticatedDetailRemote = FakeAuthenticatedDetailRemote(AppResult.Failure(error)),
+            )
+
+            val result = repository.refreshVoucherDetails("company-a", "v-1")
+
+            assertTrue("expected a failure result for $error", result is AppResult.Failure)
+            assertEquals("failure for $error must not touch Room", 0, local.storeDetailsCalls)
+            val stillCached = repository.getVoucherDetails("company-a", "v-1") as AppResult.Success
+            assertEquals("v-1", stillCached.value.summary.identity.id)
+        }
+    }
+
+    @Test
+    fun `detail CredentialUnavailable, Unpaired, PendingVerification and RePairRequired never call legacy and never touch Room`() = runTest(dispatcher) {
+        val localVaultStateError = AppError.Remote(httpStatus = null, code = AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, message = "re-pair")
+        val local = FakeLocal(detailsValue = sampleDetails())
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = FakeAuthenticatedDetailRemote(AppResult.Failure(localVaultStateError)),
+        )
+
+        val result = repository.refreshVoucherDetails("company-a", "v-1") as AppResult.Failure
+
+        assertEquals(localVaultStateError, result.error)
+        assertEquals(0, local.storeDetailsCalls)
+    }
+
+    @Test
+    fun `detail 401 never calls legacy, preserves cached detail, and returns SecurePairingRequired`() = runTest(dispatcher) {
+        val rejection = AppError.Remote(httpStatus = 401, code = AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, message = "re-pair")
+        val local = FakeLocal(detailsValue = sampleDetails())
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = FakeAuthenticatedDetailRemote(AppResult.Failure(rejection)),
+        )
+
+        val result = repository.refreshVoucherDetails("company-a", "v-1") as AppResult.Failure
+
+        assertEquals(rejection, result.error)
+        assertEquals(401, (result.error as AppError.Remote).httpStatus)
+        assertEquals(0, local.storeDetailsCalls)
+        val stillCached = repository.getVoucherDetails("company-a", "v-1") as AppResult.Success
+        assertEquals("v-1", stillCached.value.summary.identity.id)
+    }
+
+    @Test
+    fun `detail 403 never calls legacy, does not mutate credential state, preserves cached detail, and returns AccessDenied`() = runTest(dispatcher) {
+        val rejection = AppError.Remote(httpStatus = 403, code = AUTHENTICATED_ACCESS_DENIED_CODE, message = "forbidden")
+        val local = FakeLocal(detailsValue = sampleDetails())
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = FakeAuthenticatedDetailRemote(AppResult.Failure(rejection)),
+        )
+
+        val result = repository.refreshVoucherDetails("company-a", "v-1") as AppResult.Failure
+
+        assertEquals(403, (result.error as AppError.Remote).httpStatus)
+        assertEquals(AUTHENTICATED_ACCESS_DENIED_CODE, (result.error as AppError.Remote).code)
+        assertEquals(0, local.storeDetailsCalls)
+    }
+
+    @Test
+    fun `an authenticated company-A detail response persists only under company-A and leaves company-B detail untouched`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val authenticated = FakeAuthenticatedDetailRemote(AppResult.Success(sampleDetails()))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = authenticated,
+        )
+
+        repository.refreshVoucherDetails("company-a", "v-1")
+
+        assertEquals("company-a", local.lastStoreDetailsCompany)
+    }
+
+    @Test
+    fun `a response for voucher X is requested and persisted under voucher X, never voucher Y`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val authenticated = FakeAuthenticatedDetailRemote(AppResult.Success(sampleDetails(voucherId = "v-x")))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = authenticated,
+        )
+
+        repository.refreshVoucherDetails("company-a", "v-x")
+
+        assertEquals("v-x", authenticated.lastVoucherId)
+        assertEquals("v-x", local.lastStoreDetailsId)
+    }
+
+    @Test
+    fun `detail voucherId and companyId are taken from the method parameters, never re-read after the response`() = runTest(dispatcher) {
+        // VoucherRepositoryImpl has no SelectedCompanyStore dependency at all — companyId/voucherId
+        // are this method's own parameters, so the same values used to dispatch the request are,
+        // by construction, the only values ever available to label the persisted response.
+        val local = FakeLocal()
+        val authenticated = FakeAuthenticatedDetailRemote(AppResult.Success(sampleDetails(voucherId = "v-1")))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = authenticated,
+        )
+
+        repository.refreshVoucherDetails("company-a", "v-1")
+
+        assertEquals("company-a", authenticated.lastCompanyId)
+        assertEquals("v-1", authenticated.lastVoucherId)
+        assertEquals("company-a", local.lastStoreDetailsCompany)
+        assertEquals("v-1", local.lastStoreDetailsId)
+    }
+
+    @Test
+    fun `a failed company-A detail refresh does not affect any other cached detail`() = runTest(dispatcher) {
+        val local = FakeLocal(detailsValue = sampleDetails())
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = FakeAuthenticatedDetailRemote(AppResult.Failure(AppError.Offline())),
+        )
+
+        repository.refreshVoucherDetails("company-a", "v-1")
+
+        assertEquals(0, local.storeDetailsCalls)
+        val stillCached = repository.getVoucherDetails("company-a", "v-1") as AppResult.Success
+        assertEquals("v-1", stillCached.value.summary.identity.id)
+    }
+
+    @Test
+    fun `repeated successful authenticated detail refresh of the same voucher is idempotent`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val authenticated = FakeAuthenticatedDetailRemote(AppResult.Success(sampleDetails()))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedDetailRemote = authenticated,
+        )
+
+        repository.refreshVoucherDetails("company-a", "v-1")
+        repository.refreshVoucherDetails("company-a", "v-1")
+
+        assertEquals(2, local.storeDetailsCalls)
+        assertEquals("v-1", local.lastStoreDetailsId)
+    }
+
     // ============================== Fakes ==============================
 
     private fun repo(
-        remote: VoucherRemoteDataSource,
+        remote: VoucherRemoteDataSource = UnreachableRemote,
         local: VoucherLocalDataSource = FakeLocal(),
         transportGate: ConnectorTransportSelectionGate = FakeTransportGate(ConnectorTransportSelection.LEGACY),
-        authenticatedRemote: AuthenticatedVoucherListRemoteDataSource = UnreachableAuthenticatedRemote,
-    ) = VoucherRepositoryImpl(remote, errorMapper, dispatchers, local, timeProvider, transportGate, authenticatedRemote)
+        authenticatedListRemote: AuthenticatedVoucherListRemoteDataSource = UnreachableAuthenticatedListRemote,
+        authenticatedDetailRemote: AuthenticatedVoucherDetailRemoteDataSource = UnreachableAuthenticatedDetailRemote,
+    ) = VoucherRepositoryImpl(remote, errorMapper, dispatchers, local, timeProvider, transportGate, authenticatedListRemote, authenticatedDetailRemote)
 
     private class FakeRemote(
         private val listResult: ApiResult<VoucherPage> = ApiResult.Failure(NetworkError.Unknown()),
@@ -443,7 +692,7 @@ class VoucherRepositoryImplTest {
             error("UnreachableRemote must never be called on the AUTHENTICATED path")
     }
 
-    private class FakeAuthenticatedRemote(
+    private class FakeAuthenticatedListRemote(
         private val result: AppResult<VoucherPage>,
     ) : AuthenticatedVoucherListRemoteDataSource {
         var callCount = 0
@@ -458,9 +707,32 @@ class VoucherRepositoryImplTest {
         }
     }
 
-    private object UnreachableAuthenticatedRemote : AuthenticatedVoucherListRemoteDataSource {
+    private object UnreachableAuthenticatedListRemote : AuthenticatedVoucherListRemoteDataSource {
         override suspend fun fetchVouchers(query: VoucherQuery): AppResult<VoucherPage> =
-            error("UnreachableAuthenticatedRemote must never be called on the LEGACY path")
+            error("UnreachableAuthenticatedListRemote must never be called on the LEGACY path")
+    }
+
+    private class FakeAuthenticatedDetailRemote(
+        private val result: AppResult<VoucherDetails>,
+    ) : AuthenticatedVoucherDetailRemoteDataSource {
+        var callCount = 0
+            private set
+        var lastCompanyId: String? = null
+            private set
+        var lastVoucherId: String? = null
+            private set
+
+        override suspend fun fetchVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> {
+            callCount++
+            lastCompanyId = companyId
+            lastVoucherId = voucherId
+            return result
+        }
+    }
+
+    private object UnreachableAuthenticatedDetailRemote : AuthenticatedVoucherDetailRemoteDataSource {
+        override suspend fun fetchVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> =
+            error("UnreachableAuthenticatedDetailRemote must never be called on the LEGACY path")
     }
 
     private class FakeTransportGate(private val selection: ConnectorTransportSelection) : ConnectorTransportSelectionGate {
@@ -483,13 +755,16 @@ class VoucherRepositoryImplTest {
 
     private class FakeLocal(
         private val listValue: VoucherPage? = null,
-        private val detailsValue: VoucherDetails? = null,
+        private var detailsValue: VoucherDetails? = null,
         private val summaryValue: VoucherSummary? = null,
     ) : VoucherLocalDataSource {
         var storedItems: List<VoucherSummary> = emptyList()
         var storeListCalls = 0
         var lastListCompany: String? = null
         var lastStoreCompany: String? = null
+        var storeDetailsCalls = 0
+        var lastStoreDetailsCompany: String? = null
+        var lastStoreDetailsId: String? = null
         val stored = mutableMapOf<String, MutableList<VoucherSummary>>()
 
         override suspend fun storeList(companyId: String, items: List<VoucherSummary>, syncedAt: Long) {
@@ -503,7 +778,12 @@ class VoucherRepositoryImplTest {
                 }
             }
         }
-        override suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long) = Unit
+        override suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long) {
+            storeDetailsCalls += 1
+            lastStoreDetailsCompany = companyId
+            lastStoreDetailsId = details.summary.identity.id
+            detailsValue = details
+        }
         override suspend fun list(query: VoucherQuery): VoucherPage? { lastListCompany = query.companyId; return listValue?.takeIf { it.companyId == query.companyId } }
         override suspend fun details(companyId: String, voucherId: String): VoucherDetails? = detailsValue
         override suspend fun summary(companyId: String, voucherId: String): VoucherSummary? = summaryValue
@@ -513,8 +793,8 @@ class VoucherRepositoryImplTest {
 
     private fun samplePage(companyId: String = "company-a") = VoucherPage(companyId, listOf(sampleSummary()), 1, 50, 1, 1)
 
-    private fun sampleDetails() = VoucherDetails(
-        sampleSummary(), "2026-07-27", "cached", emptyList(),
+    private fun sampleDetails(voucherId: String = "v-1") = VoucherDetails(
+        sampleSummary(id = voucherId), "2026-07-27", "cached", emptyList(),
         listOf(VoucherInventoryLine(1, "Item", "2 pcs", "10", null)),
     )
 

@@ -237,8 +237,22 @@ sealed class AuthenticatedConnectorOperation(
         override val pathSegments = listOf("api", "v1", "vouchers", "snapshots", snapshotId)
     }
 
-    data class GetVoucherById(val voucherId: String) : AuthenticatedConnectorOperation(ConnectorHttpMethod.GET) {
+    /**
+     * `company` is a mandatory query parameter on the Connector route (validated server-side,
+     * never inferred from session — confirmed by direct read of
+     * `connector/budcom_connector/src/api/routes/vouchers.ts`'s `requireCompany` call). Unlike
+     * every other member above, this operation validates its own arguments at construction time:
+     * neither field may be blank, since a blank value would silently produce a malformed request
+     * this route's own server-side validation would reject anyway — failing fast here surfaces
+     * that at the call site instead.
+     */
+    data class GetVoucherById(val voucherId: String, val companyId: String) : AuthenticatedConnectorOperation(ConnectorHttpMethod.GET) {
+        init {
+            require(voucherId.isNotBlank()) { "voucherId must not be blank." }
+            require(companyId.isNotBlank()) { "companyId must not be blank." }
+        }
         override val pathSegments = listOf("api", "v1", "vouchers", voucherId)
+        override val queryParams = mapOf("company" to companyId)
     }
 
     // ---- Reserved protected stubs (inert 501s today; classified now so they inherit the gate) ----

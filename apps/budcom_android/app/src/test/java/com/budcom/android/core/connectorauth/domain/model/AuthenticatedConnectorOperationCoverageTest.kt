@@ -3,6 +3,7 @@ package com.budcom.android.core.connectorauth.domain.model
 import com.budcom.android.core.connectorauth.data.remote.AuthenticatedConnectorApiPort
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -56,7 +57,7 @@ private fun allOperations(): List<AuthenticatedConnectorOperation> = listOf(
     AuthenticatedConnectorOperation.SearchVouchers(),
     AuthenticatedConnectorOperation.ListVoucherSnapshots(),
     AuthenticatedConnectorOperation.GetVoucherSnapshot("snapshot-1"),
-    AuthenticatedConnectorOperation.GetVoucherById("voucher-1"),
+    AuthenticatedConnectorOperation.GetVoucherById("voucher-1", "company-1"),
     AuthenticatedConnectorOperation.ReservedCompanyLedgerById("company-1", "ledger-1"),
     AuthenticatedConnectorOperation.ReservedLedgerTransactions("company-1"),
     AuthenticatedConnectorOperation.ReservedCompanyVouchers("company-1"),
@@ -175,6 +176,32 @@ class AuthenticatedConnectorOperationCoverageTest {
         val routes = allOperations().map { it.route() }
         assertFalse(routes.contains("/device/pair"))
         assertFalse(routes.contains("/device/validate-token"))
+    }
+
+    // Phase 3S-D2. GetVoucherById requires both voucherId and companyId, emits exactly the
+    // Connector-mandatory `company` query parameter, and rejects blank arguments at construction
+    // — the only typed operation with its own validation, since it is the only one whose
+    // Connector route enforces a mandatory (not session-inferred) scope parameter.
+    @Test
+    fun `GetVoucherById emits exactly the GET path and the mandatory company query parameter`() {
+        val operation = AuthenticatedConnectorOperation.GetVoucherById("voucher-1", "company-1")
+        assertEquals(ConnectorHttpMethod.GET, operation.method)
+        assertEquals("/api/v1/vouchers/voucher-1", operation.route())
+        assertEquals(mapOf("company" to "company-1"), operation.queryParams)
+    }
+
+    @Test
+    fun `GetVoucherById rejects a blank voucherId`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            AuthenticatedConnectorOperation.GetVoucherById("", "company-1")
+        }
+    }
+
+    @Test
+    fun `GetVoucherById rejects a blank companyId`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            AuthenticatedConnectorOperation.GetVoucherById("voucher-1", "")
+        }
     }
 
     // 62. arbitrary raw URLs cannot be supplied — the port's only entry point takes a typed
