@@ -2,12 +2,16 @@ package com.budcom.android.feature.company.data.repository
 
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
 import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.company.data.local.CompanyLocalDataSource
+import com.budcom.android.feature.company.data.remote.AuthenticatedCompanyRemoteDataSource
 import com.budcom.android.feature.company.data.remote.CompanyRemoteDataSource
 import com.budcom.android.feature.company.domain.model.CompanyDiscoverySnapshot
+import com.budcom.android.feature.company.domain.model.CompanySelectionOutcome
 import com.budcom.android.feature.company.domain.model.ConnectorSessionSnapshot
 import com.budcom.android.feature.company.domain.model.SessionValidationOutcome
 import com.budcom.android.feature.company.domain.model.SessionSelectedCompany
@@ -26,6 +30,14 @@ class CompanyRepositoryImpl @Inject constructor(
     private val selectedCompanyStore: SelectedCompanyStore,
     private val errorMapper: ErrorMapper,
     private val dispatchers: DispatcherProvider,
+    /**
+     * Only ever defaulted in a direct (non-Hilt) constructor call, e.g. an existing test that
+     * doesn't pass these two — Hilt always supplies real bindings explicitly, so these defaults
+     * never apply in production. Defaulting to LEGACY-always preserves every pre-existing test's
+     * exact original behaviour without editing it.
+     */
+    private val transportGate: ConnectorTransportSelectionGate = AlwaysLegacyConnectorTransportSelectionGate,
+    private val authenticatedRemoteDataSource: AuthenticatedCompanyRemoteDataSource = UnreachableAuthenticatedCompanyRemoteDataSource,
 ) : CompanyRepository {
 
     override fun observeSelectedCompany(): Flow<SessionSelectedCompany?> = selectedCompanyStore.observeSelectedCompany()
@@ -43,54 +55,80 @@ class CompanyRepositoryImpl @Inject constructor(
         }
 
     private suspend fun loadCompaniesWithCache(): AppResult<CompanyDiscoverySnapshot> =
-        when (val remote = remoteDataSource.fetchCompanies()) {
-            is ApiResult.Success -> {
-                localDataSource.replaceSnapshot(remote.data)
-                AppResult.Success(remote.data)
+        when (transportGate.resolve()) {
+            ConnectorTransportSelection.LEGACY -> when (val remote = remoteDataSource.fetchCompanies()) {
+                is ApiResult.Success -> {
+                    localDataSource.replaceSnapshot(remote.data)
+                    AppResult.Success(remote.data)
+                }
+
+                is ApiResult.Failure -> {
+                    val cached = localDataSource.readSnapshot()
+                    if (cached != null) {
+                        AppResult.Success(cached)
+                    } else {
+                        AppResult.Failure(errorMapper.toAppError(remote.error))
+                    }
+                }
             }
 
-            is ApiResult.Failure -> {
-                val cached = localDataSource.readSnapshot()
-                if (cached != null) {
-                    AppResult.Success(cached)
-                } else {
-                    AppResult.Failure(errorMapper.toAppError(remote.error))
+            ConnectorTransportSelection.AUTHENTICATED -> when (val remote = authenticatedRemoteDataSource.fetchCompanies()) {
+                is AppResult.Success -> {
+                    localDataSource.replaceSnapshot(remote.value)
+                    AppResult.Success(remote.value)
+                }
+
+                is AppResult.Failure -> {
+                    // An authentication rejection must remain visible, never silently masked by a
+                    // stale-cache fallback — every other authenticated failure degrades exactly
+                    // like the legacy path (cached data if any, else the mapped failure).
+                    if (remote.error.isAuthenticationRejection()) {
+                        remote
+                    } else {
+                        val cached = localDataSource.readSnapshot()
+                        if (cached != null) AppResult.Success(cached) else remote
+                    }
                 }
             }
         }
 
     override suspend fun getSession(): AppResult<ConnectorSessionSnapshot> =
         withContext(dispatchers.io) {
-            remoteDataSource.fetchSession().toAppResult(errorMapper)
+            when (transportGate.resolve()) {
+                ConnectorTransportSelection.LEGACY -> remoteDataSource.fetchSession().toAppResult(errorMapper)
+                ConnectorTransportSelection.AUTHENTICATED -> authenticatedRemoteDataSource.fetchSession()
+            }
         }
 
     override suspend fun restoreSelection(): AppResult<SessionValidationOutcome?> =
         withContext(dispatchers.io) {
+            val selection = transportGate.resolve()
             val savedId = selectedCompanyStore.getSelectedCompanyId()
             if (savedId.isNullOrBlank()) {
-                return@withContext hydrateLocalSelectionFromConnectorSession()
+                return@withContext hydrateLocalSelectionFromConnectorSession(selection)
             }
             val isLegacySelection = selectedCompanyStore.observeSelectedCompany().first() == null
 
             Timber.tag("CompanySession").d("Attempting to restore session for companyId=%s", savedId)
 
             // First, try to select the company to ensure the connector has the session active
-            when (val selection = remoteDataSource.selectCompany(savedId)) {
-                is ApiResult.Failure -> {
+            when (val selectionResult = selectCompanyRemote(selection, savedId)) {
+                is AppResult.Failure -> {
                     Timber.tag("CompanySession").w("Remote selection failed during restore, keeping local ID")
-                    AppResult.Failure(errorMapper.toAppError(selection.error))
+                    selectionResult
                 }
 
-                is ApiResult.Success -> {
-                    if (!isSuccessfulSelectionStatus(selection.data.status)) {
-                        Timber.tag("CompanySession").e("Selection status invalid: %s. Clearing cache.", selection.data.status)
+                is AppResult.Success -> {
+                    if (!isSuccessfulSelectionStatus(selectionResult.value.status)) {
+                        Timber.tag("CompanySession").e("Selection status invalid: %s. Clearing cache.", selectionResult.value.status)
                         if (!isLegacySelection) {
                             selectedCompanyStore.clearSelectedCompanyIfCurrentId(savedId)
                         }
-                        AppResult.Failure(AppError.Message(selection.data.reason ?: "Restore failed"))
+                        AppResult.Failure(AppError.Message(selectionResult.value.reason ?: "Restore failed"))
                     } else {
                         validateAndPersist(
-                            selection.data.session.selectedCompany?.id ?: savedId,
+                            selection,
+                            selectionResult.value.session.selectedCompany?.id ?: savedId,
                             preserveIdOnInvalid = isLegacySelection,
                             expectedCurrentId = savedId,
                         )
@@ -99,18 +137,22 @@ class CompanyRepositoryImpl @Inject constructor(
             }
         }
 
-    private suspend fun hydrateLocalSelectionFromConnectorSession(): AppResult<SessionValidationOutcome?> {
-        return when (val session = remoteDataSource.fetchSession()) {
-            is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(session.error))
-            is ApiResult.Success -> {
-                val selectedId = session.data.selectedCompany?.id
+    private suspend fun hydrateLocalSelectionFromConnectorSession(selection: ConnectorTransportSelection): AppResult<SessionValidationOutcome?> {
+        val sessionResult = when (selection) {
+            ConnectorTransportSelection.LEGACY -> remoteDataSource.fetchSession().toAppResult(errorMapper)
+            ConnectorTransportSelection.AUTHENTICATED -> authenticatedRemoteDataSource.fetchSession()
+        }
+        return when (sessionResult) {
+            is AppResult.Failure -> sessionResult
+            is AppResult.Success -> {
+                val selectedId = sessionResult.value.selectedCompany?.id
                 if (selectedId.isNullOrBlank()) {
                     AppResult.Success(null)
                 } else {
-                    if (!selectedCompanyStore.saveSelectedCompanyIfCurrentId(null, session.data.selectedCompany)) {
+                    if (!selectedCompanyStore.saveSelectedCompanyIfCurrentId(null, sessionResult.value.selectedCompany)) {
                         return AppResult.Success(null)
                     }
-                    validateAndPersist(selectedId, expectedCurrentId = selectedId)
+                    validateAndPersist(selection, selectedId, expectedCurrentId = selectedId)
                 }
             }
         }
@@ -118,13 +160,14 @@ class CompanyRepositoryImpl @Inject constructor(
 
     override suspend fun selectCompany(companyId: String): AppResult<SessionValidationOutcome> =
         withContext(dispatchers.io) {
-            when (val selection = remoteDataSource.selectCompany(companyId)) {
-                is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(selection.error))
-                is ApiResult.Success -> {
-                    if (!isSuccessfulSelectionStatus(selection.data.status)) {
-                        AppResult.Failure(AppError.Message(selection.data.reason ?: "Selection failed"))
+            val selection = transportGate.resolve()
+            when (val selectionResult = selectCompanyRemote(selection, companyId)) {
+                is AppResult.Failure -> selectionResult
+                is AppResult.Success -> {
+                    if (!isSuccessfulSelectionStatus(selectionResult.value.status)) {
+                        AppResult.Failure(AppError.Message(selectionResult.value.reason ?: "Selection failed"))
                     } else {
-                        validateAndPersist(selection.data.session.selectedCompany?.id ?: companyId)
+                        validateAndPersist(selection, selectionResult.value.session.selectedCompany?.id ?: companyId)
                     }
                 }
             }
@@ -132,12 +175,13 @@ class CompanyRepositoryImpl @Inject constructor(
 
     override suspend fun validateSession(): AppResult<SessionValidationOutcome> =
         withContext(dispatchers.io) {
-            when (val validation = remoteDataSource.validateSession()) {
-                is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(validation.error))
-                is ApiResult.Success -> {
-                    if (validation.data.status == "SUCCESS") {
-                        selectedCompanyFrom(validation.data, null)?.let { selectedCompanyStore.saveSelectedCompany(it) }
-                        AppResult.Success(validation.data)
+            val selection = transportGate.resolve()
+            when (val validation = validateSessionRemote(selection)) {
+                is AppResult.Failure -> validation
+                is AppResult.Success -> {
+                    if (validation.value.status == "SUCCESS") {
+                        selectedCompanyFrom(validation.value, null)?.let { selectedCompanyStore.saveSelectedCompany(it) }
+                        AppResult.Success(validation.value)
                     } else {
                         // If validation fails but we have a saved ID, try one-time re-selection before failing
                         val savedId = selectedCompanyStore.getSelectedCompanyId()
@@ -145,7 +189,7 @@ class CompanyRepositoryImpl @Inject constructor(
                             Timber.tag("CompanySession").i("Validation failed, attempting auto-recovery for %s", savedId)
                             selectCompany(savedId)
                         } else {
-                            AppResult.Failure(AppError.Message(validation.data.reason ?: "Validation failed"))
+                            AppResult.Failure(AppError.Message(validation.value.reason ?: "Validation failed"))
                         }
                     }
                 }
@@ -153,36 +197,54 @@ class CompanyRepositoryImpl @Inject constructor(
         }
 
     override suspend fun clearSelection(): AppResult<Unit> = withContext(dispatchers.io) {
-        when (val clear = remoteDataSource.clearSession()) {
-            is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(clear.error))
-            is ApiResult.Success -> {
+        val selection = transportGate.resolve()
+        val clear = when (selection) {
+            ConnectorTransportSelection.LEGACY -> remoteDataSource.clearSession().toAppResult(errorMapper)
+            ConnectorTransportSelection.AUTHENTICATED -> authenticatedRemoteDataSource.clearSession()
+        }
+        when (clear) {
+            is AppResult.Failure -> clear
+            is AppResult.Success -> {
                 selectedCompanyStore.clearSelectedCompanyId()
                 AppResult.Success(Unit)
             }
         }
     }
 
+    private suspend fun selectCompanyRemote(selection: ConnectorTransportSelection, companyId: String): AppResult<CompanySelectionOutcome> =
+        when (selection) {
+            ConnectorTransportSelection.LEGACY -> remoteDataSource.selectCompany(companyId).toAppResult(errorMapper)
+            ConnectorTransportSelection.AUTHENTICATED -> authenticatedRemoteDataSource.selectCompany(companyId)
+        }
+
+    private suspend fun validateSessionRemote(selection: ConnectorTransportSelection): AppResult<SessionValidationOutcome> =
+        when (selection) {
+            ConnectorTransportSelection.LEGACY -> remoteDataSource.validateSession().toAppResult(errorMapper)
+            ConnectorTransportSelection.AUTHENTICATED -> authenticatedRemoteDataSource.validateSession()
+        }
+
     private suspend fun validateAndPersist(
+        selection: ConnectorTransportSelection,
         candidateCompanyId: String,
         preserveIdOnInvalid: Boolean = false,
         expectedCurrentId: String? = null,
     ): AppResult<SessionValidationOutcome> {
-        return when (val validation = remoteDataSource.validateSession()) {
-            is ApiResult.Failure -> {
+        return when (val validation = validateSessionRemote(selection)) {
+            is AppResult.Failure -> {
                 // Network error - preserve local selection so user doesn't have to re-configure
-                AppResult.Failure(errorMapper.toAppError(validation.error))
+                validation
             }
 
-            is ApiResult.Success -> {
-                if (validation.data.status == "SUCCESS") {
-                    selectedCompanyFrom(validation.data, candidateCompanyId)?.let { company ->
+            is AppResult.Success -> {
+                if (validation.value.status == "SUCCESS") {
+                    selectedCompanyFrom(validation.value, candidateCompanyId)?.let { company ->
                         if (expectedCurrentId == null) {
                             selectedCompanyStore.saveSelectedCompany(company)
                         } else {
                             selectedCompanyStore.saveSelectedCompanyIfCurrentId(expectedCurrentId, company)
                         }
                     }
-                    AppResult.Success(validation.data)
+                    AppResult.Success(validation.value)
                 } else {
                     // Critical failure (e.g. company no longer exists on Tally)
                     if (!preserveIdOnInvalid) {
@@ -192,7 +254,7 @@ class CompanyRepositoryImpl @Inject constructor(
                             selectedCompanyStore.clearSelectedCompanyIfCurrentId(expectedCurrentId)
                         }
                     }
-                    AppResult.Failure(AppError.Message(validation.data.reason ?: "Invalid session"))
+                    AppResult.Failure(AppError.Message(validation.value.reason ?: "Invalid session"))
                 }
             }
         }
@@ -215,4 +277,27 @@ private fun selectedCompanyFrom(
 private fun <T> ApiResult<T>.toAppResult(errorMapper: ErrorMapper): AppResult<T> = when (this) {
     is ApiResult.Success -> AppResult.Success(data)
     is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(error))
+}
+
+/** True only for the two outcomes [com.budcom.android.core.connectorauth.domain.AuthenticatedRepositoryFailurePolicy]
+ * produces from an authentication rejection (401/403) — see its `AUTHENTICATED_*_CODE` constants. */
+private fun AppError.isAuthenticationRejection(): Boolean =
+    this is AppError.Remote && (
+        code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE ||
+            code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_ACCESS_DENIED_CODE
+        )
+
+private object AlwaysLegacyConnectorTransportSelectionGate : ConnectorTransportSelectionGate {
+    override suspend fun resolve(): ConnectorTransportSelection = ConnectorTransportSelection.LEGACY
+}
+
+private object UnreachableAuthenticatedCompanyRemoteDataSource : AuthenticatedCompanyRemoteDataSource {
+    override suspend fun fetchCompanies(): AppResult<CompanyDiscoverySnapshot> = unreachable()
+    override suspend fun fetchSession(): AppResult<ConnectorSessionSnapshot> = unreachable()
+    override suspend fun selectCompany(companyId: String): AppResult<CompanySelectionOutcome> = unreachable()
+    override suspend fun validateSession(): AppResult<SessionValidationOutcome> = unreachable()
+    override suspend fun clearSession(): AppResult<ConnectorSessionSnapshot> = unreachable()
+
+    private fun unreachable(): Nothing =
+        error("UnreachableAuthenticatedCompanyRemoteDataSource must never be called — the default transport gate always resolves LEGACY")
 }

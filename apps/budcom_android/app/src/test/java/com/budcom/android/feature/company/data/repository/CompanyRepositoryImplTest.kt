@@ -2,11 +2,15 @@ package com.budcom.android.feature.company.data.repository
 
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
 import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkError
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.company.data.local.CompanyLocalDataSource
+import com.budcom.android.feature.company.data.remote.AuthenticatedCompanyRemoteDataSource
 import com.budcom.android.feature.company.data.remote.CompanyRemoteDataSource
 import com.budcom.android.feature.company.domain.model.CompanyDiscoverySnapshot
 import com.budcom.android.feature.company.domain.model.CompanySelectionOutcome
@@ -411,6 +415,133 @@ class CompanyRepositoryImplTest {
         val result = repository.loadCompanies() as AppResult.Failure
         assertTrue(result.error is AppError.Offline)
     }
+
+    @Test
+    fun `load companies uses the authenticated data source and writes cache when the gate resolves AUTHENTICATED`() = runTest(dispatcher) {
+        val local = FakeCompanyLocal()
+        val snapshot = sampleDiscovery()
+        val authenticated = FakeAuthenticatedRemote(companiesResult = AppResult.Success(snapshot))
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(),
+            localDataSource = local,
+            selectedCompanyStore = FakeSelectedCompanyStore(),
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemoteDataSource = authenticated,
+        )
+
+        val result = repository.loadCompanies() as AppResult.Success
+        assertEquals(1, result.value.items.size)
+        assertEquals(snapshot, local.cached)
+        assertEquals(1, authenticated.fetchCompaniesCallCount)
+    }
+
+    @Test
+    fun `load companies falls back to cache on a non-authentication authenticated failure`() = runTest(dispatcher) {
+        val cached = sampleDiscovery()
+        val local = FakeCompanyLocal(cached)
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(),
+            localDataSource = local,
+            selectedCompanyStore = FakeSelectedCompanyStore(),
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemoteDataSource = FakeAuthenticatedRemote(
+                companiesResult = AppResult.Failure(AppError.Offline()),
+            ),
+        )
+
+        val result = repository.loadCompanies() as AppResult.Success
+        assertEquals("budcom-test-01", result.value.items.single().id)
+    }
+
+    @Test
+    fun `load companies surfaces an authentication rejection instead of falling back to cache`() = runTest(dispatcher) {
+        val cached = sampleDiscovery()
+        val local = FakeCompanyLocal(cached)
+        val rejection = AppError.Remote(httpStatus = 401, code = AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, message = "re-pair")
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(),
+            localDataSource = local,
+            selectedCompanyStore = FakeSelectedCompanyStore(),
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemoteDataSource = FakeAuthenticatedRemote(
+                companiesResult = AppResult.Failure(rejection),
+            ),
+        )
+
+        val result = repository.loadCompanies() as AppResult.Failure
+        assertEquals(rejection, result.error)
+    }
+
+    @Test
+    fun `select company routes through the authenticated data source when the gate resolves AUTHENTICATED`() = runTest(dispatcher) {
+        val localStore = FakeSelectedCompanyStore()
+        val authenticated = FakeAuthenticatedRemote(
+            selectResult = AppResult.Success(
+                CompanySelectionOutcome("SUCCESS", sampleSession("estimation"), null, 200),
+            ),
+            validateResult = AppResult.Success(
+                SessionValidationOutcome("SUCCESS", sampleSession("estimation"), null, "estimation", "ESTIMATION", 200),
+            ),
+        )
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(),
+            localDataSource = FakeCompanyLocal(),
+            selectedCompanyStore = localStore,
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemoteDataSource = authenticated,
+        )
+
+        val result = repository.selectCompany("estimation")
+        assertTrue(result is AppResult.Success)
+        assertEquals("estimation", localStore.currentId)
+        assertEquals(1, authenticated.selectCompanyCallCount)
+    }
+
+    @Test
+    fun `getSession routes through the authenticated data source when the gate resolves AUTHENTICATED`() = runTest(dispatcher) {
+        val authenticated = FakeAuthenticatedRemote(sessionResult = AppResult.Success(sampleSession("estimation")))
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(),
+            localDataSource = FakeCompanyLocal(),
+            selectedCompanyStore = FakeSelectedCompanyStore(),
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemoteDataSource = authenticated,
+        )
+
+        val result = repository.getSession()
+        assertTrue(result is AppResult.Success)
+        assertEquals(1, authenticated.fetchSessionCallCount)
+    }
+
+    @Test
+    fun `clearSelection routes through the authenticated data source when the gate resolves AUTHENTICATED`() = runTest(dispatcher) {
+        val localStore = FakeSelectedCompanyStore(initial = "estimation")
+        val authenticated = FakeAuthenticatedRemote(clearResult = AppResult.Success(sampleSession(null)))
+        val repository = CompanyRepositoryImpl(
+            remoteDataSource = FakeRemote(),
+            localDataSource = FakeCompanyLocal(),
+            selectedCompanyStore = localStore,
+            errorMapper = errorMapper,
+            dispatchers = dispatchers,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemoteDataSource = authenticated,
+        )
+
+        val result = repository.clearSelection()
+        assertTrue(result is AppResult.Success)
+        assertEquals(null, localStore.currentId)
+        assertEquals(1, authenticated.clearSessionCallCount)
+    }
 }
 
 private class FakeRemote(
@@ -517,6 +648,65 @@ private class FakeCompanyLocal(
 
     override suspend fun replaceSnapshot(snapshot: CompanyDiscoverySnapshot) {
         cached = snapshot
+    }
+}
+
+private class FakeTransportGate(private val selection: ConnectorTransportSelection) : ConnectorTransportSelectionGate {
+    override suspend fun resolve(): ConnectorTransportSelection = selection
+}
+
+private class FakeAuthenticatedRemote(
+    var companiesResult: AppResult<CompanyDiscoverySnapshot> = AppResult.Success(
+        CompanyDiscoverySnapshot(
+            items = emptyList(),
+            schemaVersion = "1.0.0",
+            dataFreshnessAt = "2026-01-01T00:00:00Z",
+            contractVersion = "1",
+            status = "SUCCESS",
+            tallyReachable = true,
+            dataQualityStatus = null,
+            dataQualityReason = null,
+            reason = null,
+        ),
+    ),
+    var sessionResult: AppResult<ConnectorSessionSnapshot> = AppResult.Success(sampleSession(null)),
+    var selectResult: AppResult<CompanySelectionOutcome> = AppResult.Success(
+        CompanySelectionOutcome("SUCCESS", sampleSession("estimation"), null, 200),
+    ),
+    var validateResult: AppResult<SessionValidationOutcome> = AppResult.Success(
+        SessionValidationOutcome("SUCCESS", sampleSession("estimation"), null, "estimation", "ESTIMATION", 200),
+    ),
+    var clearResult: AppResult<ConnectorSessionSnapshot> = AppResult.Success(sampleSession(null)),
+) : AuthenticatedCompanyRemoteDataSource {
+    var fetchCompaniesCallCount: Int = 0
+        private set
+    var fetchSessionCallCount: Int = 0
+        private set
+    var selectCompanyCallCount: Int = 0
+        private set
+    var clearSessionCallCount: Int = 0
+        private set
+
+    override suspend fun fetchCompanies(): AppResult<CompanyDiscoverySnapshot> {
+        fetchCompaniesCallCount++
+        return companiesResult
+    }
+
+    override suspend fun fetchSession(): AppResult<ConnectorSessionSnapshot> {
+        fetchSessionCallCount++
+        return sessionResult
+    }
+
+    override suspend fun selectCompany(companyId: String): AppResult<CompanySelectionOutcome> {
+        selectCompanyCallCount++
+        return selectResult
+    }
+
+    override suspend fun validateSession(): AppResult<SessionValidationOutcome> = validateResult
+
+    override suspend fun clearSession(): AppResult<ConnectorSessionSnapshot> {
+        clearSessionCallCount++
+        return clearResult
     }
 }
 

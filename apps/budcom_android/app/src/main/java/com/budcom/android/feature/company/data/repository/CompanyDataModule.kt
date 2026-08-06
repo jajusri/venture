@@ -2,8 +2,10 @@ package com.budcom.android.feature.company.data.repository
 
 import com.budcom.android.feature.company.data.local.CompanyLocalDataSource
 import com.budcom.android.feature.company.data.local.RoomCompanyLocalDataSource
+import com.budcom.android.feature.company.data.remote.AuthenticatedCompanyRemoteDataSource
 import com.budcom.android.feature.company.data.remote.CompanyApi
 import com.budcom.android.feature.company.data.remote.CompanyRemoteDataSource
+import com.budcom.android.feature.company.data.remote.DefaultAuthenticatedCompanyRemoteDataSource
 import com.budcom.android.feature.company.data.remote.DefaultCompanyRemoteDataSource
 import com.budcom.android.feature.company.domain.repository.CompanyRepository
 import dagger.Binds
@@ -22,6 +24,12 @@ abstract class CompanyBindModule {
     abstract fun bindCompanyRemoteDataSource(
         impl: DefaultCompanyRemoteDataSource,
     ): CompanyRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthenticatedCompanyRemoteDataSource(
+        impl: DefaultAuthenticatedCompanyRemoteDataSource,
+    ): AuthenticatedCompanyRemoteDataSource
 
     @Binds
     @Singleton

@@ -1,0 +1,123 @@
+package com.budcom.android.core.connectorauth.domain
+
+import com.budcom.android.core.common.AppError
+import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorResult
+import com.budcom.android.core.pairing.data.local.FakeSecureCredentialVault
+import com.budcom.android.core.pairing.data.local.InMemoryVaultBackingStore
+import com.budcom.android.core.pairing.domain.model.SecurePairingCredentialRecord
+import com.budcom.android.core.pairing.domain.model.SecurePairingCredentialState
+import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
+import com.budcom.android.core.security.EncryptedPayload
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AuthenticatedRepositoryFailurePolicyTest {
+
+    @Test
+    fun `Unauthorized marks an ACTIVE credential RE_PAIR_REQUIRED and maps to a re-pair error`() = runTest {
+        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.ACTIVE) }
+        val vault = FakeSecureCredentialVault(backingStore = store)
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
+
+        val error = policy.mapFailure(AuthenticatedConnectorResult.Unauthorized)
+
+        assertEquals(SecurePairingCredentialState.RE_PAIR_REQUIRED, store.record?.state)
+        assertTrue(error is AppError.Remote)
+        assertEquals(AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, (error as AppError.Remote).code)
+        assertEquals(401, error.httpStatus)
+    }
+
+    @Test
+    fun `Unauthorized does not mutate the vault when no credential is stored`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
+
+        policy.mapFailure(AuthenticatedConnectorResult.Unauthorized)
+
+        assertNull(vault.read())
+    }
+
+    @Test
+    fun `Unauthorized does not mutate an already RE_PAIR_REQUIRED credential`() = runTest {
+        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.RE_PAIR_REQUIRED) }
+        val vault = FakeSecureCredentialVault(backingStore = store)
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
+
+        policy.mapFailure(AuthenticatedConnectorResult.Unauthorized)
+
+        assertEquals(SecurePairingCredentialState.RE_PAIR_REQUIRED, store.record?.state)
+    }
+
+    @Test
+    fun `Forbidden maps to a 403 access-denied error without touching the vault`() = runTest {
+        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.ACTIVE) }
+        val vault = FakeSecureCredentialVault(backingStore = store)
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
+
+        val error = policy.mapFailure(AuthenticatedConnectorResult.Forbidden) as AppError.Remote
+
+        assertEquals(403, error.httpStatus)
+        assertEquals(AUTHENTICATED_ACCESS_DENIED_CODE, error.code)
+        assertEquals(SecurePairingCredentialState.ACTIVE, store.record?.state)
+    }
+
+    @Test
+    fun `local vault states map to a re-pair error with a null http status`() = runTest {
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(FakeSecureCredentialVault())
+
+        listOf(
+            AuthenticatedConnectorResult.Unpaired,
+            AuthenticatedConnectorResult.PendingVerification,
+            AuthenticatedConnectorResult.RePairRequired,
+            AuthenticatedConnectorResult.CredentialUnavailable,
+        ).forEach { result ->
+            val error = policy.mapFailure(result) as AppError.Remote
+            assertNull(error.httpStatus)
+            assertEquals(AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, error.code)
+        }
+    }
+
+    @Test
+    fun `ValidationFailure carries the sanitized code as a 400`() = runTest {
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(FakeSecureCredentialVault())
+
+        val error = policy.mapFailure(AuthenticatedConnectorResult.ValidationFailure("COMPANY_NOT_FOUND")) as AppError.Remote
+
+        assertEquals(400, error.httpStatus)
+        assertEquals("COMPANY_NOT_FOUND", error.code)
+    }
+
+    @Test
+    fun `remaining outcomes map to their expected AppError types`() = runTest {
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(FakeSecureCredentialVault())
+
+        assertEquals(404, (policy.mapFailure(AuthenticatedConnectorResult.NotFound) as AppError.Remote).httpStatus)
+        assertEquals(409, (policy.mapFailure(AuthenticatedConnectorResult.Conflict) as AppError.Remote).httpStatus)
+        assertEquals(429, (policy.mapFailure(AuthenticatedConnectorResult.RateLimited) as AppError.Remote).httpStatus)
+        assertEquals(500, (policy.mapFailure(AuthenticatedConnectorResult.ServerFailure(500)) as AppError.Remote).httpStatus)
+        assertTrue(policy.mapFailure(AuthenticatedConnectorResult.TransportFailure) is AppError.Offline)
+        assertTrue(policy.mapFailure(AuthenticatedConnectorResult.MalformedResponse) is AppError.Serialization)
+        assertTrue(policy.mapFailure(AuthenticatedConnectorResult.Cancelled) is AppError.Message)
+    }
+}
+
+private fun sampleRecord(state: SecurePairingCredentialState) = SecurePairingCredentialRecord(
+    credentialId = "cred-1",
+    deviceId = "device-1",
+    encryptedCredential = EncryptedPayload(ciphertext = byteArrayOf(1, 2, 3), iv = byteArrayOf(4, 5, 6), formatVersion = 1),
+    endpoint = TrustedConnectorEndpoint(
+        connectorId = "connector-1",
+        connectorName = "Test Connector",
+        host = "192.168.1.10",
+        securePort = 8443,
+        transportFingerprint = "sha256/AAAA",
+        fingerprintAlgorithm = "sha256",
+        transportIdentityVersion = 1,
+    ),
+    createdAtEpochMillis = 1_000L,
+    lastVerifiedAtEpochMillis = null,
+    state = state,
+)
