@@ -17,12 +17,12 @@ import org.junit.Test
 class AuthenticatedRepositoryFailurePolicyTest {
 
     @Test
-    fun `Unauthorized marks an ACTIVE credential RE_PAIR_REQUIRED and maps to a re-pair error`() = runTest {
-        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.ACTIVE) }
+    fun `Unauthorized marks the credential it names RE_PAIR_REQUIRED and maps to a re-pair error`() = runTest {
+        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.ACTIVE, credentialId = "cred-1") }
         val vault = FakeSecureCredentialVault(backingStore = store)
         val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
 
-        val error = policy.mapFailure(AuthenticatedConnectorResult.Unauthorized)
+        val error = policy.mapFailure(AuthenticatedConnectorResult.Unauthorized("cred-1"))
 
         assertEquals(SecurePairingCredentialState.RE_PAIR_REQUIRED, store.record?.state)
         assertTrue(error is AppError.Remote)
@@ -35,20 +35,67 @@ class AuthenticatedRepositoryFailurePolicyTest {
         val vault = FakeSecureCredentialVault()
         val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
 
-        policy.mapFailure(AuthenticatedConnectorResult.Unauthorized)
+        policy.mapFailure(AuthenticatedConnectorResult.Unauthorized("cred-1"))
 
         assertNull(vault.read())
     }
 
     @Test
     fun `Unauthorized does not mutate an already RE_PAIR_REQUIRED credential`() = runTest {
-        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.RE_PAIR_REQUIRED) }
+        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.RE_PAIR_REQUIRED, credentialId = "cred-1") }
         val vault = FakeSecureCredentialVault(backingStore = store)
         val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
 
-        policy.mapFailure(AuthenticatedConnectorResult.Unauthorized)
+        policy.mapFailure(AuthenticatedConnectorResult.Unauthorized("cred-1"))
 
         assertEquals(SecurePairingCredentialState.RE_PAIR_REQUIRED, store.record?.state)
+    }
+
+    // ===== Credential-replacement race safety (Phase 3) =====
+    //
+    // Scenario: an in-flight request was sent using credential A's bearer token. Before its 401
+    // response is handled, the device re-pairs and the vault now holds a different credential B
+    // (a fresh ACTIVE record with a different credentialId). A's rejection must never touch B.
+
+    @Test
+    fun `a 401 for a replaced credential A does not touch the current credential B`() = runTest {
+        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.ACTIVE, credentialId = "cred-B") }
+        val vault = FakeSecureCredentialVault(backingStore = store)
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
+
+        // The rejected request was sent using the now-superseded credential A.
+        val error = policy.mapFailure(AuthenticatedConnectorResult.Unauthorized("cred-A"))
+
+        assertEquals("cred-B", store.record?.credentialId)
+        assertEquals(SecurePairingCredentialState.ACTIVE, store.record?.state)
+        // The caller is still told to re-pair — credential A truly was rejected — but B's own
+        // state on disk is untouched by A's stale rejection.
+        assertTrue(error is AppError.Remote)
+        assertEquals(AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, (error as AppError.Remote).code)
+    }
+
+    @Test
+    fun `a 401 for the current credential B marks only B RE_PAIR_REQUIRED`() = runTest {
+        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.ACTIVE, credentialId = "cred-B") }
+        val vault = FakeSecureCredentialVault(backingStore = store)
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
+
+        policy.mapFailure(AuthenticatedConnectorResult.Unauthorized("cred-B"))
+
+        assertEquals("cred-B", store.record?.credentialId)
+        assertEquals(SecurePairingCredentialState.RE_PAIR_REQUIRED, store.record?.state)
+    }
+
+    @Test
+    fun `a 403 for the current credential B leaves B ACTIVE`() = runTest {
+        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.ACTIVE, credentialId = "cred-B") }
+        val vault = FakeSecureCredentialVault(backingStore = store)
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(vault)
+
+        policy.mapFailure(AuthenticatedConnectorResult.Forbidden)
+
+        assertEquals("cred-B", store.record?.credentialId)
+        assertEquals(SecurePairingCredentialState.ACTIVE, store.record?.state)
     }
 
     @Test
@@ -104,8 +151,8 @@ class AuthenticatedRepositoryFailurePolicyTest {
     }
 }
 
-private fun sampleRecord(state: SecurePairingCredentialState) = SecurePairingCredentialRecord(
-    credentialId = "cred-1",
+private fun sampleRecord(state: SecurePairingCredentialState, credentialId: String = "cred-1") = SecurePairingCredentialRecord(
+    credentialId = credentialId,
     deviceId = "device-1",
     encryptedCredential = EncryptedPayload(ciphertext = byteArrayOf(1, 2, 3), iv = byteArrayOf(4, 5, 6), formatVersion = 1),
     endpoint = TrustedConnectorEndpoint(

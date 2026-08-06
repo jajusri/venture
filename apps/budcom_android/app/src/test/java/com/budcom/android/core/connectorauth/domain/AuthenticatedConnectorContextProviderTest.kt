@@ -68,6 +68,7 @@ class AuthenticatedConnectorContextProviderTest {
         val ready = resolution as AuthenticatedConnectorContextResolution.Ready
         assertEquals("connector-abc", ready.context.endpoint.connectorId)
         assertEquals("device-1", ready.context.logicalDeviceId)
+        assertEquals("cred-1", ready.context.credentialId)
         assertEquals("Bearer raw-token", ready.context.bearerHeaderValue())
     }
 

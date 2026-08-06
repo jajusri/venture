@@ -50,7 +50,7 @@ class AuthenticatedCompanyRemoteDataSourceTest {
 
     @Test
     fun `fetchCompanies routes a non-Success outcome through the failure policy`() = runTest {
-        val port = FakePort(result = AuthenticatedConnectorResult.Unauthorized)
+        val port = FakePort(result = AuthenticatedConnectorResult.Unauthorized("cred-1"))
         val policy = PassthroughFailurePolicy()
         val dataSource = DefaultAuthenticatedCompanyRemoteDataSource(port, policy, json)
 
@@ -58,7 +58,7 @@ class AuthenticatedCompanyRemoteDataSourceTest {
 
         assertTrue(result is AppResult.Failure)
         assertEquals(1, policy.callCount)
-        assertEquals(AuthenticatedConnectorResult.Unauthorized, policy.lastResult)
+        assertEquals(AuthenticatedConnectorResult.Unauthorized("cred-1"), policy.lastResult)
     }
 
     @Test

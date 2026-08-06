@@ -29,8 +29,16 @@ sealed class AuthenticatedConnectorResult {
     /** ACTIVE record exists but decryption failed (Keystore loss/tamper). Zero network calls made. */
     data object CredentialUnavailable : AuthenticatedConnectorResult()
 
-    /** HTTP 401 — the presented credential itself was rejected. */
-    data object Unauthorized : AuthenticatedConnectorResult()
+    /**
+     * HTTP 401 — the presented credential itself was rejected. [credentialId] is the exact
+     * [com.budcom.android.core.pairing.domain.model.SecurePairingCredentialRecord.credentialId]
+     * that was used for the rejected request (from [AuthenticatedConnectorContext.credentialId]),
+     * not necessarily whichever credential is current by the time this result is handled — a
+     * rejection handler must invalidate this specific credential, never blindly the vault's
+     * current record, so a credential replaced by a newer re-pair mid-flight is never wrongly
+     * invalidated by an older request's rejection.
+     */
+    data class Unauthorized(val credentialId: String) : AuthenticatedConnectorResult()
 
     /** HTTP 403 — credential accepted, but not authorized for this route. */
     data object Forbidden : AuthenticatedConnectorResult()

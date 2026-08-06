@@ -59,6 +59,7 @@ class DefaultAuthenticatedConnectorContextProvider @Inject constructor(
                     AuthenticatedConnectorContext(
                         endpoint = record.endpoint,
                         logicalDeviceId = record.deviceId,
+                        credentialId = record.credentialId,
                         bearerCredential = RedactedBearerCredential(String(decrypted.plaintext, Charsets.UTF_8)),
                     ),
                 )

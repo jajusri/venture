@@ -242,12 +242,12 @@ class OkHttpAuthenticatedConnectorApiClientTest {
     }
 
     @Test
-    fun `401 maps to Unauthorized`() = runTest {
+    fun `401 maps to Unauthorized carrying the credentialId that was actually used`() = runTest {
         val (server, heldCertificate) = newServer()
         server.enqueue(MockResponse().setResponseCode(401).setBody("""{"code":"UNAUTHORIZED"}"""))
         val (client, _) = readyClient(server, heldCertificate)
 
-        assertEquals(AuthenticatedConnectorResult.Unauthorized, client.execute(AuthenticatedConnectorOperation.GetCompanies))
+        assertEquals(AuthenticatedConnectorResult.Unauthorized("cred-1"), client.execute(AuthenticatedConnectorOperation.GetCompanies))
     }
 
     @Test

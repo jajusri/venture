@@ -30,14 +30,8 @@ class CompanyRepositoryImpl @Inject constructor(
     private val selectedCompanyStore: SelectedCompanyStore,
     private val errorMapper: ErrorMapper,
     private val dispatchers: DispatcherProvider,
-    /**
-     * Only ever defaulted in a direct (non-Hilt) constructor call, e.g. an existing test that
-     * doesn't pass these two — Hilt always supplies real bindings explicitly, so these defaults
-     * never apply in production. Defaulting to LEGACY-always preserves every pre-existing test's
-     * exact original behaviour without editing it.
-     */
-    private val transportGate: ConnectorTransportSelectionGate = AlwaysLegacyConnectorTransportSelectionGate,
-    private val authenticatedRemoteDataSource: AuthenticatedCompanyRemoteDataSource = UnreachableAuthenticatedCompanyRemoteDataSource,
+    private val transportGate: ConnectorTransportSelectionGate,
+    private val authenticatedRemoteDataSource: AuthenticatedCompanyRemoteDataSource,
 ) : CompanyRepository {
 
     override fun observeSelectedCompany(): Flow<SessionSelectedCompany?> = selectedCompanyStore.observeSelectedCompany()
@@ -286,18 +280,3 @@ private fun AppError.isAuthenticationRejection(): Boolean =
         code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE ||
             code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_ACCESS_DENIED_CODE
         )
-
-private object AlwaysLegacyConnectorTransportSelectionGate : ConnectorTransportSelectionGate {
-    override suspend fun resolve(): ConnectorTransportSelection = ConnectorTransportSelection.LEGACY
-}
-
-private object UnreachableAuthenticatedCompanyRemoteDataSource : AuthenticatedCompanyRemoteDataSource {
-    override suspend fun fetchCompanies(): AppResult<CompanyDiscoverySnapshot> = unreachable()
-    override suspend fun fetchSession(): AppResult<ConnectorSessionSnapshot> = unreachable()
-    override suspend fun selectCompany(companyId: String): AppResult<CompanySelectionOutcome> = unreachable()
-    override suspend fun validateSession(): AppResult<SessionValidationOutcome> = unreachable()
-    override suspend fun clearSession(): AppResult<ConnectorSessionSnapshot> = unreachable()
-
-    private fun unreachable(): Nothing =
-        error("UnreachableAuthenticatedCompanyRemoteDataSource must never be called — the default transport gate always resolves LEGACY")
-}

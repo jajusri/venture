@@ -72,7 +72,7 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
             is AuthenticatedConnectorContextResolution.Ready -> {
                 val request = buildRequest(resolution.context.endpoint, resolution.context.bearerHeaderValue(), operation)
                 val client = applyTimeoutProfile(pinnedHttpClientFactory.create(resolution.context.endpoint), operation.timeoutProfile)
-                executeRequest(client, request)
+                executeRequest(client, request, resolution.context.credentialId)
             }
         }
     }
@@ -109,8 +109,8 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
      * contract of returning a typed [AuthenticatedConnectorResult.Cancelled] value rather than
      * propagating cancellation past this boundary.
      */
-    private suspend fun executeRequest(client: OkHttpClient, request: Request): AuthenticatedConnectorResult = try {
-        runInterruptible(Dispatchers.IO) { client.newCall(request).execute() }.use { response -> mapResponse(response) }
+    private suspend fun executeRequest(client: OkHttpClient, request: Request, credentialId: String): AuthenticatedConnectorResult = try {
+        runInterruptible(Dispatchers.IO) { client.newCall(request).execute() }.use { response -> mapResponse(response, credentialId) }
     } catch (e: CancellationException) {
         AuthenticatedConnectorResult.Cancelled
     } catch (e: IOException) {
@@ -129,7 +129,7 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
         }
     }
 
-    private fun mapResponse(response: Response): AuthenticatedConnectorResult {
+    private fun mapResponse(response: Response, credentialId: String): AuthenticatedConnectorResult {
         val bodyRead = readBoundedBody(response.body)
         if (bodyRead is BoundedBodyReadResult.Oversized) {
             return AuthenticatedConnectorResult.MalformedResponse
@@ -146,7 +146,7 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
                 }
             }
             400 -> AuthenticatedConnectorResult.ValidationFailure(sanitizedErrorCode(bodyText))
-            401 -> AuthenticatedConnectorResult.Unauthorized
+            401 -> AuthenticatedConnectorResult.Unauthorized(credentialId)
             403 -> AuthenticatedConnectorResult.Forbidden
             404 -> AuthenticatedConnectorResult.NotFound
             409 -> AuthenticatedConnectorResult.Conflict

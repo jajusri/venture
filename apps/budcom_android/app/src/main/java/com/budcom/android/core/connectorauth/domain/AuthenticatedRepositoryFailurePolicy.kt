@@ -3,7 +3,6 @@ package com.budcom.android.core.connectorauth.domain
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorResult
 import com.budcom.android.core.pairing.data.local.SecureCredentialVault
-import com.budcom.android.core.pairing.domain.model.SecurePairingCredentialState
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,10 +19,14 @@ const val AUTHENTICATED_ACCESS_DENIED_CODE = "AUTHENTICATED_ACCESS_DENIED"
 /**
  * Central mapping from a non-Success [AuthenticatedConnectorResult] to an [AppError], shared by
  * every authenticated repository adapter. Never mutates Room. [AuthenticatedConnectorResult.Unauthorized]
- * is the only outcome that mutates the vault: it marks the *current* ACTIVE credential
- * RE_PAIR_REQUIRED, relying on [SecureCredentialVault.markRePairRequired]'s own credential-ID
- * match check so a credential replaced between the failing request and this handler running is
- * never invalidated by an older request's rejection.
+ * is the only outcome that mutates the vault: it marks the credential identified by
+ * [AuthenticatedConnectorResult.Unauthorized.credentialId] — the credential actually used by the
+ * rejected request, carried through from [com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorContext.credentialId]
+ * — RE_PAIR_REQUIRED. This never reads "whichever credential is current" first: it calls
+ * [SecureCredentialVault.markRePairRequired] directly with that request's own credential ID, so
+ * the vault's own atomic credential-ID match check is what decides whether the mutation applies.
+ * A credential replaced by a newer re-pair between the failing request being sent and this
+ * handler running has a different ID, the match fails, and the newer credential is left untouched.
  */
 interface AuthenticatedRepositoryFailurePolicy {
     suspend fun mapFailure(result: AuthenticatedConnectorResult): AppError
@@ -35,11 +38,8 @@ class DefaultAuthenticatedRepositoryFailurePolicy @Inject constructor(
 ) : AuthenticatedRepositoryFailurePolicy {
 
     override suspend fun mapFailure(result: AuthenticatedConnectorResult): AppError = when (result) {
-        AuthenticatedConnectorResult.Unauthorized -> {
-            val current = vault.read()
-            if (current != null && current.state == SecurePairingCredentialState.ACTIVE) {
-                vault.markRePairRequired(current.credentialId)
-            }
+        is AuthenticatedConnectorResult.Unauthorized -> {
+            vault.markRePairRequired(result.credentialId)
             AppError.Remote(
                 httpStatus = 401,
                 code = AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE,

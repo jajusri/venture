@@ -14,6 +14,15 @@ enum class ConnectorTransportSelection { LEGACY, AUTHENTICATED }
  * contacts the network, never mutates the vault, never inspects legacy pairing state, and never
  * caches its result across calls, so a vault-state change is observed by the very next
  * [resolve] call.
+ *
+ * AUTHENTICATED once any secure-pairing credential record exists, regardless of its state — not
+ * only ACTIVE. A device that has entered secure pairing and is currently PENDING_VERIFICATION or
+ * RE_PAIR_REQUIRED must never fall back to the unauthenticated legacy transport: the authenticated
+ * port itself resolves those states into a typed zero-network-call result (see
+ * [com.budcom.android.core.connectorauth.domain.AuthenticatedConnectorContextResolution]) rather
+ * than this gate silently downgrading past them. LEGACY applies only to a device that has never
+ * stored a secure-pairing credential record at all — e.g. an existing pre-secure-pairing
+ * installation, or a clean install before pairing has begun.
  */
 interface ConnectorTransportSelectionGate {
     suspend fun resolve(): ConnectorTransportSelection
@@ -26,10 +35,11 @@ class DefaultConnectorTransportSelectionGate @Inject constructor(
 
     override suspend fun resolve(): ConnectorTransportSelection {
         val record = vault.read() ?: return ConnectorTransportSelection.LEGACY
-        return if (record.state == SecurePairingCredentialState.ACTIVE) {
-            ConnectorTransportSelection.AUTHENTICATED
-        } else {
-            ConnectorTransportSelection.LEGACY
+        return when (record.state) {
+            SecurePairingCredentialState.ACTIVE,
+            SecurePairingCredentialState.PENDING_VERIFICATION,
+            SecurePairingCredentialState.RE_PAIR_REQUIRED,
+            -> ConnectorTransportSelection.AUTHENTICATED
         }
     }
 }

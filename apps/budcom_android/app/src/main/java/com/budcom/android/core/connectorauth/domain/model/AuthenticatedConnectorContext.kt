@@ -22,14 +22,22 @@ class RedactedBearerCredential(private val rawValue: String) {
  * singleton field, never placed in a StateFlow/SharedFlow/SavedStateHandle. Not Parcelable, not
  * Serializable; scoped to the lifetime of one request execution. Deliberately not a `data class`
  * so no `copy()` exists to accidentally propagate the credential elsewhere.
+ *
+ * [credentialId] is the non-secret [com.budcom.android.core.pairing.domain.model.SecurePairingCredentialRecord.credentialId]
+ * this context's bearer was decrypted from — carried through to a rejected request's
+ * [com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorResult.Unauthorized]
+ * so a rejection handler can invalidate the exact credential that was actually used, never
+ * whichever credential happens to be current when the rejection is handled (a credential can be
+ * replaced by a newer re-pair between the request being sent and its response being processed).
  */
 class AuthenticatedConnectorContext(
     val endpoint: TrustedConnectorEndpoint,
     val logicalDeviceId: String,
+    val credentialId: String,
     private val bearerCredential: RedactedBearerCredential,
 ) {
     fun bearerHeaderValue(): String = bearerCredential.asBearerHeaderValue()
 
     override fun toString(): String =
-        "AuthenticatedConnectorContext(endpoint=$endpoint, logicalDeviceId=<redacted>, bearerCredential=<redacted>)"
+        "AuthenticatedConnectorContext(endpoint=$endpoint, logicalDeviceId=<redacted>, credentialId=$credentialId, bearerCredential=<redacted>)"
 }
