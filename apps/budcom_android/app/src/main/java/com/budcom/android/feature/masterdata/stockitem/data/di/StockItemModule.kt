@@ -2,6 +2,8 @@ package com.budcom.android.feature.masterdata.stockitem.data.di
 
 import com.budcom.android.feature.masterdata.stockitem.data.local.RoomStockItemLocalDataSource
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemLocalDataSource
+import com.budcom.android.feature.masterdata.stockitem.data.remote.AuthenticatedStockItemRemoteDataSource
+import com.budcom.android.feature.masterdata.stockitem.data.remote.DefaultAuthenticatedStockItemRemoteDataSource
 import com.budcom.android.feature.masterdata.stockitem.data.remote.DefaultStockItemRemoteDataSource
 import com.budcom.android.feature.masterdata.stockitem.data.remote.StockItemApi
 import com.budcom.android.feature.masterdata.stockitem.data.remote.StockItemRemoteDataSource
@@ -26,6 +28,12 @@ abstract class StockItemBindModule {
     abstract fun bindStockItemRemoteDataSource(
         impl: DefaultStockItemRemoteDataSource,
     ): StockItemRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthenticatedStockItemRemoteDataSource(
+        impl: DefaultAuthenticatedStockItemRemoteDataSource,
+    ): AuthenticatedStockItemRemoteDataSource
 
     @Binds
     @Singleton
