@@ -2,10 +2,13 @@ package com.budcom.android.feature.voucher.data.repository
 
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
 import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.core.util.TimeProvider
+import com.budcom.android.feature.voucher.data.remote.AuthenticatedVoucherListRemoteDataSource
 import com.budcom.android.feature.voucher.data.remote.VoucherRemoteDataSource
 import com.budcom.android.feature.voucher.data.local.VoucherLocalDataSource
 import com.budcom.android.feature.voucher.domain.model.VoucherCacheState
@@ -24,6 +27,16 @@ import javax.inject.Singleton
  * [refreshVoucherDetails] are the only operations that reach the network; they persist a
  * successful response and otherwise leave the existing cache untouched — a failed refresh
  * is reported as a failure and must never be interpreted as "no cached data".
+ *
+ * [refreshVouchers] resolves [ConnectorTransportSelectionGate] once per call and, on
+ * AUTHENTICATED, routes through [AuthenticatedVoucherListRemoteDataSource] instead of the legacy
+ * [VoucherRemoteDataSource] — never both, never falling back to legacy once AUTHENTICATED is
+ * selected. [query]'s `companyId`/`dateRange` are the sole scope used for both dispatch and
+ * persistence for the entire call: neither is ever re-read from any mutable store, so a company
+ * or scope change elsewhere in the app while a refresh is in flight can never mislabel that
+ * refresh's write. [refreshVoucherDetails] is unchanged by this phase — [GetVoucherById] has no
+ * `queryParams` support yet for the Connector-required `company` parameter, deferred to a later
+ * phase.
  */
 @Singleton
 class VoucherRepositoryImpl @Inject constructor(
@@ -32,6 +45,8 @@ class VoucherRepositoryImpl @Inject constructor(
     private val dispatchers: DispatcherProvider,
     private val localDataSource: VoucherLocalDataSource,
     private val timeProvider: TimeProvider,
+    private val transportGate: ConnectorTransportSelectionGate,
+    private val authenticatedRemoteDataSource: AuthenticatedVoucherListRemoteDataSource,
 ) : VoucherRepository {
 
     override suspend fun listVouchers(query: VoucherQuery): AppResult<VoucherPage> =
@@ -42,17 +57,26 @@ class VoucherRepositoryImpl @Inject constructor(
 
     override suspend fun refreshVouchers(query: VoucherQuery): AppResult<VoucherPage> =
         withContext(dispatchers.io) {
-            when (val result = remoteDataSource.fetchVouchers(query)) {
-                is ApiResult.Success -> {
-                    val syncedAt = timeProvider.nowEpochMillis()
-                    localDataSource.storeList(query.companyId, result.data.items, syncedAt)
-                    val refreshed = localDataSource.list(query)
-                        ?: result.data.copy(cacheState = VoucherCacheState.Live, lastSyncedAt = syncedAt)
-                    AppResult.Success(refreshed.copy(cacheState = VoucherCacheState.Live, lastSyncedAt = syncedAt))
+            when (transportGate.resolve()) {
+                ConnectorTransportSelection.LEGACY -> when (val result = remoteDataSource.fetchVouchers(query)) {
+                    is ApiResult.Success -> persistAndReturn(query, result.data)
+                    is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(result.error))
                 }
-                is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(result.error))
+
+                ConnectorTransportSelection.AUTHENTICATED -> when (val result = authenticatedRemoteDataSource.fetchVouchers(query)) {
+                    is AppResult.Success -> persistAndReturn(query, result.value)
+                    is AppResult.Failure -> result
+                }
             }
         }
+
+    private suspend fun persistAndReturn(query: VoucherQuery, page: VoucherPage): AppResult<VoucherPage> {
+        val syncedAt = timeProvider.nowEpochMillis()
+        localDataSource.storeList(query.companyId, page.items, syncedAt)
+        val refreshed = localDataSource.list(query)
+            ?: page.copy(cacheState = VoucherCacheState.Live, lastSyncedAt = syncedAt)
+        return AppResult.Success(refreshed.copy(cacheState = VoucherCacheState.Live, lastSyncedAt = syncedAt))
+    }
 
     override suspend fun getVoucherDetails(
         companyId: String,
