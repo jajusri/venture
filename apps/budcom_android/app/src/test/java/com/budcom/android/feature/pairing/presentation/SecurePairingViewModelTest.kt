@@ -109,6 +109,36 @@ class SecurePairingViewModelTest {
         assertEquals(SecurePairingPhase.Idle, viewModel.uiState.value.phase)
     }
 
+    // An ACTIVE record whose credential cannot be decrypted must never present as pairing-complete —
+    // presented identically to RePairRequired, since re-pairing is the only recovery either way.
+    @Test
+    fun `an ACTIVE record with a missing Keystore key presents as RePairRequired, not Active`() = runTest(dispatcher) {
+        val cipher = com.budcom.android.core.security.FakeCredentialCipher()
+        val vault = FakeSecureCredentialVault(cipher = cipher)
+        vault.storePendingVerification("cred-1", "device-1", "raw-token", testEndpoint, NOW)
+        vault.markActive("cred-1", NOW)
+        cipher.dropKey()
+
+        val viewModel = viewModelOf(vault = vault)
+        advanceUntilIdle()
+
+        assertEquals(SecurePairingPhase.RePairRequired, viewModel.uiState.value.phase)
+        assertFalse(viewModel.uiState.value.shortCodeEntryAvailable)
+    }
+
+    @Test
+    fun `a genuinely ACTIVE, decryptable record presents as Active with short-code entry available`() = runTest(dispatcher) {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-1", "device-1", "raw-token", testEndpoint, NOW)
+        vault.markActive("cred-1", NOW)
+
+        val viewModel = viewModelOf(vault = vault)
+        advanceUntilIdle()
+
+        assertEquals(SecurePairingPhase.Active, viewModel.uiState.value.phase)
+        assertTrue(viewModel.uiState.value.shortCodeEntryAvailable)
+    }
+
     // 12. StartQrScan requests scanner launch only
     @Test
     fun `StartQrScan moves to ScannerLaunching and requests a scanner launch, without validating or redeeming anything`() = runTest(dispatcher) {

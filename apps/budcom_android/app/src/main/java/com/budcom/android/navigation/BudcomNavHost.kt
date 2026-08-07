@@ -22,6 +22,7 @@ import com.budcom.android.feature.discovery.presentation.ConnectorDiscoveryRoute
 import com.budcom.android.feature.masterdata.ledger.presentation.LedgerBrowserRoute
 import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
 import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
+import com.budcom.android.feature.pairing.presentation.SecurePairingRoute
 import com.budcom.android.feature.search.presentation.UniversalSearchRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
 import com.budcom.android.feature.settings.presentation.SettingsRoute
@@ -33,10 +34,12 @@ import com.budcom.android.feature.voucher.presentation.VoucherDetailsViewModel
 /**
  * Root navigation host for BUDCO Android.
  *
- * The start destination is resolved once via [AppRootViewModel]: first-install Connector
- * discovery when nothing is paired yet on a physical device, Dashboard otherwise. This keeps
- * Dashboard (and the business API calls its ViewModel fires on load) from ever composing
- * before a Connector is paired.
+ * The start destination is resolved once via [AppRootViewModel] from the single authoritative
+ * [StartupRoutingState]: secure pairing (bootstrap or resume) when it is required or already in
+ * flight, Dashboard otherwise — including for an existing legacy installation, an ACTIVE secure
+ * credential, and a RE_PAIR_REQUIRED/credential-unavailable installation whose cached data must
+ * remain reachable. This keeps Dashboard (and the business API calls its ViewModel fires on load)
+ * from ever composing before that classification completes.
  */
 @Composable
 fun BudcomNavHost(
@@ -65,6 +68,19 @@ fun BudcomNavHost(
                     }
                 },
                 onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
+            )
+        }
+        composable(route = Routes.SECURE_PAIRING) {
+            SecurePairingRoute(
+                onSecureActive = {
+                    // Clears the whole back stack (whether this screen was the mandatory startup
+                    // destination or was pushed from Settings' migration/re-pair entry) so a
+                    // completed pairing always lands on a single, clean Dashboard entry — never a
+                    // stale Settings/pairing screen reachable via back navigation.
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                    }
+                },
             )
         }
         composable(route = Routes.HOME) {
@@ -125,6 +141,7 @@ fun BudcomNavHost(
                 onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
                 onOpenSync = { navController.navigate(Routes.SYNC) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
+                onOpenSecurePairing = { navController.navigate(Routes.SECURE_PAIRING) },
             )
         }
         composable(

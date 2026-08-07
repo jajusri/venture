@@ -8,6 +8,7 @@ import com.budcom.android.feature.settings.domain.model.ThemePreference
 import com.budcom.android.feature.settings.domain.usecase.ObserveSettingsSnapshotUseCase
 import com.budcom.android.feature.settings.domain.usecase.RefreshSettingsConnectorFactsUseCase
 import com.budcom.android.feature.settings.domain.usecase.SetThemePreferenceUseCase
+import com.budcom.android.navigation.ResolveStartupRoutingState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,7 @@ class SettingsViewModel @Inject constructor(
     private val observeSettings: ObserveSettingsSnapshotUseCase,
     private val setThemePreference: SetThemePreferenceUseCase,
     private val refreshConnectorFacts: RefreshSettingsConnectorFactsUseCase,
+    private val resolveStartupRoutingState: ResolveStartupRoutingState,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -52,13 +54,17 @@ class SettingsViewModel @Inject constructor(
             }
         }
         refreshFacts()
+        refreshSecureConnectionState()
     }
 
     fun onEvent(event: SettingsEvent) {
         when (event) {
             SettingsEvent.Refresh,
             SettingsEvent.Retry,
-            -> refreshFacts()
+            -> {
+                refreshFacts()
+                refreshSecureConnectionState()
+            }
             is SettingsEvent.SelectTheme -> selectTheme(event.preference)
             SettingsEvent.OpenServerConfig ->
                 viewModelScope.launch { _navigation.emit(SettingsNavigation.ServerConfig) }
@@ -68,6 +74,20 @@ class SettingsViewModel @Inject constructor(
                 viewModelScope.launch { _navigation.emit(SettingsNavigation.Sync) }
             SettingsEvent.OpenDiagnostics ->
                 viewModelScope.launch { _navigation.emit(SettingsNavigation.Diagnostics) }
+            SettingsEvent.OpenSecurePairing ->
+                viewModelScope.launch { _navigation.emit(SettingsNavigation.SecurePairing) }
+        }
+    }
+
+    /**
+     * Re-resolved every time Settings is opened/refreshed (never cached from app-startup
+     * routing) — the user may open Settings, tap "Secure this connection," come back, and expects
+     * the migration action to reflect whatever the vault holds right now, not a stale snapshot.
+     */
+    private fun refreshSecureConnectionState() {
+        viewModelScope.launch {
+            val state = resolveStartupRoutingState()
+            _uiState.update { it.copy(secureConnectionState = state) }
         }
     }
 

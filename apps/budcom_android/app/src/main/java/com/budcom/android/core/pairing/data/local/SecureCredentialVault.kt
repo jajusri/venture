@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.IOException
 import java.util.Base64
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,6 +30,27 @@ sealed class SecureCredentialVaultWriteResult {
 
     /** Encryption failed at the platform Keystore level — nothing was persisted or replaced. */
     data object KeystoreUnavailable : SecureCredentialVaultWriteResult()
+}
+
+/**
+ * Outcome of a safe, non-throwing enrollment-history read. Unlike [SecureCredentialVault.read],
+ * which collapses "never enrolled" and "unreadable" into one `null`, this distinguishes them —
+ * required so a corrupted/unreadable record is never treated as an empty, never-enrolled vault
+ * (which would wrongly make a previously-secured installation eligible for legacy transport again).
+ */
+sealed class SecureCredentialVaultReadOutcome {
+    /** No pairing record has ever been written on this device. */
+    data object NoRecord : SecureCredentialVaultReadOutcome()
+
+    /** A fully-parsed, valid record — see [record] for its current [SecurePairingCredentialState]. */
+    data class Present(val record: SecurePairingCredentialRecord) : SecureCredentialVaultReadOutcome()
+
+    /**
+     * A record was (or may have been) written, but it could not be read back intact — underlying
+     * storage corruption, or a persisted field that no longer parses (e.g. an unrecognized state
+     * value). Never treated as [NoRecord]; the caller must not fall back to legacy transport.
+     */
+    data object Unreadable : SecureCredentialVaultReadOutcome()
 }
 
 /**
@@ -42,6 +64,13 @@ sealed class SecureCredentialVaultWriteResult {
 interface SecureCredentialVault {
     /** Metadata for the current trust record, if any. Never includes the decrypted credential. */
     suspend fun read(): SecurePairingCredentialRecord?
+
+    /**
+     * Safe, non-throwing variant of [read] that distinguishes a genuinely empty vault from an
+     * unreadable/corrupted one — see [SecureCredentialVaultReadOutcome]. Callers making a
+     * legacy-transport-eligibility or startup-routing decision must use this, never [read] alone.
+     */
+    suspend fun readOutcome(): SecureCredentialVaultReadOutcome
 
     /**
      * Encrypts [rawCredential] and atomically replaces any existing record with a new one in
@@ -81,6 +110,14 @@ class DataStoreSecureCredentialVault @Inject constructor(
     private val mutex = Mutex()
 
     override suspend fun read(): SecurePairingCredentialRecord? = dataStore.data.map { it.toRecord() }.first()
+
+    override suspend fun readOutcome(): SecureCredentialVaultReadOutcome = try {
+        dataStore.data.first().toReadOutcome()
+    } catch (e: IOException) {
+        // Includes androidx.datastore.core.CorruptionException, which extends IOException — a
+        // corrupted store must never be reported as an empty, never-enrolled vault.
+        SecureCredentialVaultReadOutcome.Unreadable
+    }
 
     override suspend fun storePendingVerification(
         credentialId: String,
@@ -186,6 +223,28 @@ class DataStoreSecureCredentialVault @Inject constructor(
             lastVerifiedAtEpochMillis = this[KEY_LAST_VERIFIED_AT],
             state = state,
         )
+    }
+
+    /**
+     * [KEY_CREDENTIAL_ID] is the first field ever written by [storePendingVerification] and is
+     * never removed independently of the rest of the record, so its presence is a reliable marker
+     * that a record was written here at some point — even if [toRecord] itself fails to fully
+     * parse the rest (e.g. a corrupted [KEY_STATE]), that must surface as [SecureCredentialVaultReadOutcome.Unreadable],
+     * never as [SecureCredentialVaultReadOutcome.NoRecord].
+     */
+    private fun Preferences.toReadOutcome(): SecureCredentialVaultReadOutcome {
+        val recordEverWritten = this[KEY_CREDENTIAL_ID] != null
+        val record = try {
+            toRecord()
+        } catch (e: IllegalArgumentException) {
+            // Malformed Base64 in a stored ciphertext/iv field — corrupted, not absent.
+            null
+        }
+        return when {
+            record != null -> SecureCredentialVaultReadOutcome.Present(record)
+            recordEverWritten -> SecureCredentialVaultReadOutcome.Unreadable
+            else -> SecureCredentialVaultReadOutcome.NoRecord
+        }
     }
 
     private companion object {

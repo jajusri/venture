@@ -24,6 +24,52 @@ class SecureCredentialVaultTest {
     )
 
     @Test
+    fun `readOutcome is NoRecord for a genuinely empty vault`() = runTest {
+        val vault = FakeSecureCredentialVault()
+
+        assertEquals(SecureCredentialVaultReadOutcome.NoRecord, vault.readOutcome())
+    }
+
+    @Test
+    fun `readOutcome is Present with the record for a valid PENDING_VERIFICATION entry`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-1", "device-1", "raw-bearer-token", endpoint, 1_000L)
+
+        val outcome = vault.readOutcome() as SecureCredentialVaultReadOutcome.Present
+        assertEquals(SecurePairingCredentialState.PENDING_VERIFICATION, outcome.record.state)
+        assertEquals("cred-1", outcome.record.credentialId)
+    }
+
+    @Test
+    fun `readOutcome is Present for ACTIVE and RE_PAIR_REQUIRED records too`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-1", "device-1", "raw-bearer-token", endpoint, 1_000L)
+        vault.markActive("cred-1", 1_500L)
+
+        val active = vault.readOutcome() as SecureCredentialVaultReadOutcome.Present
+        assertEquals(SecurePairingCredentialState.ACTIVE, active.record.state)
+
+        vault.markRePairRequired("cred-1")
+        val rePair = vault.readOutcome() as SecureCredentialVaultReadOutcome.Present
+        assertEquals(SecurePairingCredentialState.RE_PAIR_REQUIRED, rePair.record.state)
+    }
+
+    // A corrupted/unreadable record must never be reported the same as a never-enrolled vault —
+    // see the SecureCredentialVaultReadOutcome doc comment and Phase 3T's routing requirement.
+    @Test
+    fun `readOutcome is Unreadable, never NoRecord, for a corrupted record`() = runTest {
+        val backing = InMemoryVaultBackingStore()
+        val vault = FakeSecureCredentialVault(backingStore = backing)
+        vault.storePendingVerification("cred-1", "device-1", "raw-bearer-token", endpoint, 1_000L)
+        backing.unreadable = true
+
+        val outcome = vault.readOutcome()
+
+        assertEquals(SecureCredentialVaultReadOutcome.Unreadable, outcome)
+        assertTrue(outcome !is SecureCredentialVaultReadOutcome.NoRecord)
+    }
+
+    @Test
     fun `storePendingVerification persists a PENDING_VERIFICATION record with no plaintext credential`() = runTest {
         val vault = FakeSecureCredentialVault()
 

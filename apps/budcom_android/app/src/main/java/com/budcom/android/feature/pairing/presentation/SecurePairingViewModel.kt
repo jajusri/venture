@@ -11,6 +11,7 @@ import com.budcom.android.core.pairing.domain.usecase.RedeemSecurePairingSession
 import com.budcom.android.core.pairing.domain.usecase.RetryPendingCredentialVerification
 import com.budcom.android.core.pairing.domain.usecase.SecurePairingRedemptionOutcome
 import com.budcom.android.core.pairing.domain.usecase.ValidateSecurePairingPayload
+import com.budcom.android.core.security.CredentialDecryptionResult
 import com.budcom.android.feature.pairing.data.scanner.SecurePairingScanResult
 import com.budcom.android.feature.pairing.data.scanner.SecurePairingScannerPort
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -95,12 +96,24 @@ class SecurePairingViewModel @Inject constructor(
      * entry is available only when a previously PROVEN (ACTIVE, not merely pending) trust record
      * exists — never derived from mDNS, a typed URL, or the legacy paired-Connector record. A
      * completely clean device therefore never sees either.
+     *
+     * An ACTIVE record whose credential cannot actually be decrypted (Keystore key lost/tampered
+     * ciphertext) must never present as "pairing complete" — it is presented identically to
+     * RE_PAIR_REQUIRED, since re-pairing is the only recovery available either way.
      */
     private suspend fun syncWithPersistedState() {
         val record = vault.read()
-        val available = record?.state == SecurePairingCredentialState.ACTIVE
+        val effectiveState = if (record?.state == SecurePairingCredentialState.ACTIVE) {
+            when (vault.readDecryptedCredential()) {
+                is CredentialDecryptionResult.Success -> SecurePairingCredentialState.ACTIVE
+                else -> SecurePairingCredentialState.RE_PAIR_REQUIRED
+            }
+        } else {
+            record?.state
+        }
+        val available = effectiveState == SecurePairingCredentialState.ACTIVE
         trustedEndpointForShortCode = if (available) record?.endpoint else null
-        val initialPhase = when (record?.state) {
+        val initialPhase = when (effectiveState) {
             SecurePairingCredentialState.PENDING_VERIFICATION -> SecurePairingPhase.PendingVerification
             SecurePairingCredentialState.ACTIVE -> SecurePairingPhase.Active
             SecurePairingCredentialState.RE_PAIR_REQUIRED -> SecurePairingPhase.RePairRequired

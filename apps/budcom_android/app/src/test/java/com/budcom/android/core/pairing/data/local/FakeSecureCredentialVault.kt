@@ -12,6 +12,9 @@ import com.budcom.android.core.security.FakeCredentialCipher
  * underlying storage surviving a new repository instance being constructed ("process restart"). */
 class InMemoryVaultBackingStore {
     var record: SecurePairingCredentialRecord? = null
+
+    /** When true, simulates a corrupted/unreadable record — see [SecureCredentialVaultReadOutcome.Unreadable]. */
+    var unreadable: Boolean = false
 }
 
 /**
@@ -26,6 +29,12 @@ class FakeSecureCredentialVault(
 ) : SecureCredentialVault {
 
     override suspend fun read(): SecurePairingCredentialRecord? = backingStore.record
+
+    override suspend fun readOutcome(): SecureCredentialVaultReadOutcome = when {
+        backingStore.unreadable -> SecureCredentialVaultReadOutcome.Unreadable
+        backingStore.record != null -> SecureCredentialVaultReadOutcome.Present(backingStore.record!!)
+        else -> SecureCredentialVaultReadOutcome.NoRecord
+    }
 
     override suspend fun storePendingVerification(
         credentialId: String,

@@ -1,6 +1,5 @@
 package com.budcom.android.navigation
 
-import com.budcom.android.core.connection.ConnectorEnrolmentGate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -29,17 +28,26 @@ class AppRootViewModelTest {
     }
 
     @Test
-    fun `routes to Connector discovery when the enrolment gate says enrolment is needed`() = runTest(dispatcher) {
-        val viewModel = AppRootViewModel(enrolmentGate = FakeGate(needsEnrolment = true))
+    fun `routes to secure pairing when PairingRequired`() = runTest(dispatcher) {
+        val viewModel = AppRootViewModel(FakeResolveStartupRoutingState(StartupRoutingState.PairingRequired))
 
         advanceUntilIdle()
 
-        assertEquals(Routes.CONNECTOR_DISCOVERY, viewModel.startDestination.value)
+        assertEquals(Routes.SECURE_PAIRING, viewModel.startDestination.value)
     }
 
     @Test
-    fun `routes straight to Dashboard when the enrolment gate says no enrolment is needed`() = runTest(dispatcher) {
-        val viewModel = AppRootViewModel(enrolmentGate = FakeGate(needsEnrolment = false))
+    fun `routes to secure pairing when PairingPending`() = runTest(dispatcher) {
+        val viewModel = AppRootViewModel(FakeResolveStartupRoutingState(StartupRoutingState.PairingPending))
+
+        advanceUntilIdle()
+
+        assertEquals(Routes.SECURE_PAIRING, viewModel.startDestination.value)
+    }
+
+    @Test
+    fun `routes to Dashboard when LegacyEligible`() = runTest(dispatcher) {
+        val viewModel = AppRootViewModel(FakeResolveStartupRoutingState(StartupRoutingState.LegacyEligible))
 
         advanceUntilIdle()
 
@@ -47,16 +55,45 @@ class AppRootViewModelTest {
     }
 
     @Test
-    fun `start destination is null until the gate check resolves, never defaulting to Dashboard early`() = runTest(dispatcher) {
-        val viewModel = AppRootViewModel(enrolmentGate = FakeGate(needsEnrolment = true))
+    fun `routes to Dashboard when SecureActive`() = runTest(dispatcher) {
+        val viewModel = AppRootViewModel(FakeResolveStartupRoutingState(StartupRoutingState.SecureActive))
+
+        advanceUntilIdle()
+
+        assertEquals(Routes.HOME, viewModel.startDestination.value)
+    }
+
+    @Test
+    fun `routes to Dashboard when RePairRequired — cached data must remain reachable`() = runTest(dispatcher) {
+        val viewModel = AppRootViewModel(FakeResolveStartupRoutingState(StartupRoutingState.RePairRequired))
+
+        advanceUntilIdle()
+
+        assertEquals(Routes.HOME, viewModel.startDestination.value)
+    }
+
+    @Test
+    fun `routes to Dashboard when SecureCredentialUnavailable — cached data must remain reachable`() = runTest(dispatcher) {
+        val viewModel = AppRootViewModel(FakeResolveStartupRoutingState(StartupRoutingState.SecureCredentialUnavailable))
+
+        advanceUntilIdle()
+
+        assertEquals(Routes.HOME, viewModel.startDestination.value)
+    }
+
+    @Test
+    fun `start destination is null until resolution completes, never defaulting early`() = runTest(dispatcher) {
+        val viewModel = AppRootViewModel(FakeResolveStartupRoutingState(StartupRoutingState.PairingRequired))
 
         assertEquals(null, viewModel.startDestination.value)
 
         advanceUntilIdle()
-        assertEquals(Routes.CONNECTOR_DISCOVERY, viewModel.startDestination.value)
+        assertEquals(Routes.SECURE_PAIRING, viewModel.startDestination.value)
     }
 }
 
-private class FakeGate(private val needsEnrolment: Boolean) : ConnectorEnrolmentGate {
-    override suspend fun needsEnrolment(): Boolean = needsEnrolment
+private class FakeResolveStartupRoutingState(
+    private val state: StartupRoutingState,
+) : ResolveStartupRoutingState {
+    override suspend fun invoke(): StartupRoutingState = state
 }

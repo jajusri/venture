@@ -1,12 +1,15 @@
 package com.budcom.android.feature.settings.presentation
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import com.budcom.android.feature.settings.domain.model.ApplicationInformation
 import com.budcom.android.feature.settings.domain.model.ThemePreference
+import com.budcom.android.navigation.StartupRoutingState
 import com.budcom.android.ui.theme.BudcomTheme
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -60,6 +63,54 @@ class SettingsScreenTest {
         assertTrue(events.contains(SettingsEvent.OpenCompanySelection))
         assertTrue(events.contains(SettingsEvent.OpenSync))
         assertTrue(events.contains(SettingsEvent.OpenDiagnostics))
+    }
+
+    // 24. LegacyEligible exposes one secure-migration action
+    @Test
+    fun legacyEligibleShowsSecureThisConnectionAction() {
+        val events = mutableListOf<SettingsEvent>()
+        composeRule.setContent {
+            BudcomTheme {
+                SettingsScreen(
+                    state = sampleState().copy(secureConnectionState = StartupRoutingState.LegacyEligible),
+                    onEvent = { events.add(it) },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("settings_secure_this_connection").assertIsDisplayed().performClick()
+        assertTrue(events.contains(SettingsEvent.OpenSecurePairing))
+    }
+
+    // 25. migration action is absent for SecureActive
+    @Test
+    fun secureActiveShowsNoMigrationOrRePairAction() {
+        composeRule.setContent {
+            BudcomTheme {
+                SettingsScreen(
+                    state = sampleState().copy(secureConnectionState = StartupRoutingState.SecureActive),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onAllNodesWithTag("settings_secure_this_connection").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("settings_re_pair").assertCountEquals(0)
+    }
+
+    // 27. migration action is absent for RePairRequired — a distinct re-pair action is shown instead
+    @Test
+    fun rePairRequiredShowsRePairActionNotMigrationAction() {
+        val events = mutableListOf<SettingsEvent>()
+        composeRule.setContent {
+            BudcomTheme {
+                SettingsScreen(
+                    state = sampleState().copy(secureConnectionState = StartupRoutingState.RePairRequired),
+                    onEvent = { events.add(it) },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("settings_re_pair").assertIsDisplayed().performClick()
+        assertTrue(events.contains(SettingsEvent.OpenSecurePairing))
+        composeRule.onAllNodesWithTag("settings_secure_this_connection").assertCountEquals(0)
     }
 
     @Test

@@ -39,10 +39,20 @@ import com.journeyapps.barcodescanner.ScanOptions
 
 @Composable
 fun SecurePairingRoute(
+    onSecureActive: () -> Unit = {},
     viewModel: SecurePairingViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val activity = LocalActivity.current
+
+    // Fires exactly once per transition into Active (LaunchedEffect keys on the phase value
+    // itself, not on every recomposition) — covers both a fresh redemption completing here and
+    // this screen being opened (e.g. from Settings) while already Active, with nothing to pair.
+    LaunchedEffect(state.phase) {
+        if (state.phase == SecurePairingPhase.Active) {
+            onSecureActive()
+        }
+    }
 
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         viewModel.interpretRawScanResult(result.contents)?.let {

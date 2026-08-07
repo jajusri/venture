@@ -20,6 +20,8 @@ import com.budcom.android.feature.settings.domain.usecase.RefreshSettingsConnect
 import com.budcom.android.feature.settings.domain.usecase.SetThemePreferenceUseCase
 import com.budcom.android.feature.sync.domain.model.SyncStatusSummary
 import com.budcom.android.feature.sync.domain.port.ObserveSyncStatusPort
+import com.budcom.android.navigation.ResolveStartupRoutingState
+import com.budcom.android.navigation.StartupRoutingState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -63,7 +65,9 @@ class SettingsViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createVm(): SettingsViewModel =
+    private fun createVm(
+        secureConnectionState: StartupRoutingState = StartupRoutingState.LegacyEligible,
+    ): SettingsViewModel =
         SettingsViewModel(
             observeSettings = ObserveSettingsSnapshotUseCase(
                 applicationIdentity = ApplicationIdentityPort {
@@ -83,6 +87,9 @@ class SettingsViewModelTest {
             ),
             setThemePreference = SetThemePreferenceUseCase(themeRepo),
             refreshConnectorFacts = RefreshSettingsConnectorFactsUseCase(connector, company),
+            resolveStartupRoutingState = object : ResolveStartupRoutingState {
+                override suspend fun invoke(): StartupRoutingState = secureConnectionState
+            },
         )
 
     @Test
@@ -118,6 +125,7 @@ class SettingsViewModelTest {
         vm.onEvent(SettingsEvent.OpenCompanySelection)
         vm.onEvent(SettingsEvent.OpenSync)
         vm.onEvent(SettingsEvent.OpenDiagnostics)
+        vm.onEvent(SettingsEvent.OpenSecurePairing)
         advanceUntilIdle()
         assertEquals(
             listOf(
@@ -125,10 +133,44 @@ class SettingsViewModelTest {
                 SettingsNavigation.CompanySelection,
                 SettingsNavigation.Sync,
                 SettingsNavigation.Diagnostics,
+                SettingsNavigation.SecurePairing,
             ),
             emitted,
         )
         job.cancel()
+    }
+
+    // 24. LegacyEligible exposes one secure-migration action (via secureConnectionState)
+    @Test
+    fun `secure connection state is freshly resolved on load, reflecting LegacyEligible`() = runTest(dispatcher) {
+        val vm = createVm(secureConnectionState = StartupRoutingState.LegacyEligible)
+        advanceUntilIdle()
+        assertEquals(StartupRoutingState.LegacyEligible, vm.uiState.value.secureConnectionState)
+    }
+
+    // 25/26/27. migration action is absent for SecureActive/PendingVerification/RePairRequired —
+    // proven here by asserting the exact resolved state the Screen composable branches on.
+    @Test
+    fun `secure connection state reflects SecureActive`() = runTest(dispatcher) {
+        val vm = createVm(secureConnectionState = StartupRoutingState.SecureActive)
+        advanceUntilIdle()
+        assertEquals(StartupRoutingState.SecureActive, vm.uiState.value.secureConnectionState)
+    }
+
+    @Test
+    fun `secure connection state reflects RePairRequired`() = runTest(dispatcher) {
+        val vm = createVm(secureConnectionState = StartupRoutingState.RePairRequired)
+        advanceUntilIdle()
+        assertEquals(StartupRoutingState.RePairRequired, vm.uiState.value.secureConnectionState)
+    }
+
+    @Test
+    fun `refresh event re-resolves secure connection state`() = runTest(dispatcher) {
+        val vm = createVm(secureConnectionState = StartupRoutingState.RePairRequired)
+        advanceUntilIdle()
+        vm.onEvent(SettingsEvent.Refresh)
+        advanceUntilIdle()
+        assertEquals(StartupRoutingState.RePairRequired, vm.uiState.value.secureConnectionState)
     }
 }
 

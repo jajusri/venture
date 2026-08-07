@@ -36,6 +36,7 @@ import com.budcom.android.R
 import com.budcom.android.feature.masterdata.presentation.MasterDataOfflineBanner
 import com.budcom.android.feature.masterdata.presentation.displayMessage
 import com.budcom.android.feature.settings.domain.model.ThemePreference
+import com.budcom.android.navigation.StartupRoutingState
 
 @Composable
 fun SettingsRoute(
@@ -43,6 +44,7 @@ fun SettingsRoute(
     onOpenCompanySelection: () -> Unit,
     onOpenSync: () -> Unit,
     onOpenDiagnostics: () -> Unit,
+    onOpenSecurePairing: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -53,6 +55,7 @@ fun SettingsRoute(
                 SettingsNavigation.CompanySelection -> onOpenCompanySelection()
                 SettingsNavigation.Sync -> onOpenSync()
                 SettingsNavigation.Diagnostics -> onOpenDiagnostics()
+                SettingsNavigation.SecurePairing -> onOpenSecurePairing()
             }
         }
     }
@@ -147,6 +150,64 @@ private fun ConnectionCard(
         ) {
             Text(stringResource(R.string.settings_open_server_config))
         }
+        SecureConnectionRow(state = state, onEvent = onEvent)
+    }
+}
+
+/**
+ * The one bounded, user-initiated entry point into secure pairing from an already-running app —
+ * visible only when a real action is available: migrating a legacy-eligible installation, or
+ * recovering a RE_PAIR_REQUIRED / credential-unavailable one. Never shown, and never creates a
+ * credential record, merely by composing — see [SecurePairingScreen]'s own Idle phase for that
+ * guarantee.
+ */
+@Composable
+private fun SecureConnectionRow(
+    state: SettingsUiState,
+    onEvent: (SettingsEvent) -> Unit,
+) {
+    when (state.secureConnectionState) {
+        StartupRoutingState.LegacyEligible -> {
+            Text(
+                text = stringResource(R.string.settings_secure_connection_not_secured),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("settings_secure_connection_status"),
+            )
+            OutlinedButton(
+                onClick = { onEvent(SettingsEvent.OpenSecurePairing) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_secure_this_connection"),
+            ) {
+                Text(stringResource(R.string.settings_secure_this_connection))
+            }
+        }
+        StartupRoutingState.RePairRequired, StartupRoutingState.SecureCredentialUnavailable -> {
+            Text(
+                text = stringResource(R.string.settings_secure_connection_needs_attention),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag("settings_secure_connection_status"),
+            )
+            OutlinedButton(
+                onClick = { onEvent(SettingsEvent.OpenSecurePairing) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_re_pair"),
+            ) {
+                Text(stringResource(R.string.settings_re_pair))
+            }
+        }
+        StartupRoutingState.SecureActive -> {
+            Text(
+                text = stringResource(R.string.settings_secure_connection_active),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("settings_secure_connection_status"),
+            )
+        }
+        StartupRoutingState.PairingRequired, StartupRoutingState.PairingPending, null -> Unit
     }
 }
 

@@ -3,6 +3,7 @@ package com.budcom.android.feature.settings.presentation
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.settings.domain.model.ApplicationInformation
 import com.budcom.android.feature.settings.domain.model.ThemePreference
+import com.budcom.android.navigation.StartupRoutingState
 
 data class SettingsUiState(
     val isInitialLoading: Boolean = true,
@@ -18,6 +19,8 @@ data class SettingsUiState(
     val connectorVersion: String? = null,
     val connectorFactsError: MasterDataUiError? = null,
     val application: ApplicationInformation? = null,
+    /** Freshly re-resolved whenever Settings opens — never cached from app-startup routing. */
+    val secureConnectionState: StartupRoutingState? = null,
 ) {
     val isBusy: Boolean
         get() = isInitialLoading || isRefreshing
@@ -31,6 +34,7 @@ sealed interface SettingsEvent {
     data object OpenCompanySelection : SettingsEvent
     data object OpenSync : SettingsEvent
     data object OpenDiagnostics : SettingsEvent
+    data object OpenSecurePairing : SettingsEvent
 }
 
 enum class SettingsNavigation {
@@ -38,4 +42,5 @@ enum class SettingsNavigation {
     CompanySelection,
     Sync,
     Diagnostics,
+    SecurePairing,
 }

@@ -59,6 +59,11 @@
     <string name="settings_online">Online</string>
     <string name="settings_offline">Offline</string>
     <string name="settings_open_server_config">Open server configuration</string>
+    <string name="settings_secure_connection_not_secured">This connection is not yet secured.</string>
+    <string name="settings_secure_this_connection">Secure this connection</string>
+    <string name="settings_secure_connection_needs_attention">Secure pairing needs to be redone. Your cached data is unaffected.</string>
+    <string name="settings_re_pair">Re-pair</string>
+    <string name="settings_secure_connection_active">Secure connection active</string>
     <string name="settings_appearance_heading">Appearance</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>
