@@ -7,7 +7,22 @@ import {
 import { DESKTOP_CONTROL_TOKEN_HEADER } from '../../src/application/connector-http-client.js';
 import type { PairingCredentialListItemDto, PairingSessionCreateResult } from '../../src/application/types.js';
 import type { ConnectorLifecycleStatus } from '../../src/application/connector-lifecycle-types.js';
+import type {
+  ActiveNetworkAdapter,
+  ConnectorBindModeForEndpoint,
+  TrustedLanEligibility,
+} from '../../src/application/network/active-network-resolver.js';
 import { lifecycleStatusFixture } from '../helpers/lifecycle-fixtures.js';
+
+const eligiblePrivateNetwork: ActiveNetworkAdapter = {
+  adapterId: '{GUID-1}',
+  adapterName: 'Ethernet',
+  ipv4: '10.0.0.5',
+  prefixLength: 24,
+  gateway: '10.0.0.1',
+  profileCategory: 'Private',
+  routeMetric: 10,
+};
 
 function lifecycle(overrides: Partial<ConnectorLifecycleStatus> = {}): ConnectorLifecycleStatus {
   return { ...lifecycleStatusFixture, managedByDesktop: true, state: 'connected', ...overrides };
@@ -164,6 +179,9 @@ function buildService(overrides: {
   controlToken?: string | null;
   lifecycleStatus?: ConnectorLifecycleStatus;
   setSecureMobilePairingEnabled?: (enabled: boolean) => { ok: boolean; message: string; restartRequired: boolean };
+  connectorBindMode?: ConnectorBindModeForEndpoint;
+  activeNetwork?: ActiveNetworkAdapter | null;
+  trustedLanEligibility?: TrustedLanEligibility;
 }): MobilePairingService {
   return new MobilePairingService({
     getConnectorBaseUrl: () => 'http://127.0.0.1:8080',
@@ -173,6 +191,12 @@ function buildService(overrides: {
       ?? ((enabled) => ({ ok: true, message: 'ok', restartRequired: enabled })),
     getControlToken: () => (overrides.controlToken === undefined ? 'test-control-token' : overrides.controlToken),
     getLifecycleStatus: () => overrides.lifecycleStatus ?? lifecycle(),
+    // Defaults represent a healthy, resolved trusted-LAN endpoint so every pre-existing test in
+    // this file (written before TD-012's network-readiness gate existed) keeps exercising the
+    // 'ready' path unchanged. Tests specifically covering the gate override these explicitly.
+    getConnectorBindMode: () => overrides.connectorBindMode ?? 'trusted-lan',
+    getActiveNetwork: () => (overrides.activeNetwork === undefined ? eligiblePrivateNetwork : overrides.activeNetwork),
+    getTrustedLanEligibility: () => overrides.trustedLanEligibility ?? { eligible: true, reason: null },
     fetchImpl: overrides.fetchImpl,
   });
 }
@@ -273,6 +297,44 @@ describe('MobilePairingService — capability', () => {
     expect(capability.connectorName).toBe('Front Desk PC');
     expect(capability.trustedDeviceCount).toBe(1);
   });
+
+  // TD-012 (docs/technical-debt/registry.md): the network-readiness gate — a pairing session
+  // must never be offered as 'ready' while there is no eligible, non-loopback mobile endpoint.
+  it('reports unavailable (never ready) in local-only mode, without calling the Connector', async () => {
+    const state: FakeConnectorState = { session: null, credentials: [], receivedHeaders: [] };
+    const { fetchImpl } = createFakeConnector(state);
+    const service = buildService({ state, fetchImpl, connectorBindMode: 'local-only' });
+
+    const capability = await service.getSecurePairingCapability();
+    expect(capability.state).toBe('unavailable');
+    expect(capability.userMessage).not.toMatch(/\d+\.\d+\.\d+\.\d+/);
+    expect(state.receivedHeaders).toHaveLength(0);
+  });
+
+  it('reports unavailable when trusted-LAN mode is selected but no eligible network has resolved yet', async () => {
+    const state: FakeConnectorState = { session: null, credentials: [], receivedHeaders: [] };
+    const { fetchImpl } = createFakeConnector(state);
+    const service = buildService({ state, fetchImpl, activeNetwork: null });
+
+    const capability = await service.getSecurePairingCapability();
+    expect(capability.state).toBe('unavailable');
+    expect(state.receivedHeaders).toHaveLength(0);
+  });
+
+  it('reports unavailable when trusted-LAN mode is blocked (e.g. Public Windows network profile)', async () => {
+    const state: FakeConnectorState = { session: null, credentials: [], receivedHeaders: [] };
+    const { fetchImpl } = createFakeConnector(state);
+    const service = buildService({
+      state,
+      fetchImpl,
+      trustedLanEligibility: { eligible: false, reason: 'Trusted-LAN mode is blocked: Public network.' },
+    });
+
+    const capability = await service.getSecurePairingCapability();
+    expect(capability.state).toBe('unavailable');
+    expect(capability.userMessage).toBe('Trusted-LAN mode is blocked: Public network.');
+    expect(state.receivedHeaders).toHaveLength(0);
+  });
 });
 
 describe('MobilePairingService — pairing session lifecycle', () => {
@@ -311,6 +373,31 @@ describe('MobilePairingService — pairing session lifecycle', () => {
     const view = await service.startPairing();
     expect(view.state).toBe('failed');
     expect(view.userMessage).toBeTruthy();
+    expect(state.session).toBeNull();
+  });
+
+  // TD-012: local-only mode must never produce a usable (loopback-hosted) pairing QR — the
+  // session is never even created, not merely hidden from view.
+  it('fails startPairing cleanly in local-only mode — no session is created, no loopback QR', async () => {
+    const state: FakeConnectorState = { session: null, credentials: [], receivedHeaders: [] };
+    const { fetchImpl } = createFakeConnector(state);
+    const service = buildService({ state, fetchImpl, connectorBindMode: 'local-only' });
+
+    const view = await service.startPairing();
+    expect(view.state).toBe('failed');
+    expect(view.qrDataUrl).toBeNull();
+    expect(state.session).toBeNull();
+  });
+
+  // TD-012: a stale/no-longer-eligible resolved network must fail closed the same way — never
+  // fall back to whatever host happens to already be configured on the Connector.
+  it('fails startPairing cleanly when trusted-LAN mode has no eligible resolved network', async () => {
+    const state: FakeConnectorState = { session: null, credentials: [], receivedHeaders: [] };
+    const { fetchImpl } = createFakeConnector(state);
+    const service = buildService({ state, fetchImpl, activeNetwork: null });
+
+    const view = await service.startPairing();
+    expect(view.state).toBe('failed');
     expect(state.session).toBeNull();
   });
 

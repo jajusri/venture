@@ -231,6 +231,7 @@
 
             <div id="pairing-state-unavailable" class="pairing-state hidden">
               <p class="panel-meta form-error" id="pairing-unavailable-message"></p>
+              <button id="btn-retry-pairing-availability" class="action-btn secondary" type="button">Retry</button>
             </div>
 
             <div id="pairing-state-ready" class="pairing-state hidden">
@@ -291,7 +292,7 @@
                       <option value="trusted-lan">trusted-lan</option>
                     </select>
                   </label>
-                  <label>Connector host<input id="input-connector-host" name="connectorHost" type="text" required /></label>
+                  <label>Connector host (detected automatically for Trusted LAN)<input id="input-connector-host" name="connectorHost" type="text" required readonly /></label>
                   <label>Connector port<input id="input-connector-port" name="connectorPort" type="number" min="1" max="65535" required /></label>
                   <label>Reachable LAN URL<input id="input-reachable-lan-url" type="text" readonly /></label>
                   <label>Health check interval (ms)<input id="input-health-poll" name="healthPollIntervalMs" type="number" min="1000" max="300000" required /></label>

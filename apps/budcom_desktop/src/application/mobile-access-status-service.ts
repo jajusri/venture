@@ -1,5 +1,6 @@
 import { ConnectorHttpClient } from './connector-http-client.js';
-import type { ActiveNetworkAdapter } from './network/active-network-resolver.js';
+import type { ActiveNetworkAdapter, TrustedLanEligibility } from './network/active-network-resolver.js';
+import { resolveMobileEndpointHost } from './network/active-network-resolver.js';
 import type { ConnectorBindMode } from './desktop-config-schema.js';
 
 export type RebindStatus = 'idle' | 'rebinding' | 'succeeded' | 'failed' | 'blocked';
@@ -73,7 +74,7 @@ export class MobileAccessStatusService {
       connectorName = health.connectorName ?? null;
       discoveryAdvertising = health.discoveryAdvertising ?? false;
       connectorReachable = true;
-      reachableEndpoint = this.resolveReachableEndpoint(bindMode, activeNetwork, trustedLan.eligible);
+      reachableEndpoint = this.resolveReachableEndpoint(bindMode, activeNetwork, trustedLan);
     } catch (error) {
       userMessage = error instanceof Error ? error.message : 'Connector is not reachable.';
     }
@@ -120,11 +121,9 @@ export class MobileAccessStatusService {
   private resolveReachableEndpoint(
     bindMode: ConnectorBindMode,
     activeNetwork: ActiveNetworkAdapter | null,
-    trustedLanEligible: boolean,
+    trustedLanEligibility: TrustedLanEligibility,
   ): string | null {
-    if (bindMode !== 'trusted-lan' || !activeNetwork || !trustedLanEligible) {
-      return null;
-    }
-    return activeNetwork.ipv4;
+    const resolution = resolveMobileEndpointHost({ bindMode, activeNetwork, trustedLanEligibility });
+    return resolution.ready ? resolution.host : null;
   }
 }

@@ -20,6 +20,42 @@ export interface TrustedLanEligibility {
   readonly reason: string | null;
 }
 
+export type ConnectorBindModeForEndpoint = 'local-only' | 'trusted-lan';
+
+export type MobileEndpointResolution =
+  | { readonly ready: true; readonly host: string }
+  | { readonly ready: false; readonly reason: string };
+
+const NO_PRIVATE_NETWORK_MESSAGE =
+  'Connect this computer to a private Wi-Fi or LAN network, then retry.';
+const PREPARING_MOBILE_ACCESS_MESSAGE = 'Preparing mobile access…';
+
+/**
+ * THE single authoritative answer to "is this Connector reachable by another device on the
+ * LAN right now, and at what address?" — consumed by both MobileAccessStatusService (renderer
+ * status display) and MobilePairingService (pairing-session gate), so there is exactly one
+ * interpretation of mobile-endpoint readiness, never two that can drift apart (see TD-012,
+ * docs/technical-debt/registry.md). Deliberately never returns a loopback/link-local/wildcard
+ * address — Local-only mode always resolves `ready: false`, matching the requirement that a
+ * mobile-pairing QR must never silently embed 127.0.0.1.
+ */
+export function resolveMobileEndpointHost(params: {
+  readonly bindMode: ConnectorBindModeForEndpoint;
+  readonly activeNetwork: ActiveNetworkAdapter | null;
+  readonly trustedLanEligibility: TrustedLanEligibility;
+}): MobileEndpointResolution {
+  if (params.bindMode !== 'trusted-lan') {
+    return { ready: false, reason: NO_PRIVATE_NETWORK_MESSAGE };
+  }
+  if (!params.trustedLanEligibility.eligible) {
+    return { ready: false, reason: params.trustedLanEligibility.reason ?? NO_PRIVATE_NETWORK_MESSAGE };
+  }
+  if (!params.activeNetwork) {
+    return { ready: false, reason: PREPARING_MOBILE_ACCESS_MESSAGE };
+  }
+  return { ready: true, host: params.activeNetwork.ipv4 };
+}
+
 /**
  * Windows' `Get-NetAdapter` MediaType string for Wi-Fi varies by driver/OS build — e.g. real
  * hardware observed as `"Native 802.11"` (with a space), while some tooling/docs use

@@ -846,6 +846,33 @@ async function runLifecycleAction(
   }
 }
 
+/**
+ * Fills the (read-only, Advanced-Connector-Settings-only) host field from the same live
+ * network detection the Mobile Access / pairing panel uses — a normal user switching to
+ * Trusted-LAN mode never has to know or type a private IPv4 address themselves (TD-012).
+ * Leaves the field blank with a plain-language reason when no eligible network is detected yet,
+ * rather than a raw IPv4-validation error — validation still runs at save time as a backstop.
+ */
+async function applyDetectedTrustedLanHost(hostInput: HTMLInputElement): Promise<void> {
+  try {
+    const status = await window.budcomDesktop.getMobileAccessStatus();
+    if (status.trustedLanEligible && status.activeNetwork) {
+      hostInput.value = status.activeNetwork.ipv4;
+      renderSettingsStatus('Detected your network address automatically.', false);
+    } else {
+      hostInput.value = '';
+      renderSettingsStatus(
+        status.trustedLanBlockedReason
+          ?? 'Could not detect a private network yet. Connect this computer to Wi-Fi or Ethernet, then reselect Trusted LAN.',
+        true,
+      );
+    }
+  } catch {
+    hostInput.value = '';
+    renderSettingsStatus('Could not detect your network address. Try again in a moment.', true);
+  }
+}
+
 export function bindSettingsActions(): void {
   const form = document.getElementById('settings-form');
   form?.addEventListener('input', () => {
@@ -858,9 +885,14 @@ export function bindSettingsActions(): void {
       return;
     }
     const isLocalOnly = target.value === 'local-only';
-    hostInput.readOnly = isLocalOnly;
+    hostInput.readOnly = true;
     if (isLocalOnly) {
       hostInput.value = '127.0.0.1';
+    } else {
+      // Trusted-LAN: the operator must never have to look up or type their own machine's LAN
+      // IPv4 address (see TD-012, docs/technical-debt/registry.md) — auto-detect it the same
+      // way the Mobile Access panel does, via the one shared network-readiness source of truth.
+      void applyDetectedTrustedLanHost(hostInput);
     }
     settingsDirty = true;
   });
@@ -1703,6 +1735,9 @@ export function bindPairingActions(): void {
   });
   document.getElementById('btn-cancel-pairing')?.addEventListener('click', () => {
     void handleCancelPairing();
+  });
+  document.getElementById('btn-retry-pairing-availability')?.addEventListener('click', () => {
+    void loadPairingPanel();
   });
   document.querySelectorAll('.pairing-done-btn').forEach((button) => {
     button.addEventListener('click', () => {

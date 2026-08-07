@@ -583,6 +583,9 @@ const mobileAccessStatusService = new MobileAccessStatusService({
 
 const mobilePairingService = new MobilePairingService({
   getConnectorBaseUrl: () => resolved.connectorBaseUrl,
+  getConnectorBindMode: () => resolved.effective.connectorBindMode,
+  getActiveNetwork: () => activeNetworkAdapter,
+  getTrustedLanEligibility: () => evaluateTrustedLanEligibility(lastNetworkResolution),
   getSecureMobilePairingEnabled: () => resolved.effective.secureMobilePairingEnabled,
   setSecureMobilePairingEnabled: (enabled) => {
     // A minimal patch — merged by saveSettings() onto the actual persisted config (not the

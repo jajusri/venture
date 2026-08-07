@@ -193,6 +193,24 @@ class SecurePairingViewModelTest {
         assertEquals(SecurePairingPhase.InvalidPayload, viewModel.uiState.value.phase)
     }
 
+    // TD-012 (docs/technical-debt/registry.md, main repo): a loopback host is an InvalidHost
+    // rejection specifically — still InvalidPayload, but with an actionable, non-sensitive
+    // message rather than the generic one, and never echoing the rejected host/IP itself.
+    @Test
+    fun `a QR payload with a loopback host becomes InvalidPayload with an actionable Desktop-not-ready message`() = runTest(dispatcher) {
+        val viewModel = viewModelOf()
+        advanceUntilIdle()
+
+        val loopbackHostJson = validQrJson().replace("\"host\": \"10.0.0.5\"", "\"host\": \"127.0.0.1\"")
+        viewModel.onEvent(SecurePairingEvent.ScannerResultReceived(SecurePairingScanResult.PayloadCaptured(loopbackHostJson)))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(SecurePairingPhase.InvalidPayload, state.phase)
+        assertEquals("BUDCOM Desktop is not ready for mobile pairing. Generate a new QR code on the computer.", state.errorMessage)
+        assertTrue(state.errorMessage?.contains("127.0.0.1") != true)
+    }
+
     // 15. expired payload becomes expiredPayload
     @Test
     fun `an expired payload becomes ExpiredPayload`() = runTest(dispatcher) {

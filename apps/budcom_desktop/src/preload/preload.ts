@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import type { ConnectorLifecycleStatus } from '../application/connector-lifecycle-types.js';
+import type { MobileAccessStatus } from '../application/mobile-access-status-service.js';
 import type {
   ActivePairingSessionView,
   CompanyListResult,
@@ -55,6 +56,7 @@ export interface DesktopBridge {
   syncStockItems(incremental?: boolean): Promise<StockItemSyncResult>;
   cancelStockItemSync(): Promise<StockItemSyncProgressResult>;
   clearStockItemCache(): Promise<{ ok: boolean; message: string }>;
+  getMobileAccessStatus(): Promise<MobileAccessStatus>;
   getSecurePairingCapability(): Promise<SecurePairingCapability>;
   enableSecurePairing(): Promise<SettingsMutationResult>;
   disableSecurePairing(): Promise<SettingsMutationResult>;
@@ -96,6 +98,7 @@ const desktopBridge: DesktopBridge = {
   syncStockItems: (incremental = false) => ipcRenderer.invoke('desktop:sync-stock-items', { incremental }),
   cancelStockItemSync: () => ipcRenderer.invoke('desktop:cancel-stock-item-sync'),
   clearStockItemCache: () => ipcRenderer.invoke('desktop:clear-stock-item-cache'),
+  getMobileAccessStatus: () => ipcRenderer.invoke('desktop:get-mobile-access-status'),
   getSecurePairingCapability: () => ipcRenderer.invoke('desktop:get-secure-pairing-capability'),
   enableSecurePairing: () => ipcRenderer.invoke('desktop:enable-secure-pairing'),
   disableSecurePairing: () => ipcRenderer.invoke('desktop:disable-secure-pairing'),

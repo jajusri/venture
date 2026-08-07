@@ -35,6 +35,7 @@ function pairingMarkup(): string {
       </div>
       <div id="pairing-state-unavailable" class="hidden">
         <p id="pairing-unavailable-message"></p>
+        <button id="btn-retry-pairing-availability" type="button">Retry</button>
       </div>
       <div id="pairing-state-ready" class="hidden">
         <span id="pairing-connector-name"></span>
@@ -153,6 +154,39 @@ describe('Secure Mobile Pairing panel — capability rendering', () => {
 
     const serialized = document.getElementById('view-pairing')?.innerHTML ?? '';
     expect(serialized).not.toMatch(/BUDCOM_DESKTOP_CONTROL_TOKEN|x-budcom-desktop-control-token/i);
+  });
+
+  // TD-012 (docs/technical-debt/registry.md): Local-only mode / no eligible private network is
+  // surfaced through this same generic 'unavailable' state — never a silent loopback-hosted QR.
+  it('shows the unavailable state with a plain-language reason when no private network is available', async () => {
+    setBridge({
+      getSecurePairingCapability: vi.fn(async () =>
+        capability({
+          state: 'unavailable',
+          connectorName: null,
+          trustedDeviceCount: null,
+          userMessage: 'Connect this computer to a private Wi-Fi or LAN network, then retry.',
+        })),
+    });
+    await loadPairingPanel();
+
+    expect(document.getElementById('pairing-state-unavailable')?.classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('pairing-unavailable-message')?.textContent)
+      .toContain('Connect this computer to a private Wi-Fi or LAN network');
+  });
+
+  it('Retry re-checks pairing availability without requiring the user to leave the panel', async () => {
+    const getSecurePairingCapability = vi.fn(async () =>
+      capability({ state: 'unavailable', connectorName: null, trustedDeviceCount: null, userMessage: 'Preparing mobile access…' }));
+    setBridge({ getSecurePairingCapability });
+    await loadPairingPanel();
+    expect(getSecurePairingCapability).toHaveBeenCalledTimes(1);
+
+    document.getElementById('btn-retry-pairing-availability')?.dispatchEvent(new Event('click'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(getSecurePairingCapability).toHaveBeenCalledTimes(2);
   });
 });
 

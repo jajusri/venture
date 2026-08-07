@@ -2,6 +2,8 @@ import QRCode from 'qrcode';
 
 import { ConnectorHttpClient, DESKTOP_CONTROL_TOKEN_HEADER } from './connector-http-client.js';
 import type { ConnectorLifecycleStatus } from './connector-lifecycle-types.js';
+import type { ActiveNetworkAdapter, ConnectorBindModeForEndpoint, TrustedLanEligibility } from './network/active-network-resolver.js';
+import { resolveMobileEndpointHost } from './network/active-network-resolver.js';
 import type {
   ActivePairingSessionView,
   PairingSessionCreateResult,
@@ -23,6 +25,17 @@ export interface MobilePairingServiceOptions {
    */
   readonly getControlToken: () => string | null;
   readonly getLifecycleStatus: () => ConnectorLifecycleStatus;
+  /**
+   * The SAME live network/bind-mode sources MobileAccessStatusService reads — see
+   * resolveMobileEndpointHost, the one authoritative "is this Connector reachable by another
+   * device on the LAN, and at what address?" answer both services consume. Required (not
+   * optional): a pairing session must never be offered as 'ready' without this check, since an
+   * unchecked Local-only/unresolved-network Connector would otherwise let the QR silently embed
+   * a loopback host (see TD-012, docs/technical-debt/registry.md).
+   */
+  readonly getConnectorBindMode: () => ConnectorBindModeForEndpoint;
+  readonly getActiveNetwork: () => ActiveNetworkAdapter | null;
+  readonly getTrustedLanEligibility: () => TrustedLanEligibility;
   readonly fetchImpl?: typeof fetch;
   readonly requestTimeoutMs?: number;
 }
@@ -107,6 +120,15 @@ export class MobilePairingService {
     }
     if (lifecycle.state !== 'connected') {
       return this.capability('unavailable', 'The Connector is not currently connected.');
+    }
+
+    const endpointResolution = resolveMobileEndpointHost({
+      bindMode: this.options.getConnectorBindMode(),
+      activeNetwork: this.options.getActiveNetwork(),
+      trustedLanEligibility: this.options.getTrustedLanEligibility(),
+    });
+    if (!endpointResolution.ready) {
+      return this.capability('unavailable', endpointResolution.reason);
     }
 
     try {

@@ -364,5 +364,14 @@ private fun rejectionPhase(rejection: SecurePairingQrPayloadRejection): SecurePa
 private fun rejectionMessage(rejection: SecurePairingQrPayloadRejection): String = when (rejectionPhase(rejection)) {
     SecurePairingPhase.FingerprintRejected -> "This QR code's security details look wrong. Scan the code shown on the Desktop screen again."
     SecurePairingPhase.ExpiredPayload -> "This QR code has expired. Ask Desktop to show a new one."
-    else -> "This QR code is not a valid BUDCOM pairing code."
+    // InvalidHost is the one InvalidPayload rejection with an actionable, non-sensitive cause
+    // (Desktop generated a QR before an eligible mobile endpoint was available — see TD-012,
+    // docs/technical-debt/registry.md on the Desktop/Connector repo) — everything else in
+    // InvalidPayload stays the generic message, since there is nothing more specific a user can
+    // safely be told. Never surfaces the rejected host/IP itself.
+    else -> if (rejection is SecurePairingQrPayloadRejection.InvalidHost) {
+        "BUDCOM Desktop is not ready for mobile pairing. Generate a new QR code on the computer."
+    } else {
+        "This QR code is not a valid BUDCOM pairing code."
+    }
 }
