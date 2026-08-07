@@ -6,9 +6,13 @@ import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_ACCESS_DENIED_
 import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
+import com.budcom.android.core.connectorauth.domain.DefaultConnectorTransportSelectionGate
 import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkError
+import com.budcom.android.core.pairing.data.local.FakeSecureCredentialVault
+import com.budcom.android.core.pairing.data.local.InMemoryVaultBackingStore
+import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.core.util.TimeProvider
 import com.budcom.android.feature.voucher.data.remote.AuthenticatedVoucherDetailRemoteDataSource
@@ -229,6 +233,23 @@ class VoucherRepositoryImplTest {
         assertEquals(1, authenticated.callCount)
         assertEquals(1, local.storeListCalls)
         assertEquals("company-a", local.lastStoreCompany)
+    }
+
+    // Phase 3T-R1: the REAL gate (not a fake fixed to AUTHENTICATED) wired to a genuinely
+    // Unreadable/corrupted vault must still route here — default `remote` is UnreachableRemote.
+    @Test
+    fun `an Unreadable vault resolved by the real transport gate never falls back to legacy for list refresh`() = runTest(dispatcher) {
+        val vault = unreadableVault()
+        val authenticated = FakeAuthenticatedListRemote(AppResult.Failure(AppError.Offline()))
+        val repository = repo(
+            transportGate = DefaultConnectorTransportSelectionGate(vault),
+            authenticatedListRemote = authenticated,
+        )
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Success || result is AppResult.Failure)
+        assertEquals(1, authenticated.callCount)
     }
 
     @Test
@@ -453,6 +474,23 @@ class VoucherRepositoryImplTest {
         assertEquals("company-a", local.lastStoreDetailsCompany)
     }
 
+    // Phase 3T-R1: the REAL gate (not a fake fixed to AUTHENTICATED) wired to a genuinely
+    // Unreadable/corrupted vault must still route here — default `remote` is UnreachableRemote.
+    @Test
+    fun `an Unreadable vault resolved by the real transport gate never falls back to legacy for detail refresh`() = runTest(dispatcher) {
+        val vault = unreadableVault()
+        val authenticated = FakeAuthenticatedDetailRemote(AppResult.Failure(AppError.Offline()))
+        val repository = repo(
+            transportGate = DefaultConnectorTransportSelectionGate(vault),
+            authenticatedDetailRemote = authenticated,
+        )
+
+        val result = repository.refreshVoucherDetails("company-a", "v-1")
+
+        assertTrue(result is AppResult.Success || result is AppResult.Failure)
+        assertEquals(1, authenticated.callCount)
+    }
+
     @Test
     fun `detail PENDING_VERIFICATION and RE_PAIR_REQUIRED stay authenticated and never fall back to legacy`() = runTest(dispatcher) {
         val localVaultStateError = AppError.Remote(httpStatus = null, code = AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, message = "re-pair")
@@ -668,6 +706,29 @@ class VoucherRepositoryImplTest {
         authenticatedListRemote: AuthenticatedVoucherListRemoteDataSource = UnreachableAuthenticatedListRemote,
         authenticatedDetailRemote: AuthenticatedVoucherDetailRemoteDataSource = UnreachableAuthenticatedDetailRemote,
     ) = VoucherRepositoryImpl(remote, errorMapper, dispatchers, local, timeProvider, transportGate, authenticatedListRemote, authenticatedDetailRemote)
+
+    /** A vault holding a genuinely enrolled-but-corrupted (Unreadable) record — Phase 3T-R1. */
+    private suspend fun unreadableVault(): FakeSecureCredentialVault {
+        val backing = InMemoryVaultBackingStore()
+        val vault = FakeSecureCredentialVault(backingStore = backing)
+        vault.storePendingVerification(
+            "cred-1",
+            "device-1",
+            "raw-token",
+            TrustedConnectorEndpoint.fromTrustedPublicMetadata(
+                connectorId = "connector-abc",
+                connectorName = "Front Desk",
+                host = "10.0.0.5",
+                securePort = 8443,
+                transportFingerprint = "sha256/AAAA",
+                fingerprintAlgorithm = "sha256",
+                transportIdentityVersion = 1,
+            ),
+            1_000L,
+        )
+        backing.unreadable = true
+        return vault
+    }
 
     private class FakeRemote(
         private val listResult: ApiResult<VoucherPage> = ApiResult.Failure(NetworkError.Unknown()),

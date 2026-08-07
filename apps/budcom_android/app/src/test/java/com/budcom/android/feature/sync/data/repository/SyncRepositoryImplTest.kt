@@ -6,10 +6,14 @@ import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_ACCESS_DENIED_
 import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
+import com.budcom.android.core.connectorauth.domain.DefaultConnectorTransportSelectionGate
 import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.DefaultErrorMapper
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.core.network.NetworkError
+import com.budcom.android.core.pairing.data.local.FakeSecureCredentialVault
+import com.budcom.android.core.pairing.data.local.InMemoryVaultBackingStore
+import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
 import com.budcom.android.core.util.TimeProvider
 import com.budcom.android.feature.sync.data.remote.AuthenticatedSyncRemoteDataSource
 import com.budcom.android.feature.sync.data.remote.SyncRemoteDataSource
@@ -95,6 +99,41 @@ class SyncRepositoryImplTest {
         val repository = repo(
             remote = UnreachableRemote,
             transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repository.startSync(SyncTarget.Ledgers)
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(1, authenticated.startCalls)
+    }
+
+    // Phase 3T-R1: the REAL gate (not a fake fixed to AUTHENTICATED) wired to a genuinely
+    // Unreadable/corrupted vault must still route here — UnreachableRemote throws if ever called.
+    @Test
+    fun `an Unreadable vault resolved by the real transport gate never falls back to legacy`() = runTest {
+        val backing = InMemoryVaultBackingStore()
+        val vault = FakeSecureCredentialVault(backingStore = backing)
+        vault.storePendingVerification(
+            "cred-1",
+            "device-1",
+            "raw-token",
+            TrustedConnectorEndpoint.fromTrustedPublicMetadata(
+                connectorId = "connector-abc",
+                connectorName = "Front Desk",
+                host = "10.0.0.5",
+                securePort = 8443,
+                transportFingerprint = "sha256/AAAA",
+                fingerprintAlgorithm = "sha256",
+                transportIdentityVersion = 1,
+            ),
+            1_000L,
+        )
+        backing.unreadable = true
+        val authenticated = FakeAuthenticatedRemote()
+        val repository = repo(
+            remote = UnreachableRemote,
+            transportGate = DefaultConnectorTransportSelectionGate(vault),
             authenticatedRemote = authenticated,
         )
 

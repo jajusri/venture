@@ -6,6 +6,7 @@ import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_ACCESS_DENIED_
 import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
+import com.budcom.android.core.connectorauth.domain.DefaultConnectorTransportSelectionGate
 import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkError
@@ -19,6 +20,9 @@ import com.budcom.android.feature.company.domain.model.ConnectorCompany
 import com.budcom.android.feature.company.domain.model.ConnectorSessionSnapshot
 import com.budcom.android.feature.company.domain.model.SessionSelectedCompany
 import com.budcom.android.feature.company.domain.model.SessionValidationOutcome
+import com.budcom.android.core.pairing.data.local.FakeSecureCredentialVault
+import com.budcom.android.core.pairing.data.local.InMemoryVaultBackingStore
+import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
@@ -415,6 +419,41 @@ class CompanyRepositoryImplTest {
 
         val result = repository.loadCompanies() as AppResult.Success
         assertEquals("budcom-test-01", result.value.items.single().id)
+    }
+
+    // Phase 3T-R1: the REAL gate (not a fake fixed to AUTHENTICATED) wired to a genuinely
+    // Unreadable/corrupted vault must still route here — never falls back to UnreachableRemote.
+    @Test
+    fun `an Unreadable vault resolved by the real transport gate never falls back to legacy`() = runTest(dispatcher) {
+        val backing = InMemoryVaultBackingStore()
+        val vault = FakeSecureCredentialVault(backingStore = backing)
+        vault.storePendingVerification(
+            "cred-1",
+            "device-1",
+            "raw-token",
+            TrustedConnectorEndpoint.fromTrustedPublicMetadata(
+                connectorId = "connector-abc",
+                connectorName = "Front Desk",
+                host = "10.0.0.5",
+                securePort = 8443,
+                transportFingerprint = "sha256/AAAA",
+                fingerprintAlgorithm = "sha256",
+                transportIdentityVersion = 1,
+            ),
+            1_000L,
+        )
+        backing.unreadable = true
+        val realGate = DefaultConnectorTransportSelectionGate(vault)
+        val repository = repository(
+            remote = UnreachableRemote,
+            transportGate = realGate,
+            authenticatedRemote = FakeAuthenticatedRemote(companiesResult = AppResult.Failure(AppError.Offline())),
+        )
+
+        // UnreachableRemote throws on any call — reaching a Success/Failure result at all (rather
+        // than an exception) is the proof that the real gate resolved AUTHENTICATED, not LEGACY.
+        val result = repository.loadCompanies()
+        assertTrue(result is AppResult.Success || result is AppResult.Failure)
     }
 
     @Test

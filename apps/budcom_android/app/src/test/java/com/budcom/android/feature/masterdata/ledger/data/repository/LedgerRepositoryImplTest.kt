@@ -6,9 +6,13 @@ import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_ACCESS_DENIED_
 import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
+import com.budcom.android.core.connectorauth.domain.DefaultConnectorTransportSelectionGate
 import com.budcom.android.core.network.ApiResult
 import com.budcom.android.core.network.ErrorMapper
 import com.budcom.android.core.network.NetworkError
+import com.budcom.android.core.pairing.data.local.FakeSecureCredentialVault
+import com.budcom.android.core.pairing.data.local.InMemoryVaultBackingStore
+import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.company.data.repository.SelectedCompanyStore
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerLocalDataSource
@@ -142,6 +146,42 @@ class LedgerRepositoryImplTest {
         assertEquals(1, authenticated.callCount)
         assertEquals(1, local.replaceCount)
         assertEquals("co-1", local.stored.keys.single())
+    }
+
+    // Phase 3T-R1: the REAL gate (not a fake fixed to AUTHENTICATED) wired to a genuinely
+    // Unreadable/corrupted vault must still route here — default `remote` is UnreachableRemote.
+    @Test
+    fun `an Unreadable vault resolved by the real transport gate never falls back to legacy`() = runTest(dispatcher) {
+        val backing = InMemoryVaultBackingStore()
+        val vault = FakeSecureCredentialVault(backingStore = backing)
+        vault.storePendingVerification(
+            "cred-1",
+            "device-1",
+            "raw-token",
+            TrustedConnectorEndpoint.fromTrustedPublicMetadata(
+                connectorId = "connector-abc",
+                connectorName = "Front Desk",
+                host = "10.0.0.5",
+                securePort = 8443,
+                transportFingerprint = "sha256/AAAA",
+                fingerprintAlgorithm = "sha256",
+                transportIdentityVersion = 1,
+            ),
+            1_000L,
+        )
+        backing.unreadable = true
+        val authenticated = FakeAuthenticatedRemote(AppResult.Failure(AppError.Offline()))
+        val repo = repository(
+            transportGate = DefaultConnectorTransportSelectionGate(vault),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repo.loadLedgers(LedgerQuery())
+
+        // UnreachableRemote (the default `remote`) throws if ever called — reaching a result at
+        // all (rather than an exception) is the proof the real gate resolved AUTHENTICATED.
+        assertTrue(result is AppResult.Success || result is AppResult.Failure)
+        assertEquals(1, authenticated.callCount)
     }
 
     @Test

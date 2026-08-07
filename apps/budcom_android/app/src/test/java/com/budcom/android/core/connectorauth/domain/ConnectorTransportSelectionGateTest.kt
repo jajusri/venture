@@ -8,6 +8,7 @@ import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
 import com.budcom.android.core.security.EncryptedPayload
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ConnectorTransportSelectionGateTest {
@@ -71,7 +72,68 @@ class ConnectorTransportSelectionGateTest {
         store.record = sampleRecord(SecurePairingCredentialState.RE_PAIR_REQUIRED)
         assertEquals(ConnectorTransportSelection.AUTHENTICATED, gate.resolve())
     }
+
+    // ============================== Phase 3T-R1: enrollment-history non-downgrade ==============================
+
+    // 5/6/7/8. Unreadable selects AUTHENTICATED, never LEGACY — including a genuinely corrupted,
+    // previously-enrolled record (the exact gap Phase 3T-R1 closes).
+    @Test
+    fun `resolves AUTHENTICATED, never LEGACY, when the vault outcome is Unreadable`() = runTest {
+        val store = InMemoryVaultBackingStore()
+        val vault = FakeSecureCredentialVault(backingStore = store)
+        vault.storePendingVerification("cred-1", "device-1", "raw-token", sampleEndpoint(), 1_000L)
+        store.unreadable = true
+        val gate = DefaultConnectorTransportSelectionGate(vault)
+
+        val result = gate.resolve()
+
+        assertEquals(ConnectorTransportSelection.AUTHENTICATED, result)
+        assertTrue(result != ConnectorTransportSelection.LEGACY)
+    }
+
+    // 9. a truly cleared/no-record vault can still select LEGACY (Unreadable is not a one-way trap)
+    @Test
+    fun `a genuinely empty vault (never enrolled or intentionally cleared) still resolves LEGACY`() = runTest {
+        val store = InMemoryVaultBackingStore()
+        val vault = FakeSecureCredentialVault(backingStore = store)
+        vault.storePendingVerification("cred-1", "device-1", "raw-token", sampleEndpoint(), 1_000L)
+        vault.clear()
+        val gate = DefaultConnectorTransportSelectionGate(vault)
+
+        assertEquals(ConnectorTransportSelection.LEGACY, gate.resolve())
+    }
+
+    // 11/12/13. NoRecord -> Present -> Unreadable -> Present transitions are each observed correctly
+    // by the very next call, with no downgrade to LEGACY once any record has ever existed.
+    @Test
+    fun `NoRecord to Present to Unreadable to Present transitions are each observed without downgrading`() = runTest {
+        val store = InMemoryVaultBackingStore()
+        val vault = FakeSecureCredentialVault(backingStore = store)
+        val gate = DefaultConnectorTransportSelectionGate(vault)
+
+        assertEquals(ConnectorTransportSelection.LEGACY, gate.resolve())
+
+        vault.storePendingVerification("cred-1", "device-1", "raw-token", sampleEndpoint(), 1_000L)
+        assertEquals(ConnectorTransportSelection.AUTHENTICATED, gate.resolve())
+
+        store.unreadable = true
+        assertEquals(ConnectorTransportSelection.AUTHENTICATED, gate.resolve())
+
+        store.unreadable = false
+        vault.markActive("cred-1", 2_000L)
+        assertEquals(ConnectorTransportSelection.AUTHENTICATED, gate.resolve())
+    }
 }
+
+private fun sampleEndpoint() = TrustedConnectorEndpoint.fromTrustedPublicMetadata(
+    connectorId = "connector-abc",
+    connectorName = "Front Desk",
+    host = "10.0.0.5",
+    securePort = 8443,
+    transportFingerprint = "sha256/AAAA",
+    fingerprintAlgorithm = "sha256",
+    transportIdentityVersion = 1,
+)
 
 private fun sampleRecord(state: SecurePairingCredentialState) = SecurePairingCredentialRecord(
     credentialId = "cred-1",
