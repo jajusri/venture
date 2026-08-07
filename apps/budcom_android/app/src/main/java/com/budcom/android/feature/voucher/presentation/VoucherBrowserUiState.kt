@@ -92,7 +92,7 @@ internal fun VoucherSummary.toRowUi(): VoucherRowUi {
         id = identity.id,
         primaryLabel = numberLabel,
         secondaryLabel = secondary,
-        dateLabel = date,
+        dateLabel = formatVoucherDate(date),
         typeLabel = type,
         statusLabel = status.name.lowercase().replaceFirstChar { it.titlecase() },
         amountLabel = amount,

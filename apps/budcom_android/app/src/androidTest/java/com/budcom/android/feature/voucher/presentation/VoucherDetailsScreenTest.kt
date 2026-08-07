@@ -55,6 +55,24 @@ class VoucherDetailsScreenTest {
         composeRule.onNodeWithTag("voucher_details_metadata").assertIsDisplayed()
     }
 
+    // Phase 3T-1: the header must clearly show the formatted voucher date alongside the number.
+    @Test
+    fun headerShowsFormattedVoucherDateAlongsideNumber() {
+        composeRule.setContent {
+            BudcomTheme {
+                VoucherDetailsScreen(
+                    state = VoucherDetailsUiState(
+                        isInitialLoading = false,
+                        details = sampleContent(dateLabel = "07 Aug 2026"),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("voucher_details_header").assertIsDisplayed()
+        composeRule.onNodeWithText("07 Aug 2026").assertIsDisplayed()
+    }
+
     @Test
     fun eligibleInvoiceShowsAllShareOptions() {
         composeRule.setContent {
@@ -195,13 +213,13 @@ class VoucherDetailsScreenTest {
         amountLabel = amount,
     )
 
-    private fun sampleContent() = VoucherDetailsContentUi(
+    private fun sampleContent(dateLabel: String = "2026-07-27") = VoucherDetailsContentUi(
         id = "v-1",
         documentTitle = "Sales invoice",
         partyHeading = "Bill to",
         typeLabel = "Sales",
         numberLabel = "S-1",
-        dateLabel = "2026-07-27",
+        dateLabel = dateLabel,
         effectiveDateLabel = null,
         partyLabel = "Acme",
         referenceLabel = null,

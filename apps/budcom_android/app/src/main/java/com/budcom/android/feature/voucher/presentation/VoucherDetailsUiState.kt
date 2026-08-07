@@ -98,7 +98,7 @@ internal fun VoucherDetails.toContentUi(): VoucherDetailsContentUi {
         partyHeading = summary.type.toPartyHeading(),
         typeLabel = summary.type,
         numberLabel = summary.number?.takeIf { it.isNotBlank() } ?: "—",
-        dateLabel = summary.date,
+        dateLabel = formatVoucherDate(summary.date),
         effectiveDateLabel = effectiveDate,
         partyLabel = summary.partyName,
         referenceLabel = summary.referenceNumber,

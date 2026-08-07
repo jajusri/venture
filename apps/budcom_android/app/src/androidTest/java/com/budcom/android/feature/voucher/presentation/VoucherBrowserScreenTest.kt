@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.ui.theme.BudcomTheme
@@ -69,6 +70,38 @@ class VoucherBrowserScreenTest {
         composeRule.onNodeWithTag("voucher_list").assertIsDisplayed()
         composeRule.onNodeWithTag("voucher_row_v-1").assertIsDisplayed().performClick()
         assertTrue(openedId == "v-1")
+    }
+
+    // Phase 3T-1: a long party name must not hide the date column, and the row must still render
+    // the formatted date without crashing — the Row's three equal-weight, ellipsized Text children
+    // already guarantee this structurally (unchanged in this phase); this proves it end-to-end.
+    @Test
+    fun rowWithLongPartyNameStillShowsNumberAndDate() {
+        composeRule.setContent {
+            BudcomTheme {
+                VoucherBrowserScreen(
+                    state = VoucherBrowserUiState(
+                        isInitialLoading = false,
+                        vouchers = listOf(
+                            VoucherRowUi(
+                                id = "v-1",
+                                primaryLabel = "S-1",
+                                secondaryLabel = null,
+                                dateLabel = "07 Aug 2026",
+                                typeLabel = "Sales",
+                                statusLabel = "Active",
+                                amountLabel = null,
+                                partyName = "A Very Long Synthetic Test Trading Company Name Private Limited",
+                            ),
+                        ),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("voucher_row_v-1").assertIsDisplayed()
+        composeRule.onNodeWithText("S-1").assertIsDisplayed()
+        composeRule.onNodeWithText("07 Aug 2026").assertIsDisplayed()
     }
 
     @Test
