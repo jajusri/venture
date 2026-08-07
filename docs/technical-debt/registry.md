@@ -195,6 +195,23 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-012 — Manual private-IP entry required for Trusted-LAN mobile pairing
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-012 |
+| **Description** | Trusted-LAN bind mode requires the operator to manually type a private IPv4 address into the raw `connectorHost` Settings field before secure mobile pairing can work at all. If left at the local-only default (`127.0.0.1`) while Trusted-LAN mode is selected, the Connector's pairing session — and therefore the QR/short-code payload — embeds a loopback host, which Android's `SecurePairingQrPayloadParser` correctly and deliberately rejects (`allowLoopbackHost = false`), surfacing only as a generic "Invalid QR code" on the phone with no actionable explanation on Desktop. Separately, the Settings panel's synchronous form validation (`connectorHost` must be a private IPv4 literal in Trusted-LAN mode) and the footer's connection status (driven by the already-running Connector's live lifecycle/health state) read from two disconnected sources of truth, so the footer can show "Connected" while Settings simultaneously flags the pending `connectorHost` value as invalid — a visibly contradictory state, with neither surface actually wrong about what it displays. |
+| **Impact** | Critical for release — a normal user cannot be expected to discover their own machine's private LAN IPv4 address, type it into a raw text field, understand bind-mode/host coupling, or interpret an "Invalid QR code" phone-side error with no corresponding Desktop-side diagnosis. This blocks the core secure-pairing onboarding flow for anyone outside engineering. |
+| **Priority** | P0 |
+| **Target milestone** | Pre-MVP-1 release hardening (Phase 3U-1 follow-up) |
+| **Status** | Open |
+| **Introduced** | Secure pairing / Trusted-LAN feature work (`feat(desktop): add secure pairing controls`, c5ebc96, 2026-08-05) |
+| **Evidence** | Phase 3U-1 physical validation session, 2026-08-07 — iQOO scan of a Desktop-generated QR rejected with "Invalid QR code — This QR code is not a valid Budcom pairing code" while Desktop showed Connected/ok/Ready. Root-caused end-to-end: `desktop-config.json` had `connectorBindMode: "local-only"` → `connector-lifecycle-config.ts:70` forces `connectorHost` to `127.0.0.1` → `connector/budcom_connector/src/api/routes/pairing.ts:253` bakes that host into the pairing session → QR payload carries `host: "127.0.0.1"` → `SecurePairingQrPayloadParser.kt:205-206` rejects loopback by design. Schema version, required-field set, JSON encoding, transport-fingerprint format, and expiry handling were confirmed to match between Desktop's `buildPairingQrPayload` and Android's parser — ruled out as a contract mismatch. |
+| **Likely fix location** | `apps/budcom_desktop/src/renderer/scripts/app.ts` (Settings form, `input-connector-host`); `apps/budcom_desktop/src/application/connector-lifecycle-config.ts` (host resolution for Trusted-LAN); `apps/budcom_desktop/src/application/mobile-access-status-service.ts` / `network/active-network-resolver.ts` (auto-detected LAN IPv4 already computed here as `reachableEndpoint` / `activeNetwork.ipv4` for the Mobile Access panel, but not wired as the source of truth for pairing-session host resolution) |
+| **Recommended direction (not implemented — record only)** | Auto-resolve the active private LAN IPv4 via the existing `ActiveNetworkResolver`/`TrustedLanRebindCoordinator` path (already used for `MobileAccessStatusService.reachableEndpoint`) and use it to drive `connectorHost` automatically whenever Trusted-LAN mode is selected — manual entry must not be the product's primary flow. Primary UI should show only user-facing states such as "Mobile access: Ready" / "Retry" / "Not available on this network", never raw host/port. Keep `connectorHost`, bind address, and port fields under an Advanced Diagnostics section for engineering/support use only. Unify the footer connection indicator and the Settings-panel validation to read from one shared status model so they cannot disagree. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
@@ -210,3 +227,4 @@ Engineering-tracked compromises, defects, and deferred work.
 | TD-009 | Authenticated LAN access | P2 | Open | 5B |
 | TD-010 | Diagnostic export privacy allowlist | P2 | **Resolved (export surfaces)** | Reliability Step 3 |
 | TD-011 | Ledger name-slug identity / shallow export | P1 | **Resolved (controlled pilot)** | Reliability ledger-identity |
+| TD-012 | Manual private-IP entry required for Trusted-LAN pairing | P0 | Open | Pre-MVP-1 release hardening |
