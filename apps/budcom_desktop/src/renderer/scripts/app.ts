@@ -18,9 +18,11 @@ import type {
   TrustedPairingDeviceSummary,
 } from '../../application/types.js';
 import type { ConnectorLifecycleStatus } from '../../application/connector-lifecycle-types.js';
+import type { MobileAccessStatus } from '../../application/mobile-access-status-service.js';
 
 export interface DesktopBridge {
   getDashboardState(): Promise<DashboardState>;
+  getMobileAccessStatus(): Promise<MobileAccessStatus>;
   getLogs(): Promise<readonly LogEntry[]>;
   getSettings(): Promise<SettingsState>;
   validateSettings(input: Record<string, unknown>): Promise<{ ok: boolean; errors: readonly { field: string; message: string }[] }>;
