@@ -3,6 +3,7 @@ package com.budcom.android.feature.company.data.repository
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_ACCESS_DENIED_CODE
+import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_NO_COMPANY_SELECTED_CODE
 import com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
@@ -706,6 +707,139 @@ class CompanyRepositoryImplTest {
         assertEquals("estimation", store.currentId)
         assertEquals(0, store.completeSaveCount)
     }
+
+    // ============================== TD-013: authenticated NO_COMPANY_SELECTED recovery ==============================
+
+    @Test
+    fun `validateSession recovers from an authenticated NO_COMPANY_SELECTED rejection by reselecting the saved company and retrying once`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore(initial = "estimation")
+        val noCompanySelected = AppError.Remote(400, AUTHENTICATED_NO_COMPANY_SELECTED_CODE, "The Connector rejected the request.")
+        val authenticated = FakeAuthenticatedRemote(
+            selectResult = AppResult.Success(CompanySelectionOutcome("SUCCESS", sampleSession("estimation"), null, 200)),
+            validateResultsSequence = listOf(
+                AppResult.Failure(noCompanySelected),
+                AppResult.Success(SessionValidationOutcome("SUCCESS", sampleSession("estimation"), null, "estimation", "ESTIMATION", 200)),
+            ),
+        )
+        val repository = repository(
+            remote = UnreachableRemote,
+            store = store,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repository.validateSession()
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(1, authenticated.selectCompanyCallCount)
+        assertEquals(2, authenticated.validateSessionCallCount)
+        assertEquals("estimation", store.currentId)
+    }
+
+    @Test
+    fun `validateSession does not recover from NO_COMPANY_SELECTED when no company id is saved locally`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore(initial = null)
+        val noCompanySelected = AppError.Remote(400, AUTHENTICATED_NO_COMPANY_SELECTED_CODE, "The Connector rejected the request.")
+        val authenticated = FakeAuthenticatedRemote(validateResult = AppResult.Failure(noCompanySelected))
+        val repository = repository(
+            remote = UnreachableRemote,
+            store = store,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repository.validateSession() as AppResult.Failure
+
+        assertEquals(noCompanySelected, result.error)
+        assertEquals(0, authenticated.selectCompanyCallCount)
+        assertEquals(1, authenticated.validateSessionCallCount)
+    }
+
+    @Test
+    fun `validateSession does not attempt recovery for a 401 rejection even when a saved company id exists`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore(initial = "estimation")
+        val rejection = AppError.Remote(401, AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE, "re-pair")
+        val authenticated = FakeAuthenticatedRemote(validateResult = AppResult.Failure(rejection))
+        val repository = repository(
+            remote = UnreachableRemote,
+            store = store,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repository.validateSession() as AppResult.Failure
+
+        assertEquals(rejection, result.error)
+        assertEquals(0, authenticated.selectCompanyCallCount)
+    }
+
+    @Test
+    fun `validateSession does not attempt recovery for an unrelated 400 rejection even when a saved company id exists`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore(initial = "estimation")
+        val rejection = AppError.Remote(400, "INVALID_COMPANY", "The Connector rejected the request.")
+        val authenticated = FakeAuthenticatedRemote(validateResult = AppResult.Failure(rejection))
+        val repository = repository(
+            remote = UnreachableRemote,
+            store = store,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repository.validateSession() as AppResult.Failure
+
+        assertEquals(rejection, result.error)
+        assertEquals(0, authenticated.selectCompanyCallCount)
+    }
+
+    @Test
+    fun `validateSession recovery is bounded to a single retry when reselection still cannot validate`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore(initial = "estimation")
+        val noCompanySelected = AppError.Remote(400, AUTHENTICATED_NO_COMPANY_SELECTED_CODE, "The Connector rejected the request.")
+        val authenticated = FakeAuthenticatedRemote(
+            selectResult = AppResult.Success(CompanySelectionOutcome("SUCCESS", sampleSession("estimation"), null, 200)),
+            validateResultsSequence = listOf(
+                AppResult.Failure(noCompanySelected),
+                AppResult.Failure(noCompanySelected),
+            ),
+        )
+        val repository = repository(
+            remote = UnreachableRemote,
+            store = store,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repository.validateSession()
+
+        assertTrue(result is AppResult.Failure)
+        // Exactly one reselection attempt and one retried validation — never a second reselection.
+        assertEquals(1, authenticated.selectCompanyCallCount)
+        assertEquals(2, authenticated.validateSessionCallCount)
+    }
+
+    @Test
+    fun `validateSession recovery does not retry validation when the reselection attempt itself fails`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore(initial = "estimation")
+        val noCompanySelected = AppError.Remote(400, AUTHENTICATED_NO_COMPANY_SELECTED_CODE, "The Connector rejected the request.")
+        val selectFailure = AppError.Offline()
+        val authenticated = FakeAuthenticatedRemote(
+            selectResult = AppResult.Failure(selectFailure),
+            validateResult = AppResult.Failure(noCompanySelected),
+        )
+        val repository = repository(
+            remote = UnreachableRemote,
+            store = store,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repository.validateSession() as AppResult.Failure
+
+        assertEquals(selectFailure, result.error)
+        assertEquals(1, authenticated.selectCompanyCallCount)
+        // Only the original validate call — reselection failed before a retry validation was ever attempted.
+        assertEquals(1, authenticated.validateSessionCallCount)
+    }
 }
 
 // ============================== Fakes ==============================
@@ -879,6 +1013,10 @@ private class FakeAuthenticatedRemote(
         SessionValidationOutcome("SUCCESS", sampleSession("estimation"), null, "estimation", "ESTIMATION", 200),
     ),
     var clearResult: AppResult<ConnectorSessionSnapshot> = AppResult.Success(sampleSession(null)),
+    /** When set, `validateSession()` returns these in order (by call count), one per call,
+     * repeating the last entry past the end — lets a test simulate a first call failing and a
+     * later retry succeeding (TD-013 recovery). Falls back to [validateResult] when null. */
+    private val validateResultsSequence: List<AppResult<SessionValidationOutcome>>? = null,
 ) : AuthenticatedCompanyRemoteDataSource {
     var fetchCompaniesCallCount: Int = 0
         private set
@@ -908,7 +1046,8 @@ private class FakeAuthenticatedRemote(
 
     override suspend fun validateSession(): AppResult<SessionValidationOutcome> {
         validateSessionCallCount++
-        return validateResult
+        val sequence = validateResultsSequence ?: return validateResult
+        return sequence.getOrElse(validateSessionCallCount - 1) { sequence.last() }
     }
 
     override suspend fun clearSession(): AppResult<ConnectorSessionSnapshot> {

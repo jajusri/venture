@@ -171,7 +171,20 @@ class CompanyRepositoryImpl @Inject constructor(
         withContext(dispatchers.io) {
             val selection = transportGate.resolve()
             when (val validation = validateSessionRemote(selection)) {
-                is AppResult.Failure -> validation
+                is AppResult.Failure -> {
+                    // Authenticated-transport parity with the branch below: the legacy transport
+                    // decodes the equivalent 400 body into AppResult.Success(status =
+                    // "NO_COMPANY_SELECTED") and falls into the saved-ID recovery there instead.
+                    // On the authenticated transport that same condition instead surfaces as this
+                    // typed AppError.Remote sentinel (TD-013) — see AUTHENTICATED_NO_COMPANY_SELECTED_CODE.
+                    val savedId = selectedCompanyStore.getSelectedCompanyId()
+                    if (validation.error.isNoCompanySelectedRejection() && savedId != null) {
+                        Timber.tag("CompanySession").i("Validation failed (NO_COMPANY_SELECTED), attempting auto-recovery for %s", savedId)
+                        selectCompany(savedId)
+                    } else {
+                        validation
+                    }
+                }
                 is AppResult.Success -> {
                     if (validation.value.status == "SUCCESS") {
                         selectedCompanyFrom(validation.value, null)?.let { selectedCompanyStore.saveSelectedCompany(it) }
@@ -280,3 +293,12 @@ private fun AppError.isAuthenticationRejection(): Boolean =
         code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE ||
             code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_ACCESS_DENIED_CODE
         )
+
+/**
+ * True only for the authenticated transport's `NO_COMPANY_SELECTED` sentinel (TD-013) — see
+ * [com.budcom.android.core.connectorauth.domain.AUTHENTICATED_NO_COMPANY_SELECTED_CODE]. The
+ * legacy transport never produces this as an [AppResult.Failure] at all: it decodes the
+ * equivalent 400 body into [AppResult.Success] instead, handled by the branch above this one.
+ */
+private fun AppError.isNoCompanySelectedRejection(): Boolean =
+    this is AppError.Remote && code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_NO_COMPANY_SELECTED_CODE

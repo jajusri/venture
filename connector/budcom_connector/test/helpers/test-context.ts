@@ -1,3 +1,7 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { createExpressApp } from '../../src/api/server.js';
 import type { ExpressAppDeps } from '../../src/api/server.js';
 import { registerServices } from '../../src/bootstrap/register-services.js';
@@ -30,6 +34,10 @@ export function createTestContext(configOverrides: RegisterServicesOptions = {})
     logLevel: 'error',
     tallyMinRequestIntervalMs: 0,
     tallySafeMode: false,
+    // Each context gets its own on-disk database unless the caller overrides it below. Selected
+    // company is now durably persisted (TD-013), so sharing the default './data' path across
+    // contexts — harmless while selection was in-memory-only — would leak state between tests.
+    databasePath: fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-connector-test-')),
     ...configOverrides,
   });
 }

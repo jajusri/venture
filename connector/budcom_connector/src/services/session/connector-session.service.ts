@@ -15,12 +15,14 @@ import type {
 } from '../interfaces/connector-session.js';
 import type { TallyConnectionService } from '../interfaces/tally-connection.js';
 import type { CompanyResolver } from '../extraction/company-resolver.js';
+import type { SelectedCompanyRepository } from './selected-company-repository.js';
 import {
   createEmptySession,
   selectCompany,
   validateSession,
   withClearedSelection,
   withConnectionStatus,
+  withRestoredSelection,
   type DiscoveredCompanyRef,
 } from './session-validator.js';
 
@@ -33,6 +35,7 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
     private readonly companyResolver: CompanyResolver,
     private readonly tallyConnection: TallyConnectionService,
     private readonly readPort: ErpReadPort,
+    private readonly selectedCompanyRepository: SelectedCompanyRepository,
     private readonly logger: Logger,
   ) {
     this.session = createEmptySession({
@@ -45,17 +48,25 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
 
   async start(): Promise<void> {
     this.running = true;
+    // Restore durable selection (TD-013) before this service is reachable for session
+    // validation, so a Desktop/Connector restart never serves a "ready" state that has not
+    // yet restored a legitimately persisted company selection.
+    const restored = this.selectedCompanyRepository.load();
+    if (restored) {
+      this.session = withRestoredSelection(this.session, restored.company, restored.selectedAt);
+    }
     this.session = withConnectionStatus(this.session, this.resolveConnectionStatus());
     this.logger.info('Connector session service started', {
       sessionId: this.session.sessionId,
+      companySelectionRestored: restored !== null,
     });
   }
 
   async stop(): Promise<void> {
     this.running = false;
-    this.session = withClearedSelection(
-      withConnectionStatus(this.session, 'disconnected'),
-    );
+    // A normal stop is not a deselection: durable selection (TD-013) must survive an ordinary
+    // Desktop/Connector restart. Only the connection status changes here.
+    this.session = withConnectionStatus(this.session, 'disconnected');
     this.logger.info('Connector session service stopped');
   }
 
@@ -84,6 +95,9 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
 
     if (result.status === 'SUCCESS') {
       this.session = result.session;
+      if (this.session.selectedCompany && this.session.selectedAt) {
+        this.selectedCompanyRepository.save(this.session.selectedCompany, this.session.selectedAt);
+      }
       this.logger.info('Company selected for connector session', {
         sessionId: this.session.sessionId,
         companyId: this.session.selectedCompany?.id,
@@ -96,6 +110,7 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
   clearSelection(): ConnectorSessionSnapshot {
     this.assertRunning();
     this.session = withClearedSelection(this.session);
+    this.selectedCompanyRepository.clear();
     this.companyResolver.invalidateCache();
     this.logger.info('Connector session company selection cleared', {
       sessionId: this.session.sessionId,

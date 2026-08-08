@@ -92,6 +92,25 @@ export function withConnectionStatus(
   };
 }
 
+/**
+ * Applies a durably-persisted selection (TD-013) recovered at startup. Unlike
+ * `withSelectedCompany`, `selectedAt` is the original persisted timestamp (so session-TTL
+ * accounting is unaffected by the restart) and `lastValidatedAt` is left `null` — this restart
+ * has not yet actually validated the company against live discovery.
+ */
+export function withRestoredSelection(
+  session: ConnectorSession,
+  company: SelectedCompany,
+  selectedAt: string,
+): ConnectorSession {
+  return {
+    ...session,
+    selectedCompany: company,
+    selectedAt,
+    lastValidatedAt: null,
+  };
+}
+
 export function withClearedSelection(session: ConnectorSession): ConnectorSession {
   return {
     ...session,

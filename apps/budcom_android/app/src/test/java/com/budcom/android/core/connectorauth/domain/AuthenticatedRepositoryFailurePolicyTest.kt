@@ -138,6 +138,18 @@ class AuthenticatedRepositoryFailurePolicyTest {
     }
 
     @Test
+    fun `ValidationFailure with isNoCompanySelected maps to the NO_COMPANY_SELECTED sentinel code, not the sanitized code`() = runTest {
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(FakeSecureCredentialVault())
+
+        val error = policy.mapFailure(
+            AuthenticatedConnectorResult.ValidationFailure(sanitizedCode = null, isNoCompanySelected = true),
+        ) as AppError.Remote
+
+        assertEquals(400, error.httpStatus)
+        assertEquals(AUTHENTICATED_NO_COMPANY_SELECTED_CODE, error.code)
+    }
+
+    @Test
     fun `remaining outcomes map to their expected AppError types`() = runTest {
         val policy = DefaultAuthenticatedRepositoryFailurePolicy(FakeSecureCredentialVault())
 

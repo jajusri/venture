@@ -9,6 +9,7 @@ import {
   withSelectedCompany,
 } from '../../../src/services/session/session-validator.js';
 import { ConnectorSessionServiceImpl } from '../../../src/services/session/connector-session.service.js';
+import { SelectedCompanyRepository } from '../../../src/services/session/selected-company-repository.js';
 import { CompanyResolver } from '../../../src/services/extraction/company-resolver.js';
 import { createLogger } from '../../../src/infrastructure/logging/logger.js';
 import { createTestConnectorConfig } from '../../helpers/sqlite-test-storage.js';
@@ -66,11 +67,18 @@ describe('capability preflight session fail-closed (3A-3F)', () => {
         }) as TallyDiagnosticsSnapshot,
       getStatus: () => ({ name: 'TallyConnection', running: true, ready: true }),
     };
+    const selectedCompanyRepository = new SelectedCompanyRepository(
+      () => {
+        throw new Error('no database in this unit test');
+      },
+      createLogger({ service: 'test', level: 'error' }),
+    );
     const service = new ConnectorSessionServiceImpl(
       config,
       resolver,
       tallyConnection,
       readPort,
+      selectedCompanyRepository,
       createLogger({ service: 'test', level: 'error' }),
     );
     return { service, discovery };

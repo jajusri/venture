@@ -145,7 +145,10 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
                     AuthenticatedConnectorResult.Success(AuthenticatedConnectorResponsePayload(text))
                 }
             }
-            400 -> AuthenticatedConnectorResult.ValidationFailure(sanitizedErrorCode(bodyText))
+            400 -> AuthenticatedConnectorResult.ValidationFailure(
+                sanitizedErrorCode(bodyText),
+                isNoCompanySelected = matchesNoCompanySelected(bodyText),
+            )
             401 -> AuthenticatedConnectorResult.Unauthorized(credentialId)
             403 -> AuthenticatedConnectorResult.Forbidden
             404 -> AuthenticatedConnectorResult.NotFound
@@ -165,6 +168,18 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
         val obj = element as? JsonObject ?: return null
         val code = (obj["code"] as? JsonPrimitive)?.contentOrNull ?: return null
         return code.take(MAX_SANITIZED_CODE_LENGTH)
+    }
+
+    /**
+     * True only if [bodyText] is well-formed JSON whose `status` field is exactly the literal
+     * `"NO_COMPANY_SELECTED"` (TD-013) — an allowlist check against one known Connector session
+     * value, never a generic extraction of the `status` field's contents.
+     */
+    private fun matchesNoCompanySelected(bodyText: String?): Boolean {
+        if (bodyText.isNullOrBlank()) return false
+        val element = runCatching { json.parseToJsonElement(bodyText) }.getOrNull() ?: return false
+        val obj = element as? JsonObject ?: return false
+        return (obj["status"] as? JsonPrimitive)?.contentOrNull == "NO_COMPANY_SELECTED"
     }
 
     private fun readBoundedBody(body: ResponseBody?): BoundedBodyReadResult {

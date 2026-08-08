@@ -238,7 +238,45 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         val result = client.execute(AuthenticatedConnectorOperation.GetCompanies) as AuthenticatedConnectorResult.ValidationFailure
 
         assertEquals("INVALID_COMPANY", result.sanitizedCode)
+        assertFalse(result.isNoCompanySelected)
         assertFalse(result.toString().contains("internal detail"))
+    }
+
+    @Test
+    fun `400 with status NO_COMPANY_SELECTED sets isNoCompanySelected (TD-013)`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(
+            MockResponse().setResponseCode(400).setBody(
+                """{"status":"NO_COMPANY_SELECTED","session":{},"reason":"No company is selected for this connector session"}""",
+            ),
+        )
+        val (client, _) = readyClient(server, heldCertificate)
+
+        val result = client.execute(AuthenticatedConnectorOperation.ValidateSession) as AuthenticatedConnectorResult.ValidationFailure
+
+        assertTrue(result.isNoCompanySelected)
+    }
+
+    @Test
+    fun `400 with an unrelated status does not set isNoCompanySelected`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"status":"SESSION_INVALID","session":{}}"""))
+        val (client, _) = readyClient(server, heldCertificate)
+
+        val result = client.execute(AuthenticatedConnectorOperation.ValidateSession) as AuthenticatedConnectorResult.ValidationFailure
+
+        assertFalse(result.isNoCompanySelected)
+    }
+
+    @Test
+    fun `400 with a malformed body does not set isNoCompanySelected`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(MockResponse().setResponseCode(400).setBody("not-json"))
+        val (client, _) = readyClient(server, heldCertificate)
+
+        val result = client.execute(AuthenticatedConnectorOperation.ValidateSession) as AuthenticatedConnectorResult.ValidationFailure
+
+        assertFalse(result.isNoCompanySelected)
     }
 
     @Test

@@ -37,6 +37,7 @@ import { OfflineXmlIngestionService } from '../ingestion/offline-xml-ingestion.s
 import { CompanyResolver } from '../services/extraction/company-resolver.js';
 import { MasterDataServiceImpl } from '../services/extraction/master-data.service.js';
 import { ConnectorSessionServiceImpl } from '../services/session/connector-session.service.js';
+import { SelectedCompanyRepository } from '../services/session/selected-company-repository.js';
 import { createTallyModule } from '../tally/tally-module.js';
 import type { MasterDataService } from '../services/extraction/master-data.service.js';
 import type { ConnectorSessionService } from '../services/interfaces/connector-session.js';
@@ -155,6 +156,10 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         container.resolve<CompanyResolver>(ServiceTokens.CompanyResolver),
         container.resolve<TallyConnectionService>(ServiceTokens.TallyConnection),
         tallyModule.readPort,
+        new SelectedCompanyRepository(
+          () => container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase).getBundle().database,
+          logger.child({ service: 'SelectedCompanyRepository' }),
+        ),
         logger.child({ service: 'ConnectorSession' }),
       ),
   );

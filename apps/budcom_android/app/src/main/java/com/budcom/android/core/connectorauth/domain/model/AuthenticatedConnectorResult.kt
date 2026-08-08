@@ -52,8 +52,18 @@ sealed class AuthenticatedConnectorResult {
     /** HTTP 429. */
     data object RateLimited : AuthenticatedConnectorResult()
 
-    /** HTTP 400 — a bounded, sanitized Connector error code only; never the raw response body. */
-    data class ValidationFailure(val sanitizedCode: String?) : AuthenticatedConnectorResult()
+    /**
+     * HTTP 400 — bounded, sanitized Connector fields only; never the raw response body.
+     * [isNoCompanySelected] is true only when the body is well-formed JSON whose `status` field
+     * is exactly `"NO_COMPANY_SELECTED"` (the Connector's session-validation shape, see
+     * `session-validator.ts`) — a fixed allowlist match, never a pass-through of arbitrary body
+     * content. It is the only HTTP 400 sub-case this app treats as auto-recoverable via company
+     * reselection (TD-013); every other value, or an absent/malformed body, leaves it false.
+     */
+    data class ValidationFailure(
+        val sanitizedCode: String?,
+        val isNoCompanySelected: Boolean = false,
+    ) : AuthenticatedConnectorResult()
 
     /** HTTP 5xx. */
     data class ServerFailure(val httpStatus: Int) : AuthenticatedConnectorResult()

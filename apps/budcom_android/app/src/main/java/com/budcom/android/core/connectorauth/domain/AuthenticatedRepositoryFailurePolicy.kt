@@ -17,6 +17,14 @@ const val AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE = "SECURE_PAIRING_REQUIRED"
 const val AUTHENTICATED_ACCESS_DENIED_CODE = "AUTHENTICATED_ACCESS_DENIED"
 
 /**
+ * Well-known [AppError.Remote.code] a caller can pattern-match on to recognize the Connector's
+ * HTTP 400 `NO_COMPANY_SELECTED` session-validation outcome (TD-013) — the one 400 sub-case that
+ * is auto-recoverable via company reselection. See
+ * [com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorResult.ValidationFailure.isNoCompanySelected].
+ */
+const val AUTHENTICATED_NO_COMPANY_SELECTED_CODE = "NO_COMPANY_SELECTED"
+
+/**
  * Central mapping from a non-Success [AuthenticatedConnectorResult] to an [AppError], shared by
  * every authenticated repository adapter. Never mutates Room. [AuthenticatedConnectorResult.Unauthorized]
  * is the only outcome that mutates the vault: it marks the credential identified by
@@ -67,7 +75,7 @@ class DefaultAuthenticatedRepositoryFailurePolicy @Inject constructor(
 
         is AuthenticatedConnectorResult.ValidationFailure -> AppError.Remote(
             httpStatus = 400,
-            code = result.sanitizedCode,
+            code = if (result.isNoCompanySelected) AUTHENTICATED_NO_COMPANY_SELECTED_CODE else result.sanitizedCode,
             message = "The Connector rejected the request.",
         )
 
