@@ -274,6 +274,25 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-016 — Securely paired Android diagnostics report legacy emulator endpoint instead of authenticated transport state
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-016 |
+| **Description** | `apps/budcom_android/app/build.gradle.kts:25` bakes `BuildConfig.CONNECTOR_BASE_URL = "http://10.0.2.2:8080/"` (the documented Android-emulator host alias) as the seed for `DefaultConnectorBaseUrlProvider`'s in-memory `AtomicReference`. `DefaultConnectorBaseUrlHydrator` (`feature/serverconfig/data/startup/`) hydrates that in-memory value from `ConnectorBaseUrlLocalStore` on every process start — the **legacy/manual-URL** store. Secure QR pairing is a structurally separate architecture (`SecureCredentialVault` → trusted context → `AuthenticatedConnectorApiClient`, which builds requests directly from `resolution.context.endpoint`) and never writes into `ConnectorBaseUrlLocalStore`. `LoadDiagnosticsUseCase`/`DashboardUseCases` read "Configured URL"/health/readiness from `ConnectorStatusPort.currentBaseUrl()` (`ConnectorConfigRepositoryImpl.currentBaseUrl() = baseUrlProvider.snapshot()` — the legacy pipeline), while company/session comes from a separate, transport-aware `CompanyRepository`/`ConnectorTransportSelectionGate` path. One screen mixes state from two independent transport systems. |
+| **Observed customer message** | A securely paired, already-trusted physical device can show "Configured URL: http://10.0.2.2:8080/", "Connector unavailable", "Readiness: Unknown", "The request timed out" — while the actual authenticated transport and trusted company selection may be entirely unaffected. `10.0.2.2` is merely the untouched legacy/emulator default; it does not prove the authenticated transport is targeting it, and source alone cannot prove it — this record does not claim otherwise. |
+| **Impact** | Critical for release perception — an already-working, securely paired customer device can present as fully offline against a value that was never a real endpoint, inviting an unnecessary and unsafe manual-IP edit or re-pair attempt for a device that may not actually be broken. |
+| **Priority** | P0 |
+| **Target milestone** | Pre-MVP-1 release hardening |
+| **Status** | Open |
+| **Introduced** | Pre-dates this investigation — present since secure pairing (Phase 3N/3R-era) was layered on top of the pre-existing legacy/emulator-default connection machinery without the diagnostics/status surface being made transport-aware. |
+| **Evidence** | Read-only Android source trace, 2026-08-08 (physical iQOO screenshot review, no ADB, no phone-side inspection): confirmed via direct trace that `10.0.2.2` has exactly one source in the codebase (`build.gradle.kts`'s `BuildConfig` field), confirmed the legacy and authenticated pipelines are structurally disjoint (different stores, different HTTP clients), confirmed `Secure Mobile Pairing: off` (`mobile-pairing-service.ts:108-111`) gates only new-pairing-session creation and appears nowhere in credential authentication. |
+| **Explicitly NOT claimed / remaining open item** | "Session = Unknown" / "Last successful validation = Never" was also observed on the same physical device. That path (`CompanySessionPortImpl.validateSessionStatus()` → `CompanyRepository.validateSession()`) already routes through the authenticated transport when trust is `ACTIVE` — it is not proven to share this defect's cause. Whether it reflects a genuine, separate authenticated-transport problem (network-transition gap, TLS/certificate-identity mismatch, or something else) can only be determined by physical retest after this fix lands, not by source inspection alone. This record does not claim this defect explains that observation. |
+| **Distinction from related entries** | TD-012 is first-run pairing *bootstrap* (a never-paired device discovering a usable endpoint for its first QR scan) — unrelated, this device is already trusted. TD-013 is Connector-side selected-company persistence across restart plus Android's authenticated-transport 400-mapping recovery — a different layer; this entry does not reopen or duplicate it. TD-015 is the Desktop-side mirror-image gap (a live, correct endpoint existed but one of five consumers didn't use it) — this is the Android-side case where the diagnostics *consumer* was simply never made aware a second, authoritative transport exists at all. |
+| **Not an acceptable fix direction** | Do not write the authenticated/secure-pairing endpoint into `ConnectorBaseUrlLocalStore` merely to make the legacy-sourced screen display correctly — that would merge two deliberately separate transport models and risks stale-IP persistence, endpoint leakage, and future DHCP-transition bugs on the Android side. The fix must make the diagnostics/status *consumer* transport-aware (select `AUTHENTICATED` vs `LEGACY` per the existing `ConnectorTransportSelectionGate` architecture), not synchronize the stores. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
@@ -293,3 +312,4 @@ Engineering-tracked compromises, defects, and deferred work.
 | TD-013 | Post-pairing reconnection loses selected company / authenticated transport blocks auto-recovery | P0 | **Fixed (automated validation) — pending physical retest** | Pre-MVP-1 release hardening |
 | TD-014 | Desktop dashboard/company-list has no re-poll after a transient post-startup failure | P1 | Open — root-caused, not yet fixed | Pre-MVP-1 release hardening |
 | TD-015 | Desktop business clients retain stale Connector endpoint after trusted-LAN route resolution | P0 | Open | Pre-MVP-1 release hardening |
+| TD-016 | Securely paired Android diagnostics report legacy emulator endpoint instead of authenticated transport state | P0 | Open | Pre-MVP-1 release hardening |
