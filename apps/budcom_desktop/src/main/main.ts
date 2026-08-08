@@ -251,6 +251,19 @@ function computeEffectiveLifecycleConfig() {
   return applyRouteBackedHost(resolved.lifecycleConfig, activeNetworkAdapter);
 }
 
+/**
+ * TD-015: the single authoritative "where is the Connector actually running" answer for every
+ * Desktop-owned business-service HTTP client (Dashboard/Company/Ledger/StockItem, and the
+ * ad-hoc manual health-check handler) — the same route-backed correction
+ * computeEffectiveLifecycleConfig() already applies for the Connector's own spawn/health-check
+ * config, so a trusted-LAN Desktop can never have its lifecycle bound to the live network while
+ * its business clients stay addressed at a stale, previously-persisted host from another
+ * network. Local-only mode is unaffected (applyRouteBackedHost is a no-op off trusted-LAN).
+ */
+function computeEffectiveConnectorBaseUrl(): string {
+  return computeEffectiveLifecycleConfig().connectorBaseUrl;
+}
+
 // Fresh per managed-Connector-launch Desktop control token — see desktop-control-token.ts.
 // Set inside createLifecycleService() (below) in lockstep with each new lifecycleService
 // instance; never persisted, logged, or exposed through IPC. Cleared to null wherever the
@@ -394,10 +407,15 @@ async function stopManagedLanChild(): Promise<void> {
  */
 async function startManagedLanChildFor(resolution: ActiveNetworkResolution): Promise<void> {
   activeNetworkAdapter = resolution.adapter;
-  dashboardService = createDashboardService(resolved.connectorBaseUrl);
-  companyService = createCompanyService(resolved.connectorBaseUrl);
-  ledgerService = createLedgerService(resolved.connectorBaseUrl);
-  stockItemService = createStockItemService(resolved.connectorBaseUrl);
+  // TD-015: derive every business client's base URL the same way the lifecycle service two
+  // lines below derives its own bind target — from the resolution just applied above, not from
+  // the raw persisted resolved.connectorBaseUrl, which may still be a stale previous-network
+  // host at this point.
+  const effectiveConnectorBaseUrl = computeEffectiveConnectorBaseUrl();
+  dashboardService = createDashboardService(effectiveConnectorBaseUrl);
+  companyService = createCompanyService(effectiveConnectorBaseUrl);
+  ledgerService = createLedgerService(effectiveConnectorBaseUrl);
+  stockItemService = createStockItemService(effectiveConnectorBaseUrl);
   lifecycleService = createLifecycleService();
   diagnosticsService = createDiagnosticsService();
   await lifecycleService.initialize();
@@ -863,7 +881,9 @@ function registerIpcHandlers(): void {
     return { ok: true, message: 'Nonessential logs cleared.' };
   });
   registerIpcHandler('desktop:run-health-check', async () => {
-    const healthy = await new HttpHealthChecker(resolved.connectorBaseUrl).checkHealth();
+    // TD-015: same effective, route-backed endpoint as every other business client — not the
+    // raw persisted resolved.connectorBaseUrl, which may be stale in trusted-LAN mode.
+    const healthy = await new HttpHealthChecker(computeEffectiveConnectorBaseUrl()).checkHealth();
     let status = 'unknown';
     if (healthy) {
       try {
