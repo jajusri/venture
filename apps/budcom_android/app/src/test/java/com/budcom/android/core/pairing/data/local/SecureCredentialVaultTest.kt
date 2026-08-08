@@ -194,6 +194,94 @@ class SecureCredentialVaultTest {
         assertEquals(0, roomSpy.accessCount)
         assertNull(backing.record)
     }
+    // ============================== TD-017: updateVerifiedEndpoint ==============================
+
+    @Test
+    fun `updateVerifiedEndpoint replaces host and securePort only, preserving every other field`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-1", "device-1", "raw-bearer-token", endpoint, 1_000L)
+        vault.markActive("cred-1", 1_500L)
+
+        val result = vault.updateVerifiedEndpoint("connector-abc", "10.0.0.99", 9443)
+
+        assertEquals(SecureCredentialVaultEndpointUpdateResult.Updated, result)
+        val record = vault.read()
+        assertEquals("10.0.0.99", record?.endpoint?.host)
+        assertEquals(9443, record?.endpoint?.securePort)
+        assertEquals("connector-abc", record?.endpoint?.connectorId)
+        assertEquals(endpoint.transportFingerprint, record?.endpoint?.transportFingerprint)
+        assertEquals(endpoint.fingerprintAlgorithm, record?.endpoint?.fingerprintAlgorithm)
+        assertEquals(endpoint.transportIdentityVersion, record?.endpoint?.transportIdentityVersion)
+        assertEquals(endpoint.connectorName, record?.endpoint?.connectorName)
+        assertEquals(SecurePairingCredentialState.ACTIVE, record?.state)
+        assertEquals("cred-1", record?.credentialId)
+        assertEquals(1_500L, record?.lastVerifiedAtEpochMillis)
+    }
+
+    @Test
+    fun `updateVerifiedEndpoint never touches the encrypted credential`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-1", "device-1", "raw-bearer-token", endpoint, 1_000L)
+        vault.markActive("cred-1", 1_500L)
+        val credentialBefore = vault.read()?.encryptedCredential
+
+        vault.updateVerifiedEndpoint("connector-abc", "10.0.0.99", 9443)
+
+        assertEquals(credentialBefore, vault.read()?.encryptedCredential)
+        val decrypted = vault.readDecryptedCredential() as CredentialDecryptionResult.Success
+        assertEquals("raw-bearer-token", String(decrypted.plaintext, Charsets.UTF_8))
+    }
+
+    @Test
+    fun `updateVerifiedEndpoint returns NoRecord when the vault has never been paired`() = runTest {
+        val vault = FakeSecureCredentialVault()
+
+        val result = vault.updateVerifiedEndpoint("connector-abc", "10.0.0.99", 9443)
+
+        assertEquals(SecureCredentialVaultEndpointUpdateResult.NoRecord, result)
+    }
+
+    @Test
+    fun `updateVerifiedEndpoint rejects a connectorId that does not match the current record and leaves it untouched`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-1", "device-1", "raw-bearer-token", endpoint, 1_000L)
+        vault.markActive("cred-1", 1_500L)
+
+        val result = vault.updateVerifiedEndpoint("a-different-connector-id", "10.0.0.99", 9443)
+
+        assertEquals(SecureCredentialVaultEndpointUpdateResult.ConnectorIdMismatch, result)
+        val record = vault.read()
+        assertEquals(endpoint.host, record?.endpoint?.host)
+        assertEquals(endpoint.securePort, record?.endpoint?.securePort)
+    }
+
+    @Test
+    fun `updateVerifiedEndpoint never changes state or marks re-pair required`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-1", "device-1", "raw-bearer-token", endpoint, 1_000L)
+        vault.markActive("cred-1", 1_500L)
+
+        vault.updateVerifiedEndpoint("connector-abc", "10.0.0.99", 9443)
+
+        assertEquals(SecurePairingCredentialState.ACTIVE, vault.read()?.state)
+    }
+
+    @Test
+    fun `a verified endpoint update survives a new vault instance over the same backing store`() = runTest {
+        val backing = InMemoryVaultBackingStore()
+        val cipher = FakeCredentialCipher()
+        val first = FakeSecureCredentialVault(cipher, backing)
+        first.storePendingVerification("cred-1", "device-1", "raw-bearer-token", endpoint, 1_000L)
+        first.markActive("cred-1", 1_500L)
+        first.updateVerifiedEndpoint("connector-abc", "10.0.0.99", 9443)
+
+        val recreated = FakeSecureCredentialVault(cipher, backing)
+
+        val record = recreated.read()
+        assertEquals("10.0.0.99", record?.endpoint?.host)
+        assertEquals(9443, record?.endpoint?.securePort)
+        assertEquals(SecurePairingCredentialState.ACTIVE, record?.state)
+    }
 }
 
 /** A stand-in for "any Room-backed business repository" — proves clearing pairing trust never reaches it. */

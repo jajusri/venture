@@ -1,6 +1,7 @@
 package com.budcom.android.core.connectorauth.data.remote
 
 import com.budcom.android.core.connectorauth.domain.DefaultAuthenticatedConnectorContextProvider
+import com.budcom.android.core.connectorauth.domain.FakeAuthenticatedConnectorEndpointResolver
 import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorOperation
 import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorResult
 import com.budcom.android.core.connectorauth.domain.model.ConnectorTimeoutProfile
@@ -61,7 +62,12 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         val endpoint = endpointFor(server, heldCertificate)
         vault.storePendingVerification("cred-1", "device-1", SUPER_SECRET_TOKEN, endpoint, 1_000L)
         vault.markActive("cred-1", 2_000L)
-        val client = OkHttpAuthenticatedConnectorApiClient(DefaultAuthenticatedConnectorContextProvider(vault), httpClientFactory)
+        val client = OkHttpAuthenticatedConnectorApiClient(
+            DefaultAuthenticatedConnectorContextProvider(vault),
+            httpClientFactory,
+            FakeAuthenticatedConnectorEndpointResolver(),
+            vault,
+        )
         return client to vault
     }
 
@@ -127,7 +133,12 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         val wrongEndpoint = endpointFor(server, wrongCert)
         vault.storePendingVerification("cred-1", "device-1", SUPER_SECRET_TOKEN, wrongEndpoint, 1_000L)
         vault.markActive("cred-1", 2_000L)
-        val client = OkHttpAuthenticatedConnectorApiClient(DefaultAuthenticatedConnectorContextProvider(vault), factory)
+        val client = OkHttpAuthenticatedConnectorApiClient(
+            DefaultAuthenticatedConnectorContextProvider(vault),
+            factory,
+            FakeAuthenticatedConnectorEndpointResolver(),
+            vault,
+        )
 
         val result = client.execute(AuthenticatedConnectorOperation.GetCompanies)
 
@@ -413,7 +424,13 @@ class OkHttpAuthenticatedConnectorApiClientTest {
     @Test
     fun `an unpaired vault makes zero network calls`() = runTest {
         val (server, _) = newServer()
-        val client = OkHttpAuthenticatedConnectorApiClient(DefaultAuthenticatedConnectorContextProvider(FakeSecureCredentialVault()), factory)
+        val unpaired = FakeSecureCredentialVault()
+        val client = OkHttpAuthenticatedConnectorApiClient(
+            DefaultAuthenticatedConnectorContextProvider(unpaired),
+            factory,
+            FakeAuthenticatedConnectorEndpointResolver(),
+            unpaired,
+        )
 
         val result = client.execute(AuthenticatedConnectorOperation.GetCompanies)
 
@@ -426,7 +443,12 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         val (server, heldCertificate) = newServer()
         val vault = FakeSecureCredentialVault()
         vault.storePendingVerification("cred-1", "device-1", SUPER_SECRET_TOKEN, endpointFor(server, heldCertificate), 1_000L)
-        val client = OkHttpAuthenticatedConnectorApiClient(DefaultAuthenticatedConnectorContextProvider(vault), factory)
+        val client = OkHttpAuthenticatedConnectorApiClient(
+            DefaultAuthenticatedConnectorContextProvider(vault),
+            factory,
+            FakeAuthenticatedConnectorEndpointResolver(),
+            vault,
+        )
 
         val result = client.execute(AuthenticatedConnectorOperation.GetCompanies)
 
@@ -441,7 +463,12 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         vault.storePendingVerification("cred-1", "device-1", SUPER_SECRET_TOKEN, endpointFor(server, heldCertificate), 1_000L)
         vault.markActive("cred-1", 2_000L)
         vault.markRePairRequired("cred-1")
-        val client = OkHttpAuthenticatedConnectorApiClient(DefaultAuthenticatedConnectorContextProvider(vault), factory)
+        val client = OkHttpAuthenticatedConnectorApiClient(
+            DefaultAuthenticatedConnectorContextProvider(vault),
+            factory,
+            FakeAuthenticatedConnectorEndpointResolver(),
+            vault,
+        )
 
         val result = client.execute(AuthenticatedConnectorOperation.GetCompanies)
 
@@ -457,7 +484,12 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         vault.storePendingVerification("cred-1", "device-1", SUPER_SECRET_TOKEN, endpointFor(server, heldCertificate), 1_000L)
         vault.markActive("cred-1", 2_000L)
         cipher.dropKey()
-        val client = OkHttpAuthenticatedConnectorApiClient(DefaultAuthenticatedConnectorContextProvider(vault), factory)
+        val client = OkHttpAuthenticatedConnectorApiClient(
+            DefaultAuthenticatedConnectorContextProvider(vault),
+            factory,
+            FakeAuthenticatedConnectorEndpointResolver(),
+            vault,
+        )
 
         val result = client.execute(AuthenticatedConnectorOperation.GetCompanies)
 
@@ -510,7 +542,12 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         val vault = FakeSecureCredentialVault()
         vault.storePendingVerification("cred-1", "device-1", SUPER_SECRET_TOKEN, endpointFor(server, wrongCert), 1_000L)
         vault.markActive("cred-1", 2_000L)
-        val client = OkHttpAuthenticatedConnectorApiClient(DefaultAuthenticatedConnectorContextProvider(vault), factory)
+        val client = OkHttpAuthenticatedConnectorApiClient(
+            DefaultAuthenticatedConnectorContextProvider(vault),
+            factory,
+            FakeAuthenticatedConnectorEndpointResolver(),
+            vault,
+        )
 
         val result = client.execute(AuthenticatedConnectorOperation.StartLedgerSync)
 

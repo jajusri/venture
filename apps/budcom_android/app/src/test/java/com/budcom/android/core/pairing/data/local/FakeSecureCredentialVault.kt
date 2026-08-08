@@ -73,6 +73,17 @@ class FakeSecureCredentialVault(
         return true
     }
 
+    override suspend fun updateVerifiedEndpoint(
+        connectorId: String,
+        host: String,
+        securePort: Int,
+    ): SecureCredentialVaultEndpointUpdateResult {
+        val current = backingStore.record ?: return SecureCredentialVaultEndpointUpdateResult.NoRecord
+        if (current.endpoint.connectorId != connectorId) return SecureCredentialVaultEndpointUpdateResult.ConnectorIdMismatch
+        backingStore.record = current.copy(endpoint = current.endpoint.copy(host = host, securePort = securePort))
+        return SecureCredentialVaultEndpointUpdateResult.Updated
+    }
+
     override suspend fun clear() {
         backingStore.record = null
     }

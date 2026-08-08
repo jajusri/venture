@@ -32,6 +32,17 @@ sealed class SecureCredentialVaultWriteResult {
     data object KeystoreUnavailable : SecureCredentialVaultWriteResult()
 }
 
+/** Outcome of [SecureCredentialVault.updateVerifiedEndpoint]. See that method's doc comment. */
+sealed class SecureCredentialVaultEndpointUpdateResult {
+    data object Updated : SecureCredentialVaultEndpointUpdateResult()
+
+    /** No record exists to update. */
+    data object NoRecord : SecureCredentialVaultEndpointUpdateResult()
+
+    /** The current record's connectorId does not match — the caller verified a different Connector. */
+    data object ConnectorIdMismatch : SecureCredentialVaultEndpointUpdateResult()
+}
+
 /**
  * Outcome of a safe, non-throwing enrollment-history read. Unlike [SecureCredentialVault.read],
  * which collapses "never enrolled" and "unreadable" into one `null`, this distinguishes them —
@@ -90,6 +101,22 @@ interface SecureCredentialVault {
 
     /** Marks the current record RE_PAIR_REQUIRED, only if its credentialId matches [credentialId]. */
     suspend fun markRePairRequired(credentialId: String): Boolean
+
+    /**
+     * TD-017: atomically replaces the current record's `host`/`securePort` with [host]/[securePort]
+     * — every other field (connectorId, transportFingerprint, fingerprintAlgorithm,
+     * transportIdentityVersion, credential, state, timestamps) is left exactly as it was. This
+     * method performs no verification of its own and trusts its caller completely: it must only
+     * ever be called with a [host]/[securePort] the caller has already cryptographically verified
+     * belongs to [connectorId] (see `AuthenticatedConnectorEndpointResolver`) — passing an
+     * unverified, mDNS-supplied endpoint here would defeat the entire point of pinning. Rejects
+     * with [SecureCredentialVaultEndpointUpdateResult.ConnectorIdMismatch] if the current record's
+     * connectorId does not equal [connectorId] — a defense-in-depth guard in case the record was
+     * replaced (e.g. by a concurrent re-pair) between verification and this call; the mismatched
+     * record is left completely untouched in that case. Never resets state, never touches the
+     * credential, never marks RE_PAIR_REQUIRED.
+     */
+    suspend fun updateVerifiedEndpoint(connectorId: String, host: String, securePort: Int): SecureCredentialVaultEndpointUpdateResult
 
     /** Removes the trust record entirely. */
     suspend fun clear()
@@ -166,6 +193,23 @@ class DataStoreSecureCredentialVault @Inject constructor(
         if (current.credentialId != credentialId) return@withLock false
         dataStore.edit { prefs -> prefs[KEY_STATE] = SecurePairingCredentialState.RE_PAIR_REQUIRED.name }
         true
+    }
+
+    override suspend fun updateVerifiedEndpoint(
+        connectorId: String,
+        host: String,
+        securePort: Int,
+    ): SecureCredentialVaultEndpointUpdateResult = mutex.withLock {
+        val current = dataStore.data.map { it.toRecord() }.first()
+            ?: return@withLock SecureCredentialVaultEndpointUpdateResult.NoRecord
+        if (current.endpoint.connectorId != connectorId) {
+            return@withLock SecureCredentialVaultEndpointUpdateResult.ConnectorIdMismatch
+        }
+        dataStore.edit { prefs ->
+            prefs[KEY_HOST] = host
+            prefs[KEY_SECURE_PORT] = securePort
+        }
+        SecureCredentialVaultEndpointUpdateResult.Updated
     }
 
     override suspend fun clear() {

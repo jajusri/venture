@@ -2,11 +2,15 @@ package com.budcom.android.core.connectorauth.data.remote
 
 import com.budcom.android.core.connectorauth.domain.AuthenticatedConnectorContextProvider
 import com.budcom.android.core.connectorauth.domain.AuthenticatedConnectorContextResolution
+import com.budcom.android.core.connectorauth.domain.AuthenticatedConnectorEndpointResolver
+import com.budcom.android.core.connectorauth.domain.VerifiedEndpointResolution
 import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorOperation
 import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorResponsePayload
 import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorResult
 import com.budcom.android.core.connectorauth.domain.model.ConnectorHttpMethod
 import com.budcom.android.core.connectorauth.domain.model.ConnectorTimeoutProfile
+import com.budcom.android.core.pairing.data.local.SecureCredentialVault
+import com.budcom.android.core.pairing.data.local.SecureCredentialVaultEndpointUpdateResult
 import com.budcom.android.core.pairing.data.remote.PinnedHttpClientFactory
 import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
 import kotlinx.coroutines.CancellationException
@@ -25,10 +29,15 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody
+import timber.log.Timber
 import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import javax.net.ssl.SSLException
 
 /**
  * The dedicated, authenticated Connector business-data transport. Distinct from
@@ -46,6 +55,8 @@ interface AuthenticatedConnectorApiPort {
 
 private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
+private const val TIMBER_TAG = "AuthenticatedConnectorApi"
+
 /** Bounds every response read regardless of status code — an oversized body is never buffered whole. */
 internal const val MAX_RESPONSE_BODY_BYTES = 4L * 1024 * 1024
 
@@ -59,6 +70,8 @@ private const val SYNC_CALL_TIMEOUT_MS = 0L
 class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
     private val contextProvider: AuthenticatedConnectorContextProvider,
     private val pinnedHttpClientFactory: PinnedHttpClientFactory,
+    private val endpointResolver: AuthenticatedConnectorEndpointResolver,
+    private val vault: SecureCredentialVault,
 ) : AuthenticatedConnectorApiPort {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -69,12 +82,64 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
             AuthenticatedConnectorContextResolution.PendingVerification -> AuthenticatedConnectorResult.PendingVerification
             AuthenticatedConnectorContextResolution.RePairRequired -> AuthenticatedConnectorResult.RePairRequired
             AuthenticatedConnectorContextResolution.CredentialUnavailable -> AuthenticatedConnectorResult.CredentialUnavailable
-            is AuthenticatedConnectorContextResolution.Ready -> {
-                val request = buildRequest(resolution.context.endpoint, resolution.context.bearerHeaderValue(), operation)
-                val client = applyTimeoutProfile(pinnedHttpClientFactory.create(resolution.context.endpoint), operation.timeoutProfile)
-                executeRequest(client, request, resolution.context.credentialId)
-            }
+            is AuthenticatedConnectorContextResolution.Ready -> executeWithRediscovery(
+                resolution.context.endpoint,
+                resolution.context.bearerHeaderValue(),
+                resolution.context.credentialId,
+                operation,
+            )
         }
+    }
+
+    /**
+     * TD-017: the shared rediscovery boundary every authenticated operation goes through — a
+     * single bounded rediscovery cycle and at most one retry, never for a caller-visible failure
+     * other than [AuthenticatedConnectorResult.TransportFailure] (a 400/401/403/etc. is a real
+     * answer from the real Connector, not evidence the endpoint moved).
+     */
+    private suspend fun executeWithRediscovery(
+        endpoint: TrustedConnectorEndpoint,
+        bearerHeaderValue: String,
+        credentialId: String,
+        operation: AuthenticatedConnectorOperation,
+    ): AuthenticatedConnectorResult {
+        val firstAttempt = executeOnce(endpoint, bearerHeaderValue, credentialId, operation)
+        if (firstAttempt != AuthenticatedConnectorResult.TransportFailure) {
+            return firstAttempt
+        }
+
+        val verified = when (val resolution = endpointResolver.resolveVerifiedEndpoint(endpoint)) {
+            is VerifiedEndpointResolution.Verified -> resolution.endpoint
+            VerifiedEndpointResolution.Unavailable -> return firstAttempt
+        }
+
+        // Best-effort persistence: this operation's retry proceeds against the just-verified
+        // endpoint regardless of whether the write below succeeds — the endpoint was already
+        // cryptographically verified moments ago for this exact operation. A write failure only
+        // means the *next* process/request won't yet benefit from it, never that this retry is
+        // treated as untrusted (see SecureCredentialVault.updateVerifiedEndpoint's doc comment).
+        val updateResult = runCatching {
+            vault.updateVerifiedEndpoint(verified.connectorId, verified.host, verified.securePort)
+        }.getOrElse { error ->
+            Timber.tag(TIMBER_TAG).w(error, "verified endpoint persistence threw; retrying in-memory only")
+            null
+        }
+        if (updateResult != null && updateResult !is SecureCredentialVaultEndpointUpdateResult.Updated) {
+            Timber.tag(TIMBER_TAG).w("verified endpoint not persisted: %s", updateResult)
+        }
+
+        return executeOnce(verified, bearerHeaderValue, credentialId, operation)
+    }
+
+    private suspend fun executeOnce(
+        endpoint: TrustedConnectorEndpoint,
+        bearerHeaderValue: String,
+        credentialId: String,
+        operation: AuthenticatedConnectorOperation,
+    ): AuthenticatedConnectorResult {
+        val request = buildRequest(endpoint, bearerHeaderValue, operation)
+        val client = applyTimeoutProfile(pinnedHttpClientFactory.create(endpoint), operation.timeoutProfile)
+        return executeRequest(client, request, credentialId)
     }
 
     private fun buildRequest(endpoint: TrustedConnectorEndpoint, bearerHeaderValue: String, operation: AuthenticatedConnectorOperation): Request {
@@ -125,8 +190,24 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
             // Covers TLS/pin/hostname failures (SSLPeerUnverifiedException/CertificateException
             // from the pinned trust manager), socket errors, and timeouts — a security failure
             // never falls back to an unpinned retry, it surfaces here as a transport failure.
+            // TD-017: classified only for an internal diagnostic log line — never carried in the
+            // returned result (see the sealed AuthenticatedConnectorResult.TransportFailure
+            // doc comment: no message/cause field exists, deliberately). A fingerprint-mismatch
+            // classification does not skip or weaken the rediscovery that may follow this
+            // result — the exact same pinned-fingerprint check applies to every candidate
+            // rediscovery considers, so classifying it here never masks an identity attack; it
+            // only makes the log line legible instead of a generic "could not connect".
+            Timber.tag(TIMBER_TAG).d("transport failure classified as %s", classifyTransportFailure(e))
             AuthenticatedConnectorResult.TransportFailure
         }
+    }
+
+    private fun classifyTransportFailure(e: IOException): String = when (e) {
+        is SSLException -> "TLS_OR_FINGERPRINT_MISMATCH"
+        is UnknownHostException -> "DNS_RESOLUTION_FAILURE"
+        is ConnectException -> "CONNECTION_REFUSED"
+        is SocketTimeoutException -> "TIMEOUT"
+        else -> "OTHER_IO"
     }
 
     private fun mapResponse(response: Response, credentialId: String): AuthenticatedConnectorResult {

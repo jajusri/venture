@@ -3,9 +3,11 @@ package com.budcom.android.core.connectorauth.di
 import com.budcom.android.core.connectorauth.data.remote.AuthenticatedConnectorApiPort
 import com.budcom.android.core.connectorauth.data.remote.OkHttpAuthenticatedConnectorApiClient
 import com.budcom.android.core.connectorauth.domain.AuthenticatedConnectorContextProvider
+import com.budcom.android.core.connectorauth.domain.AuthenticatedConnectorEndpointResolver
 import com.budcom.android.core.connectorauth.domain.AuthenticatedRepositoryFailurePolicy
 import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
 import com.budcom.android.core.connectorauth.domain.DefaultAuthenticatedConnectorContextProvider
+import com.budcom.android.core.connectorauth.domain.DefaultAuthenticatedConnectorEndpointResolver
 import com.budcom.android.core.connectorauth.domain.DefaultAuthenticatedRepositoryFailurePolicy
 import com.budcom.android.core.connectorauth.domain.DefaultConnectorTransportSelectionGate
 import dagger.Binds
@@ -46,4 +48,10 @@ abstract class ConnectorAuthBindModule {
     abstract fun bindAuthenticatedRepositoryFailurePolicy(
         impl: DefaultAuthenticatedRepositoryFailurePolicy,
     ): AuthenticatedRepositoryFailurePolicy
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthenticatedConnectorEndpointResolver(
+        impl: DefaultAuthenticatedConnectorEndpointResolver,
+    ): AuthenticatedConnectorEndpointResolver
 }
