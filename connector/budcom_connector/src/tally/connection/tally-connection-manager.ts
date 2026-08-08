@@ -74,7 +74,14 @@ export class TallyConnectionManager {
 
   async start(): Promise<void> {
     this.running = true;
-    this.state = 'connecting';
+    // 'disconnected', not 'connecting': nothing has been attempted yet, and nothing in this
+    // codebase automatically calls ping()/exchange() to attempt one — the manager only ever
+    // moves to 'connecting' from inside exchange()'s own retry loop once a real attempt is
+    // genuinely in flight (see below). Reusing 'connecting' as the pre-attempt default was
+    // misleading: it reads as "an attempt is in progress and should resolve soon", which is
+    // not true and previously left /health reporting a stuck-looking "State: connecting"
+    // indefinitely whenever nothing had happened yet to trigger a real Tally call.
+    this.state = 'disconnected';
     this.options.logger.info('Tally connection manager starting', {
       host: this.options.config.tallyHost,
       port: this.options.config.tallyPort,
