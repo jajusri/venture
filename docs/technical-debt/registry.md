@@ -235,6 +235,26 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-014 — Desktop dashboard/company-list has no re-poll after a transient post-startup failure
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-014 |
+| **Description** | Desktop's renderer refresh model is entirely event-driven, not polled, and the two refresh paths are asymmetric. `startDesktopShell()` (`apps/budcom_desktop/src/renderer/scripts/app.ts:1947-1964`) calls `refreshUi()` (Connection/Health/Version summary) and `loadCompanies()` (company list, "Unable to load companies from the connector" banner) exactly once each at window load. After that, `refreshUi()` re-runs only when the main process pushes `desktop:status-updated` (`main.ts:610-614`), which itself fires only from `ConnectorLifecycleService.setStatusListener()` (`main.ts:351-353`) on an actual lifecycle **state transition** (e.g. `disconnected→starting→connected`). `loadCompanies()` has no re-trigger wired to anything at all — not to lifecycle transitions, not to any timer. A full-repo grep of the renderer found exactly one `setInterval` in the entire file, and it is the pairing-QR countdown; there is no periodic poll of the main dashboard/company summary. |
+| **Observed customer message** | Desktop shows "Connection: Not connected", "Health: unknown", "Connector version: —", "Company: No company selected", plus "Unable to load companies from the connector." / "Company discovery failed / No companies available" — a state that persists indefinitely with no user action, even though the Connector itself is fully healthy and `/health`, `/session`, `/companies` all respond correctly and quickly when probed directly. |
+| **Impact** | High for release perception — a transient, self-resolving slowness in the ~30-90 second window immediately after Connector startup (a separate, not-yet-fully-root-caused timing issue — see the distinction note below) can get captured as a one-time bad snapshot by whichever `refreshUi()`/`loadCompanies()` call happens to run during that window. Because the Connector's lifecycle state then settles into a stable `connected` with no further transitions, no `desktop:status-updated` push ever fires again, and `loadCompanies()` was never wired to re-fire at all — so the stale failure state is permanent until the user manually clicks Refresh Companies or restarts Desktop, even though the underlying service recovered within seconds on its own. A normal user has no way to know the failure is stale rather than real. |
+| **Priority** | P1 |
+| **Target milestone** | Pre-MVP-1 release hardening |
+| **Status** | Open — root-caused, not yet fixed |
+| **Introduced** | Pre-dates this investigation; became visible during Phase 3U-6 physical TD-013 retest prep (2026-08-08), reproduced on a freshly rebuilt, freshly launched Desktop/Connector pair — not specific to any particular build. |
+| **Evidence** | Live session, 2026-08-08 ~11:55-12:01 UTC: Desktop lifecycle log showed a clean `disconnected→starting→connected` transition at 11:55:32-11:55:39 with no further transition logged since; three `"Company discovery failed: The connector did not respond in time"` errors at 11:56:06-11:56:40; direct probes of the same running Connector at 12:00-12:01 (`/health`, `/session` in 12ms, `/companies` in 79ms returning the real company `ESTIMATION` successfully) confirmed the service was fully healthy — yet the Desktop window, left untouched, continued showing "Not connected / Health unknown / Connector version — / Unable to load companies" throughout. |
+| **Distinction from the underlying transient slowness** | This entry is about the *missing recovery path* in the UI, not about *why* the ~30-90s post-startup window is occasionally slow enough to time out a client request in the first place — that remains the same not-fully-root-caused observability gap noted in the Connector→Tally diagnostic (packaged Connector `stdio:'ignore'` means no Connector-side logs exist to pinpoint the exact stall mechanism). Both are real; this entry is scoped to the Desktop-side fix (give the UI a way to notice the transient failure has cleared), which is independently valuable regardless of whether the underlying transient-slowness cause is ever further narrowed. |
+| **Likely fix location** | `apps/budcom_desktop/src/renderer/scripts/app.ts` — either add a bounded periodic re-poll for the dashboard/company summary (matching the existing self-rescheduling-`setTimeout` pattern already used for sync-progress and pairing-status polling elsewhere in this same file), or wire `loadCompanies()` (and a failed `refreshUi()` result specifically) to retry on a short bounded backoff until it succeeds once, then stop — not an unconditional infinite poll. |
+| **Required automated tests** | A renderer test proving: after `startDesktopShell()`'s initial `loadCompanies()`/`refreshUi()` calls fail, and with no further `desktop:status-updated` event, the UI still recovers to a correct state within a bounded time/number of attempts when the underlying bridge calls start succeeding; a test proving the retry is bounded (does not poll forever); a test proving a genuinely persistent failure still displays as an error, not a false "recovered" state. |
+| **Required physical retest** | Not required to confirm the diagnosis (already confirmed live above); required once a fix lands, to prove the UI now self-recovers within the same physical Desktop/Connector restart scenario this defect was found in. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
@@ -252,3 +272,4 @@ Engineering-tracked compromises, defects, and deferred work.
 | TD-011 | Ledger name-slug identity / shallow export | P1 | **Resolved (controlled pilot)** | Reliability ledger-identity |
 | TD-012 | Manual private-IP entry required for Trusted-LAN pairing | P0 | **Fixed (automated validation) — pending physical retest** | Pre-MVP-1 release hardening |
 | TD-013 | Post-pairing reconnection loses selected company / authenticated transport blocks auto-recovery | P0 | **Fixed (automated validation) — pending physical retest** | Pre-MVP-1 release hardening |
+| TD-014 | Desktop dashboard/company-list has no re-poll after a transient post-startup failure | P1 | Open — root-caused, not yet fixed | Pre-MVP-1 release hardening |
