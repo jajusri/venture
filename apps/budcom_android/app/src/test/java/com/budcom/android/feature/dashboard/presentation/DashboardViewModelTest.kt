@@ -20,6 +20,8 @@ import com.budcom.android.feature.dashboard.domain.usecase.ValidateDashboardSess
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatus
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
 import com.budcom.android.feature.sync.domain.model.SyncStatusSummary
 import com.budcom.android.feature.sync.domain.model.SyncTarget
@@ -71,7 +73,7 @@ class DashboardViewModelTest {
         restoreRepository: CompanyRepository = DashboardNoOpCompanyRepository,
     ): DashboardViewModel {
         val refresh = RefreshDashboardUseCase(
-            connectorStatus = connector,
+            operationalStatus = connector,
             companySession = company,
             restoreCompanySelection = RestoreCompanySelectionUseCase(restoreRepository),
             connectivityObserver = connectivity,
@@ -233,7 +235,7 @@ class DashboardViewModelTest {
     }
 }
 
-private class FakeConnectorStatus : ConnectorStatusPort {
+private class FakeConnectorStatus : ConnectorStatusPort, ConnectorOperationalStatusPort {
     val baseUrl = MutableStateFlow("http://10.0.2.2:8080/")
     var probe: AppResult<ConnectorConnectionProbe> = AppResult.Success(sampleProbe(ready = true))
     var delayMillis: Long = 0
@@ -244,6 +246,15 @@ private class FakeConnectorStatus : ConnectorStatusPort {
         probeCalls++
         if (delayMillis > 0) delay(delayMillis)
         return probe
+    }
+
+    // TD-016: this ViewModel test exercises RefreshDashboardUseCase through the LEGACY branch
+    // of ConnectorOperationalStatus only - AUTHENTICATED-branch behavior is covered directly in
+    // RefreshDashboardUseCaseTest, which does not need a ViewModel/Hilt harness.
+    override suspend fun currentStatus(): ConnectorOperationalStatus {
+        probeCalls++
+        if (delayMillis > 0) delay(delayMillis)
+        return ConnectorOperationalStatus.Legacy(baseUrl.value, probe)
     }
 }
 

@@ -6,6 +6,8 @@ import com.budcom.android.feature.serverconfig.data.remote.ConnectorHealthRemote
 import com.budcom.android.feature.serverconfig.data.remote.ConnectorSystemApi
 import com.budcom.android.feature.serverconfig.data.remote.DefaultConnectorHealthRemoteDataSource
 import com.budcom.android.feature.serverconfig.data.repository.ConnectorConfigRepositoryImpl
+import com.budcom.android.feature.serverconfig.data.repository.ConnectorOperationalStatusPortImpl
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import com.budcom.android.feature.serverconfig.domain.repository.ConnectorConfigRepository
 import dagger.Binds
 import dagger.Module
@@ -48,6 +50,14 @@ abstract class ServerConfigBindModule {
     abstract fun bindHealthRemoteDataSource(
         impl: DefaultConnectorHealthRemoteDataSource,
     ): ConnectorHealthRemoteDataSource
+
+    /** TD-016: transport-aware successor consulted wherever a securely paired device's real
+     * connection status must be shown instead of the always-LEGACY [ConnectorStatusPort]. */
+    @Binds
+    @Singleton
+    abstract fun bindConnectorOperationalStatusPort(
+        impl: ConnectorOperationalStatusPortImpl,
+    ): ConnectorOperationalStatusPort
 }
 
 @Module

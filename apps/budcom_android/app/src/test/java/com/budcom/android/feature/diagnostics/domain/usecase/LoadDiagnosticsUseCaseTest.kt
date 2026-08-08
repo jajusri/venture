@@ -12,7 +12,8 @@ import com.budcom.android.feature.diagnostics.domain.port.ConnectionDiagnosticsP
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
-import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatus
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import com.budcom.android.feature.sync.domain.model.SyncRunSummary
 import com.budcom.android.feature.sync.domain.model.SyncStatusSummary
 import com.budcom.android.feature.sync.domain.model.SyncTarget
@@ -36,7 +37,7 @@ class LoadDiagnosticsUseCaseTest {
     @Test
     fun aggregatesConfirmedSectionsWithoutInventingHealth() = runTest {
         val useCase = LoadDiagnosticsUseCase(
-            connectorStatus = FakeConnectorStatus(probeSuccess = true),
+            operationalStatus = FakeOperationalStatus(legacy(probeSuccess = true)),
             companySession = FakeCompanySession(),
             connectionDiagnostics = FakeConnectionPort(success = true),
             syncStatus = FakeSyncStatus(),
@@ -58,7 +59,7 @@ class LoadDiagnosticsUseCaseTest {
     @Test
     fun preservesPartialFailureWhenHealthFails() = runTest {
         val useCase = LoadDiagnosticsUseCase(
-            connectorStatus = FakeConnectorStatus(probeSuccess = false),
+            operationalStatus = FakeOperationalStatus(legacy(probeSuccess = false)),
             companySession = FakeCompanySession(),
             connectionDiagnostics = FakeConnectionPort(success = true),
             syncStatus = FakeSyncStatus(),
@@ -72,48 +73,130 @@ class LoadDiagnosticsUseCaseTest {
         assertNotNull(snapshot.connection)
         assertEquals("connected", snapshot.connection!!.state)
     }
+
+    // TD-016 regression coverage: LoadDiagnosticsUseCase must never surface the legacy emulator
+    // default, and must never fabricate health/readiness detail, when transport is AUTHENTICATED.
+
+    @Test
+    fun `TD-016 authenticated healthy device reports the real endpoint, never 10-0-2-2, with honest not-available health detail`() = runTest {
+        val useCase = LoadDiagnosticsUseCase(
+            operationalStatus = FakeOperationalStatus(
+                ConnectorOperationalStatus.AuthenticatedHealthy(
+                    endpointDisplay = "https://trusted-connector.example:8443/",
+                    checkedAtEpochMillis = 7L,
+                ),
+            ),
+            companySession = FakeCompanySession(),
+            connectionDiagnostics = FakeConnectionPort(success = true),
+            syncStatus = FakeSyncStatus(),
+            refreshSyncOverview = RefreshSyncOverviewUseCase(FakeSyncRepository(), FakeCompanySession()),
+            timeProvider = TimeProvider { 99L },
+        )
+        val snapshot = useCase(refreshSync = false)
+        assertEquals("https://trusted-connector.example:8443/", snapshot.baseUrl)
+        assertTrue(!snapshot.baseUrl.contains("10.0.2.2"))
+        assertNull(snapshot.health)
+        assertNull(snapshot.readiness)
+        assertNull(snapshot.connection)
+        assertNotNull(snapshot.healthError)
+    }
+
+    @Test
+    fun `TD-016 authenticated unavailable never falls back to a legacy probe or the emulator default`() = runTest {
+        val useCase = LoadDiagnosticsUseCase(
+            operationalStatus = FakeOperationalStatus(
+                ConnectorOperationalStatus.AuthenticatedUnavailable(AppError.Message("Could not reach the Connector.")),
+            ),
+            companySession = FakeCompanySession(),
+            connectionDiagnostics = FakeConnectionPort(success = true),
+            syncStatus = FakeSyncStatus(),
+            refreshSyncOverview = RefreshSyncOverviewUseCase(FakeSyncRepository(), FakeCompanySession()),
+            timeProvider = TimeProvider { 99L },
+        )
+        val snapshot = useCase(refreshSync = false)
+        assertEquals(ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER, snapshot.baseUrl)
+        assertTrue(!snapshot.baseUrl.contains("10.0.2.2"))
+        assertNotNull(snapshot.healthError)
+        assertNull(snapshot.health)
+    }
+
+    @Test
+    fun `TD-016 authenticated preparing state never displays 10-0-2-2 as if it were the active endpoint`() = runTest {
+        val useCase = LoadDiagnosticsUseCase(
+            operationalStatus = FakeOperationalStatus(
+                ConnectorOperationalStatus.AuthenticatedPreparing("Verifying secure pairing…"),
+            ),
+            companySession = FakeCompanySession(),
+            connectionDiagnostics = FakeConnectionPort(success = true),
+            syncStatus = FakeSyncStatus(),
+            refreshSyncOverview = RefreshSyncOverviewUseCase(FakeSyncRepository(), FakeCompanySession()),
+            timeProvider = TimeProvider { 99L },
+        )
+        val snapshot = useCase(refreshSync = false)
+        assertTrue(!snapshot.baseUrl.contains("10.0.2.2"))
+        assertEquals("Verifying secure pairing…", (snapshot.healthError as AppError.Message).message)
+    }
+
+    @Test
+    fun `TD-016 legacy transport is completely unaffected by the new port shape`() = runTest {
+        val useCase = LoadDiagnosticsUseCase(
+            operationalStatus = FakeOperationalStatus(legacy(probeSuccess = true)),
+            companySession = FakeCompanySession(),
+            connectionDiagnostics = FakeConnectionPort(success = true),
+            syncStatus = FakeSyncStatus(),
+            refreshSyncOverview = RefreshSyncOverviewUseCase(FakeSyncRepository(), FakeCompanySession()),
+            timeProvider = TimeProvider { 99L },
+        )
+        val snapshot = useCase(refreshSync = false)
+        assertEquals("http://10.0.2.2:8080/", snapshot.baseUrl)
+        assertNotNull(snapshot.health)
+        assertNotNull(snapshot.readiness)
+        assertNull(snapshot.healthError)
+    }
 }
 
-private class FakeConnectorStatus(
-    private val probeSuccess: Boolean,
-) : ConnectorStatusPort {
-    override fun observeBaseUrl(): Flow<String> = flowOf("http://10.0.2.2:8080/")
-    override fun currentBaseUrl(): String = "http://10.0.2.2:8080/"
-    override suspend fun probeConnection(): AppResult<ConnectorConnectionProbe> =
-        if (probeSuccess) {
-            AppResult.Success(
-                ConnectorConnectionProbe(
-                    health = ConnectorHealth(
-                        status = "ok",
-                        schemaVersion = "1.0.0",
-                        connectorVersion = "0.1.0",
-                        tallyReachable = true,
-                        readOnly = true,
-                        bindHost = "0.0.0.0",
-                        bindPort = 8080,
-                        networkExposure = "loopback",
-                        networkExposureWarning = null,
-                        networkPolicySatisfied = true,
-                        authenticatedLanAccessEnabled = false,
-                        services = emptyList(),
-                        startupCorrelationId = "s1",
-                        repositoryAvailable = true,
-                        databaseAccessible = true,
-                    ),
-                    readiness = ConnectorReadiness(
-                        status = "ready",
-                        repositoryAvailable = true,
-                        databaseAccessible = true,
-                        voucherSynchronizationComposed = false,
-                        voucherApplicationComposed = true,
-                        httpStatus = 200,
-                    ),
-                    checkedAtEpochMillis = 1L,
+private fun legacy(probeSuccess: Boolean): ConnectorOperationalStatus.Legacy = ConnectorOperationalStatus.Legacy(
+    baseUrl = "http://10.0.2.2:8080/",
+    healthProbe = if (probeSuccess) {
+        AppResult.Success(
+            ConnectorConnectionProbe(
+                health = ConnectorHealth(
+                    status = "ok",
+                    schemaVersion = "1.0.0",
+                    connectorVersion = "0.1.0",
+                    tallyReachable = true,
+                    readOnly = true,
+                    bindHost = "0.0.0.0",
+                    bindPort = 8080,
+                    networkExposure = "loopback",
+                    networkExposureWarning = null,
+                    networkPolicySatisfied = true,
+                    authenticatedLanAccessEnabled = false,
+                    services = emptyList(),
+                    startupCorrelationId = "s1",
+                    repositoryAvailable = true,
+                    databaseAccessible = true,
                 ),
-            )
-        } else {
-            AppResult.Failure(AppError.Timeout())
-        }
+                readiness = ConnectorReadiness(
+                    status = "ready",
+                    repositoryAvailable = true,
+                    databaseAccessible = true,
+                    voucherSynchronizationComposed = false,
+                    voucherApplicationComposed = true,
+                    httpStatus = 200,
+                ),
+                checkedAtEpochMillis = 1L,
+            ),
+        )
+    } else {
+        AppResult.Failure(AppError.Timeout())
+    },
+)
+
+private class FakeOperationalStatus(
+    private val status: ConnectorOperationalStatus,
+) : ConnectorOperationalStatusPort {
+    override suspend fun currentStatus(): ConnectorOperationalStatus = status
 }
 
 private class FakeCompanySession : CompanySessionPort {

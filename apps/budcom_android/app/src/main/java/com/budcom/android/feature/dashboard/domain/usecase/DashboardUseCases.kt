@@ -10,6 +10,8 @@ import com.budcom.android.feature.company.domain.usecase.RestoreCompanySelection
 import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidity
 import com.budcom.android.feature.dashboard.domain.model.DashboardSnapshot
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatus
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -20,7 +22,7 @@ import javax.inject.Inject
  * Aggregates stable public ports into a dashboard snapshot.
  */
 class RefreshDashboardUseCase @Inject constructor(
-    private val connectorStatus: ConnectorStatusPort,
+    private val operationalStatus: ConnectorOperationalStatusPort,
     private val companySession: CompanySessionPort,
     private val restoreCompanySelection: RestoreCompanySelectionUseCase,
     private val connectivityObserver: NetworkConnectivityObserver,
@@ -29,7 +31,6 @@ class RefreshDashboardUseCase @Inject constructor(
     suspend operator fun invoke(
         validateSessionWhenCompanySelected: Boolean = true,
     ): DashboardSnapshot {
-        val baseUrl = connectorStatus.currentBaseUrl()
         val isOnline = connectivityObserver.current()
         // A null complete object can mean either an empty cache or a legacy ID-only cache.
         // Restoration resolves and atomically persists the matching name in both cases.
@@ -38,19 +39,46 @@ class RefreshDashboardUseCase @Inject constructor(
         }
         val selectedCompanyId = companySession.observeSelectedCompanyId().first()
 
+        val baseUrl: String
         var healthPresent = false
         var readinessStatus: String? = null
         var lastHealthAt: Long? = null
         var connectorError: AppError? = null
 
-        when (val probe = connectorStatus.probeConnection()) {
-            is AppResult.Success -> {
-                healthPresent = true
-                readinessStatus = probe.value.readiness?.status
-                lastHealthAt = probe.value.checkedAtEpochMillis
+        when (val status = operationalStatus.currentStatus()) {
+            is ConnectorOperationalStatus.Legacy -> {
+                baseUrl = status.baseUrl
+                when (val probe = status.healthProbe) {
+                    is AppResult.Success -> {
+                        healthPresent = true
+                        readinessStatus = probe.value.readiness?.status
+                        lastHealthAt = probe.value.checkedAtEpochMillis
+                    }
+                    is AppResult.Failure -> {
+                        connectorError = probe.error
+                    }
+                }
             }
-            is AppResult.Failure -> {
-                connectorError = probe.error
+
+            is ConnectorOperationalStatus.AuthenticatedHealthy -> {
+                // healthPresent=true here is exactly what unblocks the session-validation
+                // attempt below for a securely paired device — previously that attempt was
+                // gated behind the always-LEGACY probe and so never ran for these devices
+                // (TD-016). No authenticated /ready equivalent exists, so readinessStatus stays
+                // unset rather than fabricated.
+                baseUrl = status.endpointDisplay
+                healthPresent = true
+                lastHealthAt = status.checkedAtEpochMillis
+            }
+
+            is ConnectorOperationalStatus.AuthenticatedUnavailable -> {
+                baseUrl = ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER
+                connectorError = status.error
+            }
+
+            is ConnectorOperationalStatus.AuthenticatedPreparing -> {
+                baseUrl = ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER
+                connectorError = AppError.Message(status.message)
             }
         }
 

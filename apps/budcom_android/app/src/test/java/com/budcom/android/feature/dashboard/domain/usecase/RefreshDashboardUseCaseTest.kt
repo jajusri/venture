@@ -15,7 +15,8 @@ import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidit
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
-import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatus
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -90,7 +91,9 @@ class RefreshDashboardUseCaseTest {
             }
         }
         val snapshot = RefreshDashboardUseCase(
-            connectorStatus = FakeConnectorStatus("http://10.0.2.2:8080/", AppResult.Success(sampleProbe(ready = true))),
+            operationalStatus = FakeOperationalStatus(
+                ConnectorOperationalStatus.Legacy("http://10.0.2.2:8080/", AppResult.Success(sampleProbe(ready = true))),
+            ),
             companySession = companySession,
             restoreCompanySelection = RestoreCompanySelectionUseCase(restoreRepo),
             connectivityObserver = FakeConnectivity(true),
@@ -155,6 +158,114 @@ class RefreshDashboardUseCaseTest {
         assertEquals(DashboardOperationalMode.ConnectorUnavailable, snapshot.operationalMode())
     }
 
+    // TD-016 regression coverage below. These exercise the AUTHENTICATED branches of
+    // ConnectorOperationalStatus directly (not through the real port implementation, which is
+    // covered separately by ConnectorOperationalStatusPortImplTest) - the point here is that
+    // RefreshDashboardUseCase itself reacts correctly to each status variant.
+
+    @Test
+    fun `TD-016 authenticated healthy device never shows the emulator default and unblocks session validation`() = runTest {
+        // This is the exact mechanism that previously left securely paired devices stuck on
+        // "Session = Unknown / Last successful validation = Never": session validation below is
+        // gated behind healthPresent, which was always false for these devices because the
+        // legacy probe (targeting 10.0.2.2) could never succeed. AuthenticatedHealthy setting
+        // healthPresent=true is what allows validateSessionStatus() to actually run.
+        val companySession = FakeCompanySession(
+            selectedId = "estimation",
+            selected = AppResult.Success(SelectedCompanyStatus("estimation", "ESTIMATION")),
+            validate = AppResult.Success(
+                SessionValidationStatus(
+                    validity = SessionValidity.Valid,
+                    companyId = "estimation",
+                    companyName = "ESTIMATION",
+                ),
+            ),
+        )
+        val snapshot = RefreshDashboardUseCase(
+            operationalStatus = FakeOperationalStatus(
+                ConnectorOperationalStatus.AuthenticatedHealthy(
+                    endpointDisplay = "https://trusted-connector.example:8443/",
+                    checkedAtEpochMillis = 4_242L,
+                ),
+            ),
+            companySession = companySession,
+            restoreCompanySelection = RestoreCompanySelectionUseCase(NoOpCompanyRepository),
+            connectivityObserver = FakeConnectivity(true),
+            timeProvider = TimeProvider { 5_000L },
+        )()
+
+        assertEquals("https://trusted-connector.example:8443/", snapshot.baseUrl)
+        assertTrue(!snapshot.baseUrl.contains("10.0.2.2"))
+        assertTrue(snapshot.healthPresent)
+        assertNull(snapshot.connectorError)
+        assertEquals(DashboardSessionValidity.Valid, snapshot.sessionValidity)
+        assertEquals("ESTIMATION", snapshot.selectedCompanyName)
+    }
+
+    @Test
+    fun `TD-016 authenticated unavailable reports the real authenticated failure, never a fabricated connected state, never 10-0-2-2`() = runTest {
+        val snapshot = RefreshDashboardUseCase(
+            operationalStatus = FakeOperationalStatus(
+                ConnectorOperationalStatus.AuthenticatedUnavailable(
+                    AppError.Message("Could not reach the Connector."),
+                ),
+            ),
+            companySession = FakeCompanySession(null, AppResult.Success(SelectedCompanyStatus(null, null)), AppResult.Success(SessionValidationStatus(SessionValidity.NoCompany, null, null))),
+            restoreCompanySelection = RestoreCompanySelectionUseCase(NoOpCompanyRepository),
+            connectivityObserver = FakeConnectivity(true),
+            timeProvider = TimeProvider { 5_000L },
+        )()
+
+        assertEquals(ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER, snapshot.baseUrl)
+        assertTrue(!snapshot.baseUrl.contains("10.0.2.2"))
+        assertEquals(false, snapshot.healthPresent)
+        assertTrue(snapshot.connectorError is AppError.Message)
+        assertEquals(DashboardOperationalMode.ConnectorUnavailable, snapshot.operationalMode())
+    }
+
+    @Test
+    fun `TD-016 authenticated preparing state is bounded and neutral, never the emulator default`() = runTest {
+        val snapshot = RefreshDashboardUseCase(
+            operationalStatus = FakeOperationalStatus(
+                ConnectorOperationalStatus.AuthenticatedPreparing("Verifying secure pairing…"),
+            ),
+            companySession = FakeCompanySession(null, AppResult.Success(SelectedCompanyStatus(null, null)), AppResult.Success(SessionValidationStatus(SessionValidity.NoCompany, null, null))),
+            restoreCompanySelection = RestoreCompanySelectionUseCase(NoOpCompanyRepository),
+            connectivityObserver = FakeConnectivity(true),
+            timeProvider = TimeProvider { 5_000L },
+        )()
+
+        assertEquals(ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER, snapshot.baseUrl)
+        assertTrue(!snapshot.baseUrl.contains("10.0.2.2"))
+        assertEquals(false, snapshot.healthPresent)
+        assertEquals("Verifying secure pairing…", (snapshot.connectorError as AppError.Message).message)
+    }
+
+    @Test
+    fun `TD-016 authenticated healthy status resolution never consults any pairing-admission setting`() = runTest {
+        // Android has no representation of Desktop's "Secure Mobile Pairing" toggle anywhere in
+        // its source (confirmed by repo-wide search) - it is a Desktop-only gate on creating NEW
+        // pairing sessions. An already-ACTIVE credential's operational status here is derived
+        // solely from local vault state via ConnectorOperationalStatusPort, so there is no
+        // "pairing admission off" code path to disable for an already-trusted device - this test
+        // documents and pins that architectural fact rather than exercising a real toggle.
+        val snapshot = RefreshDashboardUseCase(
+            operationalStatus = FakeOperationalStatus(
+                ConnectorOperationalStatus.AuthenticatedHealthy(
+                    endpointDisplay = "https://trusted-connector.example:8443/",
+                    checkedAtEpochMillis = 1L,
+                ),
+            ),
+            companySession = FakeCompanySession(null, AppResult.Success(SelectedCompanyStatus(null, null)), AppResult.Success(SessionValidationStatus(SessionValidity.NoCompany, null, null))),
+            restoreCompanySelection = RestoreCompanySelectionUseCase(NoOpCompanyRepository),
+            connectivityObserver = FakeConnectivity(true),
+            timeProvider = TimeProvider { 5_000L },
+        )()
+
+        assertTrue(snapshot.healthPresent)
+        assertNull(snapshot.connectorError)
+    }
+
     private fun useCase(
         baseUrl: String = "http://10.0.2.2:8080/",
         online: Boolean = true,
@@ -167,7 +278,7 @@ class RefreshDashboardUseCaseTest {
             SessionValidationStatus(SessionValidity.NoCompany, null, null),
         ),
     ) = RefreshDashboardUseCase(
-        connectorStatus = FakeConnectorStatus(baseUrl, probe),
+        operationalStatus = FakeOperationalStatus(ConnectorOperationalStatus.Legacy(baseUrl, probe)),
         companySession = FakeCompanySession(selectedId, selected, validate),
         restoreCompanySelection = RestoreCompanySelectionUseCase(NoOpCompanyRepository),
         connectivityObserver = FakeConnectivity(online),
@@ -175,13 +286,10 @@ class RefreshDashboardUseCaseTest {
     )
 }
 
-private class FakeConnectorStatus(
-    private val baseUrl: String,
-    private val probe: AppResult<ConnectorConnectionProbe>,
-) : ConnectorStatusPort {
-    override fun observeBaseUrl(): Flow<String> = flowOf(baseUrl)
-    override fun currentBaseUrl(): String = baseUrl
-    override suspend fun probeConnection(): AppResult<ConnectorConnectionProbe> = probe
+private class FakeOperationalStatus(
+    private val status: ConnectorOperationalStatus,
+) : ConnectorOperationalStatusPort {
+    override suspend fun currentStatus(): ConnectorOperationalStatus = status
 }
 
 private class FakeCompanySession(

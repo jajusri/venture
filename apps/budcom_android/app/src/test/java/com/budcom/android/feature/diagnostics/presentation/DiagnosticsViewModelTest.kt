@@ -14,6 +14,8 @@ import com.budcom.android.feature.diagnostics.domain.usecase.LoadDiagnosticsUseC
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatus
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
 import com.budcom.android.feature.sync.domain.model.SyncRunSummary
 import com.budcom.android.feature.sync.domain.model.SyncStatusSummary
@@ -62,7 +64,7 @@ class DiagnosticsViewModelTest {
     private fun createVm(): DiagnosticsViewModel {
         val company = VmFakeCompany()
         val load = LoadDiagnosticsUseCase(
-            connectorStatus = connector,
+            operationalStatus = connector,
             companySession = company,
             connectionDiagnostics = VmFakeConnectionPort(),
             syncStatus = VmFakeSyncStatus(),
@@ -117,7 +119,7 @@ class DiagnosticsViewModelTest {
     }
 }
 
-private class VmFakeConnector : ConnectorStatusPort {
+private class VmFakeConnector : ConnectorStatusPort, ConnectorOperationalStatusPort {
     var probe: AppResult<ConnectorConnectionProbe> = AppResult.Success(
         ConnectorConnectionProbe(
             health = ConnectorHealth(
@@ -151,6 +153,12 @@ private class VmFakeConnector : ConnectorStatusPort {
     override fun observeBaseUrl(): Flow<String> = flowOf("http://10.0.2.2:8080/")
     override fun currentBaseUrl(): String = "http://10.0.2.2:8080/"
     override suspend fun probeConnection(): AppResult<ConnectorConnectionProbe> = probe
+
+    // TD-016: this ViewModel test exercises LoadDiagnosticsUseCase through the LEGACY branch of
+    // ConnectorOperationalStatus only - AUTHENTICATED-branch behavior is covered directly in
+    // LoadDiagnosticsUseCaseTest, which does not need a ViewModel/Hilt harness.
+    override suspend fun currentStatus(): ConnectorOperationalStatus =
+        ConnectorOperationalStatus.Legacy(currentBaseUrl(), probe)
 }
 
 private class VmFakeCompany : CompanySessionPort {

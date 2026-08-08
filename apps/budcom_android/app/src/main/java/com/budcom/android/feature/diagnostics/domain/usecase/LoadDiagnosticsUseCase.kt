@@ -8,9 +8,13 @@ import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SessionValidity
 import com.budcom.android.feature.diagnostics.domain.model.ApplicationIdentity
 import com.budcom.android.feature.diagnostics.domain.model.CompanyDiagnostic
+import com.budcom.android.feature.diagnostics.domain.model.ConnectionDiagnostics
 import com.budcom.android.feature.diagnostics.domain.model.DiagnosticsSnapshot
 import com.budcom.android.feature.diagnostics.domain.port.ConnectionDiagnosticsPort
-import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
+import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
+import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatus
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import com.budcom.android.feature.sync.domain.model.SyncTarget
 import com.budcom.android.feature.sync.domain.port.ObserveSyncStatusPort
 import com.budcom.android.feature.sync.domain.usecase.RefreshSyncOverviewUseCase
@@ -20,7 +24,7 @@ import javax.inject.Inject
  * Aggregates confirmed diagnostic sources. Does not invent health or readiness.
  */
 class LoadDiagnosticsUseCase @Inject constructor(
-    private val connectorStatus: ConnectorStatusPort,
+    private val operationalStatus: ConnectorOperationalStatusPort,
     private val companySession: CompanySessionPort,
     private val connectionDiagnostics: ConnectionDiagnosticsPort,
     private val syncStatus: ObserveSyncStatusPort,
@@ -32,7 +36,6 @@ class LoadDiagnosticsUseCase @Inject constructor(
             runCatching { refreshSyncOverview() }
         }
 
-        val baseUrl = connectorStatus.currentBaseUrl()
         val application = ApplicationIdentity(
             appName = BuildConfig.APP_NAME,
             versionName = BuildConfig.VERSION_NAME,
@@ -40,26 +43,64 @@ class LoadDiagnosticsUseCase @Inject constructor(
             isDebuggable = BuildConfig.DEBUG,
         )
 
+        val status = operationalStatus.currentStatus()
+        val baseUrl: String
+        var health: ConnectorHealth? = null
         var healthError: AppError? = null
+        var readiness: ConnectorReadiness? = null
         var readinessError: AppError? = null
-        val probe = when (val result = connectorStatus.probeConnection()) {
-            is AppResult.Success -> result.value
-            is AppResult.Failure -> {
-                healthError = result.error
-                null
-            }
-        }
-        val readiness = probe?.readiness
-        if (probe != null && readiness == null) {
-            readinessError = AppError.Message("Readiness was not returned with the health probe.")
-        }
-
+        var connection: ConnectionDiagnostics? = null
         var connectionError: AppError? = null
-        val connection = when (val result = connectionDiagnostics.loadConnectionDiagnostics()) {
-            is AppResult.Success -> result.value
-            is AppResult.Failure -> {
-                connectionError = result.error
-                null
+
+        when (status) {
+            is ConnectorOperationalStatus.Legacy -> {
+                baseUrl = status.baseUrl
+                val probe = when (val result = status.healthProbe) {
+                    is AppResult.Success -> result.value
+                    is AppResult.Failure -> {
+                        healthError = result.error
+                        null
+                    }
+                }
+                health = probe?.health
+                readiness = probe?.readiness
+                if (probe != null && readiness == null) {
+                    readinessError = AppError.Message("Readiness was not returned with the health probe.")
+                }
+                // /diagnostics/connection is only meaningful against the same Connector the
+                // health probe just targeted — the legacy base URL here, unchanged behavior.
+                connection = when (val result = connectionDiagnostics.loadConnectionDiagnostics()) {
+                    is AppResult.Success -> result.value
+                    is AppResult.Failure -> {
+                        connectionError = result.error
+                        null
+                    }
+                }
+            }
+
+            is ConnectorOperationalStatus.AuthenticatedHealthy -> {
+                baseUrl = status.endpointDisplay
+                // /health, /ready, and the legacy /diagnostics/connection call are all
+                // deliberately not attempted here — they would only reach the unrelated legacy
+                // endpoint, not this device's trusted Connector (TD-016). Reported honestly as
+                // "not available over this transport" rather than fabricated or misattributed.
+                healthError = AppError.Message(
+                    "Detailed health/readiness breakdown is not available over the secure " +
+                        "authenticated connection. The connection itself was confirmed reachable.",
+                )
+                connectionError = healthError
+            }
+
+            is ConnectorOperationalStatus.AuthenticatedUnavailable -> {
+                baseUrl = ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER
+                healthError = status.error
+                connectionError = status.error
+            }
+
+            is ConnectorOperationalStatus.AuthenticatedPreparing -> {
+                baseUrl = ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER
+                healthError = AppError.Message(status.message)
+                connectionError = healthError
             }
         }
 
@@ -77,7 +118,7 @@ class LoadDiagnosticsUseCase @Inject constructor(
             loadedAtEpochMillis = timeProvider.nowEpochMillis(),
             baseUrl = baseUrl,
             application = application,
-            health = probe?.health,
+            health = health,
             healthError = healthError,
             readiness = readiness,
             readinessError = readinessError,
