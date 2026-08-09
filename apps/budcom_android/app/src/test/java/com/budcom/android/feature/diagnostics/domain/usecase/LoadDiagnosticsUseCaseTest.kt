@@ -74,16 +74,18 @@ class LoadDiagnosticsUseCaseTest {
         assertEquals("connected", snapshot.connection!!.state)
     }
 
-    // TD-016 regression coverage: LoadDiagnosticsUseCase must never surface the legacy emulator
-    // default, and must never fabricate health/readiness detail, when transport is AUTHENTICATED.
+    // TD-016 regression coverage: authenticated diagnostics must use only the trusted endpoint.
 
     @Test
-    fun `TD-016 authenticated healthy device reports the real endpoint, never 10-0-2-2, with honest not-available health detail`() = runTest {
+    fun `authenticated healthy device reports pinned health and readiness from the real endpoint`() = runTest {
+        val probe = (legacy(probeSuccess = true).healthProbe as AppResult.Success<ConnectorConnectionProbe>).value
         val useCase = LoadDiagnosticsUseCase(
             operationalStatus = FakeOperationalStatus(
                 ConnectorOperationalStatus.AuthenticatedHealthy(
                     endpointDisplay = "https://trusted-connector.example:8443/",
                     checkedAtEpochMillis = 7L,
+                    health = probe.health,
+                    readiness = probe.readiness,
                 ),
             ),
             companySession = FakeCompanySession(),
@@ -95,10 +97,12 @@ class LoadDiagnosticsUseCaseTest {
         val snapshot = useCase(refreshSync = false)
         assertEquals("https://trusted-connector.example:8443/", snapshot.baseUrl)
         assertTrue(!snapshot.baseUrl.contains("10.0.2.2"))
-        assertNull(snapshot.health)
-        assertNull(snapshot.readiness)
+        assertNotNull(snapshot.health)
+        assertNotNull(snapshot.readiness)
         assertNull(snapshot.connection)
-        assertNotNull(snapshot.healthError)
+        assertNull(snapshot.healthError)
+        assertNull(snapshot.readinessError)
+        assertNotNull(snapshot.connectionError)
     }
 
     @Test

@@ -150,6 +150,18 @@ class AuthenticatedRepositoryFailurePolicyTest {
     }
 
     @Test
+    fun `SessionExpired maps to a typed 410 without changing secure pairing state`() = runTest {
+        val store = InMemoryVaultBackingStore().apply { record = sampleRecord(SecurePairingCredentialState.ACTIVE) }
+        val policy = DefaultAuthenticatedRepositoryFailurePolicy(FakeSecureCredentialVault(backingStore = store))
+
+        val error = policy.mapFailure(AuthenticatedConnectorResult.SessionExpired) as AppError.Remote
+
+        assertEquals(410, error.httpStatus)
+        assertEquals(AUTHENTICATED_SESSION_EXPIRED_CODE, error.code)
+        assertEquals(SecurePairingCredentialState.ACTIVE, store.record?.state)
+    }
+
+    @Test
     fun `remaining outcomes map to their expected AppError types`() = runTest {
         val policy = DefaultAuthenticatedRepositoryFailurePolicy(FakeSecureCredentialVault())
 

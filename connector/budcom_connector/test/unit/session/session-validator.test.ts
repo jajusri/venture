@@ -56,8 +56,9 @@ describe('session validator', () => {
     expect(result.status).toBe('COMPANY_NOT_FOUND');
   });
 
-  it('rejects duplicate selection', () => {
+  it('renews duplicate selection idempotently', () => {
     const nowMs = Date.now();
+    const renewedAtMs = nowMs + 5_000;
     const session = withSelectedCompany(
       createEmptySession({
         connectorVersion: '0.3.1',
@@ -76,10 +77,13 @@ describe('session validator', () => {
       tallyReachable: true,
       discoveryAvailable: true,
       connectorConnected: true,
-      nowMs,
+      nowMs: renewedAtMs,
     });
 
     expect(result.status).toBe('DUPLICATE_SELECTION');
+    expect(result.session.selectedCompany).toEqual({ id: 'estimation', name: 'ESTIMATION' });
+    expect(result.session.selectedAt).toBe(new Date(renewedAtMs).toISOString());
+    expect(result.session.selectedAt).not.toBe(session.selectedAt);
   });
 
   it('selects a valid company', () => {

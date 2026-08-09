@@ -169,8 +169,13 @@ export function selectCompany(input: CompanySelectionInput): CompanySelectionRes
   ) {
     return {
       status: 'DUPLICATE_SELECTION',
-      session: input.session,
-      reason: `Company already selected: ${company.id}`,
+      // POST /session/company is an authenticated, explicit assertion of the desired
+      // company. Repeating it is therefore an idempotent lease renewal, not a no-op:
+      // preserved selections can legitimately outlive the session TTL across ordinary
+      // Desktop restarts. Refreshing selectedAt here keeps the TTL meaningful while
+      // allowing the same authenticated selection command to establish a fresh session.
+      session: withSelectedCompany(input.session, company, input.nowMs),
+      reason: `Company already selected; session renewed: ${company.id}`,
     };
   }
 
@@ -324,9 +329,8 @@ function findDiscoveredCompany(
 export function mapSelectionStatusToHttpStatus(status: CompanySelectionStatus): number {
   switch (status) {
     case 'SUCCESS':
-      return 200;
     case 'DUPLICATE_SELECTION':
-      return 409;
+      return 200;
     case 'EMPTY_SELECTION':
     case 'INVALID_COMPANY':
       return 400;

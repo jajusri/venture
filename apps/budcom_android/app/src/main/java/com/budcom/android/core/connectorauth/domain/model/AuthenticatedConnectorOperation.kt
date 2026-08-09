@@ -12,15 +12,18 @@ private fun jsonBodyOf(vararg fields: Pair<String, String>): String =
     buildJsonObject { fields.forEach { (key, value) -> put(key, value) } }.toString()
 
 /**
- * One typed member per Connector route classified DEVICE_CREDENTIAL_REQUIRED by the Phase 3P
+ * One typed member per Connector route used by the secure transport. Business operations are
+ * classified DEVICE_CREDENTIAL_REQUIRED by the Phase 3P
  * route matrix (see `BUDCOM_PHASE3P_AUTHENTICATED_ROUTE_CALLER_MATRIX_20260805_200456.csv`),
  * reconciled manually against committed Connector route source rather than parsed from the CSV at
  * build time. A caller may only ever construct one of these fixed members — there is no
  * `executeUrl(String)` escape hatch, so an arbitrary raw URL can never be dispatched through
  * [com.budcom.android.core.connectorauth.data.remote.AuthenticatedConnectorApiPort].
  *
- * Deliberately excludes: `/health`, `/ready` (PUBLIC_HEALTH_MINIMAL); the pairing-bootstrap
- * routes and `/device/pair`/`/device/validate-token` (PUBLIC_BOOTSTRAP / LEGACY_COMPATIBILITY_ONLY
+ * `PublicHealth` and `PublicReadiness` are the only PUBLIC_HEALTH_MINIMAL exceptions: they use
+ * the same pinned client and trusted endpoint but explicitly omit the bearer credential.
+ * Deliberately excludes the pairing-bootstrap routes and `/device/pair`/`/device/validate-token`
+ * (PUBLIC_BOOTSTRAP / LEGACY_COMPATIBILITY_ONLY
  * — pre-credential by definition); the Desktop-control-only routes (`/device/list`,
  * `DELETE /device/:id`, the two pairing-credential admin routes) — those remain
  * requireDesktopControlToken-gated, never reachable with a device credential.
@@ -28,12 +31,28 @@ private fun jsonBodyOf(vararg fields: Pair<String, String>): String =
 sealed class AuthenticatedConnectorOperation(
     val method: ConnectorHttpMethod,
     val timeoutProfile: ConnectorTimeoutProfile = ConnectorTimeoutProfile.STANDARD,
+    /** Public health routes remain pinned to the trusted certificate but receive no bearer. */
+    val requiresCredential: Boolean = true,
 ) {
     abstract val pathSegments: List<String>
     open val queryParams: Map<String, String> = emptyMap()
     open val jsonBody: String? = null
 
     // ---- Diagnostics ----
+
+    data object PublicHealth : AuthenticatedConnectorOperation(
+        ConnectorHttpMethod.GET,
+        requiresCredential = false,
+    ) {
+        override val pathSegments = listOf("health")
+    }
+
+    data object PublicReadiness : AuthenticatedConnectorOperation(
+        ConnectorHttpMethod.GET,
+        requiresCredential = false,
+    ) {
+        override val pathSegments = listOf("ready")
+    }
 
     data object DiagnosticsConnection : AuthenticatedConnectorOperation(ConnectorHttpMethod.GET) {
         override val pathSegments = listOf("diagnostics", "connection")

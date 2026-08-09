@@ -172,14 +172,15 @@ class CompanyRepositoryImpl @Inject constructor(
             val selection = transportGate.resolve()
             when (val validation = validateSessionRemote(selection)) {
                 is AppResult.Failure -> {
-                    // Authenticated-transport parity with the branch below: the legacy transport
-                    // decodes the equivalent 400 body into AppResult.Success(status =
-                    // "NO_COMPANY_SELECTED") and falls into the saved-ID recovery there instead.
-                    // On the authenticated transport that same condition instead surfaces as this
-                    // typed AppError.Remote sentinel (TD-013) — see AUTHENTICATED_NO_COMPANY_SELECTED_CODE.
+                    // Authenticated-transport parity with the branch below: recover only the
+                    // two exact, typed session-state sentinels. Both use the same bounded
+                    // select-once path; no recursive validation or generic 4xx retry is allowed.
                     val savedId = selectedCompanyStore.getSelectedCompanyId()
-                    if (validation.error.isNoCompanySelectedRejection() && savedId != null) {
-                        Timber.tag("CompanySession").i("Validation failed (NO_COMPANY_SELECTED), attempting auto-recovery for %s", savedId)
+                    if (validation.error.isRecoverableSessionRejection() && savedId != null) {
+                        Timber.tag("CompanySession").i(
+                            "Validation lost or expired its session, attempting one authenticated renewal for %s",
+                            savedId,
+                        )
                         selectCompany(savedId)
                     } else {
                         validation
@@ -295,10 +296,12 @@ private fun AppError.isAuthenticationRejection(): Boolean =
         )
 
 /**
- * True only for the authenticated transport's `NO_COMPANY_SELECTED` sentinel (TD-013) — see
- * [com.budcom.android.core.connectorauth.domain.AUTHENTICATED_NO_COMPANY_SELECTED_CODE]. The
- * legacy transport never produces this as an [AppResult.Failure] at all: it decodes the
- * equivalent 400 body into [AppResult.Success] instead, handled by the branch above this one.
+ * True only for the authenticated transport's exact `NO_COMPANY_SELECTED` and `SESSION_EXPIRED`
+ * sentinels (TD-013). The legacy transport decodes structured business responses as
+ * [AppResult.Success], so its recovery remains in the success branch above.
  */
-private fun AppError.isNoCompanySelectedRejection(): Boolean =
-    this is AppError.Remote && code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_NO_COMPANY_SELECTED_CODE
+private fun AppError.isRecoverableSessionRejection(): Boolean =
+    this is AppError.Remote && (
+        code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_NO_COMPANY_SELECTED_CODE ||
+            code == com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SESSION_EXPIRED_CODE
+        )

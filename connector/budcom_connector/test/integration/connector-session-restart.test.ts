@@ -129,6 +129,60 @@ describe('connector session restart (TD-013)', () => {
     expect(snapshot.session.selectedCompany).toEqual({ id: 'estimation', name: 'ESTIMATION' });
   });
 
+  it('renews and persists a restored same-company selection whose lease expired while Desktop was stopped', async () => {
+    const databasePath = sharedDatabasePath();
+    const { fetchImpl } = createTallyMockFetch({ pingOk: true, companiesXml: COMPANY_ONE_VALID });
+
+    const context1 = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1, databasePath });
+    await startCore(context1);
+    const app1 = createTestApp(context1);
+    const selected = await request(app1).post('/session/company').send({ companyId: 'estimation' });
+    expect(selected.status).toBe(200);
+
+    const staleSelectedAt = '2026-01-01T00:00:00.000Z';
+    const database1 = context1.container
+      .resolve<SqliteStorageService>(ServiceTokens.LocalDatabase)
+      .getBundle().database
+      .getDatabase();
+    database1.prepare('UPDATE storage_meta SET value = ? WHERE key = ?').run(
+      JSON.stringify({
+        version: 1,
+        id: 'estimation',
+        name: 'ESTIMATION',
+        selectedAt: staleSelectedAt,
+      }),
+      'selected_company',
+    );
+    await stopAndCloseDatabase(context1);
+
+    const context2 = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1, databasePath });
+    await startCore(context2);
+    const app2 = createTestApp(context2);
+
+    const expired = await request(app2).post('/session/validate');
+    expect(expired.status).toBe(410);
+    expect(expired.body.status).toBe('SESSION_EXPIRED');
+
+    const renewal = await request(app2).post('/session/company').send({ companyId: 'estimation' });
+    expect(renewal.status).toBe(200);
+    expect(renewal.body.status).toBe('DUPLICATE_SELECTION');
+    expect(renewal.body.session.selectedAt).not.toBe(staleSelectedAt);
+
+    const validation = await request(app2).post('/session/validate');
+    expect(validation.status).toBe(200);
+    expect(validation.body.status).toBe('SUCCESS');
+
+    const persisted = context2.container
+      .resolve<SqliteStorageService>(ServiceTokens.LocalDatabase)
+      .getBundle().database
+      .getDatabase()
+      .prepare('SELECT value FROM storage_meta WHERE key = ?')
+      .get('selected_company') as { value: string };
+    expect((JSON.parse(persisted.value) as { selectedAt: string }).selectedAt).toBe(
+      renewal.body.session.selectedAt,
+    );
+  });
+
   it('explicit clearSelection() clears durable state, so a subsequent restart starts with no company selected', async () => {
     const databasePath = sharedDatabasePath();
     const { fetchImpl } = createTallyMockFetch({ pingOk: true, companiesXml: COMPANY_ONE_VALID });

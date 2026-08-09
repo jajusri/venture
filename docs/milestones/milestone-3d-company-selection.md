@@ -62,9 +62,12 @@ Session objects are replaced atomically on selection or successful validation �
 4. **Validate** — every ERP request re-validates session before adapter calls
 5. **Refresh** — `POST /session/validate` explicitly re-checks company existence and reachability
 6. **Clear** — `DELETE /session/company` removes selection
-7. **Stop** — session cleared and connection marked disconnected
+7. **Stop** — durable selection is preserved; only connection state becomes disconnected
 
-Session TTL defaults to 8 hours (`BUDCOM_SESSION_TTL_MS`). Expired sessions return `SESSION_EXPIRED`.
+Session TTL defaults to 8 hours (`BUDCOM_SESSION_TTL_MS`). Expired sessions return
+`SESSION_EXPIRED`. Repeating `POST /session/company` for the already-selected, still-discoverable
+company is an authenticated idempotent renewal: it refreshes and persists `selectedAt`, returns
+HTTP 200 with `DUPLICATE_SELECTION`, and does not alter pairing, identity, or trust state.
 
 ## Validation flow
 
@@ -109,7 +112,7 @@ Selection and validation endpoints return **structured status bodies** (not exce
 | `EMPTY_SELECTION` | 400 | Empty or whitespace company id |
 | `INVALID_COMPANY` | 400 | Company not accessible (connector/Tally state) |
 | `COMPANY_NOT_FOUND` | 404 | Company not in discovery results |
-| `DUPLICATE_SELECTION` | 409 | Same company already selected |
+| `DUPLICATE_SELECTION` | 200 | Same company already selected; session lease renewed |
 
 ### Validation statuses
 
@@ -129,7 +132,8 @@ ERP routes include `details.sessionStatus` for structured client handling.
 | Layer | Tests |
 |-------|-------|
 | `session-validator.test.ts` | Pure rules: valid/invalid/empty/duplicate/stale/missing company |
-| `connector-session.test.ts` | HTTP integration: selection, validation, reuse, unavailable, stale session |
+| `connector-session.test.ts` | HTTP integration: selection, validation, idempotent renewal, unavailable, stale session |
+| `connector-session-restart.test.ts` | Durable restart continuity, expired persisted lease renewal, and renewed timestamp persistence |
 | Master data / groups integration | Updated to select company before ERP calls; mismatch and no-selection cases |
 
 Test helpers:

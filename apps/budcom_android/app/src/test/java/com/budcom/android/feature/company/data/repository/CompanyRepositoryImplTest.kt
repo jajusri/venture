@@ -737,6 +737,78 @@ class CompanyRepositoryImplTest {
     }
 
     @Test
+    fun `validateSession renews an authenticated expired session exactly once and preserves pairing-independent company state`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore(initial = "estimation")
+        val sessionExpired = AppError.Remote(
+            410,
+            com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SESSION_EXPIRED_CODE,
+            "The Connector session expired and must be renewed.",
+        )
+        val authenticated = FakeAuthenticatedRemote(
+            selectResult = AppResult.Success(
+                CompanySelectionOutcome("DUPLICATE_SELECTION", sampleSession("estimation"), null, 200),
+            ),
+            validateResultsSequence = listOf(
+                AppResult.Failure(sessionExpired),
+                AppResult.Success(
+                    SessionValidationOutcome(
+                        "SUCCESS",
+                        sampleSession("estimation"),
+                        null,
+                        "estimation",
+                        "ESTIMATION",
+                        200,
+                    ),
+                ),
+            ),
+        )
+        val repository = repository(
+            remote = UnreachableRemote,
+            store = store,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repository.validateSession()
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(1, authenticated.selectCompanyCallCount)
+        assertEquals(2, authenticated.validateSessionCallCount)
+        assertEquals("estimation", store.currentId)
+    }
+
+    @Test
+    fun `expired-session renewal is bounded when the post-renewal validation still reports expiry`() = runTest(dispatcher) {
+        val store = FakeSelectedCompanyStore(initial = "estimation")
+        val sessionExpired = AppError.Remote(
+            410,
+            com.budcom.android.core.connectorauth.domain.AUTHENTICATED_SESSION_EXPIRED_CODE,
+            "expired",
+        )
+        val authenticated = FakeAuthenticatedRemote(
+            selectResult = AppResult.Success(
+                CompanySelectionOutcome("DUPLICATE_SELECTION", sampleSession("estimation"), null, 200),
+            ),
+            validateResultsSequence = listOf(
+                AppResult.Failure(sessionExpired),
+                AppResult.Failure(sessionExpired),
+            ),
+        )
+        val repository = repository(
+            remote = UnreachableRemote,
+            store = store,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedRemote = authenticated,
+        )
+
+        val result = repository.validateSession()
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(1, authenticated.selectCompanyCallCount)
+        assertEquals(2, authenticated.validateSessionCallCount)
+    }
+
+    @Test
     fun `validateSession does not recover from NO_COMPANY_SELECTED when no company id is saved locally`() = runTest(dispatcher) {
         val store = FakeSelectedCompanyStore(initial = null)
         val noCompanySelected = AppError.Remote(400, AUTHENTICATED_NO_COMPANY_SELECTED_CODE, "The Connector rejected the request.")

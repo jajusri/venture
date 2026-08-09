@@ -238,7 +238,10 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
     ...config,
     host: effectiveBindHost.host,
     networkExposure: effectiveBindHost.exposure,
-    networkExposureWarning: getNetworkExposureWarning(effectiveBindHost),
+    networkExposureWarning: getNetworkExposureWarning(
+      effectiveBindHost,
+      config.requireDeviceAuthForLan || config.secureLanRouteProtectionEnabled,
+    ),
   };
 
   if (resolved.port < 1 || resolved.port > 65535) {

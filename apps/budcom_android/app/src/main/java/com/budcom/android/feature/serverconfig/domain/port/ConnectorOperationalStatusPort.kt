@@ -3,6 +3,8 @@ package com.budcom.android.feature.serverconfig.domain.port
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
+import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
+import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
 
 /**
  * TD-016: the transport-aware answer to "is the Connector reachable, and what endpoint is it
@@ -33,14 +35,18 @@ sealed class ConnectorOperationalStatus {
      * trusted Connector, not merely that some URL responds. [endpointDisplay] is sourced from
      * the trusted-pairing context, never from [ConnectorStatusPort]/`BuildConfig.CONNECTOR_DEFAULT_BASE_URL`.
      *
-     * `/health`/`/ready` are deliberately excluded from the authenticated operation catalog
-     * (see `AuthenticatedConnectorOperation`'s own doc comment) — there is no authenticated
-     * equivalent of [ConnectorConnectionProbe]'s detailed health/readiness breakdown by design,
-     * not by omission.
+     * Health and readiness are fetched from that same trusted endpoint over pinned TLS after
+     * the authenticated proof succeeds. Those public Connector routes deliberately omit the bearer.
+     * Missing or malformed detail is represented by [healthError] or [readinessError], never by
+     * a fabricated status.
      */
     data class AuthenticatedHealthy(
         val endpointDisplay: String,
         val checkedAtEpochMillis: Long,
+        val health: ConnectorHealth? = null,
+        val healthError: AppError? = null,
+        val readiness: ConnectorReadiness? = null,
+        val readinessError: AppError? = null,
     ) : ConnectorOperationalStatus()
 
     /**

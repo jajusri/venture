@@ -80,15 +80,16 @@ class LoadDiagnosticsUseCase @Inject constructor(
 
             is ConnectorOperationalStatus.AuthenticatedHealthy -> {
                 baseUrl = status.endpointDisplay
-                // /health, /ready, and the legacy /diagnostics/connection call are all
-                // deliberately not attempted here — they would only reach the unrelated legacy
-                // endpoint, not this device's trusted Connector (TD-016). Reported honestly as
-                // "not available over this transport" rather than fabricated or misattributed.
-                healthError = AppError.Message(
-                    "Detailed health/readiness breakdown is not available over the secure " +
-                        "authenticated connection. The connection itself was confirmed reachable.",
+                // The operational-status probe already fetched public health/readiness from the
+                // pinned trusted endpoint after authenticated reachability succeeded. Only the
+                // legacy-only detailed connection breakdown remains unavailable here.
+                health = status.health
+                healthError = status.healthError
+                readiness = status.readiness
+                readinessError = status.readinessError
+                connectionError = AppError.Message(
+                    "Detailed connection diagnostics are not available on this screen over the secure connection.",
                 )
-                connectionError = healthError
             }
 
             is ConnectorOperationalStatus.AuthenticatedUnavailable -> {

@@ -22,6 +22,7 @@ import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,12 +41,14 @@ class ConnectorOperationalStatusPortImplTest {
         authenticatedApi: AuthenticatedConnectorApiPort = UnreachableAuthenticatedApi,
         contextProvider: AuthenticatedConnectorContextProvider = UnreachableContextProvider,
         timeProvider: TimeProvider = TimeProvider { 5_000L },
+        json: Json = Json { ignoreUnknownKeys = true },
     ): ConnectorOperationalStatusPortImpl = ConnectorOperationalStatusPortImpl(
         transportGate = transportGate,
         legacyStatus = legacyStatus,
         authenticatedApi = authenticatedApi,
         contextProvider = contextProvider,
         timeProvider = timeProvider,
+        json = json,
     )
 
     @Test
@@ -79,7 +82,7 @@ class ConnectorOperationalStatusPortImplTest {
     }
 
     @Test
-    fun `AUTHENTICATED transport uses DiagnosticsConnection as the reachability probe, never health or ready`() = runTest {
+    fun `AUTHENTICATED transport proves credential access then reads public health and readiness from the same pinned endpoint`() = runTest {
         val api = FakeAuthenticatedApi(result = AuthenticatedConnectorResult.Success(AuthenticatedConnectorResponsePayload("{}")))
         val impl = port(
             transportGate = FakeGate(ConnectorTransportSelection.AUTHENTICATED),
@@ -89,7 +92,44 @@ class ConnectorOperationalStatusPortImplTest {
 
         impl.currentStatus()
 
-        assertEquals(listOf(AuthenticatedConnectorOperation.DiagnosticsConnection), api.executedOperations)
+        assertEquals(
+            listOf(
+                AuthenticatedConnectorOperation.DiagnosticsConnection,
+                AuthenticatedConnectorOperation.PublicHealth,
+                AuthenticatedConnectorOperation.PublicReadiness,
+            ),
+            api.executedOperations,
+        )
+    }
+
+    @Test
+    fun `authenticated health and readiness payloads are surfaced without consulting the legacy endpoint`() = runTest {
+        val api = FakeAuthenticatedApi(
+            result = AuthenticatedConnectorResult.TransportFailure,
+            resultsByOperation = mapOf(
+                AuthenticatedConnectorOperation.DiagnosticsConnection to success("{}"),
+                AuthenticatedConnectorOperation.PublicHealth to success(
+                    """{"status":"ok","schemaVersion":"1.0.0","connectorVersion":"0.4.0","tallyReachable":true,"readOnly":true,"bindHost":"192.168.29.34","bindPort":8080,"networkExposure":"lan","networkPolicySatisfied":true,"authenticatedLanAccessEnabled":true,"services":[],"repositoryAvailable":true,"databaseAccessible":true}""",
+                ),
+                AuthenticatedConnectorOperation.PublicReadiness to success(
+                    """{"status":"ready","repositoryAvailable":true,"databaseAccessible":true,"voucherSynchronizationComposed":true,"voucherApplicationComposed":true}""",
+                ),
+            ),
+        )
+        val impl = port(
+            transportGate = FakeGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedApi = api,
+            contextProvider = FakeContextProvider(readyResolution("192.168.29.34", 8443)),
+        )
+
+        val status = impl.currentStatus() as ConnectorOperationalStatus.AuthenticatedHealthy
+
+        assertEquals("ok", status.health?.status)
+        assertEquals("0.4.0", status.health?.connectorVersion)
+        assertEquals("ready", status.readiness?.status)
+        assertEquals(200, status.readiness?.httpStatus)
+        assertEquals(null, status.healthError)
+        assertEquals(null, status.readinessError)
     }
 
     @Test
@@ -269,13 +309,17 @@ private object UnreachableLegacyStatus : ConnectorStatusPort {
 
 private class FakeAuthenticatedApi(
     private val result: AuthenticatedConnectorResult,
+    private val resultsByOperation: Map<AuthenticatedConnectorOperation, AuthenticatedConnectorResult> = emptyMap(),
 ) : AuthenticatedConnectorApiPort {
     val executedOperations = mutableListOf<AuthenticatedConnectorOperation>()
     override suspend fun execute(operation: AuthenticatedConnectorOperation): AuthenticatedConnectorResult {
         executedOperations.add(operation)
-        return result
+        return resultsByOperation[operation] ?: result
     }
 }
+
+private fun success(json: String): AuthenticatedConnectorResult =
+    AuthenticatedConnectorResult.Success(AuthenticatedConnectorResponsePayload(json))
 
 /** Proves the LEGACY path never reaches the authenticated transport. */
 private object UnreachableAuthenticatedApi : AuthenticatedConnectorApiPort {

@@ -34,14 +34,17 @@ export function parseConnectorBindHost(raw: string | undefined, fallback: string
   };
 }
 
-export function getNetworkExposureWarning(parsed: ParsedConnectorBindHost): string | null {
+export function getNetworkExposureWarning(
+  parsed: ParsedConnectorBindHost,
+  authenticatedLanRoutes = false,
+): string | null {
   if (parsed.isLoopback) {
     return null;
   }
-  return (
-    `Connector API is network-exposed on ${parsed.host}. Authentication is not enabled. ` +
-    'Restrict network access with firewall rules or bind to 127.0.0.1 for local-only operation.'
-  );
+  const protection = authenticatedLanRoutes
+    ? 'LAN business routes require device authentication.'
+    : 'Authentication is not enabled.';
+  return `Connector API is network-exposed on ${parsed.host}. ${protection} Restrict network access with firewall rules or bind to 127.0.0.1 for local-only operation.`;
 }
 
 export function isLanModePolicySatisfied(

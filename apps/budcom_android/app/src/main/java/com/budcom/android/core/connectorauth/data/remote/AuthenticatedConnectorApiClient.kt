@@ -146,7 +146,7 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
     ): AuthenticatedConnectorResult {
         val request = buildRequest(endpoint, bearerHeaderValue, operation)
         val client = applyTimeoutProfile(pinnedHttpClientFactory.create(endpoint), operation.timeoutProfile)
-        return executeRequest(client, request, credentialId)
+        return executeRequest(client, request, credentialId, operation)
     }
 
     private fun buildRequest(endpoint: TrustedConnectorEndpoint, bearerHeaderValue: String, operation: AuthenticatedConnectorOperation): Request {
@@ -157,11 +157,12 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
         operation.pathSegments.forEach { urlBuilder.addPathSegment(it) }
         operation.queryParams.forEach { (name, value) -> urlBuilder.addQueryParameter(name, value) }
 
-        val requestBuilder = Request.Builder()
-            .url(urlBuilder.build())
+        val requestBuilder = Request.Builder().url(urlBuilder.build())
+        if (operation.requiresCredential) {
             // Never logged: NetworkDiagnosticsInterceptor/HttpLoggingInterceptor belong only to the
             // separate shared OkHttpClient in core/network/NetworkModule.kt, never attached here.
-            .header("Authorization", bearerHeaderValue)
+            requestBuilder.header("Authorization", bearerHeaderValue)
+        }
 
         when (operation.method) {
             ConnectorHttpMethod.GET -> requestBuilder.get()
@@ -181,8 +182,15 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
      * contract of returning a typed [AuthenticatedConnectorResult.Cancelled] value rather than
      * propagating cancellation past this boundary.
      */
-    private suspend fun executeRequest(client: OkHttpClient, request: Request, credentialId: String): AuthenticatedConnectorResult = try {
-        runInterruptible(Dispatchers.IO) { client.newCall(request).execute() }.use { response -> mapResponse(response, credentialId) }
+    private suspend fun executeRequest(
+        client: OkHttpClient,
+        request: Request,
+        credentialId: String,
+        operation: AuthenticatedConnectorOperation,
+    ): AuthenticatedConnectorResult = try {
+        runInterruptible(Dispatchers.IO) { client.newCall(request).execute() }.use { response ->
+            mapResponse(response, credentialId, operation)
+        }
     } catch (e: CancellationException) {
         AuthenticatedConnectorResult.Cancelled
     } catch (e: IOException) {
@@ -222,7 +230,11 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
         else -> "OTHER_IO"
     }
 
-    private fun mapResponse(response: Response, credentialId: String): AuthenticatedConnectorResult {
+    private fun mapResponse(
+        response: Response,
+        credentialId: String,
+        operation: AuthenticatedConnectorOperation,
+    ): AuthenticatedConnectorResult {
         val bodyRead = readBoundedBody(response.body)
         if (bodyRead is BoundedBodyReadResult.Oversized) {
             return AuthenticatedConnectorResult.MalformedResponse
@@ -246,13 +258,49 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
             403 -> AuthenticatedConnectorResult.Forbidden
             404 -> AuthenticatedConnectorResult.NotFound
             409 -> AuthenticatedConnectorResult.Conflict
+            410 -> if (
+                operation == AuthenticatedConnectorOperation.ValidateSession &&
+                matchesSessionExpired(bodyText)
+            ) {
+                AuthenticatedConnectorResult.SessionExpired
+            } else {
+                AuthenticatedConnectorResult.ServerFailure(response.code)
+            }
             429 -> AuthenticatedConnectorResult.RateLimited
+            503 -> if (
+                operation == AuthenticatedConnectorOperation.PublicReadiness &&
+                matchesReadinessNotReady(bodyText)
+            ) {
+                AuthenticatedConnectorResult.Success(AuthenticatedConnectorResponsePayload(bodyText.orEmpty()))
+            } else {
+                AuthenticatedConnectorResult.ServerFailure(response.code)
+            }
             in 500..599 -> AuthenticatedConnectorResult.ServerFailure(response.code)
             else -> AuthenticatedConnectorResult.ServerFailure(response.code)
         }
     }
 
     private fun isWellFormedJson(text: String): Boolean = runCatching { json.parseToJsonElement(text) }.isSuccess
+
+    /** Exact allowlist match only; no Connector reason/message text crosses this boundary. */
+    private fun matchesSessionExpired(bodyText: String?): Boolean {
+        if (bodyText.isNullOrBlank()) return false
+        val element = runCatching { json.parseToJsonElement(bodyText) }.getOrNull() ?: return false
+        return (element as? JsonObject)
+            ?.get("status")
+            ?.let { it as? JsonPrimitive }
+            ?.contentOrNull == "SESSION_EXPIRED"
+    }
+
+    /** `/ready` legitimately returns 503 with this exact bounded status body when not ready. */
+    private fun matchesReadinessNotReady(bodyText: String?): Boolean {
+        if (bodyText.isNullOrBlank()) return false
+        val element = runCatching { json.parseToJsonElement(bodyText) }.getOrNull() ?: return false
+        return (element as? JsonObject)
+            ?.get("status")
+            ?.let { it as? JsonPrimitive }
+            ?.contentOrNull == "not_ready"
+    }
 
     /** Extracts only the bounded `code` field — never the full body, which may carry internal detail. */
     private fun sanitizedErrorCode(bodyText: String?): String? {

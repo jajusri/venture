@@ -186,6 +186,8 @@ class RefreshDashboardUseCaseTest {
                 ConnectorOperationalStatus.AuthenticatedHealthy(
                     endpointDisplay = "https://trusted-connector.example:8443/",
                     checkedAtEpochMillis = 4_242L,
+                    health = sampleProbe(ready = true).health,
+                    readiness = sampleProbe(ready = true).readiness,
                 ),
             ),
             companySession = companySession,
@@ -197,6 +199,7 @@ class RefreshDashboardUseCaseTest {
         assertEquals("https://trusted-connector.example:8443/", snapshot.baseUrl)
         assertTrue(!snapshot.baseUrl.contains("10.0.2.2"))
         assertTrue(snapshot.healthPresent)
+        assertEquals("ready", snapshot.readinessStatus)
         assertNull(snapshot.connectorError)
         assertEquals(DashboardSessionValidity.Valid, snapshot.sessionValidity)
         assertEquals("ESTIMATION", snapshot.selectedCompanyName)

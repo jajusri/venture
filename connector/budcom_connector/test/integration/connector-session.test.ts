@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { COMPANY_EMPTY_LIST, COMPANY_ONE_VALID } from '../helpers/company-discovery-fixtures.js';
 import { createMasterDataMockFetch, createTallyMockFetch } from '../helpers/mock-fetch.js';
@@ -57,13 +57,51 @@ describe('connector session integration', () => {
     expect(response.body.status).toBe('EMPTY_SELECTION');
   });
 
-  it('rejects duplicate company selection', async () => {
+  it('accepts duplicate company selection as an idempotent session renewal', async () => {
     const context = await setupContext();
     const app = createTestApp(context);
-    await request(app).post('/session/company').send({ companyId: 'estimation' });
+    const first = await request(app).post('/session/company').send({ companyId: 'estimation' });
     const response = await request(app).post('/session/company').send({ companyId: 'estimation' });
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(200);
     expect(response.body.status).toBe('DUPLICATE_SELECTION');
+    expect(Date.parse(response.body.session.selectedAt)).toBeGreaterThanOrEqual(
+      Date.parse(first.body.session.selectedAt),
+    );
+  });
+
+  it('renews an expired same-company selection before validation', async () => {
+    let nowMs = Date.parse('2026-08-09T12:00:00.000Z');
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+    try {
+      const { fetchImpl } = createTallyMockFetch({ pingOk: true, companiesXml: COMPANY_ONE_VALID });
+      const context = createTestContext({
+        fetchImpl,
+        tallyRetryMaxAttempts: 1,
+        sessionTtlMs: 50,
+      });
+      await startTestServices(context);
+      const app = createTestApp(context);
+      const initial = await request(app).post('/session/company').send({ companyId: 'estimation' });
+      nowMs += 51;
+
+      const expired = await request(app).post('/session/validate');
+      expect(expired.status).toBe(410);
+      expect(expired.body.status).toBe('SESSION_EXPIRED');
+
+      nowMs += 1;
+      const renewed = await request(app).post('/session/company').send({ companyId: 'estimation' });
+      expect(renewed.status).toBe(200);
+      expect(renewed.body.status).toBe('DUPLICATE_SELECTION');
+      expect(Date.parse(renewed.body.session.selectedAt)).toBeGreaterThan(
+        Date.parse(initial.body.session.selectedAt),
+      );
+
+      const validation = await request(app).post('/session/validate');
+      expect(validation.status).toBe(200);
+      expect(validation.body.status).toBe('SUCCESS');
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('clears selected company', async () => {

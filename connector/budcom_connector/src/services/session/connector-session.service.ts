@@ -93,15 +93,20 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
       nowMs: Date.now(),
     });
 
-    if (result.status === 'SUCCESS') {
+    if (result.status === 'SUCCESS' || result.status === 'DUPLICATE_SELECTION') {
       this.session = result.session;
       if (this.session.selectedCompany && this.session.selectedAt) {
         this.selectedCompanyRepository.save(this.session.selectedCompany, this.session.selectedAt);
       }
-      this.logger.info('Company selected for connector session', {
-        sessionId: this.session.sessionId,
-        companyId: this.session.selectedCompany?.id,
-      });
+      this.logger.info(
+        result.status === 'DUPLICATE_SELECTION'
+          ? 'Company selection renewed for connector session'
+          : 'Company selected for connector session',
+        {
+          sessionId: this.session.sessionId,
+          companyId: this.session.selectedCompany?.id,
+        },
+      );
     }
 
     return result;

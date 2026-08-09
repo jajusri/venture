@@ -37,6 +37,12 @@ No QR scan or manual address should be needed after ordinary app, Desktop, Conne
 router, or DHCP restarts. The app performs bounded discovery, filters by the trusted Connector ID,
 and cryptographically verifies the pinned certificate before updating only the endpoint location.
 
+An old preserved company selection may legitimately outlive the Connector's session TTL. The app
+recognizes the exact authenticated `SESSION_EXPIRED` response and performs one bounded renewal of
+the already-saved company. The Connector treats that same-company selection as an idempotent,
+durably persisted lease renewal. It does not clear trust, request another QR, weaken TLS pinning, or
+retry indefinitely.
+
 ## Status interpretation
 
 - **Secure connection verified**: a pinned, credential-authenticated request succeeded.
@@ -46,6 +52,13 @@ and cryptographically verifies the pinned certificate before updating only the e
   does not accept it automatically. Confirm the correct Desktop and explicitly scan a fresh QR.
 - **Connector certificate is invalid**: certificate validation failed. Trust remains unchanged.
 - **Phone network connectivity**: describes the phone's network state, not proof of Connector health.
+- **Session expired**: the secure connection remains trusted; one bounded company-session renewal
+  is attempted automatically. It is not a pairing or certificate failure.
+
+For a securely paired device, health and readiness are read from the trusted endpoint over pinned
+TLS. These two routes are public by Connector contract and therefore receive no bearer credential;
+the credential-authenticated diagnostics probe must succeed first. Business routes continue to
+require the bearer credential.
 
 ## Safe troubleshooting order
 

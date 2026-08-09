@@ -72,7 +72,9 @@ class RefreshDashboardUseCase @Inject constructor(
                 // unset rather than fabricated.
                 baseUrl = status.endpointDisplay
                 healthPresent = true
+                readinessStatus = status.readiness?.status
                 lastHealthAt = status.checkedAtEpochMillis
+                connectorError = status.healthError
             }
 
             is ConnectorOperationalStatus.AuthenticatedUnavailable -> {

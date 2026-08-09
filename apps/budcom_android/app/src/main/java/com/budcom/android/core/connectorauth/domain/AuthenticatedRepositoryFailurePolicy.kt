@@ -26,6 +26,9 @@ const val AUTHENTICATED_CERTIFICATE_INVALID_CODE = "CONNECTOR_CERTIFICATE_INVALI
  */
 const val AUTHENTICATED_NO_COMPANY_SELECTED_CODE = "NO_COMPANY_SELECTED"
 
+/** Typed HTTP 410 sentinel used for one bounded authenticated session renewal. */
+const val AUTHENTICATED_SESSION_EXPIRED_CODE = "SESSION_EXPIRED"
+
 /**
  * Central mapping from a non-Success [AuthenticatedConnectorResult] to an [AppError], shared by
  * every authenticated repository adapter. Never mutates Room. [AuthenticatedConnectorResult.Unauthorized]
@@ -79,6 +82,12 @@ class DefaultAuthenticatedRepositoryFailurePolicy @Inject constructor(
             httpStatus = 400,
             code = if (result.isNoCompanySelected) AUTHENTICATED_NO_COMPANY_SELECTED_CODE else result.sanitizedCode,
             message = "The Connector rejected the request.",
+        )
+
+        AuthenticatedConnectorResult.SessionExpired -> AppError.Remote(
+            httpStatus = 410,
+            code = AUTHENTICATED_SESSION_EXPIRED_CODE,
+            message = "The Connector session expired and must be renewed.",
         )
 
         AuthenticatedConnectorResult.NotFound -> AppError.Remote(404, null, "The requested resource was not found.")

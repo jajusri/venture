@@ -64,6 +64,23 @@ describe('HealthService', () => {
     expect(report.networkExposure).toBe('loopback');
     expect(report.authenticatedLanAccessEnabled).toBe(false);
   });
+
+  it('reports authenticated LAN access when secure business-route protection is active', async () => {
+    const context = createTestContext({
+      host: '192.168.29.34',
+      lanModeAcknowledged: true,
+      secureLanRouteProtectionEnabled: true,
+      requireDeviceAuthForLan: false,
+    });
+    await startTestServices(context);
+    const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
+
+    const report = await healthService.getReport();
+
+    expect(report.networkExposure).toBe('lan');
+    expect(report.authenticatedLanAccessEnabled).toBe(true);
+    expect(report.networkExposureWarning).toMatch(/require device authentication/);
+  });
 });
 
 describe('registerServices', () => {

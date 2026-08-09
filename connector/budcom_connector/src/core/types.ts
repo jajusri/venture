@@ -22,7 +22,7 @@ export interface HealthReport {
   readonly networkExposure: 'loopback' | 'lan';
   readonly networkExposureWarning: string | null;
   readonly networkPolicySatisfied: boolean;
-  /** True only when networkExposure is 'lan' and requireDeviceAuthForLan is enabled. */
+  /** True when LAN business routes are protected by either supported device-auth policy. */
   readonly authenticatedLanAccessEnabled: boolean;
   /** Stable Connector identity — see docs/architecture. Not a secret; same trust level as a hostname. */
   readonly connectorId: string;

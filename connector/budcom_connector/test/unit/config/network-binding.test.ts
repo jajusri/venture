@@ -29,6 +29,9 @@ describe('parseConnectorBindHost', () => {
     const parsed = parseConnectorBindHost('192.168.1.50', '127.0.0.1');
     expect(parsed.exposure).toBe('lan');
     expect(getNetworkExposureWarning(parsed)).toMatch(/network-exposed/);
+    expect(getNetworkExposureWarning(parsed)).toMatch(/Authentication is not enabled/);
+    expect(getNetworkExposureWarning(parsed, true)).toMatch(/require device authentication/);
+    expect(getNetworkExposureWarning(parsed, true)).not.toMatch(/Authentication is not enabled/);
   });
 
   it('requires LAN acknowledgement for production policy', () => {
@@ -83,5 +86,17 @@ describe('loadConfig network binding', () => {
         tallyCircuitBreakerEnabled: false,
       }),
     ).toThrow(/LAN_MODE_ACKNOWLEDGED/);
+  });
+
+  it('reports secure LAN route protection accurately in the exposure warning', () => {
+    const config = loadConfig({
+      env: 'production',
+      host: '192.168.1.50',
+      lanModeAcknowledged: true,
+      secureLanRouteProtectionEnabled: true,
+    });
+
+    expect(config.networkExposureWarning).toMatch(/require device authentication/);
+    expect(config.networkExposureWarning).not.toMatch(/Authentication is not enabled/);
   });
 });

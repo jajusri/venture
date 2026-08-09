@@ -27,13 +27,11 @@ import javax.inject.Singleton
  * A successful (2xx) authenticated response only ever carries the response body — the exact HTTP
  * status (200/201/204) is not distinguishable from [AuthenticatedConnectorResult.Success] alone,
  * so [CompanySelectionOutcome.httpStatus]/[SessionValidationOutcome.httpStatus] are populated with
- * 200 for this path, matching the common case documented in the Phase 3P route matrix. A business
- * rejection returned via a non-2xx status with a structured body (e.g. `COMPANY_NOT_FOUND`) is not
- * reconstructable here — [AuthenticatedConnectorResult]'s non-Success variants carry no body by
- * design (Phase 3R) — such cases surface as a typed [AppResult.Failure] instead of the legacy
- * path's structured-outcome-at-non-2xx shape. This is an accepted, narrow behavioral difference:
- * no currently-relied-upon device uses the authenticated path yet (see the Phase 3S-A evidence
- * report), and Room/local state are preserved identically either way.
+ * 200 for this path, matching the common case documented in the Phase 3P route matrix. Exact
+ * recovery-relevant non-2xx statuses (`NO_COMPANY_SELECTED` and `SESSION_EXPIRED`) are converted to
+ * typed results by the transport/failure policy without exposing arbitrary response detail. Other
+ * structured business rejections still surface as [AppResult.Failure] rather than the legacy
+ * path's structured-outcome-at-non-2xx shape; Room/local state remain preserved either way.
  */
 interface AuthenticatedCompanyRemoteDataSource {
     suspend fun fetchCompanies(): AppResult<CompanyDiscoverySnapshot>

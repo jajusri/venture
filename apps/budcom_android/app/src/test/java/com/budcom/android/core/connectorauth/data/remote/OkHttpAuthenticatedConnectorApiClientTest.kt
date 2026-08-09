@@ -3,6 +3,7 @@ package com.budcom.android.core.connectorauth.data.remote
 import com.budcom.android.core.connectorauth.domain.DefaultAuthenticatedConnectorContextProvider
 import com.budcom.android.core.connectorauth.domain.FakeAuthenticatedConnectorEndpointResolver
 import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorOperation
+import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorResponsePayload
 import com.budcom.android.core.connectorauth.domain.model.AuthenticatedConnectorResult
 import com.budcom.android.core.connectorauth.domain.model.ConnectorTimeoutProfile
 import com.budcom.android.core.pairing.data.local.FakeSecureCredentialVault
@@ -87,6 +88,20 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         assertEquals("Bearer $SUPER_SECRET_TOKEN", request.getHeader("Authorization"))
         assertEquals(server.hostName, request.requestUrl?.host)
         assertEquals(server.port, request.requestUrl?.port)
+        assertEquals("https", request.requestUrl?.scheme)
+    }
+
+    @Test
+    fun `public health requests remain pinned but never receive the bearer credential`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        val (client, _) = readyClient(server, heldCertificate)
+
+        client.execute(AuthenticatedConnectorOperation.PublicHealth)
+
+        val request = server.takeRequest()
+        assertEquals("/health", request.path)
+        assertNull(request.getHeader("Authorization"))
         assertEquals("https", request.requestUrl?.scheme)
     }
 
@@ -327,6 +342,44 @@ class OkHttpAuthenticatedConnectorApiClientTest {
     }
 
     @Test
+    fun `410 SESSION_EXPIRED maps to the typed session-expired outcome`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(
+            MockResponse().setResponseCode(410).setBody(
+                """{"status":"SESSION_EXPIRED","reason":"internal detail must not cross the boundary"}""",
+            ),
+        )
+        val (client, _) = readyClient(server, heldCertificate)
+
+        val result = client.execute(AuthenticatedConnectorOperation.ValidateSession)
+
+        assertEquals(AuthenticatedConnectorResult.SessionExpired, result)
+        assertFalse(result.toString().contains("internal detail"))
+    }
+
+    @Test
+    fun `an unrelated 410 cannot masquerade as an expired Connector session`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(MockResponse().setResponseCode(410).setBody("""{"status":"OTHER"}"""))
+        val (client, _) = readyClient(server, heldCertificate)
+
+        val result = client.execute(AuthenticatedConnectorOperation.ValidateSession)
+
+        assertEquals(AuthenticatedConnectorResult.ServerFailure(410), result)
+    }
+
+    @Test
+    fun `SESSION_EXPIRED is typed only on the session-validation operation`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(MockResponse().setResponseCode(410).setBody("""{"status":"SESSION_EXPIRED"}"""))
+        val (client, _) = readyClient(server, heldCertificate)
+
+        val result = client.execute(AuthenticatedConnectorOperation.GetCompanies)
+
+        assertEquals(AuthenticatedConnectorResult.ServerFailure(410), result)
+    }
+
+    @Test
     fun `429 maps to RateLimited`() = runTest {
         val (server, heldCertificate) = newServer()
         server.enqueue(MockResponse().setResponseCode(429))
@@ -342,6 +395,34 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         val (client, _) = readyClient(server, heldCertificate)
 
         assertEquals(AuthenticatedConnectorResult.ServerFailure(500), client.execute(AuthenticatedConnectorOperation.GetCompanies))
+    }
+
+    @Test
+    fun `public readiness preserves the Connector's legitimate 503 not-ready body`() = runTest {
+        val (server, heldCertificate) = newServer()
+        val body =
+            """{"status":"not_ready","repositoryAvailable":true,"databaseAccessible":true,"voucherSynchronizationComposed":false,"voucherApplicationComposed":true}"""
+        server.enqueue(MockResponse().setResponseCode(503).setBody(body))
+        val (client, _) = readyClient(server, heldCertificate)
+
+        val result = client.execute(AuthenticatedConnectorOperation.PublicReadiness)
+
+        assertEquals(
+            AuthenticatedConnectorResult.Success(AuthenticatedConnectorResponsePayload(body)),
+            result,
+        )
+    }
+
+    @Test
+    fun `a 503 on a business operation remains a server failure`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(MockResponse().setResponseCode(503).setBody("""{"status":"not_ready"}"""))
+        val (client, _) = readyClient(server, heldCertificate)
+
+        assertEquals(
+            AuthenticatedConnectorResult.ServerFailure(503),
+            client.execute(AuthenticatedConnectorOperation.ValidateSession),
+        )
     }
 
     // 45. malformed successful JSON maps to MalformedResponse

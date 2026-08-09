@@ -65,6 +65,13 @@ sealed class AuthenticatedConnectorResult {
         val isNoCompanySelected: Boolean = false,
     ) : AuthenticatedConnectorResult()
 
+    /**
+     * HTTP 410 whose bounded JSON body identifies the Connector's exact `SESSION_EXPIRED`
+     * session-validation outcome. This is recoverable through one authenticated company
+     * reselection; it is never treated as a transport or generic server failure.
+     */
+    data object SessionExpired : AuthenticatedConnectorResult()
+
     /** HTTP 5xx. */
     data class ServerFailure(val httpStatus: Int) : AuthenticatedConnectorResult()
 

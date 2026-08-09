@@ -82,7 +82,8 @@ export class HealthService {
       networkExposureWarning: this.deps.config.networkExposureWarning,
       networkPolicySatisfied,
       authenticatedLanAccessEnabled:
-        this.deps.config.networkExposure === 'lan' && this.deps.config.requireDeviceAuthForLan,
+        this.deps.config.networkExposure === 'lan' &&
+        (this.deps.config.requireDeviceAuthForLan || this.deps.config.secureLanRouteProtectionEnabled),
       connectorId: identity.connectorId,
       connectorName: identity.connectorName,
       discoveryAdvertising: this.deps.mdnsAdvertiser?.isRunning() ?? false,

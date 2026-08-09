@@ -15,8 +15,8 @@ android {
         applicationId = "com.budcom.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.1-continuity.2"
+        versionCode = 4
+        versionName = "0.1.1-continuity.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
