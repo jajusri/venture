@@ -46,6 +46,10 @@ Use before distributing a controlled-pilot build.
 - [ ] Connector ownership verified
 - [ ] Every mutable Connector path is under Budcom AppData and outside install/resources
 - [ ] Transport fingerprint is identical across same-version reinstall and supported upgrade
+- [ ] Installer-level legacy identity migration completes before electron-builder invokes the old uninstaller
+- [ ] Pre-launch over-install gate proves certificate/key byte hashes and SPKI fingerprint are unchanged
+- [ ] Same-version, older-version upgrade, and per-user-to-per-machine identity cases pass in isolated profiles
+- [ ] Partial destination/source, conflicting identities, and copy/hash failure abort before old-tree replacement
 - [ ] Packaged child failures retain bounded sanitized stderr
 - [ ] Packaged build reports exact clean-commit controlled-pilot provenance, never development fallback
 - [ ] Packaged `/health` and `/companies` succeed against physical Tally before Android testing

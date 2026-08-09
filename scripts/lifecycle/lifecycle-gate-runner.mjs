@@ -41,6 +41,41 @@ const paths = {
   legacyUserDataRoot: path.join(process.env.APPDATA ?? '', 'budcom-desktop'),
 };
 
+function readIdentityEvidence(identityDir) {
+  const certPath = path.join(identityDir, 'transport-cert.pem');
+  const keyPath = path.join(identityDir, 'transport-key.pem');
+  const certificateExists = fs.existsSync(certPath);
+  const privateKeyExists = fs.existsSync(keyPath);
+  if (certificateExists !== privateKeyExists) {
+    throw new Error(`Partial transport identity detected at ${identityDir}`);
+  }
+  if (!certificateExists) {
+    return { identityDir, certificateExists, privateKeyExists, complete: false };
+  }
+  const certificate = new crypto.X509Certificate(fs.readFileSync(certPath));
+  const spki = certificate.publicKey.export({ type: 'spki', format: 'der' });
+  return {
+    identityDir,
+    certificateExists,
+    privateKeyExists,
+    complete: true,
+    certificateSha256: sha256File(certPath),
+    privateKeySha256: sha256File(keyPath),
+    fingerprint: `sha256/${crypto.createHash('sha256').update(spki).digest('base64')}`,
+  };
+}
+
+function assertPreLaunchIdentityPreserved(before, after) {
+  if (!before.complete || !after.complete) {
+    throw new Error('Installer identity preservation failed before first application launch: complete pair missing');
+  }
+  if (before.certificateSha256 !== after.certificateSha256
+    || before.privateKeySha256 !== after.privateKeySha256
+    || before.fingerprint !== after.fingerprint) {
+    throw new Error('Installer identity preservation failed before first application launch: identity changed');
+  }
+}
+
 function readTransportFingerprint() {
   const certPath = path.join(paths.transportIdentityDir, 'transport-cert.pem');
   if (!fs.existsSync(certPath)) return null;
@@ -256,6 +291,34 @@ async function waitForConnectorHealth(timeoutMs = 30000) {
     await sleep(1000);
   }
   return false;
+}
+
+function readRegisteredInstallRoot(scope) {
+  const hive = scope === 'currentuser' ? 'HKCU' : 'HKLM';
+  const ps = spawnSync('powershell', [
+    '-NoProfile',
+    '-Command',
+    `$entry = Get-ChildItem '${hive}:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall' -ErrorAction SilentlyContinue |
+      ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } |
+      Where-Object { $_.DisplayName -like 'Budcom Desktop*' } |
+      Select-Object -First 1; $entry.InstallLocation`,
+  ], { encoding: 'utf8' });
+  const value = String(ps.stdout ?? '').trim();
+  return value || null;
+}
+
+function seedLegacyIdentityForIsolatedLifecycle(installRoot, fixtureDir) {
+  const source = readIdentityEvidence(fixtureDir);
+  if (!source.complete) {
+    throw new Error('Lifecycle legacy identity fixture must contain a complete certificate/key pair');
+  }
+  const legacyDir = path.join(installRoot, 'resources', 'connector', 'dist', 'data', 'transport');
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.copyFileSync(path.join(fixtureDir, 'transport-cert.pem'), path.join(legacyDir, 'transport-cert.pem'));
+  fs.copyFileSync(path.join(fixtureDir, 'transport-key.pem'), path.join(legacyDir, 'transport-key.pem'));
+  const seeded = readIdentityEvidence(legacyDir);
+  assertPreLaunchIdentityPreserved(source, seeded);
+  return seeded;
 }
 
 async function readPackagedCompanies() {
@@ -562,10 +625,79 @@ async function runExecuteWindows(report) {
   return report;
 }
 
+function runIdentityOverinstallPreLaunchGate(report) {
+  if (process.env.BUDCOM_LIFECYCLE_ISOLATED_PROFILE !== '1') {
+    throw new Error('Identity over-install gate requires BUDCOM_LIFECYCLE_ISOLATED_PROFILE=1');
+  }
+  const oldInstaller = process.env.BUDCOM_LIFECYCLE_OLD_INSTALLER;
+  const fixtureDir = process.env.BUDCOM_LIFECYCLE_LEGACY_IDENTITY_DIR;
+  const oldScope = process.env.BUDCOM_LIFECYCLE_OLD_INSTALL_SCOPE === 'currentuser'
+    ? 'currentuser'
+    : 'allusers';
+  if (!oldInstaller || !fs.existsSync(oldInstaller)) {
+    throw new Error('BUDCOM_LIFECYCLE_OLD_INSTALLER must name the exact old installer');
+  }
+  if (!fixtureDir || !fs.existsSync(fixtureDir)) {
+    throw new Error('BUDCOM_LIFECYCLE_LEGACY_IDENTITY_DIR must name a complete identity fixture');
+  }
+  if (hasBusinessAppData(paths.userDataRoot) || hasBusinessAppData(paths.legacyUserDataRoot)
+    || fs.existsSync(paths.installRoot)) {
+    throw new Error('Identity over-install gate requires an isolated profile with no existing Budcom state');
+  }
+
+  const candidate = verifyControlledPilotCandidate();
+  const oldArgs = ['/S', oldScope === 'currentuser' ? '/currentuser' : '/allusers'];
+  const oldInstall = spawnSync(oldInstaller, oldArgs, { encoding: 'utf8' });
+  if ((oldInstall.status ?? 1) !== 0) {
+    throw new Error(`Old-product installation failed with exit code ${oldInstall.status ?? 1}`);
+  }
+  const oldInstallRoot = readRegisteredInstallRoot(oldScope);
+  if (!oldInstallRoot || !fs.existsSync(oldInstallRoot)) {
+    throw new Error(`Unable to resolve registered ${oldScope} old installation root`);
+  }
+  if (getBudcomProcesses().desktop !== 0 || getBudcomProcesses().connector !== 0) {
+    throw new Error('Old installer unexpectedly launched Budcom before identity fixture setup');
+  }
+
+  const before = seedLegacyIdentityForIsolatedLifecycle(oldInstallRoot, fixtureDir);
+  if (fs.existsSync(paths.transportIdentityDir)) {
+    throw new Error('Persistent identity unexpectedly exists before over-install');
+  }
+  const overinstall = runInstaller(candidate.installerPath, true);
+  if (overinstall.exitCode !== 0) {
+    throw new Error(`Candidate over-install failed with exit code ${overinstall.exitCode}`);
+  }
+
+  // Mandatory boundary: inspect the migrated pair before any Desktop/Connector launch.
+  const processesBeforeAssertion = getBudcomProcesses();
+  if (processesBeforeAssertion.desktop !== 0 || processesBeforeAssertion.connector !== 0) {
+    throw new Error('Candidate unexpectedly launched Budcom before the pre-launch identity assertion');
+  }
+  const after = readIdentityEvidence(paths.transportIdentityDir);
+  assertPreLaunchIdentityPreserved(before, after);
+  report.phases.identityOverinstallPreLaunch = {
+    oldScope,
+    oldInstallRoot,
+    candidateInstallRoot: paths.installRoot,
+    oldInstallTreeReplaced: !fs.existsSync(path.join(oldInstallRoot, 'resources', 'connector', 'dist', 'data', 'transport')),
+    desktopProcesses: processesBeforeAssertion.desktop,
+    connectorProcesses: processesBeforeAssertion.connector,
+    certificateSha256Preserved: before.certificateSha256 === after.certificateSha256,
+    privateKeySha256Preserved: before.privateKeySha256 === after.privateKeySha256,
+    fingerprintBefore: before.fingerprint,
+    fingerprintAfter: after.fingerprint,
+    fingerprintPreserved: before.fingerprint === after.fingerprint,
+    assertedBeforeApplicationLaunch: true,
+  };
+  report.installationCompleted = true;
+  return report;
+}
+
 async function main() {
   const execute = process.argv.includes('--execute-windows');
+  const executeIdentityOverinstall = process.argv.includes('--execute-windows-identity-overinstall');
   const cleanupOnly = process.argv.includes('--cleanup-only');
-  const dryRun = !execute && !cleanupOnly;
+  const dryRun = !execute && !executeIdentityOverinstall && !cleanupOnly;
 
   const report = initialReport();
   report.phases.preflight = {
@@ -593,7 +725,9 @@ async function main() {
       sha256: candidate.sha256,
       sizeBytes: candidate.sizeBytes,
     };
-    if (execute) {
+    if (executeIdentityOverinstall) {
+      runIdentityOverinstallPreLaunchGate(report);
+    } else if (execute) {
       await runExecuteWindows(report);
     } else {
       report.notes.push('Dry-run only — pass --execute-windows for real lifecycle execution');
@@ -617,4 +751,11 @@ if (invokedDirectly) {
   main();
 }
 
-export { paths, readRetentionMarkers, boundedCleanup, getBudcomProcesses };
+export {
+  paths,
+  readRetentionMarkers,
+  boundedCleanup,
+  getBudcomProcesses,
+  readIdentityEvidence,
+  assertPreLaunchIdentityPreserved,
+};

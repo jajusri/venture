@@ -52,6 +52,22 @@ NSIS installer (when produced on Windows):
 2. Approve the system-wide installation prompt. Elevation is required for Program Files and the narrowly scoped Budcom Connector firewall rules.
 3. Do not expect automatic launch after install (`runAfterFinish: false`).
 
+### Legacy transport identity during over-install
+
+Before electron-builder runs the old uninstaller, the installer checks the resolved installation
+path and the registered HKLM/per-machine and HKCU/per-user installation paths for the historical
+`resources\connector\dist\data\transport` identity. A complete legacy certificate/key pair is
+copied and byte-for-byte verified in a staging directory beside the persistent AppData identity, then
+published by an atomic directory rename. The application must not be launched until the persistent
+pair and its SPKI fingerprint have been verified.
+
+- A complete persistent pair is authoritative and is never overwritten.
+- A partial persistent or legacy pair aborts installation before the old tree is replaced.
+- Multiple identical legacy pairs are accepted; different pairs abort as ambiguous.
+- Copy, hash, or atomic-publication failure aborts installation and removes only installer-created
+  staging material.
+- Runtime TD-018 migration remains a secondary compatibility fallback for non-NSIS layouts.
+
 ## First start
 
 1. Application data is created under `%APPDATA%/@budcom/desktop/` (Electron `userData` for package `@budcom/desktop`).
@@ -116,6 +132,22 @@ Real Windows lifecycle gate (isolated profile or first-install session only):
 ```powershell
 node scripts/lifecycle/lifecycle-gate-runner.mjs --execute-windows
 ```
+
+Real pre-launch identity over-install gate (isolated disposable Windows profile only):
+
+```powershell
+$env:BUDCOM_LIFECYCLE_ISOLATED_PROFILE='1'
+$env:BUDCOM_LIFECYCLE_OLD_INSTALLER='<exact old installer path>'
+$env:BUDCOM_LIFECYCLE_LEGACY_IDENTITY_DIR='<complete test identity fixture directory>'
+$env:BUDCOM_LIFECYCLE_OLD_INSTALL_SCOPE='allusers' # or currentuser
+node scripts/lifecycle/lifecycle-gate-runner.mjs --execute-windows-identity-overinstall
+```
+
+This mode installs the old product, seeds its legacy resource-tree identity, runs the candidate's
+normal uninstall-first over-install, and verifies both byte hashes and the SPKI fingerprint before
+any Desktop or Connector process is allowed to start. Use the candidate itself as the old installer
+for the same-version case, an approved older installer for upgrade coverage, and a per-user-capable
+older installer with `currentuser` for the per-user-to-Program-Files case.
 
 Bounded cleanup of gate-created data (marker-guarded):
 
