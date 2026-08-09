@@ -127,7 +127,6 @@ class SyncViewModel @Inject constructor(
 
     private fun start(target: SyncTarget) {
         if (!_uiState.value.canStart) return
-        if (target == SyncTarget.Vouchers) return
         if (startJob?.isActive == true) return
 
         startJob = viewModelScope.launch {
@@ -140,7 +139,10 @@ class SyncViewModel @Inject constructor(
                     aggregateMessage = null,
                 )
             }
-            beginPolling(target)
+            // Ledger and stock-item syncs expose status endpoints that can be polled while their
+            // blocking start calls are in flight. Voucher sync intentionally exposes only its
+            // blocking start endpoint, so its final response is the authoritative outcome.
+            if (target != SyncTarget.Vouchers) beginPolling(target)
             when (val result = startTargetSync(target)) {
                 is AppResult.Success -> applyOutcome(result.value)
                 is AppResult.Failure -> {

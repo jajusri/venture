@@ -102,6 +102,39 @@ class SyncViewModelTest {
     }
 
     @Test
+    fun `voucher start reaches the repository and does not poll an unsupported status route`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        repository.startedTargets.clear()
+        repository.statusTargets.clear()
+
+        vm.onEvent(SyncEvent.StartTarget(SyncTarget.Vouchers))
+        advanceUntilIdle()
+
+        assertEquals(listOf(SyncTarget.Vouchers), repository.startedTargets)
+        assertFalse(repository.statusTargets.contains(SyncTarget.Vouchers))
+        assertEquals(SyncPhase.Success, vm.uiState.value.phase)
+        assertFalse(vm.uiState.value.isBusy)
+    }
+
+    @Test
+    fun `run available syncs reaches vouchers after ledgers and stock items`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        repository.startedTargets.clear()
+
+        vm.onEvent(SyncEvent.RunAvailableSyncs)
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(SyncTarget.Ledgers, SyncTarget.StockItems, SyncTarget.Vouchers),
+            repository.startedTargets,
+        )
+        assertTrue(vm.uiState.value.aggregateMessage.orEmpty().contains("3 target(s) attempted"))
+        assertFalse(vm.uiState.value.isBusy)
+    }
+
+    @Test
     fun offlineDisablesStart() = runTest(dispatcher) {
         connectivity.online.value = false
         val vm = createVm()
@@ -112,9 +145,12 @@ class SyncViewModelTest {
 
 private class FakeSyncRepository : SyncRepository {
     var startCalls = 0
+    val startedTargets = mutableListOf<SyncTarget>()
+    val statusTargets = mutableListOf<SyncTarget>()
     override fun bindCompany(companyId: String?) = Unit
     override suspend fun startSync(target: SyncTarget, mode: SyncMode): AppResult<SyncOutcome> {
         startCalls++
+        startedTargets += target
         return AppResult.Success(
             SyncOutcome.Succeeded(
                 target = target,
@@ -143,10 +179,12 @@ private class FakeSyncRepository : SyncRepository {
             SyncProgress("r1", SyncRunStatus.Cancelled, SyncCounts(0, 0, 0, 0, 0, null), null, null, null, null, true),
         )
 
-    override suspend fun getStatus(target: SyncTarget) =
-        AppResult.Success(
+    override suspend fun getStatus(target: SyncTarget): AppResult<SyncProgress> {
+        statusTargets += target
+        return AppResult.Success(
             SyncProgress(null, SyncRunStatus.Idle, SyncCounts(0, 0, 0, 0, 0, null), null, null, null, null, false),
         )
+    }
 
     override suspend fun getStatistics(target: SyncTarget) =
         AppResult.Success(SyncStatisticsSummary(null, 0))
@@ -167,7 +205,7 @@ private class FakeObserveSyncStatus : ObserveSyncStatusPort {
             targets = listOf(
                 SyncTargetSnapshot(SyncTarget.Ledgers, true),
                 SyncTargetSnapshot(SyncTarget.StockItems, true),
-                SyncTargetSnapshot(SyncTarget.Vouchers, false, "Public voucher sync is not available on the Connector."),
+                SyncTargetSnapshot(SyncTarget.Vouchers, true),
             ),
             lastUpdatedEpochMillis = 0L,
         ),

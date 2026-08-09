@@ -3,7 +3,7 @@ package com.budcom.android.feature.sync.domain.model
 /**
  * Sync targets known to the Android companion.
  *
- * [Vouchers] has no public Connector sync route and is unavailable for execution.
+ * [Vouchers] has a blocking start route but no cancel, status, statistics, or recent-runs route.
  */
 enum class SyncTarget {
     Ledgers,

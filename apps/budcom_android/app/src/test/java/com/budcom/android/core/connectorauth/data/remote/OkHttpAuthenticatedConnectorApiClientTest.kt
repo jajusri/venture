@@ -105,6 +105,23 @@ class OkHttpAuthenticatedConnectorApiClientTest {
         assertEquals("https", request.requestUrl?.scheme)
     }
 
+    @Test
+    fun `voucher sync is an authenticated HTTPS POST with an explicit empty JSON body`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+        val (client, _) = readyClient(server, heldCertificate)
+
+        client.execute(AuthenticatedConnectorOperation.StartVoucherSync)
+
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/sync/vouchers", request.path)
+        assertEquals("{}", request.body.readUtf8())
+        assertEquals("application/json; charset=utf-8", request.getHeader("Content-Type"))
+        assertEquals("Bearer $SUPER_SECRET_TOKEN", request.getHeader("Authorization"))
+        assertEquals("https", request.requestUrl?.scheme)
+    }
+
     // 19, 20, 21, 22. token never in URL, query, body, or cookies
     @Test
     fun `the bearer credential never appears in the URL, query, body, or cookies`() = runTest {

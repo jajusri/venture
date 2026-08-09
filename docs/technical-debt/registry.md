@@ -351,10 +351,26 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-020 — Android Voucher sync action was silently discarded
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-020 |
+| **Description** | The Android Sync screen advertised Voucher sync, but its individual action returned before invoking the repository. The shared start path also assumed every target exposed a pollable status endpoint even though Voucher sync intentionally returns its final result from a blocking start request. Physical acceptance showed ledger and stock-item extraction while no Voucher request, snapshot, or failure record reached the Connector. |
+| **Priority** | P0 |
+| **Target milestone** | Pre-MVP-1 Android controlled-pilot hardening |
+| **Status** | **Implemented — automated validation in progress; physical confirmation pending** |
+| **Resolution** | Voucher start now reaches the authenticated `POST /sync/vouchers` operation and waits for its authoritative blocking response without calling the deliberately unavailable Voucher status endpoint. Ledger and stock-item polling is unchanged. “Sync all” remains sequential and explicitly includes Ledgers, Stock items, and Vouchers. |
+| **Regression boundary** | View-model tests prove an individual Voucher action makes exactly one repository start call and zero Voucher status calls, and that “Sync all” reaches all three targets in order. Existing authenticated-operation, repository, and Connector route tests continue to cover the pinned HTTPS request and extraction service. |
+| **Required physical confirmation** | Install the continuity.4 APK in place without clearing data or changing trust, run individual Voucher sync, prove a fresh Connector Voucher snapshot and unchanged secure identity/session, then smoke voucher list, detail, Share Summary, Share PDF, and Save PDF. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-020 | Android Voucher sync action was silently discarded | P0 | **Implemented — automated validation in progress; physical confirmation pending** | Pre-MVP-1 release hardening |
 | TD-018 | Packaged transport identity and mutable Connector paths lived under install resources | P0 | **Windows physical lifecycle accepted; Android confirmation pending** | Pre-MVP-1 release hardening |
 | TD-019 | Android release exposes stale legacy endpoint and lacks safe active-trust replacement | P0 | **Implemented — automated validation passed; physical release-APK confirmation pending** | Pre-MVP-1 release hardening |
 | TD-001 | Parent encoding normalization (`&#4; Primary`) | P2 | Open | 5A |
