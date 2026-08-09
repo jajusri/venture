@@ -125,6 +125,13 @@ class SecurePairingViewModel @Inject constructor(
                 connectorName = record?.endpoint?.connectorName,
                 canRetryPendingVerification = record?.state == SecurePairingCredentialState.PENDING_VERIFICATION,
                 shortCodeEntryAvailable = available,
+                showShortCodeEntry = false,
+                shortCodeInput = "",
+                cameraPermanentlyDenied = false,
+                abbreviatedFingerprint = null,
+                expiresAtEpochMillis = null,
+                progressDescription = null,
+                errorMessage = null,
             )
         }
     }
@@ -147,8 +154,7 @@ class SecurePairingViewModel @Inject constructor(
     private fun handleScanResult(result: SecurePairingScanResult) {
         when (result) {
             is SecurePairingScanResult.PayloadCaptured -> validateScannedPayload(result.rawPayload)
-            SecurePairingScanResult.Cancelled ->
-                _uiState.update { it.copy(phase = SecurePairingPhase.Cancelled) }
+            SecurePairingScanResult.Cancelled -> cancel()
             is SecurePairingScanResult.PermissionDenied ->
                 _uiState.update { it.copy(phase = SecurePairingPhase.PermissionDenied, cameraPermanentlyDenied = result.permanentlyDenied) }
             SecurePairingScanResult.CameraUnavailable ->
@@ -197,8 +203,7 @@ class SecurePairingViewModel @Inject constructor(
 
     private fun rejectConnector() {
         if (_uiState.value.phase != SecurePairingPhase.AwaitingConfirmation) return
-        pendingRawPayload = null
-        _uiState.update { it.copy(phase = SecurePairingPhase.Idle, connectorName = null, abbreviatedFingerprint = null, expiresAtEpochMillis = null, errorMessage = null) }
+        cancel()
     }
 
     private fun retryVerification() {
@@ -218,6 +223,7 @@ class SecurePairingViewModel @Inject constructor(
                     it.copy(phase = SecurePairingPhase.Active, connectorName = outcome.record.endpoint.connectorName, canRetryPendingVerification = false)
                 }
                 viewModelScope.launch { syncWithPersistedState() }
+                viewModelScope.launch { _effects.emit(SecurePairingUiEffect.PairingCompleted) }
             }
             is SecurePairingRedemptionOutcome.PendingRetryable -> _uiState.update {
                 it.copy(
@@ -286,31 +292,26 @@ class SecurePairingViewModel @Inject constructor(
 
     /**
      * Cancels any in-flight operation and closes whatever transient sub-flow was open (scanning,
-     * short-code entry, an error screen). Deliberately does NOT blank an already-proven
-     * Active/PendingVerification/RePairRequired steady state back to Idle — those reflect real,
-     * currently-persisted vault state and cancelling a sub-flow (e.g. dismissing short-code entry)
-     * must not make an already-paired device appear unpaired.
+     * short-code entry, an error screen), then re-reads the encrypted vault as the authoritative
+     * resting state. During replacement, every pre-publication failure leaves the old ACTIVE
+     * credential untouched, so dismissing that failure must return to Active rather than
+     * misleadingly presenting the device as unpaired.
      */
     private fun cancel() {
         activeOperation?.cancel()
         activeOperation = null
         pendingRawPayload = null
-        val restingPhase = when (_uiState.value.phase) {
-            SecurePairingPhase.Active, SecurePairingPhase.PendingVerification, SecurePairingPhase.RePairRequired -> _uiState.value.phase
-            else -> SecurePairingPhase.Idle
-        }
         _uiState.update {
             it.copy(
-                phase = restingPhase,
                 showShortCodeEntry = false,
                 shortCodeInput = "",
                 errorMessage = null,
                 cameraPermanentlyDenied = false,
-                abbreviatedFingerprint = if (restingPhase == SecurePairingPhase.Idle) null else it.abbreviatedFingerprint,
-                expiresAtEpochMillis = if (restingPhase == SecurePairingPhase.Idle) null else it.expiresAtEpochMillis,
-                connectorName = if (restingPhase == SecurePairingPhase.Idle) null else it.connectorName,
+                abbreviatedFingerprint = null,
+                expiresAtEpochMillis = null,
             )
         }
+        viewModelScope.launch { syncWithPersistedState() }
     }
 
     private fun clearError() {

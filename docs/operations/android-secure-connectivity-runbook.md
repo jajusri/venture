@@ -26,6 +26,10 @@ alone is never sufficient to replace trust.
 Replacement is fail-closed. The existing active credential remains intact if QR parsing, redemption,
 certificate verification, Connector/device identity validation, encryption, or storage fails. The
 new active record is published only after the new endpoint and credential have been verified.
+Opening pairing management for an already-active credential must remain on that screen until the
+customer chooses an action. Returning to the Dashboard is permitted only after a pairing operation
+has completed successfully. Cancelling, rejecting, or dismissing a failed replacement returns to
+the actual persisted trust state; it must not make an active device appear unpaired.
 
 ## Normal reconnection
 

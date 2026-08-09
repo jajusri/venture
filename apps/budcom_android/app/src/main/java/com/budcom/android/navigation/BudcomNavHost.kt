@@ -72,11 +72,10 @@ fun BudcomNavHost(
         }
         composable(route = Routes.SECURE_PAIRING) {
             SecurePairingRoute(
-                onSecureActive = {
-                    // Clears the whole back stack (whether this screen was the mandatory startup
-                    // destination or was pushed from Settings' migration/re-pair entry) so a
-                    // completed pairing always lands on a single, clean Dashboard entry — never a
-                    // stale Settings/pairing screen reachable via back navigation.
+                onPairingCompleted = {
+                    // Clear the pairing flow only after a verified pairing operation completes.
+                    // Merely opening this destination with an existing ACTIVE credential must keep
+                    // its management UI visible so explicit replacement remains reachable.
                     navController.navigate(Routes.HOME) {
                         popUpTo(navController.graph.startDestinationId) { inclusive = true }
                     }

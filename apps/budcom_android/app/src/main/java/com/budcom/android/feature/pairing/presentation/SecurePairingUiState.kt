@@ -41,7 +41,6 @@ enum class SecurePairingPhase {
     NetworkFailure,
     Unauthorized,
     RePairRequired,
-    Cancelled,
     Failed,
 }
 
@@ -62,6 +61,14 @@ sealed interface SecurePairingEvent {
 sealed interface SecurePairingUiEffect {
     /** Route composable must request camera permission (if needed) then launch the QR scanner. */
     data object LaunchScanner : SecurePairingUiEffect
+
+    /**
+     * A user-initiated pairing or re-pair operation has been verified and published as ACTIVE.
+     * This is intentionally an event, not inferred from the steady-state [SecurePairingPhase.Active]:
+     * opening pairing management for an existing ACTIVE credential must keep the management UI
+     * visible so the user can explicitly replace its trust.
+     */
+    data object PairingCompleted : SecurePairingUiEffect
 }
 
 /**

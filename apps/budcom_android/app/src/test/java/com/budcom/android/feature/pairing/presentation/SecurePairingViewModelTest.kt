@@ -1,5 +1,6 @@
 package com.budcom.android.feature.pairing.presentation
 
+import app.cash.turbine.test
 import com.budcom.android.core.pairing.data.local.FakePairingDeviceIdentityLocalDataSource
 import com.budcom.android.core.pairing.data.local.FakeSecureCredentialVault
 import com.budcom.android.core.pairing.data.local.SecureCredentialVault
@@ -139,6 +140,21 @@ class SecurePairingViewModelTest {
         assertTrue(viewModel.uiState.value.shortCodeEntryAvailable)
     }
 
+    @Test
+    fun `opening management for an existing ACTIVE credential does not emit pairing completed`() = runTest(dispatcher) {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-1", "device-1", "raw-token", testEndpoint, NOW)
+        vault.markActive("cred-1", NOW)
+        val viewModel = viewModelOf(vault = vault)
+
+        viewModel.effects.test {
+            advanceUntilIdle()
+
+            assertEquals(SecurePairingPhase.Active, viewModel.uiState.value.phase)
+            expectNoEvents()
+        }
+    }
+
     // 12. StartQrScan requests scanner launch only
     @Test
     fun `StartQrScan moves to ScannerLaunching and requests a scanner launch, without validating or redeeming anything`() = runTest(dispatcher) {
@@ -261,6 +277,26 @@ class SecurePairingViewModelTest {
         assertEquals(SecurePairingPhase.Active, viewModel.uiState.value.phase)
     }
 
+    @Test
+    fun `verified user-initiated pairing emits one completion navigation effect`() = runTest(dispatcher) {
+        val api = FakeSecurePairingApiPort(
+            redeemResult = PairingRedeemOutcome.Success("connector-abc", "Front Desk", "cred-1", "raw-token"),
+            selfStatusResult = PairingSelfStatusOutcome.Active("cred-1", null, null, "connector-abc", "2026-01-01T00:00:00Z", null, "active"),
+        )
+        val viewModel = viewModelOf(api = api)
+        advanceUntilIdle()
+
+        viewModel.effects.test {
+            viewModel.onEvent(SecurePairingEvent.ScannerResultReceived(SecurePairingScanResult.PayloadCaptured(validQrJson())))
+            advanceUntilIdle()
+            viewModel.onEvent(SecurePairingEvent.ConfirmConnector)
+            advanceUntilIdle()
+
+            assertEquals(SecurePairingUiEffect.PairingCompleted, awaitItem())
+            expectNoEvents()
+        }
+    }
+
     // 20. rejection clears the validated payload
     @Test
     fun `RejectConnector returns to Idle and a later Confirm does nothing`() = runTest(dispatcher) {
@@ -277,6 +313,64 @@ class SecurePairingViewModelTest {
         viewModel.onEvent(SecurePairingEvent.ConfirmConnector)
         advanceUntilIdle()
         assertEquals(0, api.redeemQrCallCount)
+    }
+
+    @Test
+    fun `cancelling a replacement scan returns to the persisted ACTIVE credential`() = runTest(dispatcher) {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-old", "device-1", "old-token", testEndpoint, NOW)
+        vault.markActive("cred-old", NOW)
+        val viewModel = viewModelOf(vault = vault)
+        advanceUntilIdle()
+
+        viewModel.onEvent(SecurePairingEvent.StartQrScan)
+        viewModel.onEvent(SecurePairingEvent.ScannerResultReceived(SecurePairingScanResult.Cancelled))
+        advanceUntilIdle()
+
+        assertEquals(SecurePairingPhase.Active, viewModel.uiState.value.phase)
+        assertEquals("cred-old", vault.read()?.credentialId)
+    }
+
+    @Test
+    fun `rejecting a replacement QR returns to the persisted ACTIVE credential`() = runTest(dispatcher) {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-old", "device-1", "old-token", testEndpoint, NOW)
+        vault.markActive("cred-old", NOW)
+        val viewModel = viewModelOf(vault = vault)
+        advanceUntilIdle()
+
+        viewModel.onEvent(SecurePairingEvent.ScannerResultReceived(SecurePairingScanResult.PayloadCaptured(validQrJson())))
+        advanceUntilIdle()
+        viewModel.onEvent(SecurePairingEvent.RejectConnector)
+        advanceUntilIdle()
+
+        assertEquals(SecurePairingPhase.Active, viewModel.uiState.value.phase)
+        assertEquals("cred-old", vault.read()?.credentialId)
+    }
+
+    @Test
+    fun `dismissing a failed replacement returns to unchanged ACTIVE trust`() = runTest(dispatcher) {
+        val vault = FakeSecureCredentialVault()
+        vault.storePendingVerification("cred-old", "device-1", "old-token", testEndpoint, NOW)
+        vault.markActive("cred-old", NOW)
+        val oldRecord = vault.read()
+        val viewModel = viewModelOf(
+            api = FakeSecurePairingApiPort(redeemResult = PairingRedeemOutcome.TransportFailure),
+            vault = vault,
+        )
+        advanceUntilIdle()
+
+        viewModel.onEvent(SecurePairingEvent.ScannerResultReceived(SecurePairingScanResult.PayloadCaptured(validQrJson())))
+        advanceUntilIdle()
+        viewModel.onEvent(SecurePairingEvent.ConfirmConnector)
+        advanceUntilIdle()
+        assertEquals(SecurePairingPhase.NetworkFailure, viewModel.uiState.value.phase)
+
+        viewModel.onEvent(SecurePairingEvent.Cancel)
+        advanceUntilIdle()
+
+        assertEquals(SecurePairingPhase.Active, viewModel.uiState.value.phase)
+        assertEquals(oldRecord, vault.read())
     }
 
     // 21. transient verification failure becomes pendingVerification
