@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type fs from 'node:fs';
 
 import {
   formatBuildInfoForDiagnostics,
@@ -6,6 +7,7 @@ import {
   parseBuildInfoJson,
   detectVersionMismatch,
   DEV_BUILD_INFO_FALLBACK,
+  defaultBuildInfoSearchPaths,
 } from '../../src/application/release/build-info.js';
 import {
   isAutoUpdatePermitted,
@@ -18,6 +20,8 @@ import {
 } from '../../src/application/release/release-mode.js';
 import {
   assertDeletionWithinAppDataRoot,
+  assertPackagedMutablePathsOutsideInstallRoot,
+  ensureAppDataDirectories,
   resolveAppDataLayout,
 } from '../../src/application/release/app-data-layout.js';
 import {
@@ -33,6 +37,11 @@ describe('release mode contract', () => {
 
   it('fails closed on unknown mode', () => {
     expect(() => resolveReleaseMode({ envValue: 'staging' })).toThrow(UnknownReleaseModeError);
+  });
+
+  it('fails closed when a packaged build silently falls back to development', () => {
+    expect(() => resolveReleaseMode({ envValue: 'development', buildInfoMode: 'development', isPackaged: true }))
+      .toThrow(/packaged builds/i);
   });
 
   it('does not infer production from NODE_ENV alone', () => {
@@ -72,6 +81,11 @@ describe('release mode contract', () => {
 });
 
 describe('build identity', () => {
+  it('searches generated dist/main build-info from packaged application code', () => {
+    const candidates = defaultBuildInfoSearchPaths('C:\\app\\resources\\app.asar\\dist\\application\\release');
+    expect(candidates.map((candidate) => candidate.replace(/\\/g, '/')))
+      .toContain('C:/app/resources/app.asar/dist/main/build-info.json');
+  });
   it('parses valid build metadata', () => {
     const parsed = parseBuildInfoJson(JSON.stringify({
       applicationVersion: '0.4.3',
@@ -108,6 +122,37 @@ describe('application data layout', () => {
     expect(layout.installRoot).toContain('Program Files');
     expect(layout.connectorDatabaseDir).toContain('AppData');
     expect(layout.connectorDatabaseDir).not.toContain('Program Files');
+    expect(layout.connectorTallyAuditPath).toContain('AppData');
+    expect(layout.connectorTallyAuditPath).not.toContain('Program Files');
+    expect(() => assertPackagedMutablePathsOutsideInstallRoot(layout)).not.toThrow();
+  });
+
+  it('places the connector transport identity outside the install directory too (TD-018)', () => {
+    const layout = resolveAppDataLayout({
+      userDataDir: 'C:\\Users\\Tester\\AppData\\Roaming\\budcom-desktop',
+      isPackaged: true,
+      installRoot: 'C:\\Program Files\\Budcom Desktop',
+    });
+    expect(layout.connectorTransportIdentityDir).toContain('AppData');
+    expect(layout.connectorTransportIdentityDir).not.toContain('Program Files');
+    // Distinct from the database dir — a sibling under the same persistent userData root.
+    expect(layout.connectorTransportIdentityDir).not.toBe(layout.connectorDatabaseDir);
+  });
+
+  it('ensureAppDataDirectories creates the connector transport identity directory', () => {
+    const layout = resolveAppDataLayout({
+      userDataDir: 'C:\\Users\\Tester\\AppData\\Roaming\\budcom-desktop',
+      isPackaged: true,
+      installRoot: 'C:\\Program Files\\Budcom Desktop',
+    });
+    const created: string[] = [];
+    ensureAppDataDirectories(layout, {
+      mkdirSync: (dir: fs.PathLike) => {
+        created.push(String(dir));
+        return undefined;
+      },
+    });
+    expect(created).toContain(layout.connectorTransportIdentityDir);
   });
 
   it('rejects cwd fallback for mutable data', () => {
@@ -115,6 +160,15 @@ describe('application data layout', () => {
       userDataDir: process.cwd(),
       isPackaged: false,
     })).toThrow();
+  });
+
+  it('fails closed when any packaged mutable path resolves beneath the install root', () => {
+    const layout = resolveAppDataLayout({
+      userDataDir: 'C:\\Program Files\\Budcom Desktop\\mutable',
+      isPackaged: true,
+      installRoot: 'C:\\Program Files\\Budcom Desktop',
+    });
+    expect(() => assertPackagedMutablePathsOutsideInstallRoot(layout)).toThrow(/outside the install root/i);
   });
 
   it('rejects deletion outside app-data root', () => {

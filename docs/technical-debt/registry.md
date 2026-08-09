@@ -317,6 +317,20 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-018 — Packaged transport identity and mutable Connector paths lived under install resources
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-018 |
+| **Description** | The packaged Connector inherited CWD-relative mutable defaults. Transport key/certificate and Tally request-audit output therefore resolved beneath packaged resources. Reinstall replaced the TLS identity while preserving connectorId, producing a legitimate Android fingerprint mismatch; a system-wide Program Files install also made the audit directory unwritable and caused the child to exit during startup validation. |
+| **Priority** | P0 |
+| **Status** | Implementation and automated validation in progress; installed and physical acceptance pending. |
+| **Repair boundary** | All mutable paths are explicit AppData paths; packaged startup rejects any mutable path beneath the install root. Legacy identity migration derives the real `resources/connector/dist/data/transport` layout, preserves byte-identical key/cert material when available, and explicitly reports that one legitimate re-pair is required when a previous reinstall has already destroyed the identity. Child fatal stderr is bounded and sanitized. |
+| **Security invariants** | No fingerprint, connectorId, trusted-device, TLS-pinning, or secure-pairing validation is weakened. A missing old private key is never reconstructed or bypassed. |
+| **Required acceptance** | Clean-commit installer: fresh system-wide install, Connector health, Tally companies, DB/fingerprint continuity through same-version reinstall and upgrade, exact bundled-executable firewall rules, then physical Android reconnection. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |

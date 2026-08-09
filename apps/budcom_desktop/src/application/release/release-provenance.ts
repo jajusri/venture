@@ -1,6 +1,7 @@
 /** Generated build outputs that may change during a release without invalidating source provenance. */
 export const ALLOWLISTED_GENERATED_PATH_PREFIXES = [
   'apps/budcom_desktop/dist/',
+  'release/controlled-pilot/0.4.3/STALE-DO-NOT-DISTRIBUTE.md',
 ] as const;
 
 export interface GitPorcelainEntry {
@@ -54,7 +55,10 @@ export function isAllowlistedGeneratedPath(
 ): boolean {
   const normalized = normalizeRepoPath(repoRelativePath);
   return allowlist.some((prefixRaw) => {
-    const prefix = normalizeRepoPath(prefixRaw.endsWith('/') ? prefixRaw : `${prefixRaw}/`);
+    if (!prefixRaw.endsWith('/')) {
+      return normalized === normalizeRepoPath(prefixRaw);
+    }
+    const prefix = normalizeRepoPath(prefixRaw);
     return normalized === prefix.slice(0, -1) || normalized.startsWith(prefix);
   });
 }

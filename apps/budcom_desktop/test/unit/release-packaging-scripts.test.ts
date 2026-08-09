@@ -74,6 +74,26 @@ describe('packaging boundary inspection', () => {
   });
 });
 
+describe('controlled-pilot release ordering', () => {
+  it('captures and validates clean source provenance before deleting generated release output', () => {
+    const script = fs.readFileSync(
+      path.resolve(process.cwd(), '..', '..', 'scripts', 'release', 'controlled-pilot-release.mjs'),
+      'utf8',
+    );
+    expect(script.indexOf('assertReleaseStartClean(startProvenanceSnapshot)'))
+      .toBeLessThan(script.indexOf('cleanReleaseOutput(releaseRoot)'));
+  });
+
+  it('excludes generated Connector state and dependency source maps from the package', () => {
+    const config = fs.readFileSync(
+      path.resolve(process.cwd(), 'electron-builder.yml'),
+      'utf8',
+    );
+    expect(config).toContain('- "!data/**"');
+    expect(config.match(/- "!\*\*\/\*\.map"/g)).toHaveLength(3);
+  });
+});
+
 describe('manifest and checksum verification', () => {
   const tempDirs: string[] = [];
 

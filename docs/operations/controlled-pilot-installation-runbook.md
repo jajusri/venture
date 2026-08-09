@@ -49,13 +49,15 @@ Portable pilot layout:
 NSIS installer (when produced on Windows):
 
 1. Run the setup executable.
-2. Accept per-user installation (no administrator rights required).
+2. Approve the system-wide installation prompt. Elevation is required for Program Files and the narrowly scoped Budcom Connector firewall rules.
 3. Do not expect automatic launch after install (`runAfterFinish: false`).
 
 ## First start
 
 1. Application data is created under `%APPDATA%/@budcom/desktop/` (Electron `userData` for package `@budcom/desktop`).
 2. Connector data is stored under `%APPDATA%/@budcom/desktop/connector-data/`.
+3. Connector transport identity is stored under `%APPDATA%/@budcom/desktop/connector-transport-identity/`.
+4. Tally request audit output is stored under `%APPDATA%/@budcom/desktop/connector-diagnostics/`; no mutable Connector file may be written beneath Program Files.
 3. Confirm release mode in startup logs or diagnostics export: `controlled_pilot`.
 4. Confirm desktop and connector versions in diagnostics metadata.
 5. Connector starts on loopback only.
@@ -67,6 +69,7 @@ Before upgrading:
 1. Export diagnostics if support needs context.
 2. Copy `%APPDATA%/@budcom/desktop/connector-data/` including `budcom-ledger.db` and any `backups/` directory.
 3. Copy `%APPDATA%/@budcom/desktop/desktop-config.json`.
+4. Back up `%APPDATA%/@budcom/desktop/connector-transport-identity/` securely; never share its private key.
 
 ## Manual upgrade
 
@@ -82,6 +85,7 @@ Automatic update is disabled in controlled pilot.
 - Uninstall removes application binaries only.
 - Configuration, SQLite database, logs, diagnostic exports, and backups remain under `%APPDATA%/@budcom/desktop/` unless the operator deletes them manually.
 - No destructive data-delete option is provided in controlled pilot.
+- Uninstall removes the stable-name Budcom HTTP, HTTPS, and mDNS firewall rules. Upgrade replaces them so they target the current bundled `resources/node/node.exe` path.
 
 ## Diagnostics and privacy
 

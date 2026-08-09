@@ -16,6 +16,16 @@ export interface AppDataLayout {
   readonly diagnosticsExportDir: string;
   readonly connectorDataDir: string;
   readonly connectorDatabaseDir: string;
+  readonly connectorDiagnosticsDir: string;
+  readonly connectorTallyAuditPath: string;
+  /**
+   * Persistent home for the Connector's transport identity (private key + self-signed
+   * certificate used for pinned-HTTPS secure pairing). Deliberately a sibling of
+   * connectorDataDir, under the same reinstall-surviving userDataRoot — see
+   * docs/technical-debt/registry.md TD-018 and transport-identity-migration.ts. Never the
+   * install/resources tree, which a Desktop reinstall replaces.
+   */
+  readonly connectorTransportIdentityDir: string;
   readonly importStagingDir: string;
   readonly tempDir: string;
   readonly releaseMetadataDir: string;
@@ -33,6 +43,7 @@ export function resolveAppDataLayout(input: ResolveAppDataLayoutInput): AppDataL
     throw new AppDataLayoutError('Mutable application data must not resolve to the current working directory.');
   }
   const connectorDataDir = path.join(userDataRoot, 'connector-data');
+  const connectorDiagnosticsDir = path.join(userDataRoot, 'connector-diagnostics');
   return {
     installRoot: input.isPackaged ? (input.installRoot ?? null) : null,
     userDataRoot,
@@ -41,6 +52,9 @@ export function resolveAppDataLayout(input: ResolveAppDataLayoutInput): AppDataL
     diagnosticsExportDir: path.join(userDataRoot, 'diagnostics-exports'),
     connectorDataDir,
     connectorDatabaseDir: connectorDataDir,
+    connectorDiagnosticsDir,
+    connectorTallyAuditPath: path.join(connectorDiagnosticsDir, 'tally-request-audit.jsonl'),
+    connectorTransportIdentityDir: path.join(userDataRoot, 'connector-transport-identity'),
     importStagingDir: path.join(userDataRoot, 'imports', 'staging'),
     tempDir: path.join(userDataRoot, 'temp'),
     releaseMetadataDir: path.join(userDataRoot, 'release-metadata'),
@@ -56,11 +70,35 @@ export function ensureAppDataDirectories(
     layout.logsDir,
     layout.diagnosticsExportDir,
     layout.connectorDataDir,
+    layout.connectorDiagnosticsDir,
+    layout.connectorTransportIdentityDir,
     layout.importStagingDir,
     layout.tempDir,
     layout.releaseMetadataDir,
   ]) {
     fsImpl.mkdirSync(dir, { recursive: true });
+  }
+}
+
+export function assertPackagedMutablePathsOutsideInstallRoot(layout: AppDataLayout): void {
+  if (!layout.installRoot) return;
+  const mutablePaths = [
+    layout.configDir,
+    layout.logsDir,
+    layout.diagnosticsExportDir,
+    layout.connectorDataDir,
+    layout.connectorDatabaseDir,
+    layout.connectorDiagnosticsDir,
+    layout.connectorTallyAuditPath,
+    layout.connectorTransportIdentityDir,
+    layout.importStagingDir,
+    layout.tempDir,
+    layout.releaseMetadataDir,
+  ];
+  for (const mutablePath of mutablePaths) {
+    if (isPathWithinRoot(mutablePath, layout.installRoot)) {
+      throw new AppDataLayoutError(`Mutable application path must remain outside the install root: ${mutablePath}`);
+    }
   }
 }
 

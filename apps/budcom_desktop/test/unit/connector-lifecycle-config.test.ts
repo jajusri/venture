@@ -51,6 +51,68 @@ describe('connector-lifecycle-config', () => {
     expect(config.childEnv?.ELECTRON_RUN_AS_NODE).toBeUndefined();
   });
 
+  it('passes the Tally request audit path under persistent app data, never packaged CWD', () => {
+    const auditPath = 'C:/Users/Tester/AppData/Roaming/@budcom/desktop/connector-diagnostics/tally-request-audit.jsonl';
+    const config = resolveConnectorLifecycleConfig({ connectorExecutable: process.execPath }, {
+      isPackaged: true,
+      resourcesPath: 'C:/Program Files/Budcom Desktop/resources',
+      connectorTallyAuditPath: auditPath,
+    });
+    expect(config.childEnv?.BUDCOM_TALLY_REQUEST_AUDIT_PATH).toBe(auditPath);
+    expect(config.childEnv?.BUDCOM_TALLY_REQUEST_AUDIT_PATH).not.toContain('Program Files');
+  });
+
+  it('passes a persistent connector transport identity directory to child env as BUDCOM_TRANSPORT_IDENTITY_DIR (TD-018 scenario 1)', () => {
+    const config = resolveConnectorLifecycleConfig({
+      connectorExecutable: process.execPath,
+    }, {
+      isPackaged: true,
+      resourcesPath: 'C:/Apps/Budcom Desktop/resources',
+      connectorTransportIdentityDir: 'C:/Users/Tester/AppData/Roaming/@budcom/desktop/connector-transport-identity',
+    });
+
+    expect(config.childEnv?.BUDCOM_TRANSPORT_IDENTITY_DIR).toBe(
+      'C:/Users/Tester/AppData/Roaming/@budcom/desktop/connector-transport-identity',
+    );
+  });
+
+  it('omits BUDCOM_TRANSPORT_IDENTITY_DIR from child env when no persistent directory is supplied', () => {
+    const config = resolveConnectorLifecycleConfig({
+      connectorExecutable: process.execPath,
+    }, {
+      isPackaged: true,
+      resourcesPath: 'C:/Apps/Budcom Desktop/resources',
+    });
+
+    expect(config.childEnv?.BUDCOM_TRANSPORT_IDENTITY_DIR).toBeUndefined();
+  });
+
+  it('resolves the same transport identity directory across a simulated reinstall (different resourcesPath, same persistent dir) (TD-018 scenario 2)', () => {
+    const persistentTransportIdentityDir = 'C:/Users/Tester/AppData/Roaming/@budcom/desktop/connector-transport-identity';
+
+    const beforeReinstall = resolveConnectorLifecycleConfig({
+      connectorExecutable: process.execPath,
+    }, {
+      isPackaged: true,
+      resourcesPath: 'C:/Apps/Budcom Desktop/resources',
+      connectorTransportIdentityDir: persistentTransportIdentityDir,
+    });
+    // A reinstall/update replaces the install/resources tree — resourcesPath can legitimately
+    // change (e.g. a version-suffixed reinstall directory) while userData, and therefore the
+    // persistent transport identity directory passed in by main.ts, stays fixed.
+    const afterReinstall = resolveConnectorLifecycleConfig({
+      connectorExecutable: process.execPath,
+    }, {
+      isPackaged: true,
+      resourcesPath: 'C:/Apps/Budcom Desktop (new)/resources',
+      connectorTransportIdentityDir: persistentTransportIdentityDir,
+    });
+
+    expect(beforeReinstall.childEnv?.BUDCOM_TRANSPORT_IDENTITY_DIR).toBe(persistentTransportIdentityDir);
+    expect(afterReinstall.childEnv?.BUDCOM_TRANSPORT_IDENTITY_DIR).toBe(persistentTransportIdentityDir);
+    expect(afterReinstall.childEnv?.BUDCOM_TRANSPORT_IDENTITY_DIR).toBe(beforeReinstall.childEnv?.BUDCOM_TRANSPORT_IDENTITY_DIR);
+  });
+
   it('forces loopback host and child env binding for packaged startup', () => {
     delete process.env.BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED;
     const config = resolveConnectorLifecycleConfig({

@@ -39,6 +39,14 @@ export interface ConnectorLifecycleResolutionContext {
   readonly isPackaged?: boolean;
   readonly resourcesPath?: string;
   readonly connectorDatabaseDir?: string;
+  readonly connectorTallyAuditPath?: string;
+  /**
+   * Persistent home for the Connector's transport identity (private key + certificate), passed
+   * to the spawned Connector as BUDCOM_TRANSPORT_IDENTITY_DIR so it never falls back to its own
+   * default (a path relative to its working directory, which for a packaged install sits inside
+   * the install/resources tree a Desktop reinstall replaces — see transport-identity-migration.ts).
+   */
+  readonly connectorTransportIdentityDir?: string;
   /**
    * Desktop's stable Connector identity (from ConnectorIdentityStore), passed to the spawned
    * Connector child process as BUDCOM_CONNECTOR_ID so it never has to generate its own.
@@ -125,6 +133,12 @@ export function resolveConnectorLifecycleConfig(
   }
   if (context.connectorDatabaseDir) {
     childEnvOverrides.BUDCOM_DATABASE_PATH = context.connectorDatabaseDir;
+  }
+  if (context.connectorTallyAuditPath) {
+    childEnvOverrides.BUDCOM_TALLY_REQUEST_AUDIT_PATH = context.connectorTallyAuditPath;
+  }
+  if (context.connectorTransportIdentityDir) {
+    childEnvOverrides.BUDCOM_TRANSPORT_IDENTITY_DIR = context.connectorTransportIdentityDir;
   }
   if (context.connectorId) {
     childEnvOverrides.BUDCOM_CONNECTOR_ID = context.connectorId;

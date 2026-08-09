@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -57,11 +58,13 @@ import { LogService } from '../application/log-service.js';
 import { NodeProcessSpawner } from '../application/node-process-spawner.js';
 import { RecoveryService } from '../application/recovery-service.js';
 import { SettingsService } from '../application/settings-service.js';
-import { ensureAppDataDirectories, resolveAppDataLayout } from '../application/release/app-data-layout.js';
+import { assertPackagedMutablePathsOutsideInstallRoot, ensureAppDataDirectories, resolveAppDataLayout } from '../application/release/app-data-layout.js';
 import { loadBuildInfo, formatBuildInfoForDiagnostics } from '../application/release/build-info.js';
+import { resolvePackagedConnectorPaths } from '../application/release/connector-packaged-paths.js';
 import { resolveReleaseMode, ReleaseMode } from '../application/release/release-mode.js';
 import { bindSecondInstanceFocus, requestDesktopSingleInstance } from '../application/release/single-instance.js';
 import { StartupDiagnostics } from '../application/release/startup-diagnostics.js';
+import { migrateLegacyTransportIdentity, resolvePackagedLegacyTransportIdentityDir } from '../application/release/transport-identity-migration.js';
 
 sanitizeDesktopProcessEnvironment();
 
@@ -159,11 +162,30 @@ const appDataLayout = resolveAppDataLayout({
   installRoot: app.isPackaged ? path.dirname(app.getPath('exe')) : null,
 });
 ensureAppDataDirectories(appDataLayout);
+assertPackagedMutablePathsOutsideInstallRoot(appDataLayout);
 startupDiagnostics.record('app_data_ready', {
   userDataRoot: appDataLayout.userDataRoot,
   logsDir: appDataLayout.logsDir,
   connectorDataDir: appDataLayout.connectorDataDir,
+  connectorDiagnosticsDir: appDataLayout.connectorDiagnosticsDir,
+  connectorTallyAuditPath: appDataLayout.connectorTallyAuditPath,
+  connectorTransportIdentityDir: appDataLayout.connectorTransportIdentityDir,
 });
+
+// TD-018: one-time, idempotent recovery of a pre-existing Connector transport identity from its
+// old install-relative location (wiped by this very reinstall/update) into the new persistent
+// one — see transport-identity-migration.ts. A no-op once the persistent directory already has
+// an identity (every subsequent launch, forever). Never logs key material.
+if (app.isPackaged) {
+  const packagedConnector = resolvePackagedConnectorPaths({ isPackaged: true, resourcesPath: process.resourcesPath });
+  const legacyTransportIdentityDir = resolvePackagedLegacyTransportIdentityDir(packagedConnector.connectorEntryScript);
+  const migrationOutcome = migrateLegacyTransportIdentity({
+    persistentDir: appDataLayout.connectorTransportIdentityDir,
+    legacyDir: legacyTransportIdentityDir,
+    existingInstallation: fs.existsSync(path.join(appDataLayout.userDataRoot, 'connector-identity.json')),
+  });
+  startupDiagnostics.record('connector_transport_identity_migration', migrationOutcome);
+}
 
 const configPaths = resolveDesktopConfigPaths(appDataLayout.userDataRoot);
 const fileLogWriter = new FileLogWriter({ logsDir: configPaths.logsDir });
@@ -209,6 +231,8 @@ const settingsService = new SettingsService({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
     connectorDatabaseDir: appDataLayout.connectorDatabaseDir,
+    connectorTallyAuditPath: appDataLayout.connectorTallyAuditPath,
+    connectorTransportIdentityDir: appDataLayout.connectorTransportIdentityDir,
     connectorId: connectorIdentity.connectorId,
   },
 });
@@ -345,7 +369,17 @@ function createLifecycleService(): ConnectorLifecycleService {
 
   const service = new ConnectorLifecycleService({
     config,
-    processSpawner: new NodeProcessSpawner(),
+    processSpawner: new NodeProcessSpawner({
+      onDiagnostic: ({ text }) => {
+        startupDiagnostics.record('connector_child_stderr', { message: text });
+        logService.appendStructured({
+          level: 'error',
+          event: 'connector_child_stderr',
+          component: 'connector',
+          message: text,
+        });
+      },
+    }),
     healthChecker: new HttpHealthChecker(config.connectorBaseUrl, undefined, {
       expectedPort: config.connectorPort,
       expectedCorrelationId: config.startupCorrelationId,

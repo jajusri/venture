@@ -26,6 +26,8 @@ Use before distributing a controlled-pilot build.
 - [ ] No LAN exposure enabled by default
 - [ ] Auto-update disabled
 - [ ] Child process environment minimized
+- [ ] Firewall rules target the exact bundled Node: TCP 8080/8443 and UDP 5353, Private/Public profiles, `LocalSubnet` only
+- [ ] Upgrade replaces stale Budcom firewall rules and uninstall removes them
 
 ## Integrity
 
@@ -42,6 +44,11 @@ Use before distributing a controlled-pilot build.
 - [ ] Future schema version fails closed
 - [ ] Single desktop instance enforced
 - [ ] Connector ownership verified
+- [ ] Every mutable Connector path is under Budcom AppData and outside install/resources
+- [ ] Transport fingerprint is identical across same-version reinstall and supported upgrade
+- [ ] Packaged child failures retain bounded sanitized stderr
+- [ ] Packaged build reports exact clean-commit controlled-pilot provenance, never development fallback
+- [ ] Packaged `/health` and `/companies` succeed against physical Tally before Android testing
 
 ## Lifecycle gate (RC#4 §32)
 

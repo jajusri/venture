@@ -72,6 +72,11 @@ export interface SpawnSpec {
   readonly env?: Record<string, string>;
 }
 
+export interface ProcessDiagnostic {
+  readonly stream: 'stderr';
+  readonly text: string;
+}
+
 export interface ManagedProcess {
   readonly pid: number;
   kill(signal?: NodeJS.Signals): Promise<void>;

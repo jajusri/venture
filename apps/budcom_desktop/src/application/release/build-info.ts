@@ -75,6 +75,7 @@ export function defaultBuildInfoSearchPaths(baseDir = __dirname): string[] {
     path.join(baseDir, BUILD_INFO_FILENAME),
     path.join(baseDir, '..', BUILD_INFO_FILENAME),
     path.join(baseDir, '..', '..', BUILD_INFO_FILENAME),
+    path.join(baseDir, '..', '..', 'main', BUILD_INFO_FILENAME),
     path.join(process.cwd(), BUILD_INFO_FILENAME),
   ];
 }

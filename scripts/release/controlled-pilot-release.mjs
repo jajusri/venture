@@ -103,6 +103,10 @@ async function main() {
   const checksumsDir = path.join(releaseRoot, 'checksums');
   const reportsDir = path.join(releaseRoot, 'reports');
 
+  const gitRunner = createRepoGitRunner(repoRoot);
+  const startProvenanceSnapshot = captureReleaseProvenanceSnapshot(gitRunner);
+  assertReleaseStartClean(startProvenanceSnapshot);
+
   cleanReleaseOutput(releaseRoot);
   for (const dir of [artifactsDir, manifestDir, checksumsDir, reportsDir]) {
     fs.mkdirSync(dir, { recursive: true });
@@ -115,9 +119,6 @@ async function main() {
     platform: process.platform,
   };
 
-  const gitRunner = createRepoGitRunner(repoRoot);
-  const startProvenanceSnapshot = captureReleaseProvenanceSnapshot(gitRunner);
-  assertReleaseStartClean(startProvenanceSnapshot);
   const releaseProvenanceEnv = buildReleaseProvenanceMetadata(startProvenanceSnapshot, []);
   process.env.BUDCOM_RELEASE_PROVENANCE = JSON.stringify(releaseProvenanceEnv);
   report.provenance = {

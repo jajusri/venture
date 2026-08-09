@@ -45,6 +45,9 @@ export function resolveReleaseMode(input: ResolveReleaseModeInput = {}): Release
   if (!KNOWN_MODES.has(normalized)) {
     throw new UnknownReleaseModeError(raw);
   }
+  if (input.isPackaged && normalized === ReleaseMode.Development) {
+    throw new UnknownReleaseModeError('development (packaged builds must carry controlled-pilot or production provenance)');
+  }
   return normalized as ReleaseMode;
 }
 

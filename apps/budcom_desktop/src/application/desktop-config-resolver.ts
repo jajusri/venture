@@ -175,6 +175,8 @@ export interface ResolveDesktopConfigOptions {
   readonly isPackaged?: boolean;
   readonly resourcesPath?: string;
   readonly connectorDatabaseDir?: string;
+  readonly connectorTallyAuditPath?: string;
+  readonly connectorTransportIdentityDir?: string;
   readonly connectorId?: string;
 }
 
@@ -207,6 +209,8 @@ export function resolveDesktopConfig(
     isPackaged: options.isPackaged ?? false,
     resourcesPath: options.resourcesPath,
     connectorDatabaseDir: options.connectorDatabaseDir,
+    connectorTallyAuditPath: options.connectorTallyAuditPath,
+    connectorTransportIdentityDir: options.connectorTransportIdentityDir,
     connectorId: options.connectorId,
   });
 

@@ -111,6 +111,12 @@ describe('release provenance', () => {
   it('rejects path-prefix lookalike bypass', () => {
     expect(isAllowlistedGeneratedPath('apps/budcom_desktop/dist_evil/main.js')).toBe(false);
     expect(isAllowlistedGeneratedPath('apps/budcom_desktop/dist/main.js')).toBe(true);
+    expect(isAllowlistedGeneratedPath(
+      'release/controlled-pilot/0.4.3/STALE-DO-NOT-DISTRIBUTE.md',
+    )).toBe(true);
+    expect(isAllowlistedGeneratedPath(
+      'release/controlled-pilot/0.4.3/unreviewed-installer.exe',
+    )).toBe(false);
   });
 
   it('handles Windows path separators safely', () => {

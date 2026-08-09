@@ -26,17 +26,40 @@ const DIAG_MARKER_FILE = 'lifecycle-gate-diagnostic-marker.txt';
 const DB_MARKER_KEY = 'lifecycle_gate_marker';
 
 const paths = {
-  installRoot: path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Budcom Desktop'),
-  appExe: path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Budcom Desktop', 'Budcom Desktop.exe'),
-  uninstallExe: path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Budcom Desktop', 'Uninstall Budcom Desktop.exe'),
+  installRoot: path.join(process.env.ProgramFiles ?? '', 'Budcom Desktop'),
+  appExe: path.join(process.env.ProgramFiles ?? '', 'Budcom Desktop', 'Budcom Desktop.exe'),
+  uninstallExe: path.join(process.env.ProgramFiles ?? '', 'Budcom Desktop', 'Uninstall Budcom Desktop.exe'),
   userDataRoot: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop'),
   connectorDataDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-data'),
   dbPath: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-data', 'budcom-ledger.db'),
   releaseMetadataDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'release-metadata'),
   logsDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'logs'),
   diagnosticsDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'diagnostics-exports'),
+  connectorDiagnosticsDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-diagnostics'),
+  tallyAuditPath: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-diagnostics', 'tally-request-audit.jsonl'),
+  transportIdentityDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-transport-identity'),
   legacyUserDataRoot: path.join(process.env.APPDATA ?? '', 'budcom-desktop'),
 };
+
+function readTransportFingerprint() {
+  const certPath = path.join(paths.transportIdentityDir, 'transport-cert.pem');
+  if (!fs.existsSync(certPath)) return null;
+  const certificate = new crypto.X509Certificate(fs.readFileSync(certPath));
+  const spki = certificate.publicKey.export({ type: 'spki', format: 'der' });
+  return `sha256/${crypto.createHash('sha256').update(spki).digest('base64')}`;
+}
+
+function readFirewallContract() {
+  const bundledNode = path.join(paths.installRoot, 'resources', 'node', 'node.exe').toLowerCase();
+  const result = spawnSync('netsh', ['advfirewall', 'firewall', 'show', 'rule', 'name=all', 'verbose'], { encoding: 'utf8' });
+  const text = String(result.stdout ?? '').toLowerCase();
+  return {
+    bundledNode,
+    http: text.includes('budcom connector http') && text.includes(bundledNode) && text.includes('8080'),
+    https: text.includes('budcom connector https') && text.includes(bundledNode) && text.includes('8443'),
+    mdns: text.includes('budcom connector mdns') && text.includes(bundledNode) && text.includes('5353'),
+  };
+}
 
 function sha256File(filePath) {
   const hash = crypto.createHash('sha256');
@@ -235,6 +258,21 @@ async function waitForConnectorHealth(timeoutMs = 30000) {
   return false;
 }
 
+async function readPackagedCompanies() {
+  try {
+    const response = await fetch('http://127.0.0.1:8080/companies', { signal: AbortSignal.timeout(15000) });
+    const body = await response.json();
+    return {
+      status: response.status,
+      ok: response.ok,
+      companyCount: Array.isArray(body?.companies) ? body.companies.length : null,
+      errorCode: typeof body?.code === 'string' ? body.code : null,
+    };
+  } catch (error) {
+    return { status: null, ok: false, companyCount: null, errorCode: error instanceof Error ? error.name : 'unknown' };
+  }
+}
+
 async function readSchemaVersion() {
   if (!fs.existsSync(paths.dbPath)) {
     return null;
@@ -260,13 +298,14 @@ async function launchDesktop(timeoutMs = 20000) {
   });
   child.unref();
   const healthReady = await waitForConnectorHealth(timeoutMs);
+  const companies = healthReady ? await readPackagedCompanies() : null;
   await sleep(healthReady ? 3000 : Math.min(timeoutMs, 10000));
   const processes = getBudcomProcesses();
   spawnSync('taskkill', ['/IM', 'Budcom Desktop.exe', '/F'], { stdio: 'ignore' });
   await sleep(3000);
   killOwnedConnectorProcesses();
   await sleep(2000);
-  return { ...processes, healthReady };
+  return { ...processes, healthReady, companies };
 }
 
 function killOwnedConnectorProcesses() {
@@ -392,7 +431,7 @@ async function runExecuteWindows(report) {
   report.phases.installation = {
     exitCode: install.exitCode,
     uacPromptObserved: false,
-    perMachine: false,
+    perMachine: true,
     installRoot: paths.installRoot,
     silent: true,
   };
@@ -407,6 +446,8 @@ async function runExecuteWindows(report) {
   fs.copyFileSync(v7Fixture, paths.dbPath);
 
   const firstLaunch = await launchDesktop(35000);
+  const companiesAfterFirstLaunch = firstLaunch.companies;
+  const fingerprintAfterFirstLaunch = readTransportFingerprint();
   const schemaAfterFirstRun = await readSchemaVersion();
   report.phases.firstRun = {
     appOpened: fs.existsSync(paths.appExe),
@@ -414,6 +455,8 @@ async function runExecuteWindows(report) {
     processCounts: { desktop: firstLaunch.desktop, connector: firstLaunch.connector },
     startupLogLines: readLatestStartupLogLines(20).filter((line) => !/password|gstin|voucher|<\?xml/i.test(line)),
     schemaAfterFirstRun,
+    fingerprintAfterFirstLaunch,
+    companies: companiesAfterFirstLaunch,
   };
 
   const buildInfo = readBuildInfoFromStartupLogs();
@@ -430,14 +473,28 @@ async function runExecuteWindows(report) {
   report.phases.syntheticMarkers = markers;
 
   const reinstall = runInstaller(candidate.installerPath, true);
+  const fingerprintAfterReinstall = readTransportFingerprint();
   report.phases.sameVersionReinstall = {
     exitCode: reinstall.exitCode,
     markersAfterReinstall: readRetentionMarkers(),
+    fingerprintAfterReinstall,
+    fingerprintPreserved: fingerprintAfterFirstLaunch !== null && fingerprintAfterReinstall === fingerprintAfterFirstLaunch,
   };
+  if (!firstLaunch.healthReady || !companiesAfterFirstLaunch?.ok || (companiesAfterFirstLaunch.companyCount ?? 0) < 1) {
+    throw new Error('Packaged Connector did not prove local health and Tally company discovery');
+  }
 
   const afterReinstallMarkers = readRetentionMarkers();
   if (afterReinstallMarkers.configMarker !== MARKER_ID || afterReinstallMarkers.databaseMarker !== MARKER_ID) {
     throw new Error('Same-version reinstall did not preserve synthetic markers');
+  }
+  if (fingerprintAfterFirstLaunch !== null && fingerprintAfterReinstall !== fingerprintAfterFirstLaunch) {
+    throw new Error('Same-version reinstall changed the persisted transport fingerprint');
+  }
+
+  report.phases.firewall = readFirewallContract();
+  if (!report.phases.firewall.http || !report.phases.firewall.https || !report.phases.firewall.mdns) {
+    throw new Error('Installed firewall rules do not target the exact bundled executable and required ports');
   }
 
   report.phases.upgradeSchema = {
@@ -494,6 +551,9 @@ async function runExecuteWindows(report) {
     connectorDatabaseDir: paths.connectorDataDir,
     logsDir: paths.logsDir,
     diagnosticsExportDir: paths.diagnosticsDir,
+    connectorDiagnosticsDir: paths.connectorDiagnosticsDir,
+    tallyAuditPath: paths.tallyAuditPath,
+    transportIdentityDir: paths.transportIdentityDir,
     installRoot: paths.installRoot,
     mutableOutsideInstall: true,
   };
