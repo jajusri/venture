@@ -11,6 +11,7 @@ Var td018SourceLabel
 Function td018Trace
   Exch $0
   Push $1
+  ClearErrors
   FileOpen $1 "$TEMP\Budcom-TD018-installer.log" a
   IfErrors td018_trace_done
   FileWrite $1 "$0$\r$\n"
