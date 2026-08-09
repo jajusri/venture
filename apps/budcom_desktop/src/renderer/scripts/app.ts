@@ -120,6 +120,15 @@ let stockItemProgressPollTimer: number | null = null;
 let stockItemProgressRequestInFlight = false;
 let stockItemSyncActionInFlight = false;
 
+// TD-014: bounded automatic recovery for a transient dashboard/company failure that leaves no
+// further ConnectorLifecycleService state transition to hang a re-check off of. Never a
+// permanent poll — see reconcileBoundedRecovery()/runDashboardRecoveryCycle() below.
+const DASHBOARD_RECOVERY_DELAYS_MS = [2_000, 5_000, 10_000, 20_000, 30_000];
+let recoveryGeneration = 0;
+let recoveryTimer: number | null = null;
+let companyLoadGeneration = 0;
+let lastCompanyLoadFailed = false;
+
 export function setText(id: string, value: string): void {
   const element = document.getElementById(id);
   if (element && element.textContent !== value) {
@@ -683,7 +692,15 @@ export async function refreshDiagnostics(): Promise<void> {
   }
 }
 
+/**
+ * TD-014: guarded by [companyLoadGeneration] so an older, slower call can never overwrite a
+ * newer one's result — e.g. a bounded-recovery retry started before a manual Refresh click, but
+ * the manual click's own request completes first. The older call's eventual resolution/rejection
+ * is a no-op once a newer call has started. [lastCompanyLoadFailed] is the signal
+ * reconcileBoundedRecovery() reads to decide whether company state still needs recovery.
+ */
 export async function loadCompanies(): Promise<void> {
+  const generation = ++companyLoadGeneration;
   const refreshBtn = document.getElementById('btn-refresh-companies') as HTMLButtonElement | null;
   if (refreshBtn) {
     refreshBtn.disabled = true;
@@ -696,6 +713,9 @@ export async function loadCompanies(): Promise<void> {
       bridge.getCompanies(),
       bridge.getDashboardState(),
     ]);
+    if (generation !== companyLoadGeneration) {
+      return;
+    }
     renderCompanyList(
       companies.items,
       dashboard.companyId === '—' ? '' : dashboard.companyId,
@@ -703,16 +723,98 @@ export async function loadCompanies(): Promise<void> {
         ? `${companies.items.length} companies available`
         : `Discovery status: ${companies.status}`,
     );
+    lastCompanyLoadFailed = false;
   } catch {
+    if (generation !== companyLoadGeneration) {
+      return;
+    }
     setBanner('Unable to load companies from the connector.', 'error');
     renderCompanyList([], '', 'Company discovery failed.');
+    lastCompanyLoadFailed = true;
   } finally {
-    if (refreshBtn) {
-      refreshBtn.disabled = false;
-      refreshBtn.classList.remove('busy');
+    if (generation === companyLoadGeneration) {
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.classList.remove('busy');
+      }
+      setLoading({ companies: false });
     }
-    setLoading({ companies: false });
   }
+}
+
+function isDashboardHealthy(): boolean {
+  return latestDashboardState?.connectorReachable === true;
+}
+
+/** Cancels any pending bounded-recovery retry without scheduling a new one — used on teardown. */
+export function stopBoundedRecovery(): void {
+  recoveryGeneration += 1;
+  if (recoveryTimer !== null) {
+    window.clearTimeout(recoveryTimer);
+    recoveryTimer = null;
+  }
+}
+
+function scheduleDashboardRecoveryAttempt(generation: number, attemptIndex: number): void {
+  recoveryTimer = window.setTimeout(
+    () => void runDashboardRecoveryCycle(generation, attemptIndex),
+    DASHBOARD_RECOVERY_DELAYS_MS[attemptIndex],
+  );
+}
+
+/**
+ * TD-014: the actual bounded retry — re-fetches both dashboard and company state together (never
+ * just one), so a recovery cycle can't leave Company stale while Connection recovers or vice
+ * versa. [generation] must still match [recoveryGeneration] at each checkpoint or this run has
+ * been superseded (a newer reconcileBoundedRecovery() call, e.g. from a real lifecycle
+ * transition or a manual refresh, takes priority) and quietly stops rather than fighting it.
+ */
+async function runDashboardRecoveryCycle(generation: number, attemptIndex: number): Promise<void> {
+  if (generation !== recoveryGeneration) {
+    return;
+  }
+  await refreshUi({ showLoading: false });
+  if (generation !== recoveryGeneration) {
+    return;
+  }
+  await loadCompanies();
+  if (generation !== recoveryGeneration) {
+    return;
+  }
+  if (isDashboardHealthy() && !lastCompanyLoadFailed) {
+    recoveryTimer = null;
+    return;
+  }
+  const nextAttemptIndex = attemptIndex + 1;
+  if (nextAttemptIndex >= DASHBOARD_RECOVERY_DELAYS_MS.length) {
+    recoveryTimer = null;
+    return;
+  }
+  scheduleDashboardRecoveryAttempt(generation, nextAttemptIndex);
+}
+
+/**
+ * TD-014: call after any point-in-time refresh (startup, a lifecycle status push, an explicit
+ * user action) to decide whether bounded automatic recovery is still needed. Healthy now (both
+ * dashboard reachable and the last company load succeeded) cancels any pending retry — including
+ * one scheduled by an now-superseded, since-resolved failure. Still unhealthy starts a fresh
+ * bounded cycle from attempt 0, discarding whatever cycle (if any) was already in flight, so
+ * overlapping triggers never stack concurrent retry chains.
+ */
+export function reconcileBoundedRecovery(): void {
+  if (isDashboardHealthy() && !lastCompanyLoadFailed) {
+    if (recoveryTimer !== null) {
+      window.clearTimeout(recoveryTimer);
+      recoveryTimer = null;
+    }
+    return;
+  }
+  recoveryGeneration += 1;
+  const generation = recoveryGeneration;
+  if (recoveryTimer !== null) {
+    window.clearTimeout(recoveryTimer);
+  }
+  scheduleDashboardRecoveryAttempt(generation, 0);
 }
 
 export async function handleCompanySelection(companyId: string): Promise<void> {
@@ -838,6 +940,9 @@ async function runLifecycleAction(
     setLifecycleStatusMessage(status.userMessage, status.state === 'failed');
     setBanner(status.userMessage, status.state === 'failed' ? 'error' : 'information');
     await refreshUi({ showLoading: false });
+    // TD-014: Start/Restart is exactly the post-startup timing window the defect was found in —
+    // reconcile in case this refresh landed during the same transient unhealthy window.
+    reconcileBoundedRecovery();
   } catch {
     const failureMessage = 'Connector action failed. Check the Logs view for details.';
     setLifecycleStatusMessage(failureMessage, true);
@@ -1888,7 +1993,10 @@ export function bindStockItemActions(): void {
 
 export function bindCompanyActions(): void {
   document.getElementById('btn-refresh-companies')?.addEventListener('click', () => {
-    void loadCompanies();
+    // TD-014: an explicit manual refresh always fires immediately (loadCompanies()'s own
+    // generation token already makes it win over any stale in-flight automatic retry); once it
+    // settles, reconcile decides whether bounded recovery is still needed or can stand down.
+    void loadCompanies().then(() => reconcileBoundedRecovery());
   });
   document.getElementById('btn-clear-company')?.addEventListener('click', () => {
     void handleClearCompany();
@@ -1955,11 +2063,23 @@ export async function startDesktopShell(): Promise<void> {
   bindPairingActions();
   await refreshUi({ showLoading: false });
   await loadCompanies();
+  // TD-014: the initial pair above can transiently fail with no further lifecycle transition to
+  // hang a re-check off of (the defect's exact root cause) — reconcile decides right away
+  // whether bounded automatic recovery is needed.
+  reconcileBoundedRecovery();
   window.budcomDesktop.onStatusUpdated(() => {
-    void refreshUi({ showLoading: false });
+    // TD-014: a real lifecycle transition refreshes BOTH dashboard and company state together
+    // (never just the Connection card), then reconciles — a fresh transition always takes
+    // priority over whatever bounded-recovery cycle (if any) was already in flight.
+    void (async () => {
+      await refreshUi({ showLoading: false });
+      await loadCompanies();
+      reconcileBoundedRecovery();
+    })();
   });
   window.addEventListener('beforeunload', () => {
     disposeSyncProgressPolling();
+    stopBoundedRecovery();
   }, { once: true });
 }
 
