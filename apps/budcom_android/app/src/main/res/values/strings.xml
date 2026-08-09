@@ -22,7 +22,7 @@
     <string name="dashboard_readiness_ready">Ready</string>
     <string name="dashboard_readiness_not_ready">Not ready</string>
     <string name="dashboard_readiness_unknown">Unknown</string>
-    <string name="dashboard_base_url_label">Configured URL</string>
+    <string name="dashboard_base_url_label">Connector endpoint</string>
     <string name="dashboard_base_url_empty">Not set</string>
     <string name="dashboard_last_health_label">Last successful health check</string>
     <string name="dashboard_test_connection">Test connection</string>
@@ -54,8 +54,8 @@
     <string name="settings_retry">Retry</string>
     <string name="settings_refresh">Refresh Connector facts</string>
     <string name="settings_connection_heading">Connection</string>
-    <string name="settings_base_url_label">Connector base URL</string>
-    <string name="settings_connectivity_label">Device connectivity</string>
+    <string name="settings_base_url_label">Connector endpoint</string>
+    <string name="settings_connectivity_label">Phone network connectivity</string>
     <string name="settings_online">Online</string>
     <string name="settings_offline">Offline</string>
     <string name="settings_open_server_config">Open server configuration</string>
@@ -63,7 +63,9 @@
     <string name="settings_secure_this_connection">Secure this connection</string>
     <string name="settings_secure_connection_needs_attention">Secure pairing needs to be redone. Your cached data is unaffected.</string>
     <string name="settings_re_pair">Re-pair</string>
-    <string name="settings_secure_connection_active">Secure connection active</string>
+    <string name="settings_secure_pairing_stored">Secure pairing stored. Live verification status is shown above.</string>
+    <string name="settings_secure_pairing_pending">Secure pairing is awaiting verification.</string>
+    <string name="settings_manage_secure_pairing">Manage secure pairing</string>
     <string name="settings_appearance_heading">Appearance</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>

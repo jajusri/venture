@@ -97,5 +97,5 @@ fun ConnectorUrlValidator.Reason.toUserMessage(): String = when (this) {
     ConnectorUrlValidator.Reason.UNSUPPORTED_SCHEME -> "Only http and https URLs are supported."
     ConnectorUrlValidator.Reason.MISSING_HOST -> "URL must include a host."
     ConnectorUrlValidator.Reason.PATH_NOT_ALLOWED ->
-        "URL must be an origin only (no path). Example: http://10.0.2.2:8080/"
+        "URL must be an origin only (no path). Example: http://192.168.1.10:8080/"
 }

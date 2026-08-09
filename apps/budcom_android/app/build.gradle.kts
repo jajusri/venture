@@ -20,9 +20,13 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Emulator loopback to host machine where the BudCom Connector typically runs (port 8080).
-        // Physical devices and custom hosts will be configured by the serverconfig feature later.
-        buildConfigField("String", "CONNECTOR_BASE_URL", "\"http://10.0.2.2:8080/\"")
+        // Retrofit requires a syntactically valid construction-time origin even though every
+        // legacy request is rewritten by DynamicBaseUrlInterceptor. This value is plumbing only:
+        // it is never a configured customer endpoint and must never be displayed or persisted.
+        buildConfigField("String", "CONNECTOR_BOOTSTRAP_BASE_URL", "\"https://localhost/\"")
+        // Customer releases start explicitly unconfigured. Debug overrides this with the Android
+        // emulator host alias so the local developer loop remains convenient.
+        buildConfigField("String", "CONNECTOR_DEFAULT_BASE_URL", "\"\"")
         buildConfigField("String", "APP_NAME", "\"BudCom\"")
     }
 
@@ -30,6 +34,7 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
+            buildConfigField("String", "CONNECTOR_DEFAULT_BASE_URL", "\"http://10.0.2.2:8080/\"")
             buildConfigField("boolean", "NETWORK_LOGGING_ENABLED", "true")
         }
         release {

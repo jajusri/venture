@@ -205,7 +205,7 @@ class AuthenticatedConnectorApiClientRediscoveryTest {
 
         val result = client.execute(AuthenticatedConnectorOperation.GetCompanies)
 
-        assertEquals(AuthenticatedConnectorResult.TransportFailure, result)
+        assertEquals(AuthenticatedConnectorResult.IdentityMismatch, result)
         // Neither the endpoint nor the credential was touched by the rejected impostor.
         assertEquals(staleEndpoint.host, vault.read()?.endpoint?.host)
         assertEquals("cred-1", vault.read()?.credentialId)

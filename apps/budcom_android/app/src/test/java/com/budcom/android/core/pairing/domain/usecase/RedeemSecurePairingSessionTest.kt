@@ -62,6 +62,21 @@ class RedeemSecurePairingSessionTest {
         return RedeemSecurePairingSession(parser, api, vault, deviceIdentity, timeProvider, step)
     }
 
+    private suspend fun seedActive(vault: SecureCredentialVault): com.budcom.android.core.pairing.domain.model.SecurePairingCredentialRecord {
+        val endpoint = TrustedConnectorEndpoint.fromTrustedPublicMetadata(
+            connectorId = "old-connector",
+            connectorName = "Old Connector",
+            host = "10.0.0.2",
+            securePort = 8443,
+            transportFingerprint = "sha256/OLD",
+            fingerprintAlgorithm = "sha256",
+            transportIdentityVersion = 1,
+        )
+        vault.storePendingVerification("old-credential", "device-uuid-fixed", "old-token", endpoint, NOW - 1_000L)
+        vault.markActive("old-credential", NOW - 500L)
+        return requireNotNull(vault.read())
+    }
+
     // 44. successful redemption first stores encrypted pending state
     @Test
     fun `successful redemption stores the encrypted credential as PENDING_VERIFICATION`() = runTest {
@@ -245,5 +260,56 @@ class RedeemSecurePairingSessionTest {
 
         assertEquals(1, api.redeemQrCallCount)
         assertEquals(1, api.getCredentialSelfCallCount)
+    }
+
+    @Test
+    fun `re-pair transport failure leaves the existing ACTIVE record untouched`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        val original = seedActive(vault)
+        val api = FakeSecurePairingApiPort(
+            redeemResult = PairingRedeemOutcome.Success("connector-abc", "Front Desk", "new-credential", "new-token"),
+            selfStatusResult = PairingSelfStatusOutcome.TransportFailure,
+        )
+
+        val outcome = useCaseOf(api, vault).redeemQr(qrJson())
+
+        assertEquals(SecurePairingRedemptionOutcome.TransportFailure, outcome)
+        assertEquals(original, vault.read())
+    }
+
+    @Test
+    fun `re-pair identity mismatch leaves the existing ACTIVE record untouched`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        val original = seedActive(vault)
+        val api = FakeSecurePairingApiPort(
+            redeemResult = PairingRedeemOutcome.Success("connector-abc", "Front Desk", "new-credential", "new-token"),
+            selfStatusResult = PairingSelfStatusOutcome.Active(
+                "different-credential", "device-uuid-fixed", null, "connector-abc", "2026-01-01T00:00:00Z", null, "active",
+            ),
+        )
+
+        val outcome = useCaseOf(api, vault).redeemQr(qrJson())
+
+        assertTrue(outcome is SecurePairingRedemptionOutcome.RedemptionRejected)
+        assertEquals(original, vault.read())
+    }
+
+    @Test
+    fun `verified re-pair atomically replaces the old record with the new ACTIVE record`() = runTest {
+        val vault = FakeSecureCredentialVault()
+        seedActive(vault)
+        val api = FakeSecurePairingApiPort(
+            redeemResult = PairingRedeemOutcome.Success("connector-abc", "Front Desk", "new-credential", "new-token"),
+            selfStatusResult = PairingSelfStatusOutcome.Active(
+                "new-credential", "device-uuid-fixed", null, "connector-abc", "2026-01-01T00:00:00Z", null, "active",
+            ),
+        )
+
+        val outcome = useCaseOf(api, vault).redeemQr(qrJson())
+
+        assertTrue(outcome is SecurePairingRedemptionOutcome.Verified)
+        assertEquals("new-credential", vault.read()?.credentialId)
+        assertEquals(SecurePairingCredentialState.ACTIVE, vault.read()?.state)
+        assertEquals("connector-abc", vault.read()?.endpoint?.connectorId)
     }
 }

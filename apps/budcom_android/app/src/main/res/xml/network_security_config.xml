@@ -1,22 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!--
-      Cleartext is permitted only for local Connector development (emulator / LAN).
-      Tighten this when production TLS endpoints are defined.
-    -->
-    <!--
-      The Connector uses operator-configured private/LAN IPv4 addresses, which
-      cannot be enumerated as static domain entries. HTTPS remains supported,
-      but local HTTP must be allowed until the Connector provides TLS.
-    -->
-    <base-config cleartextTrafficPermitted="true">
+    <!-- Customer builds use the authenticated, certificate-pinned HTTPS transport. -->
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">10.0.2.2</domain>
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-    </domain-config>
 </network-security-config>

@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.budcom.android.BuildConfig
 import com.budcom.android.R
 import com.budcom.android.feature.masterdata.presentation.MasterDataOfflineBanner
 import com.budcom.android.feature.masterdata.presentation.displayMessage
@@ -177,13 +178,15 @@ private fun ToolsCard(
             ) {
                 Text(stringResource(R.string.diagnostics_recheck_readiness))
             }
-            OutlinedButton(
-                onClick = { onEvent(DiagnosticsEvent.OpenServerConfig) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("diagnostics_open_server_config"),
-            ) {
-                Text(stringResource(R.string.diagnostics_open_server_config))
+            if (BuildConfig.DEBUG) {
+                OutlinedButton(
+                    onClick = { onEvent(DiagnosticsEvent.OpenServerConfig) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("diagnostics_open_server_config"),
+                ) {
+                    Text(stringResource(R.string.diagnostics_open_server_config))
+                }
             }
         }
     }

@@ -2,6 +2,8 @@ package com.budcom.android.feature.dashboard.presentation
 
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.core.util.TimeProvider
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
@@ -90,6 +92,9 @@ class DashboardViewModelTest {
                 connectorStatus = connector,
                 companySession = company,
                 connectivityObserver = connectivity,
+                transportGate = object : ConnectorTransportSelectionGate {
+                    override suspend fun resolve() = ConnectorTransportSelection.LEGACY
+                },
             ),
             observeSyncStatus = syncStatus,
         )

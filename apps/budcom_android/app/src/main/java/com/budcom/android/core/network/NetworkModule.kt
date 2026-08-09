@@ -114,7 +114,7 @@ object NetworkModule {
         val contentType = "application/json".toMediaType()
         return Retrofit.Builder()
             // Placeholder origin; DynamicBaseUrlInterceptor applies the configured host.
-            .baseUrl(BuildConfig.CONNECTOR_BASE_URL)
+            .baseUrl(BuildConfig.CONNECTOR_BOOTSTRAP_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(json.asConverterFactory(contentType))
             .build()
@@ -129,7 +129,7 @@ object NetworkModule {
     ): Retrofit {
         val contentType = "application/json".toMediaType()
         return Retrofit.Builder()
-            .baseUrl(BuildConfig.CONNECTOR_BASE_URL)
+            .baseUrl(BuildConfig.CONNECTOR_BOOTSTRAP_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(json.asConverterFactory(contentType))
             .build()

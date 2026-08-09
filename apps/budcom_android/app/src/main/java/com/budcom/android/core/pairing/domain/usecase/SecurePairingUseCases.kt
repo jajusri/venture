@@ -146,6 +146,14 @@ class RedeemSecurePairingSession @Inject constructor(
             PairingRedeemOutcome.MalformedResponse -> return SecurePairingRedemptionOutcome.MalformedResponse
         }
 
+        // Re-pair is transactional from Android's perspective: a currently ACTIVE record is not
+        // replaced by a merely redeemed credential. Prove the replacement first, then publish it
+        // with one DataStore edit. Every failure before that point leaves the old local trust and
+        // encrypted credential byte-for-byte untouched.
+        if (vault.read()?.state == SecurePairingCredentialState.ACTIVE) {
+            return verifyAndPublishActiveReplacement(success, endpoint, logicalDeviceId)
+        }
+
         val storeResult = vault.storePendingVerification(
             credentialId = success.credentialId,
             deviceId = logicalDeviceId,
@@ -158,6 +166,45 @@ class RedeemSecurePairingSession @Inject constructor(
         }
 
         return verificationStep.verify(success.credentialId, success.token, endpoint, expectedDeviceId = logicalDeviceId)
+    }
+
+    private suspend fun verifyAndPublishActiveReplacement(
+        success: PairingRedeemOutcome.Success,
+        endpoint: TrustedConnectorEndpoint,
+        logicalDeviceId: String,
+    ): SecurePairingRedemptionOutcome = when (val proof = pairingApi.getCredentialSelf(endpoint, success.token)) {
+        is PairingSelfStatusOutcome.Active -> {
+            val deviceMismatch = proof.deviceId != null && proof.deviceId != logicalDeviceId
+            if (proof.credentialId != success.credentialId || proof.connectorId != endpoint.connectorId || deviceMismatch) {
+                SecurePairingRedemptionOutcome.RedemptionRejected(reasonCode = "IDENTITY_MISMATCH", httpStatus = 0)
+            } else {
+                val now = timeProvider.nowEpochMillis()
+                when (
+                    vault.storeVerifiedActive(
+                        credentialId = success.credentialId,
+                        deviceId = logicalDeviceId,
+                        rawCredential = success.token,
+                        endpoint = endpoint,
+                        createdAtEpochMillis = now,
+                        verifiedAtEpochMillis = now,
+                    )
+                ) {
+                    SecureCredentialVaultWriteResult.KeystoreUnavailable -> SecurePairingRedemptionOutcome.KeystoreUnavailable
+                    SecureCredentialVaultWriteResult.Stored -> {
+                        val stored = vault.read()
+                        if (stored?.credentialId == success.credentialId && stored.state == SecurePairingCredentialState.ACTIVE) {
+                            SecurePairingRedemptionOutcome.Verified(stored)
+                        } else {
+                            SecurePairingRedemptionOutcome.TransportFailure
+                        }
+                    }
+                }
+            }
+        }
+        PairingSelfStatusOutcome.Unauthorized ->
+            SecurePairingRedemptionOutcome.RedemptionRejected(reasonCode = "UNAUTHORIZED", httpStatus = 401)
+        PairingSelfStatusOutcome.TransportFailure -> SecurePairingRedemptionOutcome.TransportFailure
+        PairingSelfStatusOutcome.MalformedResponse -> SecurePairingRedemptionOutcome.MalformedResponse
     }
 }
 

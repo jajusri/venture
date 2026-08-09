@@ -96,6 +96,20 @@ interface SecureCredentialVault {
         createdAtEpochMillis: Long,
     ): SecureCredentialVaultWriteResult
 
+    /**
+     * Encrypts and atomically publishes an already-verified replacement as ACTIVE. Used only for
+     * re-pairing over an existing ACTIVE record: the old record remains untouched until the new
+     * credential has completed its pinned self-status proof.
+     */
+    suspend fun storeVerifiedActive(
+        credentialId: String,
+        deviceId: String,
+        rawCredential: String,
+        endpoint: TrustedConnectorEndpoint,
+        createdAtEpochMillis: Long,
+        verifiedAtEpochMillis: Long,
+    ): SecureCredentialVaultWriteResult
+
     /** Promotes the current record to ACTIVE, only if its credentialId matches [credentialId]. */
     suspend fun markActive(credentialId: String, verifiedAtEpochMillis: Long): Boolean
 
@@ -167,6 +181,40 @@ class DataStoreSecureCredentialVault @Inject constructor(
             prefs[KEY_FORMAT_VERSION] = encrypted.formatVersion
             prefs[KEY_CREATED_AT] = createdAtEpochMillis
             prefs[KEY_STATE] = SecurePairingCredentialState.PENDING_VERIFICATION.name
+            prefs[KEY_CONNECTOR_ID] = endpoint.connectorId
+            prefs[KEY_CONNECTOR_NAME] = endpoint.connectorName
+            prefs[KEY_HOST] = endpoint.host
+            prefs[KEY_SECURE_PORT] = endpoint.securePort
+            prefs[KEY_TRANSPORT_FINGERPRINT] = endpoint.transportFingerprint
+            prefs[KEY_FINGERPRINT_ALGORITHM] = endpoint.fingerprintAlgorithm
+            prefs[KEY_TRANSPORT_IDENTITY_VERSION] = endpoint.transportIdentityVersion
+        }
+        SecureCredentialVaultWriteResult.Stored
+    }
+
+    override suspend fun storeVerifiedActive(
+        credentialId: String,
+        deviceId: String,
+        rawCredential: String,
+        endpoint: TrustedConnectorEndpoint,
+        createdAtEpochMillis: Long,
+        verifiedAtEpochMillis: Long,
+    ): SecureCredentialVaultWriteResult = mutex.withLock {
+        val encrypted = when (val result = credentialCipher.encrypt(rawCredential.toByteArray(Charsets.UTF_8))) {
+            is CredentialEncryptionResult.Success -> result.payload
+            is CredentialEncryptionResult.KeystoreUnavailable -> return SecureCredentialVaultWriteResult.KeystoreUnavailable
+        }
+
+        dataStore.edit { prefs ->
+            prefs.clear()
+            prefs[KEY_CREDENTIAL_ID] = credentialId
+            prefs[KEY_DEVICE_ID] = deviceId
+            prefs[KEY_CIPHERTEXT] = Base64.getEncoder().encodeToString(encrypted.ciphertext)
+            prefs[KEY_IV] = Base64.getEncoder().encodeToString(encrypted.iv)
+            prefs[KEY_FORMAT_VERSION] = encrypted.formatVersion
+            prefs[KEY_CREATED_AT] = createdAtEpochMillis
+            prefs[KEY_LAST_VERIFIED_AT] = verifiedAtEpochMillis
+            prefs[KEY_STATE] = SecurePairingCredentialState.ACTIVE.name
             prefs[KEY_CONNECTOR_ID] = endpoint.connectorId
             prefs[KEY_CONNECTOR_NAME] = endpoint.connectorName
             prefs[KEY_HOST] = endpoint.host

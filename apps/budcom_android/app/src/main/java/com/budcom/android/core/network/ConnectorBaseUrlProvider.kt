@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,8 +22,8 @@ interface ConnectorBaseUrlProvider {
     /** Current normalized base URL ending with `/`. */
     fun snapshot(): String
 
-    /** Parsed [HttpUrl] for the current snapshot. */
-    fun snapshotHttpUrl(): HttpUrl
+    /** Parsed [HttpUrl], or null when no legacy endpoint has been configured. */
+    fun snapshotHttpUrl(): HttpUrl?
 
     /** Observable stream of normalized base URLs. */
     fun observe(): Flow<String>
@@ -36,7 +36,7 @@ interface ConnectorBaseUrlProvider {
 }
 
 /**
- * Default in-memory provider seeded from [BuildConfig.CONNECTOR_BASE_URL].
+ * Default in-memory provider seeded from [BuildConfig.CONNECTOR_DEFAULT_BASE_URL].
  */
 @Singleton
 class DefaultConnectorBaseUrlProvider @Inject constructor() : ConnectorBaseUrlProvider {
@@ -46,7 +46,7 @@ class DefaultConnectorBaseUrlProvider @Inject constructor() : ConnectorBaseUrlPr
 
     override fun snapshot(): String = cached.get()
 
-    override fun snapshotHttpUrl(): HttpUrl = snapshot().toHttpUrl()
+    override fun snapshotHttpUrl(): HttpUrl? = snapshot().toHttpUrlOrNull()
 
     override fun observe(): Flow<String> = flow.asStateFlow()
 
@@ -56,6 +56,6 @@ class DefaultConnectorBaseUrlProvider @Inject constructor() : ConnectorBaseUrlPr
     }
 
     companion object {
-        const val DEFAULT: String = BuildConfig.CONNECTOR_BASE_URL
+        const val DEFAULT: String = BuildConfig.CONNECTOR_DEFAULT_BASE_URL
     }
 }

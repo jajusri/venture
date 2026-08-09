@@ -2,6 +2,8 @@ package com.budcom.android.feature.dashboard.domain.usecase
 
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.core.util.TimeProvider
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
@@ -16,6 +18,8 @@ import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
 
 /**
@@ -140,11 +144,36 @@ class RefreshDashboardUseCase @Inject constructor(
 /**
  * Probes Connector health/readiness only (dashboard Test Connection action).
  */
+data class ConnectorConnectionCheck(
+    val endpointDisplay: String,
+    val readinessStatus: String?,
+    val checkedAtEpochMillis: Long,
+)
+
 class ProbeConnectorConnectionUseCase @Inject constructor(
-    private val connectorStatus: ConnectorStatusPort,
+    private val operationalStatus: ConnectorOperationalStatusPort,
 ) {
-    suspend operator fun invoke(): AppResult<ConnectorConnectionProbe> =
-        connectorStatus.probeConnection()
+    suspend operator fun invoke(): AppResult<ConnectorConnectionCheck> = when (val status = operationalStatus.currentStatus()) {
+        is ConnectorOperationalStatus.Legacy -> when (val probe = status.healthProbe) {
+            is AppResult.Success -> AppResult.Success(
+                ConnectorConnectionCheck(
+                    endpointDisplay = status.baseUrl,
+                    readinessStatus = probe.value.readiness?.status,
+                    checkedAtEpochMillis = probe.value.checkedAtEpochMillis,
+                ),
+            )
+            is AppResult.Failure -> probe
+        }
+        is ConnectorOperationalStatus.AuthenticatedHealthy -> AppResult.Success(
+            ConnectorConnectionCheck(
+                endpointDisplay = status.endpointDisplay,
+                readinessStatus = null,
+                checkedAtEpochMillis = status.checkedAtEpochMillis,
+            ),
+        )
+        is ConnectorOperationalStatus.AuthenticatedUnavailable -> AppResult.Failure(status.error)
+        is ConnectorOperationalStatus.AuthenticatedPreparing -> AppResult.Failure(AppError.Message(status.message))
+    }
 }
 
 /**
@@ -199,10 +228,12 @@ class ValidateDashboardSessionUseCase @Inject constructor(
 /**
  * Observes ambient dashboard context (connectivity, URL, selected company id).
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ObserveDashboardContextUseCase @Inject constructor(
     private val connectorStatus: ConnectorStatusPort,
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
+    private val transportGate: ConnectorTransportSelectionGate,
 ) {
     data class Context(
         val isOnline: Boolean,
@@ -222,6 +253,13 @@ class ObserveDashboardContextUseCase @Inject constructor(
             selectedCompanyId = company?.id,
             selectedCompanyName = company?.name,
         )
+    }.mapLatest { context ->
+        when (transportGate.resolve()) {
+            ConnectorTransportSelection.LEGACY -> context
+            ConnectorTransportSelection.AUTHENTICATED -> context.copy(
+                baseUrl = ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER,
+            )
+        }
     }
 }
 

@@ -12,7 +12,9 @@ import com.budcom.android.core.connectorauth.domain.model.ConnectorTimeoutProfil
 import com.budcom.android.core.pairing.data.local.SecureCredentialVault
 import com.budcom.android.core.pairing.data.local.SecureCredentialVaultEndpointUpdateResult
 import com.budcom.android.core.pairing.data.remote.PinnedHttpClientFactory
+import com.budcom.android.core.pairing.data.remote.connectorCertificateVerificationResult
 import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
+import com.budcom.android.core.security.SpkiFingerprintVerificationResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -104,13 +106,18 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
         operation: AuthenticatedConnectorOperation,
     ): AuthenticatedConnectorResult {
         val firstAttempt = executeOnce(endpoint, bearerHeaderValue, credentialId, operation)
-        if (firstAttempt != AuthenticatedConnectorResult.TransportFailure) {
+        if (firstAttempt != AuthenticatedConnectorResult.TransportFailure &&
+            firstAttempt != AuthenticatedConnectorResult.IdentityMismatch &&
+            firstAttempt != AuthenticatedConnectorResult.CertificateInvalid
+        ) {
             return firstAttempt
         }
 
         val verified = when (val resolution = endpointResolver.resolveVerifiedEndpoint(endpoint)) {
             is VerifiedEndpointResolution.Verified -> resolution.endpoint
             VerifiedEndpointResolution.Unavailable -> return firstAttempt
+            VerifiedEndpointResolution.IdentityMismatch -> return AuthenticatedConnectorResult.IdentityMismatch
+            VerifiedEndpointResolution.CertificateInvalid -> return AuthenticatedConnectorResult.CertificateInvalid
         }
 
         // Best-effort persistence: this operation's retry proceeds against the just-verified
@@ -197,8 +204,13 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
             // result — the exact same pinned-fingerprint check applies to every candidate
             // rediscovery considers, so classifying it here never masks an identity attack; it
             // only makes the log line legible instead of a generic "could not connect".
+            val result = when (e.connectorCertificateVerificationResult()) {
+                SpkiFingerprintVerificationResult.FingerprintMismatch -> AuthenticatedConnectorResult.IdentityMismatch
+                null -> AuthenticatedConnectorResult.TransportFailure
+                else -> AuthenticatedConnectorResult.CertificateInvalid
+            }
             Timber.tag(TIMBER_TAG).d("transport failure classified as %s", classifyTransportFailure(e))
-            AuthenticatedConnectorResult.TransportFailure
+            result
         }
     }
 

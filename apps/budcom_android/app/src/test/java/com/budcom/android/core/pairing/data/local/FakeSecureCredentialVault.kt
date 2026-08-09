@@ -66,6 +66,30 @@ class FakeSecureCredentialVault(
         return true
     }
 
+    override suspend fun storeVerifiedActive(
+        credentialId: String,
+        deviceId: String,
+        rawCredential: String,
+        endpoint: TrustedConnectorEndpoint,
+        createdAtEpochMillis: Long,
+        verifiedAtEpochMillis: Long,
+    ): SecureCredentialVaultWriteResult {
+        val encrypted = when (val result = cipher.encrypt(rawCredential.toByteArray(Charsets.UTF_8))) {
+            is CredentialEncryptionResult.Success -> result.payload
+            is CredentialEncryptionResult.KeystoreUnavailable -> return SecureCredentialVaultWriteResult.KeystoreUnavailable
+        }
+        backingStore.record = SecurePairingCredentialRecord(
+            credentialId = credentialId,
+            deviceId = deviceId,
+            encryptedCredential = encrypted,
+            endpoint = endpoint,
+            createdAtEpochMillis = createdAtEpochMillis,
+            lastVerifiedAtEpochMillis = verifiedAtEpochMillis,
+            state = SecurePairingCredentialState.ACTIVE,
+        )
+        return SecureCredentialVaultWriteResult.Stored
+    }
+
     override suspend fun markRePairRequired(credentialId: String): Boolean {
         val current = backingStore.record ?: return false
         if (current.credentialId != credentialId) return false

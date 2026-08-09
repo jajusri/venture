@@ -149,6 +149,35 @@ class ConnectorOperationalStatusPortImplTest {
     }
 
     @Test
+    fun `identity mismatch reports explicit re-pair without replacing trust or falling back to legacy`() = runTest {
+        val impl = port(
+            transportGate = FakeGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedApi = FakeAuthenticatedApi(result = AuthenticatedConnectorResult.IdentityMismatch),
+            contextProvider = FakeContextProvider(AuthenticatedConnectorContextResolution.Unpaired),
+        )
+
+        val status = impl.currentStatus() as ConnectorOperationalStatus.AuthenticatedUnavailable
+        val message = (status.error as AppError.Message).message
+        assertTrue(message.contains("identity changed"))
+        assertTrue(message.contains("Trust was not replaced"))
+        assertTrue(message.contains("fresh Desktop QR"))
+    }
+
+    @Test
+    fun `invalid certificate reports a trust failure without changing trust or falling back to legacy`() = runTest {
+        val impl = port(
+            transportGate = FakeGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedApi = FakeAuthenticatedApi(result = AuthenticatedConnectorResult.CertificateInvalid),
+            contextProvider = FakeContextProvider(AuthenticatedConnectorContextResolution.Unpaired),
+        )
+
+        val status = impl.currentStatus() as ConnectorOperationalStatus.AuthenticatedUnavailable
+        val message = (status.error as AppError.Message).message
+        assertTrue(message.contains("certificate is invalid"))
+        assertTrue(message.contains("Trust was not changed"))
+    }
+
+    @Test
     fun `every call re-resolves the transport gate rather than caching a prior selection`() = runTest {
         val gate = CountingGate(ConnectorTransportSelection.LEGACY)
         val impl = port(transportGate = gate, legacyStatus = FakeLegacyStatus())

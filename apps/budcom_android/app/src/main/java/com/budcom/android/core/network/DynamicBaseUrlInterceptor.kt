@@ -2,6 +2,7 @@ package com.budcom.android.core.network
 
 import okhttp3.Interceptor
 import okhttp3.Response
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,6 +20,7 @@ class DynamicBaseUrlInterceptor @Inject constructor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val configured = baseUrlProvider.snapshotHttpUrl()
+            ?: throw IOException("Connector endpoint is not configured.")
         val rewritten = original.url.newBuilder()
             .scheme(configured.scheme)
             .host(configured.host)

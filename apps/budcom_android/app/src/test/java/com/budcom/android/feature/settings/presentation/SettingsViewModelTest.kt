@@ -1,6 +1,8 @@
 package com.budcom.android.feature.settings.presentation
 
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
@@ -10,6 +12,8 @@ import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionP
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatus
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import com.budcom.android.feature.settings.domain.model.ApplicationInformation
 import com.budcom.android.feature.settings.domain.model.ThemePreference
 import com.budcom.android.feature.settings.domain.port.ApplicationIdentityPort
@@ -84,6 +88,13 @@ class SettingsViewModelTest {
                 companySession = company,
                 syncStatus = sync,
                 connectivity = connectivity,
+                transportGate = object : ConnectorTransportSelectionGate {
+                    override suspend fun resolve() = if (secureConnectionState == StartupRoutingState.LegacyEligible) {
+                        ConnectorTransportSelection.LEGACY
+                    } else {
+                        ConnectorTransportSelection.AUTHENTICATED
+                    }
+                },
             ),
             setThemePreference = SetThemePreferenceUseCase(themeRepo),
             refreshConnectorFacts = RefreshSettingsConnectorFactsUseCase(connector, company),
@@ -185,7 +196,7 @@ private class FakeThemeRepo : ThemePreferencesRepository {
     }
 }
 
-private class FakeConnector : ConnectorStatusPort {
+private class FakeConnector : ConnectorStatusPort, ConnectorOperationalStatusPort {
     override fun observeBaseUrl(): Flow<String> = flowOf("http://10.0.2.2:8080/")
     override fun currentBaseUrl(): String = "http://10.0.2.2:8080/"
     override suspend fun probeConnection(): AppResult<ConnectorConnectionProbe> =
@@ -219,6 +230,9 @@ private class FakeConnector : ConnectorStatusPort {
                 checkedAtEpochMillis = 1L,
             ),
         )
+
+    override suspend fun currentStatus(): ConnectorOperationalStatus =
+        ConnectorOperationalStatus.Legacy(currentBaseUrl(), probeConnection())
 }
 
 private class FakeCompany : CompanySessionPort {

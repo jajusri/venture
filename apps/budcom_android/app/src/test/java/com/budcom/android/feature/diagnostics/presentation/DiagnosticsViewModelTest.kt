@@ -73,7 +73,6 @@ class DiagnosticsViewModelTest {
         )
         return DiagnosticsViewModel(
             loadDiagnostics = load,
-            connectorStatus = connector,
             connectivityObserver = connectivity,
         )
     }

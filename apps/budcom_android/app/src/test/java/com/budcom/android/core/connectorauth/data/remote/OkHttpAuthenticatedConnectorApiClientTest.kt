@@ -142,7 +142,7 @@ class OkHttpAuthenticatedConnectorApiClientTest {
 
         val result = client.execute(AuthenticatedConnectorOperation.GetCompanies)
 
-        assertEquals(AuthenticatedConnectorResult.TransportFailure, result)
+        assertEquals(AuthenticatedConnectorResult.IdentityMismatch, result)
     }
 
     // 28. configured-host mismatch — covered by the unmodified PinnedHttpClientFactoryTest, whose
@@ -551,6 +551,6 @@ class OkHttpAuthenticatedConnectorApiClientTest {
 
         val result = client.execute(AuthenticatedConnectorOperation.StartLedgerSync)
 
-        assertEquals(AuthenticatedConnectorResult.TransportFailure, result)
+        assertEquals(AuthenticatedConnectorResult.IdentityMismatch, result)
     }
 }

@@ -1,6 +1,8 @@
 package com.budcom.android.feature.settings.domain.usecase
 
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
@@ -68,6 +70,9 @@ class ObserveSettingsSnapshotUseCaseTest {
                 override val isOnline: Flow<Boolean> = flowOf(true)
                 override fun current(): Boolean = true
             },
+            transportGate = object : ConnectorTransportSelectionGate {
+                override suspend fun resolve() = ConnectorTransportSelection.LEGACY
+            },
         )
         useCase().test {
             val snapshot = awaitItem()
@@ -76,6 +81,60 @@ class ObserveSettingsSnapshotUseCaseTest {
             assertEquals("c1", snapshot.companyId)
             assertTrue(snapshot.syncStatusLabel.contains("t1"))
             assertEquals(null, snapshot.connectorVersion)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `authenticated snapshot never exposes a stale legacy endpoint`() = runTest {
+        val staleLegacyUrl = "http://10.0.2.2:8080/"
+        val useCase = ObserveSettingsSnapshotUseCase(
+            applicationIdentity = ApplicationIdentityPort {
+                ApplicationInformation("BudCom", "com.budcom.android", "0.1.0", 1, "Release")
+            },
+            themePreferences = object : ThemePreferencesRepository {
+                override fun observeTheme() = flowOf(ThemeObservation.Available(ThemePreference.System))
+                override suspend fun setTheme(preference: ThemePreference) = AppResult.Success(Unit)
+            },
+            connectorStatus = object : ConnectorStatusPort {
+                override fun observeBaseUrl() = flowOf(staleLegacyUrl)
+                override fun currentBaseUrl() = staleLegacyUrl
+                override suspend fun probeConnection(): AppResult<ConnectorConnectionProbe> = error("must not probe")
+            },
+            companySession = object : CompanySessionPort {
+                override fun observeSelectedCompanyId() = flowOf("c1")
+                override suspend fun readSelectedCompany() =
+                    AppResult.Success(SelectedCompanyStatus("c1", "ESTIMATION"))
+                override suspend fun validateSessionStatus() =
+                    AppResult.Success(SessionValidationStatus(SessionValidity.Valid, "c1", "ESTIMATION"))
+            },
+            syncStatus = object : ObserveSyncStatusPort {
+                override val summary: StateFlow<SyncStatusSummary> = MutableStateFlow(
+                    SyncStatusSummary(
+                        companyId = "c1",
+                        isAnySyncActive = false,
+                        activeTarget = null,
+                        activeStatus = null,
+                        latestSuccessfulAt = null,
+                        latestFailedMessage = null,
+                        targets = emptyList(),
+                        lastUpdatedEpochMillis = 1L,
+                    ),
+                )
+            },
+            connectivity = object : NetworkConnectivityObserver {
+                override val isOnline: Flow<Boolean> = flowOf(true)
+                override fun current(): Boolean = true
+            },
+            transportGate = object : ConnectorTransportSelectionGate {
+                override suspend fun resolve() = ConnectorTransportSelection.AUTHENTICATED
+            },
+        )
+
+        useCase().test {
+            val snapshot = awaitItem()
+            assertEquals("Secure paired Connector", snapshot.baseUrl)
+            assertTrue(snapshot.baseUrl != staleLegacyUrl)
             cancelAndIgnoreRemainingEvents()
         }
     }

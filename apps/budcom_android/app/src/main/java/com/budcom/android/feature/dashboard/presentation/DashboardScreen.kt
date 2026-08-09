@@ -40,6 +40,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.budcom.android.BuildConfig
 import com.budcom.android.R
 import com.budcom.android.feature.dashboard.domain.model.DashboardOperationalMode
 import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidity
@@ -136,14 +137,16 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { onEvent(DashboardEvent.OpenServerConfig) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("dashboard_loading_server_config")
-                                .semantics { contentDescription = "Open server configuration" },
-                        ) {
-                            Text(stringResource(R.string.dashboard_action_server_config))
+                        if (BuildConfig.DEBUG) {
+                            Button(
+                                onClick = { onEvent(DashboardEvent.OpenServerConfig) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("dashboard_loading_server_config")
+                                    .semantics { contentDescription = "Open server configuration" },
+                            ) {
+                                Text(stringResource(R.string.dashboard_action_server_config))
+                            }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedButton(
@@ -478,6 +481,7 @@ private fun QuickActionsCard(onEvent: (DashboardEvent) -> Unit) {
                 text = stringResource(R.string.dashboard_actions_heading),
                 style = MaterialTheme.typography.titleMedium,
             )
+        if (BuildConfig.DEBUG) {
             Button(
                 onClick = { onEvent(DashboardEvent.OpenServerConfig) },
                 modifier = Modifier
@@ -486,6 +490,7 @@ private fun QuickActionsCard(onEvent: (DashboardEvent) -> Unit) {
                     .semantics { contentDescription = "Open server configuration" },
             ) {
                 Text(stringResource(R.string.dashboard_action_server_config))
+            }
             }
             OutlinedButton(
                 onClick = { onEvent(DashboardEvent.OpenCompanySelection) },
@@ -604,7 +609,7 @@ private fun DashboardScreenPreview() {
             state = DashboardUiState(
                 isInitialLoading = false,
                 isOnline = true,
-                baseUrl = "http://10.0.2.2:8080/",
+                baseUrl = "http://192.168.1.10:8080/",
                 connectorConnected = true,
                 readinessLabel = ReadinessLabel.Ready,
                 lastSuccessfulHealthCheckEpochMillis = 1_700_000_000_000L,

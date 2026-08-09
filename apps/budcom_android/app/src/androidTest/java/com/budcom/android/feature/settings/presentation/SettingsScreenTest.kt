@@ -81,19 +81,23 @@ class SettingsScreenTest {
         assertTrue(events.contains(SettingsEvent.OpenSecurePairing))
     }
 
-    // 25. migration action is absent for SecureActive
+    // ACTIVE trust remains explicitly manageable without exposing the legacy/manual URL editor.
     @Test
-    fun secureActiveShowsNoMigrationOrRePairAction() {
+    fun secureActiveShowsManagePairingAndHidesLegacyServerConfig() {
+        val events = mutableListOf<SettingsEvent>()
         composeRule.setContent {
             BudcomTheme {
                 SettingsScreen(
                     state = sampleState().copy(secureConnectionState = StartupRoutingState.SecureActive),
-                    onEvent = {},
+                    onEvent = { events.add(it) },
                 )
             }
         }
         composeRule.onAllNodesWithTag("settings_secure_this_connection").assertCountEquals(0)
         composeRule.onAllNodesWithTag("settings_re_pair").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("settings_open_server_config").assertCountEquals(0)
+        composeRule.onNodeWithTag("settings_manage_secure_pairing").assertIsDisplayed().performClick()
+        assertTrue(events.contains(SettingsEvent.OpenSecurePairing))
     }
 
     // 27. migration action is absent for RePairRequired — a distinct re-pair action is shown instead
@@ -134,6 +138,7 @@ class SettingsScreenTest {
         companyName = "Company",
         syncStatusLabel = "Never synced",
         connectorVersion = "0.1.0",
+        secureConnectionState = StartupRoutingState.LegacyEligible,
         application = ApplicationInformation(
             appName = "BudCom",
             packageName = "com.budcom.android.debug",

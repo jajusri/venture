@@ -38,6 +38,17 @@ interface PinnedHttpClientFactory {
     fun create(endpoint: TrustedConnectorEndpoint): OkHttpClient
 }
 
+/** Sanitized marker retained through TLS exception wrapping; contains no certificate material. */
+internal class ConnectorCertificateVerificationException(
+    val verificationResult: SpkiFingerprintVerificationResult,
+) : CertificateException("Connector certificate verification failed: $verificationResult")
+
+internal fun Throwable.connectorCertificateVerificationResult(): SpkiFingerprintVerificationResult? =
+    generateSequence(this) { it.cause }
+        .filterIsInstance<ConnectorCertificateVerificationException>()
+        .firstOrNull()
+        ?.verificationResult
+
 @Singleton
 class OkHttpPinnedHttpClientFactory @Inject constructor(
     private val fingerprintVerifier: SpkiFingerprintVerifier,
@@ -92,7 +103,7 @@ private class PinnedTrustManager(
     override fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {
         val result = fingerprintVerifier.verify(chain, pinnedFingerprint, timeProvider.nowEpochMillis())
         if (result != SpkiFingerprintVerificationResult.Match) {
-            throw CertificateException("Connector certificate did not satisfy the pinned fingerprint (reason: $result).")
+            throw ConnectorCertificateVerificationException(result)
         }
     }
 

@@ -7,11 +7,9 @@ import javax.inject.Singleton
 /**
  * Narrow physical-device vs emulator distinction.
  *
- * The only thing this gates: whether the emulator-oriented `BuildConfig.CONNECTOR_BASE_URL`
- * default (`10.0.2.2`, the documented Android emulator alias for the host machine) may be
- * used automatically as a first-install connection target. On a physical device that address
- * is never reachable, so first-install pairing must go through Connector discovery instead —
- * see `ConnectorEnrolmentGate`.
+ * The only thing this gates is the debug-emulator bootstrap convenience. Customer builds have no
+ * default Connector address; first-install connection on a physical device must use discovery and
+ * explicit secure pairing. See `ConnectorEnrolmentGate`.
  */
 interface DeviceEnvironment {
     fun isLikelyEmulator(): Boolean

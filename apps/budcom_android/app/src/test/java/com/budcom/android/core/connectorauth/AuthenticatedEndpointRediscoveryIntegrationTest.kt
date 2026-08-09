@@ -184,7 +184,7 @@ class AuthenticatedEndpointRediscoveryIntegrationTest {
 
         // Rejected — never Success, never any hint of the attacker's response payload.
         assertTrue(result !is AuthenticatedConnectorResult.Success)
-        assertEquals(AuthenticatedConnectorResult.TransportFailure, result)
+        assertEquals(AuthenticatedConnectorResult.IdentityMismatch, result)
         // No persisted update: the vault still points at the original (now-dead) endpoint A,
         // never the attacker's host/port, and the credential/trust state is completely intact.
         assertEquals(endpointA.host, vault.read()?.endpoint?.host)

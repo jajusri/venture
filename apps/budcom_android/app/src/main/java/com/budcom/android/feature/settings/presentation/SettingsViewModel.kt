@@ -121,6 +121,7 @@ class SettingsViewModel @Inject constructor(
                 it.copy(
                     isRefreshing = false,
                     isInitialLoading = false,
+                    baseUrl = facts.endpointDisplay,
                     connectorVersion = facts.connectorVersion ?: it.connectorVersion,
                     companyId = facts.companyId ?: it.companyId,
                     companyName = facts.companyName ?: it.companyName,

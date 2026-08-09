@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.budcom.android.BuildConfig
 import com.budcom.android.R
 import com.budcom.android.feature.masterdata.presentation.MasterDataOfflineBanner
 import com.budcom.android.feature.masterdata.presentation.displayMessage
@@ -176,7 +177,7 @@ private fun SummaryCard(state: SyncUiState, onEvent: (SyncEvent) -> Unit) {
                     Text(stringResource(R.string.sync_select_company))
                 }
             }
-            if (!state.isOnline) {
+            if (BuildConfig.DEBUG && !state.isOnline) {
                 OutlinedButton(
                     onClick = { onEvent(SyncEvent.OpenServerConfig) },
                     modifier = Modifier.testTag("sync_open_server"),

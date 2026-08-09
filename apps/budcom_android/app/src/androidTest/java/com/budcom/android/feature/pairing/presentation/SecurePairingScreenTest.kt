@@ -139,11 +139,12 @@ class SecurePairingScreenTest {
     // 38. active state does not falsely claim business sync is secured
     @Test
     fun activeStateDoesNotClaimAccountingSyncIsSecured() {
+        var rescanned = false
         composeRule.setContent {
             BudcomTheme {
                 SecurePairingScreen(
                     state = SecurePairingUiState(phase = SecurePairingPhase.Active, connectorName = "Front Desk"),
-                    onEvent = {},
+                    onEvent = { if (it == SecurePairingEvent.StartQrScan) rescanned = true },
                 )
             }
         }
@@ -151,6 +152,8 @@ class SecurePairingScreenTest {
         val tree = composeRule.onRoot().printToString()
         assertFalse(tree.contains("sync", ignoreCase = true))
         assertFalse(tree.contains("accounting", ignoreCase = true))
+        composeRule.onNodeWithTag("secure_pairing_replace_button").assertIsDisplayed().performClick()
+        assertTrue(rescanned)
     }
 
     // 39. re-pair-required state states cached data is preserved

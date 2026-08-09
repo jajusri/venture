@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.budcom.android.BuildConfig
 import com.budcom.android.core.discovery.DiscoveredConnector
 import com.budcom.android.ui.theme.BudcomTheme
 
@@ -140,11 +141,13 @@ private fun EmptyContent(
         ) {
             Text("Retry")
         }
-        OutlinedButton(
-            onClick = onManualConfig,
-            modifier = Modifier.fillMaxWidth().testTag("discovery_manual_config_button"),
-        ) {
-            Text("Enter server address manually")
+        if (BuildConfig.DEBUG) {
+            OutlinedButton(
+                onClick = onManualConfig,
+                modifier = Modifier.fillMaxWidth().testTag("discovery_manual_config_button"),
+            ) {
+                Text("Enter server address manually")
+            }
         }
     }
 }
@@ -187,11 +190,13 @@ private fun FoundContent(
         ) {
             Text("Search again")
         }
-        OutlinedButton(
-            onClick = onManualConfig,
-            modifier = Modifier.fillMaxWidth().testTag("discovery_manual_config_button"),
-        ) {
-            Text("Enter server address manually")
+        if (BuildConfig.DEBUG) {
+            OutlinedButton(
+                onClick = onManualConfig,
+                modifier = Modifier.fillMaxWidth().testTag("discovery_manual_config_button"),
+            ) {
+                Text("Enter server address manually")
+            }
         }
     }
 }

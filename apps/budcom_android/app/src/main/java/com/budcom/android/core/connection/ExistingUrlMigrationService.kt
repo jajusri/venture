@@ -12,6 +12,7 @@ import javax.inject.Singleton
 sealed class MigrationOutcome {
     data class Migrated(val connectorId: String) : MigrationOutcome()
     data class AlreadyPaired(val connectorId: String) : MigrationOutcome()
+    data object Unconfigured : MigrationOutcome()
     data object Unreachable : MigrationOutcome()
 }
 
@@ -40,7 +41,7 @@ class DefaultExistingUrlMigrationService @Inject constructor(
 ) : ExistingUrlMigrationService {
 
     override suspend fun migrateIfNeeded(): MigrationOutcome {
-        val currentUrl = baseUrlProvider.snapshotHttpUrl()
+        val currentUrl = baseUrlProvider.snapshotHttpUrl() ?: return MigrationOutcome.Unconfigured
         Timber.tag("ConnectorMigration").d("probing host=%s port=%s", currentUrl.host, currentUrl.port)
         val probe = healthProbe.probe(currentUrl.host, currentUrl.port, PROBE_TIMEOUT_MS)
         Timber.tag("ConnectorMigration").d(

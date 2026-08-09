@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.budcom.android.BuildConfig
 import com.budcom.android.R
 import com.budcom.android.feature.masterdata.presentation.MasterDataOfflineBanner
 import com.budcom.android.feature.masterdata.presentation.displayMessage
@@ -142,13 +143,15 @@ private fun ConnectionCard(
             },
             testTag = "settings_connectivity",
         )
-        Button(
-            onClick = { onEvent(SettingsEvent.OpenServerConfig) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("settings_open_server_config"),
-        ) {
-            Text(stringResource(R.string.settings_open_server_config))
+        if (BuildConfig.DEBUG && state.secureConnectionState == StartupRoutingState.LegacyEligible) {
+            Button(
+                onClick = { onEvent(SettingsEvent.OpenServerConfig) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_open_server_config"),
+            ) {
+                Text(stringResource(R.string.settings_open_server_config))
+            }
         }
         SecureConnectionRow(state = state, onEvent = onEvent)
     }
@@ -201,13 +204,35 @@ private fun SecureConnectionRow(
         }
         StartupRoutingState.SecureActive -> {
             Text(
-                text = stringResource(R.string.settings_secure_connection_active),
+                text = stringResource(R.string.settings_secure_pairing_stored),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag("settings_secure_connection_status"),
             )
+            OutlinedButton(
+                onClick = { onEvent(SettingsEvent.OpenSecurePairing) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_manage_secure_pairing"),
+            ) {
+                Text(stringResource(R.string.settings_manage_secure_pairing))
+            }
         }
-        StartupRoutingState.PairingRequired, StartupRoutingState.PairingPending, null -> Unit
+        StartupRoutingState.PairingPending -> {
+            Text(
+                text = stringResource(R.string.settings_secure_pairing_pending),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("settings_secure_connection_status"),
+            )
+            OutlinedButton(
+                onClick = { onEvent(SettingsEvent.OpenSecurePairing) },
+                modifier = Modifier.fillMaxWidth().testTag("settings_manage_secure_pairing"),
+            ) {
+                Text(stringResource(R.string.settings_manage_secure_pairing))
+            }
+        }
+        StartupRoutingState.PairingRequired, null -> Unit
     }
 }
 

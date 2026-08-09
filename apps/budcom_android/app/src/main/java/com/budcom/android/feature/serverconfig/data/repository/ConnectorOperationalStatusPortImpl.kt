@@ -100,6 +100,14 @@ class ConnectorOperationalStatusPortImpl @Inject constructor(
                 AppError.Message("Could not reach the Connector."),
             )
 
+            AuthenticatedConnectorResult.IdentityMismatch -> ConnectorOperationalStatus.AuthenticatedUnavailable(
+                AppError.Message("Connector identity changed. Trust was not replaced; scan a fresh Desktop QR to re-pair explicitly."),
+            )
+
+            AuthenticatedConnectorResult.CertificateInvalid -> ConnectorOperationalStatus.AuthenticatedUnavailable(
+                AppError.Message("The Connector certificate is invalid. Trust was not changed."),
+            )
+
             AuthenticatedConnectorResult.Cancelled -> ConnectorOperationalStatus.AuthenticatedUnavailable(
                 AppError.Message("The connection check was cancelled."),
             )
@@ -107,7 +115,7 @@ class ConnectorOperationalStatusPortImpl @Inject constructor(
 
     /**
      * Sourced only from the trusted-pairing context (never from [ConnectorStatusPort] /
-     * `BuildConfig.CONNECTOR_BASE_URL`) — this is the one place a raw endpoint may legitimately be
+     * `BuildConfig.CONNECTOR_DEFAULT_BASE_URL`) — this is the one place a raw endpoint may legitimately be
      * shown for a securely paired device, and only the real one.
      */
     private suspend fun resolveEndpointDisplay(): String =

@@ -2,8 +2,12 @@ package com.budcom.android.feature.settings.domain.usecase
 
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelection
+import com.budcom.android.core.connectorauth.domain.ConnectorTransportSelectionGate
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatus
+import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
 import com.budcom.android.feature.settings.domain.model.SettingsSnapshot
 import com.budcom.android.feature.settings.domain.model.ThemePreference
@@ -14,6 +18,8 @@ import com.budcom.android.feature.sync.domain.port.ObserveSyncStatusPort
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import javax.inject.Inject
 
 class ObserveThemePreferenceUseCase @Inject constructor(
@@ -32,6 +38,7 @@ class SetThemePreferenceUseCase @Inject constructor(
 /**
  * Aggregates confirmed settings sources. Does not invent preferences or Connector metadata.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ObserveSettingsSnapshotUseCase @Inject constructor(
     private val applicationIdentity: ApplicationIdentityPort,
     private val themePreferences: ThemePreferencesRepository,
@@ -39,6 +46,7 @@ class ObserveSettingsSnapshotUseCase @Inject constructor(
     private val companySession: CompanySessionPort,
     private val syncStatus: ObserveSyncStatusPort,
     private val connectivity: NetworkConnectivityObserver,
+    private val transportGate: ConnectorTransportSelectionGate,
 ) {
     operator fun invoke(): Flow<SettingsSnapshot> = combine(
         themePreferences.observeTheme(),
@@ -70,14 +78,22 @@ class ObserveSettingsSnapshotUseCase @Inject constructor(
             connectorVersion = null,
             application = applicationIdentity.read(),
         )
+    }.mapLatest { snapshot ->
+        when (transportGate.resolve()) {
+            ConnectorTransportSelection.LEGACY -> snapshot
+            ConnectorTransportSelection.AUTHENTICATED -> snapshot.copy(
+                baseUrl = ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER,
+            )
+        }
     }.distinctUntilChanged()
 }
 
 class RefreshSettingsConnectorFactsUseCase @Inject constructor(
-    private val connectorStatus: ConnectorStatusPort,
+    private val operationalStatus: ConnectorOperationalStatusPort,
     private val companySession: CompanySessionPort,
 ) {
     data class ConnectorFacts(
+        val endpointDisplay: String,
         val connectorVersion: String?,
         val companyName: String?,
         val companyId: String?,
@@ -89,17 +105,41 @@ class RefreshSettingsConnectorFactsUseCase @Inject constructor(
             is AppResult.Success -> selected.value
             is AppResult.Failure -> null
         }
-        return when (val probe = connectorStatus.probeConnection()) {
-            is AppResult.Success -> ConnectorFacts(
-                connectorVersion = probe.value.health.connectorVersion,
-                companyName = company?.companyName,
-                companyId = company?.companyId,
-            )
-            is AppResult.Failure -> ConnectorFacts(
+        return when (val status = operationalStatus.currentStatus()) {
+            is ConnectorOperationalStatus.Legacy -> when (val probe = status.healthProbe) {
+                is AppResult.Success -> ConnectorFacts(
+                    endpointDisplay = status.baseUrl,
+                    connectorVersion = probe.value.health.connectorVersion,
+                    companyName = company?.companyName,
+                    companyId = company?.companyId,
+                )
+                is AppResult.Failure -> ConnectorFacts(
+                    endpointDisplay = status.baseUrl,
+                    connectorVersion = null,
+                    companyName = company?.companyName,
+                    companyId = company?.companyId,
+                    probeError = probe.error,
+                )
+            }
+            is ConnectorOperationalStatus.AuthenticatedHealthy -> ConnectorFacts(
+                endpointDisplay = status.endpointDisplay,
                 connectorVersion = null,
                 companyName = company?.companyName,
                 companyId = company?.companyId,
-                probeError = probe.error,
+            )
+            is ConnectorOperationalStatus.AuthenticatedUnavailable -> ConnectorFacts(
+                endpointDisplay = ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER,
+                connectorVersion = null,
+                companyName = company?.companyName,
+                companyId = company?.companyId,
+                probeError = status.error,
+            )
+            is ConnectorOperationalStatus.AuthenticatedPreparing -> ConnectorFacts(
+                endpointDisplay = ConnectorOperationalStatus.AUTHENTICATED_ENDPOINT_PLACEHOLDER,
+                connectorVersion = null,
+                companyName = company?.companyName,
+                companyId = company?.companyId,
+                probeError = AppError.Message(status.message),
             )
         }
     }

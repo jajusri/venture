@@ -2,7 +2,9 @@ package com.budcom.android.core.connectorauth.domain
 
 import com.budcom.android.core.discovery.ConnectorDiscoveryPort
 import com.budcom.android.core.pairing.data.remote.PinnedHttpClientFactory
+import com.budcom.android.core.pairing.data.remote.connectorCertificateVerificationResult
 import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
+import com.budcom.android.core.security.SpkiFingerprintVerificationResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
@@ -19,6 +21,12 @@ sealed class VerifiedEndpointResolution {
 
     /** No candidate was found, or none presented a certificate matching the pinned fingerprint. */
     data object Unavailable : VerifiedEndpointResolution()
+
+    /** At least one matching-ID candidate presented a different cryptographic identity. */
+    data object IdentityMismatch : VerifiedEndpointResolution()
+
+    /** At least one matching-ID candidate presented an invalid pinned certificate. */
+    data object CertificateInvalid : VerifiedEndpointResolution()
 }
 
 /**
@@ -62,13 +70,22 @@ class DefaultAuthenticatedConnectorEndpointResolver @Inject constructor(
         val discovered = discoveryPort.discover(DISCOVERY_TIMEOUT_MS)
         val candidates = discovered.filter { it.connectorId == expected.connectorId }
 
+        var sawIdentityMismatch = false
+        var sawInvalidCertificate = false
         for (candidate in candidates) {
             val candidateEndpoint = expected.copy(host = candidate.host, securePort = candidate.port)
-            if (verifyPinnedHandshake(candidateEndpoint)) {
-                return VerifiedEndpointResolution.Verified(candidateEndpoint)
+            when (verifyPinnedHandshake(candidateEndpoint)) {
+                CandidateVerification.Verified -> return VerifiedEndpointResolution.Verified(candidateEndpoint)
+                CandidateVerification.IdentityMismatch -> sawIdentityMismatch = true
+                CandidateVerification.CertificateInvalid -> sawInvalidCertificate = true
+                CandidateVerification.Unavailable -> Unit
             }
         }
-        return VerifiedEndpointResolution.Unavailable
+        return when {
+            sawIdentityMismatch -> VerifiedEndpointResolution.IdentityMismatch
+            sawInvalidCertificate -> VerifiedEndpointResolution.CertificateInvalid
+            else -> VerifiedEndpointResolution.Unavailable
+        }
     }
 
     /**
@@ -78,7 +95,7 @@ class DefaultAuthenticatedConnectorEndpointResolver @Inject constructor(
      * means verification failed. The response itself is discarded unread; only handshake success
      * is meaningful.
      */
-    private suspend fun verifyPinnedHandshake(candidate: TrustedConnectorEndpoint): Boolean {
+    private suspend fun verifyPinnedHandshake(candidate: TrustedConnectorEndpoint): CandidateVerification {
         val client = pinnedHttpClientFactory.create(candidate)
         val request = Request.Builder()
             .url(
@@ -92,13 +109,19 @@ class DefaultAuthenticatedConnectorEndpointResolver @Inject constructor(
             .get()
             .build()
         return try {
-            runInterruptible(Dispatchers.IO) { client.newCall(request).execute() }.use { true }
+            runInterruptible(Dispatchers.IO) { client.newCall(request).execute() }.use { CandidateVerification.Verified }
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            false
+            when (e.connectorCertificateVerificationResult()) {
+                SpkiFingerprintVerificationResult.FingerprintMismatch -> CandidateVerification.IdentityMismatch
+                null -> CandidateVerification.Unavailable
+                else -> CandidateVerification.CertificateInvalid
+            }
         }
     }
+
+    private enum class CandidateVerification { Verified, IdentityMismatch, CertificateInvalid, Unavailable }
 
     private companion object {
         const val DISCOVERY_TIMEOUT_MS = 5_000L

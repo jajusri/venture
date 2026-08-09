@@ -103,7 +103,7 @@ class AuthenticatedConnectorEndpointResolverTest {
 
         val result = resolver.resolveVerifiedEndpoint(expected) // expected's fingerprint matches nothing real here
 
-        assertEquals(VerifiedEndpointResolution.Unavailable, result)
+        assertEquals(VerifiedEndpointResolution.IdentityMismatch, result)
     }
 
     @Test
@@ -120,7 +120,7 @@ class AuthenticatedConnectorEndpointResolverTest {
 
         val result = resolver.resolveVerifiedEndpoint(expectedWithLegitFingerprint)
 
-        assertEquals(VerifiedEndpointResolution.Unavailable, result)
+        assertEquals(VerifiedEndpointResolution.IdentityMismatch, result)
         assertEquals(0, legitServer.requestCount)
     }
 

@@ -13,12 +13,10 @@ import javax.inject.Singleton
  *
  * True only when ALL of:
  * - no Connector has ever been paired on this device;
- * - the device is not recognized as an emulator (emulator dev flow keeps using
- *   [com.budcom.android.core.connection.ExistingUrlMigrationService] against the
- *   `10.0.2.2` default exactly as before);
+ * - the device is not recognized as an emulator (debug emulator builds retain their development
+ *   bootstrap flow);
  * - the persisted base URL is still the untouched build default — i.e. the user never
- *   went through Server Config manually (an explicit developer configuration is honored
- *   exactly as before, never redirected into the discovery flow).
+ *   supplied an explicit debug/developer configuration.
  */
 interface ConnectorEnrolmentGate {
     suspend fun needsEnrolment(): Boolean
@@ -34,6 +32,7 @@ class DefaultConnectorEnrolmentGate @Inject constructor(
     override suspend fun needsEnrolment(): Boolean {
         if (pairedConnectors.getPrimary() != null) return false
         if (deviceEnvironment.isLikelyEmulator()) return false
-        return baseUrlLocalStore.read() == DefaultConnectorBaseUrlProvider.DEFAULT
+        val persisted = baseUrlLocalStore.read()
+        return persisted.isBlank() || persisted == DefaultConnectorBaseUrlProvider.DEFAULT
     }
 }

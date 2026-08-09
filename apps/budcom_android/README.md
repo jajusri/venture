@@ -164,9 +164,14 @@ Contract notes: [`docs/contracts/android-settings.md`](../../docs/contracts/andr
 
 | Field | Purpose |
 | --- | --- |
-| `CONNECTOR_BASE_URL` | Default `http://10.0.2.2:8080/` |
+| `CONNECTOR_BOOTSTRAP_BASE_URL` | Internal Retrofit bootstrap only; never a Connector destination |
+| `CONNECTOR_DEFAULT_BASE_URL` | Blank in customer releases; Android-emulator convenience only in debug builds |
 | `NETWORK_LOGGING_ENABLED` | Debug only |
 | `APP_NAME` | Display label |
+
+Customer releases use the secure pairing vault and certificate-pinned HTTPS transport. They do not
+ship an emulator or manual-IP endpoint, and cleartext Connector traffic is disabled. Manual server
+configuration remains available only in debug builds for development and automated testing.
 
 ## Prerequisites
 

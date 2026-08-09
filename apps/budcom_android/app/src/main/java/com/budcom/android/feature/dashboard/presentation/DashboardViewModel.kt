@@ -139,7 +139,8 @@ class DashboardViewModel @Inject constructor(
                             isTestingConnection = false,
                             isInitialLoading = false,
                             connectorConnected = true,
-                            readinessLabel = readinessLabelFromStatus(probe.readiness?.status),
+                            baseUrl = probe.endpointDisplay,
+                            readinessLabel = readinessLabelFromStatus(probe.readinessStatus),
                             lastSuccessfulHealthCheckEpochMillis = probe.checkedAtEpochMillis,
                             connectorError = null,
                         ).withAuthoritativeMode()

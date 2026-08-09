@@ -68,7 +68,13 @@ sealed class AuthenticatedConnectorResult {
     /** HTTP 5xx. */
     data class ServerFailure(val httpStatus: Int) : AuthenticatedConnectorResult()
 
-    /** TLS/pin/hostname/socket/timeout failure, or any other transport-level `IOException`. */
+    /** The live certificate uses a different SPKI than the explicitly trusted Connector. */
+    data object IdentityMismatch : AuthenticatedConnectorResult()
+
+    /** The pinned certificate was present but expired, not yet valid, missing, or malformed. */
+    data object CertificateInvalid : AuthenticatedConnectorResult()
+
+    /** Socket/DNS/timeout failure, or another non-trust transport-level `IOException`. */
     data object TransportFailure : AuthenticatedConnectorResult()
 
     /** A 2xx body that was not well-formed JSON, or exceeded the bounded read size. */

@@ -318,8 +318,8 @@ private fun ServerConfigScreenPreview() {
     BudcomTheme {
         ServerConfigScreen(
             state = ServerConfigUiState(
-                urlInput = "http://10.0.2.2:8080/",
-                savedUrl = "http://10.0.2.2:8080/",
+                urlInput = "http://192.168.1.10:8080/",
+                savedUrl = "http://192.168.1.10:8080/",
                 connection = ConnectionUiState.Success(
                     ConnectorConnectionProbe(
                         health = sampleHealth(),

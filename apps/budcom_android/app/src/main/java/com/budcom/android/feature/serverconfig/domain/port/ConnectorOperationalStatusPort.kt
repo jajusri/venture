@@ -7,7 +7,7 @@ import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionP
 /**
  * TD-016: the transport-aware answer to "is the Connector reachable, and what endpoint is it
  * at" — replacing direct reliance on [ConnectorStatusPort] (which is always LEGACY-sourced,
- * `BuildConfig.CONNECTOR_BASE_URL`-seeded) wherever a securely paired device's real status must
+ * `BuildConfig.CONNECTOR_DEFAULT_BASE_URL`-seeded) wherever a securely paired device's real status must
  * be shown instead.
  *
  * [Legacy] preserves today's exact [ConnectorStatusPort] behavior unchanged — genuinely
@@ -31,7 +31,7 @@ sealed class ConnectorOperationalStatus {
      * transport = AUTHENTICATED, trust is ACTIVE, and an authenticated request round-trip
      * (pinned TLS + bearer credential) succeeded — proof the device really did reach its
      * trusted Connector, not merely that some URL responds. [endpointDisplay] is sourced from
-     * the trusted-pairing context, never from [ConnectorStatusPort]/`BuildConfig.CONNECTOR_BASE_URL`.
+     * the trusted-pairing context, never from [ConnectorStatusPort]/`BuildConfig.CONNECTOR_DEFAULT_BASE_URL`.
      *
      * `/health`/`/ready` are deliberately excluded from the authenticated operation catalog
      * (see `AuthenticatedConnectorOperation`'s own doc comment) — there is no authenticated

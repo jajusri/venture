@@ -115,7 +115,7 @@ fun SecurePairingScreen(
                 SecurePairingPhase.StoringPendingCredential -> ProgressContent("Securing credential…")
                 SecurePairingPhase.VerifyingCredential -> ProgressContent(state.progressDescription ?: "Verifying Connector…")
                 SecurePairingPhase.PendingVerification -> PendingVerificationContent(onEvent = onEvent)
-                SecurePairingPhase.Active -> ActiveContent(state = state)
+                SecurePairingPhase.Active -> ActiveContent(state = state, onEvent = onEvent)
                 SecurePairingPhase.PermissionDenied -> PermissionDeniedContent(state = state, onEvent = onEvent)
                 SecurePairingPhase.CameraUnavailable -> ErrorContent(
                     title = "Camera unavailable",
@@ -329,7 +329,7 @@ private fun PendingVerificationContent(onEvent: (SecurePairingEvent) -> Unit) {
 }
 
 @Composable
-private fun ActiveContent(state: SecurePairingUiState) {
+private fun ActiveContent(state: SecurePairingUiState, onEvent: (SecurePairingEvent) -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().testTag("secure_pairing_active"),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -343,6 +343,18 @@ private fun ActiveContent(state: SecurePairingUiState) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.testTag("secure_pairing_active_description"),
         )
+        Text(
+            text = "To replace this trust, scan a fresh QR from Desktop and explicitly confirm its Connector and fingerprint.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag("secure_pairing_active_replace_notice"),
+        )
+        OutlinedButton(
+            onClick = { onEvent(SecurePairingEvent.StartQrScan) },
+            modifier = Modifier.fillMaxWidth().testTag("secure_pairing_replace_button"),
+        ) {
+            Text("Replace / Re-pair Connector")
+        }
     }
 }
 

@@ -15,6 +15,8 @@ import javax.inject.Singleton
  */
 const val AUTHENTICATED_SECURE_PAIRING_REQUIRED_CODE = "SECURE_PAIRING_REQUIRED"
 const val AUTHENTICATED_ACCESS_DENIED_CODE = "AUTHENTICATED_ACCESS_DENIED"
+const val AUTHENTICATED_IDENTITY_MISMATCH_CODE = "CONNECTOR_IDENTITY_MISMATCH"
+const val AUTHENTICATED_CERTIFICATE_INVALID_CODE = "CONNECTOR_CERTIFICATE_INVALID"
 
 /**
  * Well-known [AppError.Remote.code] a caller can pattern-match on to recognize the Connector's
@@ -83,6 +85,16 @@ class DefaultAuthenticatedRepositoryFailurePolicy @Inject constructor(
         AuthenticatedConnectorResult.Conflict -> AppError.Remote(409, null, "The request conflicted with the current Connector state.")
         AuthenticatedConnectorResult.RateLimited -> AppError.Remote(429, null, "Too many requests. Try again shortly.")
         is AuthenticatedConnectorResult.ServerFailure -> AppError.Remote(result.httpStatus, null, "The Connector reported a server error.")
+        AuthenticatedConnectorResult.IdentityMismatch -> AppError.Remote(
+            httpStatus = null,
+            code = AUTHENTICATED_IDENTITY_MISMATCH_CODE,
+            message = "The Connector identity changed. Re-pair explicitly with a fresh Desktop QR.",
+        )
+        AuthenticatedConnectorResult.CertificateInvalid -> AppError.Remote(
+            httpStatus = null,
+            code = AUTHENTICATED_CERTIFICATE_INVALID_CODE,
+            message = "The Connector certificate is invalid. Trust was not changed.",
+        )
         AuthenticatedConnectorResult.TransportFailure -> AppError.Offline()
         AuthenticatedConnectorResult.MalformedResponse -> AppError.Serialization("The Connector response could not be parsed.")
         AuthenticatedConnectorResult.Cancelled -> AppError.Message("The request was cancelled.")

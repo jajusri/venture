@@ -2,11 +2,8 @@ package com.budcom.android.feature.diagnostics.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.diagnostics.domain.usecase.LoadDiagnosticsUseCase
-import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
-import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +18,6 @@ import javax.inject.Inject
 @HiltViewModel
 class DiagnosticsViewModel @Inject constructor(
     private val loadDiagnostics: LoadDiagnosticsUseCase,
-    private val connectorStatus: ConnectorStatusPort,
     private val connectivityObserver: NetworkConnectivityObserver,
 ) : ViewModel() {
 
@@ -82,41 +78,8 @@ class DiagnosticsViewModel @Inject constructor(
         refreshInFlight = true
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true, bannerError = null) }
-            when (val probe = connectorStatus.probeConnection()) {
-                is AppResult.Success -> {
-                    _uiState.update { state ->
-                        state.copy(
-                            isRefreshing = false,
-                            connector = state.connector.copy(
-                                health = probe.value.health,
-                                healthError = null,
-                                readiness = probe.value.readiness,
-                                readinessError = if (probe.value.readiness == null) {
-                                    MasterDataUiError.Message(
-                                        "Readiness was not returned with the health probe.",
-                                    )
-                                } else {
-                                    null
-                                },
-                            ),
-                        )
-                    }
-                }
-                is AppResult.Failure -> {
-                    _uiState.update { state ->
-                        state.copy(
-                            isRefreshing = false,
-                            connector = state.connector.copy(
-                                health = null,
-                                readiness = null,
-                                healthError = probe.error.toDiagnosticsUiError(),
-                                readinessError = probe.error.toDiagnosticsUiError(),
-                            ),
-                            bannerError = probe.error.toDiagnosticsUiError(),
-                        )
-                    }
-                }
-            }
+            val snapshot = loadDiagnostics(refreshSync = false)
+            _uiState.update { snapshot.toUiState(prior = it, isOnline = _uiState.value.isOnline) }
             refreshInFlight = false
         }
     }

@@ -331,10 +331,29 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-019 — Android release exposes stale legacy endpoint and lacks safe active-trust replacement
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-019 |
+| **Description** | Customer Android builds inherited the emulator-only `10.0.2.2:8080` legacy endpoint, allowed cleartext LAN traffic, and exposed manual server-address controls even though a securely paired device uses the separate certificate-pinned authenticated transport. Settings and several dashboard/diagnostic refresh paths could therefore display or probe the unrelated legacy endpoint. Separately, a device with an `ACTIVE` secure credential had no explicit customer-facing replacement action, and certificate-pin mismatch was collapsed into a generic transport failure. A legitimate historical identity loss could leave the customer unable to understand the trust failure or deliberately re-pair without destructive app-data clearing. |
+| **Observed customer state** | Physical iQOO validation on 2026-08-09 showed the phone online and the UI reporting “Secure connection active,” while the Connection card still displayed `http://10.0.2.2:8080/`. The stale value was a legacy-display/configuration artifact, not evidence that the authenticated request had used that address. Earlier validation also exposed the absence of an active-state re-pair action after a legitimate historical transport-identity loss. |
+| **Impact** | P0 release risk: misleading endpoint/status information invites unsafe manual-IP changes; generic trust errors can be mistaken for ordinary network loss; and the only apparent recovery may be destructive Android reset/reinstall even though a verified, explicit credential replacement is sufficient. |
+| **Priority** | P0 |
+| **Target milestone** | Pre-MVP-1 Android controlled-pilot hardening |
+| **Status** | **Implemented — automated validation passed; physical release-APK confirmation pending** |
+| **Resolution** | Customer release configuration now has a blank Connector default, blocks cleartext, and hides manual server configuration; emulator/manual controls remain debug-only. Settings, Dashboard, Diagnostics, and connection probes select the authoritative transport and never surface the legacy URL for an `AUTHENTICATED` credential. Certificate verification now returns sanitized typed identity-mismatch/certificate-invalid outcomes rather than an undifferentiated socket failure. LAN rediscovery still treats Connector ID only as a candidate filter and accepts/persists a new host/port only after verification against the existing pinned fingerprint. The active pairing screen exposes **Replace / Re-pair Connector**. Replacement verifies the new endpoint, fingerprint, credential ID, Connector ID, and device ID before one atomic encrypted `ACTIVE` publication; any parse, network, identity, certificate, encryption, or persistence failure leaves the old active record unchanged. No automatic fingerprint acceptance, legacy fallback, or trust weakening was introduced. |
+| **Automated validation (2026-08-09)** | Debug JVM: 793 tests, 0 failures; release JVM: 793 tests, 0 failures. Focused coverage includes blank release endpoint configuration, local failure when no endpoint is configured, stale legacy URL suppression under authenticated trust, typed identity/certificate failures, verified endpoint rediscovery, explicit active-state replacement UI, failed replacement retaining the exact old active record, and successful verified atomic replacement. `lintDebug`, `lintRelease`, `assembleDebug`, `assembleRelease`, and `assembleDebugAndroidTest` all passed. The generated APKs were not installed and no phone was accessed. |
+| **Required physical confirmation** | Build/sign one controlled Android candidate from a clean committed tree, record commit and APK SHA-256, then use normal customer UI only: install/update without clearing data; confirm no stale emulator URL or manual-IP entry; explicitly re-pair once if the historical pinned identity is genuinely obsolete; confirm SPKI, Connector ID, company/session, MVP smoke, and automatic reconnect across Android/Desktop/Tally/Wi-Fi restarts and an ordinary DHCP address change. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-018 | Packaged transport identity and mutable Connector paths lived under install resources | P0 | **Windows physical lifecycle accepted; Android confirmation pending** | Pre-MVP-1 release hardening |
+| TD-019 | Android release exposes stale legacy endpoint and lacks safe active-trust replacement | P0 | **Implemented — automated validation passed; physical release-APK confirmation pending** | Pre-MVP-1 release hardening |
 | TD-001 | Parent encoding normalization (`&#4; Primary`) | P2 | Open | 5A |
 | TD-002 | Desktop company selection UI | P2 | **Resolved** | 4B |
 | TD-003 | Connector process supervision | P2 | **Resolved** | 4C |

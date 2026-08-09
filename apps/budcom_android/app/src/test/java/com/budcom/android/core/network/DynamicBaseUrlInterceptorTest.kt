@@ -5,7 +5,9 @@ import okhttp3.Request
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.io.IOException
 
 class DynamicBaseUrlInterceptorTest {
 
@@ -32,6 +34,18 @@ class DynamicBaseUrlInterceptorTest {
             assertEquals(server.port, recorded.requestUrl?.port)
         } finally {
             server.shutdown()
+        }
+    }
+
+    @Test
+    fun `unconfigured endpoint fails locally without attempting a bootstrap host`() {
+        val provider = DefaultConnectorBaseUrlProvider().apply { updateInMemory("") }
+        val client = OkHttpClient.Builder()
+            .addInterceptor(DynamicBaseUrlInterceptor(provider))
+            .build()
+
+        assertThrows(IOException::class.java) {
+            client.newCall(Request.Builder().url("http://localhost/health").build()).execute()
         }
     }
 }
