@@ -10,71 +10,140 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
 const releaseRoot = path.join(repoRoot, 'release', 'controlled-pilot', '0.4.3');
 
-const EXPECTED = {
-  gitCommit: 'a9595af857546de3c65f1457775f3f65eb78ae77',
-  sha256: '911422191ea977558f73fc756b6eb32dd701e01b16fb6626fc030da6e6480bdd',
-  sizeBytes: 81970565,
-  installerFilename: 'BudcomDesktop-0.4.3-x64-setup.exe',
-  releaseMode: 'controlled_pilot',
-};
-
 function sha256File(filePath) {
   const hash = crypto.createHash('sha256');
   hash.update(fs.readFileSync(filePath));
   return hash.digest('hex');
 }
 
+function readRequiredJson(filePath, label) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`${label} missing: ${filePath}`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    throw new Error(`${label} is malformed JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${label} has malformed structure`);
+  }
+  return parsed;
+}
+
+function requireString(value, label, pattern) {
+  if (typeof value !== 'string' || value.length === 0 || (pattern && !pattern.test(value))) {
+    throw new Error(`${label} is missing or malformed`);
+  }
+  return value;
+}
+
+function requireInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${label} is missing or malformed`);
+  }
+  return value;
+}
+
+function assertBuildIdentity(source, label, expectedCommit) {
+  const commit = requireString(source.gitCommit, `${label}.gitCommit`, /^[0-9a-f]{40}$/i);
+  if (expectedCommit && commit !== expectedCommit) {
+    throw new Error(`${label}.gitCommit disagrees with generated release evidence`);
+  }
+  if (source.dirtyTree !== false || source.sourceTreeCleanAtStart !== true) {
+    throw new Error(`${label} does not describe a clean source tree`);
+  }
+  if (source.releaseMode !== 'controlled_pilot') {
+    throw new Error(`${label}.releaseMode is not controlled_pilot`);
+  }
+  return commit;
+}
+
 export function verifyControlledPilotCandidate(options = {}) {
   const root = options.releaseRoot ?? releaseRoot;
   const artifactsDir = path.join(root, 'artifacts');
-  const installerPath = path.join(artifactsDir, EXPECTED.installerFilename);
   const manifestPath = path.join(root, 'manifest', 'artifacts.manifest.json');
   const checksumPath = path.join(root, 'checksums', 'SHA256SUMS.txt');
   const buildInfoPath = path.join(root, 'build-info.json');
   const reportPath = path.join(root, 'reports', 'release-report.json');
 
-  if (!fs.existsSync(installerPath)) {
+  const manifest = readRequiredJson(manifestPath, 'Artifact manifest');
+  const buildInfo = readRequiredJson(buildInfoPath, 'Build info');
+  const releaseReport = readRequiredJson(reportPath, 'Release report');
+
+  if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length !== 1) {
+    throw new Error('Artifact manifest must contain exactly one installer entry');
+  }
+  const entry = manifest.artifacts[0];
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error('Artifact manifest installer entry is malformed');
+  }
+  const manifestFilename = requireString(entry.filename, 'Manifest installer filename');
+  if (path.basename(manifestFilename) !== manifestFilename) {
+    throw new Error('Manifest installer filename is not a safe basename');
+  }
+  const manifestSha256 = requireString(entry.checksum, 'Manifest installer SHA-256', /^[0-9a-f]{64}$/i).toLowerCase();
+  const manifestSize = requireInteger(entry.sizeBytes, 'Manifest installer size');
+  if (entry.checksumAlgorithm !== 'sha256'
+    || entry.classification !== 'nsis_installer'
+    || entry.distributable !== true) {
+    throw new Error('Artifact manifest does not describe a distributable SHA-256 NSIS installer');
+  }
+
+  if (releaseReport.status !== 'PASS' || releaseReport.verdict !== 'controlled_pilot_distributable') {
+    throw new Error('Release report does not contain a passing controlled-pilot verdict');
+  }
+  if (!releaseReport.installer || typeof releaseReport.installer !== 'object'
+    || !releaseReport.buildInfo || typeof releaseReport.buildInfo !== 'object'
+    || !releaseReport.provenance || typeof releaseReport.provenance !== 'object') {
+    throw new Error('Release report structure is malformed');
+  }
+  const reportFilename = requireString(releaseReport.installer.filename, 'Report installer filename');
+  const reportSha256 = requireString(releaseReport.installer.sha256, 'Report installer SHA-256', /^[0-9a-f]{64}$/i).toLowerCase();
+  const reportSize = requireInteger(releaseReport.installer.sizeBytes, 'Report installer size');
+  if (releaseReport.installer.classification !== 'nsis_installer'
+    || releaseReport.installer.distributable !== true) {
+    throw new Error('Release report does not describe a distributable NSIS installer');
+  }
+  if (reportFilename !== manifestFilename || reportSha256 !== manifestSha256 || reportSize !== manifestSize) {
+    throw new Error('Release report installer identity disagrees with artifact manifest');
+  }
+
+  const buildCommit = assertBuildIdentity(buildInfo, 'Build info');
+  assertBuildIdentity(releaseReport.buildInfo, 'Release report buildInfo', buildCommit);
+  const provenanceCommit = requireString(
+    releaseReport.provenance.gitCommitAtStart,
+    'Release report provenance commit',
+    /^[0-9a-f]{40}$/i,
+  );
+  if (provenanceCommit !== buildCommit || releaseReport.provenance.sourceTreeCleanAtStart !== true) {
+    throw new Error('Release provenance disagrees with clean build identity');
+  }
+
+  const installerPath = path.join(artifactsDir, manifestFilename);
+  if (!fs.existsSync(installerPath) || !fs.statSync(installerPath).isFile()) {
     throw new Error(`Installer missing: ${installerPath}`);
   }
 
   const actualSha256 = sha256File(installerPath);
   const actualSize = fs.statSync(installerPath).size;
-  if (actualSha256 !== EXPECTED.sha256) {
-    throw new Error(`SHA-256 mismatch: expected ${EXPECTED.sha256}, got ${actualSha256}`);
+  if (actualSha256 !== manifestSha256) {
+    throw new Error(`SHA-256 mismatch: expected ${manifestSha256}, got ${actualSha256}`);
   }
-  if (actualSize !== EXPECTED.sizeBytes) {
-    throw new Error(`Size mismatch: expected ${EXPECTED.sizeBytes}, got ${actualSize}`);
+  if (actualSize !== manifestSize) {
+    throw new Error(`Size mismatch: expected ${manifestSize}, got ${actualSize}`);
   }
 
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   verifyManifest(manifest, artifactsDir);
 
+  if (!fs.existsSync(checksumPath)) {
+    throw new Error(`Checksum file missing: ${checksumPath}`);
+  }
   const checksumLine = fs.readFileSync(checksumPath, 'utf8').trim();
-  const expectedLine = `${EXPECTED.sha256}  ${EXPECTED.installerFilename}`;
+  const expectedLine = `${manifestSha256}  ${manifestFilename}`;
   if (checksumLine !== expectedLine) {
     throw new Error('Checksum file mismatch');
-  }
-
-  const buildInfo = JSON.parse(fs.readFileSync(buildInfoPath, 'utf8'));
-  const releaseReport = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
-  for (const source of [buildInfo, releaseReport.buildInfo ?? {}]) {
-    if (source.gitCommit !== EXPECTED.gitCommit) {
-      throw new Error(`Git commit mismatch: ${source.gitCommit}`);
-    }
-    if (source.releaseMode !== EXPECTED.releaseMode) {
-      throw new Error(`Release mode mismatch: ${source.releaseMode}`);
-    }
-    if (source.dirtyTree !== false) {
-      throw new Error('Candidate dirtyTree is not false');
-    }
-    if (source.sourceTreeCleanAtStart !== true) {
-      throw new Error('Candidate sourceTreeCleanAtStart is not true');
-    }
-  }
-
-  const entry = manifest.artifacts[0];
-  if (entry.classification !== 'nsis_installer' || entry.distributable !== true) {
-    throw new Error('Installer is not classified as distributable nsis_installer');
   }
 
   return {
