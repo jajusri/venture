@@ -74,7 +74,12 @@ export class HealthService {
       status,
       schemaVersion: this.deps.config.schemaVersion,
       connectorVersion: this.deps.config.connectorVersion,
-      tallyReachable: Boolean(tallyDiagnostics.lastSuccessfulPingAt),
+      // Derived from TallyConnectionManager's own connection state (updated by every live
+      // exchange(), not just the rarely-invoked ping() fallback) so tallyReachable reflects
+      // real steady-state Tally traffic instead of staying permanently false whenever
+      // discoverCompanies()/ledger/stock/voucher sync succeed without ever hitting ping()'s
+      // narrow error-recovery call site. Cheap: reads an in-memory field, no Tally XML request.
+      tallyReachable: tallyDiagnostics.state === 'connected',
       readOnly: true,
       bindHost: this.deps.config.host,
       bindPort: this.deps.config.port,

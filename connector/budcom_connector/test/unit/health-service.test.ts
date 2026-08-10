@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { ServiceTokens } from '../../src/core/tokens.js';
 import type { HealthService } from '../../src/services/health/health-service.js';
-import { createTallyMockFetch } from '../helpers/mock-fetch.js';
+import type { CompanyDiscoveryService } from '../../src/services/interfaces/company-discovery.js';
+import type { TallyDiagnosticsService } from '../../src/services/interfaces/tally-diagnostics.js';
+import {
+  createMockFetch,
+  createTallyMockFetch,
+  SAMPLE_TALLY_COMPANY_LIST_RESPONSE,
+} from '../helpers/mock-fetch.js';
 import { createTestContext, startTestServices } from '../helpers/test-context.js';
 
 describe('HealthService', () => {
@@ -80,6 +86,80 @@ describe('HealthService', () => {
     expect(report.networkExposure).toBe('lan');
     expect(report.authenticatedLanAccessEnabled).toBe(true);
     expect(report.networkExposureWarning).toMatch(/require device authentication/);
+  });
+
+  // Regression coverage for the tallyReachable diagnostic fix: it must track
+  // TallyConnectionManager's own connection state (updated by every live exchange()) rather
+  // than the rarely-invoked ping() fallback, which previously left it stuck false forever
+  // during otherwise-healthy steady-state operation.
+  it('reports tallyReachable false before any live Tally exchange has occurred', async () => {
+    const { fetchImpl } = createTallyMockFetch({ pingOk: true });
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
+    await startTestServices(context);
+    const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
+
+    const report = await healthService.getReport();
+
+    expect(report.tallyReachable).toBe(false);
+  });
+
+  it('reports tallyReachable true after a successful steady-state exchange, without requiring ping()', async () => {
+    const { fetchImpl } = createTallyMockFetch({ pingOk: true });
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
+    await startTestServices(context);
+    const companyDiscovery = context.container.resolve<CompanyDiscoveryService>(
+      ServiceTokens.CompanyDiscovery,
+    );
+    const tallyDiagnostics = context.container.resolve<TallyDiagnosticsService>(
+      ServiceTokens.TallyDiagnostics,
+    );
+    const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
+
+    await companyDiscovery.discoverCompanies();
+    const report = await healthService.getReport();
+
+    expect(report.tallyReachable).toBe(true);
+    // Proves the true value came from the normal discoverCompanies() exchange path, not the
+    // narrow ping() fallback, which this test never invokes.
+    expect(tallyDiagnostics.getConnectionDiagnostics().lastSuccessfulPingAt).toBeUndefined();
+  });
+
+  it('reports tallyReachable false after a proven connectivity failure', async () => {
+    // Unlike createTallyMockFetch({ pingOk: false }) — which only fails ping()'s own fallback
+    // request and still succeeds "List of Companies" — this fails every request unconditionally,
+    // so discoverCompanies() itself genuinely fails.
+    const { fetchImpl } = createMockFetch(() => ({ status: 503, body: 'Service Unavailable' }));
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
+    await startTestServices(context);
+    const companyDiscovery = context.container.resolve<CompanyDiscoveryService>(
+      ServiceTokens.CompanyDiscovery,
+    );
+    const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
+
+    await expect(companyDiscovery.discoverCompanies()).rejects.toThrow();
+    const report = await healthService.getReport();
+
+    expect(report.tallyReachable).toBe(false);
+  });
+
+  it('restores tallyReachable true after a subsequent successful exchange following a failure', async () => {
+    const { fetchImpl } = createMockFetch((_call, index) =>
+      index === 0
+        ? { status: 503, body: 'Service Unavailable' }
+        : { body: SAMPLE_TALLY_COMPANY_LIST_RESPONSE },
+    );
+    const context = createTestContext({ fetchImpl, tallyRetryMaxAttempts: 1 });
+    await startTestServices(context);
+    const companyDiscovery = context.container.resolve<CompanyDiscoveryService>(
+      ServiceTokens.CompanyDiscovery,
+    );
+    const healthService = context.container.resolve<HealthService>(ServiceTokens.HealthService);
+
+    await expect(companyDiscovery.discoverCompanies()).rejects.toThrow();
+    expect((await healthService.getReport()).tallyReachable).toBe(false);
+
+    await companyDiscovery.discoverCompanies();
+    expect((await healthService.getReport()).tallyReachable).toBe(true);
   });
 });
 
