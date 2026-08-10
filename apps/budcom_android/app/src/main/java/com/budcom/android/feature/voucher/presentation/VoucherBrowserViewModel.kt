@@ -79,14 +79,26 @@ class VoucherBrowserViewModel @Inject constructor(
     private fun continueBackgroundReconciliation(companyId: String) {
         if (reconcileJob?.isActive == true) return
         reconcileJob = viewModelScope.launch {
-            _uiState.update { it.copy(historyReconciliationStatus = VoucherHistoryReconciliationStatus.InProgress) }
+            _uiState.update {
+                it.copy(
+                    historyReconciliationStatus = VoucherHistoryReconciliationStatus.InProgress,
+                    historyReconciliationScopeIsAuthoritative = null,
+                )
+            }
             val outcome = reconcileVoucherWindows(companyId)
-            val status = when (outcome) {
-                is VoucherReconciliationOutcome.Completed -> VoucherHistoryReconciliationStatus.Completed
-                is VoucherReconciliationOutcome.PartiallyCompleted -> VoucherHistoryReconciliationStatus.Failed
+            val (status, scopeIsAuthoritative) = when (outcome) {
+                is VoucherReconciliationOutcome.Completed ->
+                    VoucherHistoryReconciliationStatus.Completed to outcome.scopeIsAuthoritative
+                is VoucherReconciliationOutcome.PartiallyCompleted ->
+                    VoucherHistoryReconciliationStatus.Failed to outcome.scopeIsAuthoritative
                 VoucherReconciliationOutcome.AlreadyRunning -> return@launch
             }
-            _uiState.update { it.copy(historyReconciliationStatus = status) }
+            _uiState.update {
+                it.copy(
+                    historyReconciliationStatus = status,
+                    historyReconciliationScopeIsAuthoritative = scopeIsAuthoritative,
+                )
+            }
         }
     }
 

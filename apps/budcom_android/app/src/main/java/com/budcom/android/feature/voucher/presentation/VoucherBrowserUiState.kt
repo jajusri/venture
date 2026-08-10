@@ -39,6 +39,15 @@ data class VoucherBrowserUiState(
      * gone until [VoucherHistoryReconciliationStatus.Completed].
      */
     val historyReconciliationStatus: VoucherHistoryReconciliationStatus = VoucherHistoryReconciliationStatus.NotStarted,
+    /**
+     * Meaningful only once [historyReconciliationStatus] is [VoucherHistoryReconciliationStatus.Completed]
+     * or [VoucherHistoryReconciliationStatus.Failed]: true means the walk covered the company's
+     * real BOOKSFROM history boundary; false means BOOKSFROM was unavailable and only the
+     * default fallback window was covered — its actual coverage of this company's full history
+     * is unknown. Never read `historyReconciliationStatus == Completed` alone as "full history
+     * reconciled" — this flag must also be true.
+     */
+    val historyReconciliationScopeIsAuthoritative: Boolean? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isLoadingMore
     val hasContent: Boolean get() = vouchers.isNotEmpty()

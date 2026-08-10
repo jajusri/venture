@@ -238,6 +238,9 @@ class VoucherBrowserViewModelTest {
         advanceUntilIdle()
 
         assertEquals(VoucherHistoryReconciliationStatus.Completed, vm.uiState.value.historyReconciliationStatus)
+        // FakeCompanyRepository has no booksFrom for this company — the completed walk only
+        // covered the fallback window, so it must NOT be reported as authoritative full history.
+        assertEquals(false, vm.uiState.value.historyReconciliationScopeIsAuthoritative)
     }
 
     @Test

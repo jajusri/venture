@@ -16,12 +16,20 @@ import javax.inject.Singleton
 import kotlinx.coroutines.sync.Mutex
 
 sealed interface VoucherReconciliationOutcome {
-    /** Every planned window was refreshed successfully. */
-    data class Completed(val windowsSynced: Int) : VoucherReconciliationOutcome
+    /**
+     * Every planned window was refreshed successfully. [scopeIsAuthoritative] MUST be checked
+     * before this is ever reported as "full history reconciled": true means the walk covered the
+     * company's real Tally `BOOKSFROM` history boundary; false means `booksFrom` was unavailable
+     * and the walk only covered the [VoucherWindowPlanner.DEFAULT_TOTAL_LOOKBACK_DAYS] fallback
+     * window, a limited scope whose actual historical coverage relative to the company's real
+     * history is unknown — never represent that case as complete company history.
+     */
+    data class Completed(val windowsSynced: Int, val scopeIsAuthoritative: Boolean) : VoucherReconciliationOutcome
     /** Stopped at the first window whose refresh failed; every earlier window is fully synced. */
     data class PartiallyCompleted(
         val windowsSynced: Int,
         val failedWindow: VoucherDateRange,
+        val scopeIsAuthoritative: Boolean,
     ) : VoucherReconciliationOutcome
     /** A reconciliation for this company was already in progress; this call did nothing. */
     data object AlreadyRunning : VoucherReconciliationOutcome
@@ -68,38 +76,44 @@ class ReconcileVoucherWindowsUseCase @Inject constructor(
         val lock = locks.getOrPut(companyId) { Mutex() }
         if (!lock.tryLock()) return VoucherReconciliationOutcome.AlreadyRunning
         try {
-            val windows = VoucherWindowPlanner.plan(
-                totalLookbackDays = resolveAuthoritativeLookbackDays(companyId),
-                clock = clock,
-            )
+            val scope = resolveAuthoritativeLookbackDays(companyId)
+            val windows = VoucherWindowPlanner.plan(totalLookbackDays = scope.totalLookbackDays, clock = clock)
             windows.forEachIndexed { index, window ->
                 val result = refreshVouchers(VoucherQuery(companyId = companyId, dateRange = window))
                 onWindowSynced(window, result)
                 if (result is AppResult.Failure) {
-                    return VoucherReconciliationOutcome.PartiallyCompleted(index, window)
+                    return VoucherReconciliationOutcome.PartiallyCompleted(index, window, scope.isAuthoritative)
                 }
             }
-            return VoucherReconciliationOutcome.Completed(windows.size)
+            return VoucherReconciliationOutcome.Completed(windows.size, scope.isAuthoritative)
         } finally {
             lock.unlock()
         }
     }
 
+    private data class LookbackScope(val totalLookbackDays: Long, val isAuthoritative: Boolean)
+
     /**
      * Reads the LOCALLY CACHED company list (never triggers a network discovery call — this is a
      * scope lookup, not itself a sync) and resolves this company's `booksFrom` into a lookback
      * day count from "today." Falls back to [VoucherWindowPlanner.DEFAULT_TOTAL_LOOKBACK_DAYS]
-     * when the company isn't in the cache, `booksFrom` is null, or it doesn't parse as a plain
-     * ISO date — never throws, never blocks reconciliation on a missing/malformed field.
+     * (marked [LookbackScope.isAuthoritative] = false) when the company isn't in the cache,
+     * `booksFrom` is null, or it doesn't parse as a plain ISO date — never throws, never blocks
+     * reconciliation on a missing/malformed field, but never silently claims that fallback window
+     * represents this company's actual complete history either.
      */
-    private suspend fun resolveAuthoritativeLookbackDays(companyId: String): Long {
+    private suspend fun resolveAuthoritativeLookbackDays(companyId: String): LookbackScope {
         val companies = (companyRepository.loadCompanies() as? AppResult.Success)?.value?.items
         val booksFrom = companies?.firstOrNull { it.id == companyId }?.booksFrom
         val parsedBooksFrom = booksFrom?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
         val today = LocalDate.now(clock.withZone(ZoneOffset.UTC))
-        return parsedBooksFrom
+        val authoritativeDays = parsedBooksFrom
             ?.let { ChronoUnit.DAYS.between(it, today) + 1 }
             ?.takeIf { it > 0 }
-            ?: VoucherWindowPlanner.DEFAULT_TOTAL_LOOKBACK_DAYS
+        return if (authoritativeDays != null) {
+            LookbackScope(authoritativeDays, isAuthoritative = true)
+        } else {
+            LookbackScope(VoucherWindowPlanner.DEFAULT_TOTAL_LOOKBACK_DAYS, isAuthoritative = false)
+        }
     }
 }

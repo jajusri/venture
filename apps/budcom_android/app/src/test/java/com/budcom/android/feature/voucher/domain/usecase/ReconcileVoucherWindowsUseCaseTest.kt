@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -41,6 +42,7 @@ class ReconcileVoucherWindowsUseCaseTest {
 
         assertTrue(outcome is VoucherReconciliationOutcome.Completed)
         assertEquals(3, (outcome as VoucherReconciliationOutcome.Completed).windowsSynced)
+        assertTrue("booksFrom was provided, so scope must be reported authoritative", outcome.scopeIsAuthoritative)
         for (index in 0 until repo.refreshedRanges.size - 1) {
             assertTrue(repo.refreshedRanges[index].from > repo.refreshedRanges[index + 1].to)
         }
@@ -53,14 +55,15 @@ class ReconcileVoucherWindowsUseCaseTest {
         // tracks the authoritative booksFrom rather than an invented boundary.
         val useCase = useCase(repo, booksFrom = today.minusDays(399).toString())
 
-        useCase("company-a")
+        val outcome = useCase("company-a")
 
         val oldestWindow = repo.refreshedRanges.last()
         assertEquals(today.minusDays(399).toString(), oldestWindow.from)
+        assertTrue((outcome as VoucherReconciliationOutcome.Completed).scopeIsAuthoritative)
     }
 
     @Test
-    fun `falls back to the default lookback when booksFrom is absent for the company`() = runTest {
+    fun `falls back to the default lookback when booksFrom is absent for the company, and marks the scope non-authoritative`() = runTest {
         val repo = RecordingRepository()
         val useCase = useCase(repo, booksFrom = null)
 
@@ -69,6 +72,21 @@ class ReconcileVoucherWindowsUseCaseTest {
         assertTrue(outcome is VoucherReconciliationOutcome.Completed)
         val expectedWindows = com.budcom.android.feature.voucher.domain.model.VoucherWindowPlanner.plan(clock = fixedClock).size
         assertEquals(expectedWindows, (outcome as VoucherReconciliationOutcome.Completed).windowsSynced)
+        assertFalse(
+            "booksFrom was absent — Completed must never claim authoritative full-history coverage",
+            outcome.scopeIsAuthoritative,
+        )
+    }
+
+    @Test
+    fun `a failed fallback-scope reconciliation also reports the scope as non-authoritative`() = runTest {
+        val repo = RecordingRepository(failOnWindowIndex = 0)
+        val useCase = useCase(repo, booksFrom = null)
+
+        val outcome = useCase("company-a")
+
+        assertTrue(outcome is VoucherReconciliationOutcome.PartiallyCompleted)
+        assertFalse((outcome as VoucherReconciliationOutcome.PartiallyCompleted).scopeIsAuthoritative)
     }
 
     @Test
