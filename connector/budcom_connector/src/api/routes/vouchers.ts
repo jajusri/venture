@@ -6,6 +6,7 @@ import { asyncHandler } from '../../infrastructure/errors/error-handler.js';
 import type { VoucherApplicationService } from '../../services/voucher/voucher-application.interface.js';
 import type { VoucherSnapshotSyncService } from '../../services/voucher/voucher-application.interface.js';
 import type { ConnectorSessionService } from '../../services/interfaces/connector-session.js';
+import { businessDateIsoDaysBefore, businessTodayIso } from '../../services/voucher/voucher-business-date.js';
 
 const SCHEMA_VERSION = '1.0.0';
 const MAX_PAGE_SIZE = 100;
@@ -50,12 +51,11 @@ export function createVouchersRouter(
             409,
           );
         }
-        const today = new Date();
-        const defaultTo = today.toISOString().slice(0, 10);
-        const defaultFromDate = new Date(today);
-        defaultFromDate.setUTCDate(defaultFromDate.getUTCDate() - 29);
-        const dateFrom = req.body?.dateFrom ?? defaultFromDate.toISOString().slice(0, 10);
+        // The business day, not the Connector host's own UTC calendar day — see
+        // voucher-business-date.ts for why this distinction matters here.
+        const defaultTo = businessTodayIso();
         const dateTo = req.body?.dateTo ?? defaultTo;
+        const dateFrom = req.body?.dateFrom ?? businessDateIsoDaysBefore(dateTo, 29);
         const result = await synchronization.synchronize(
           { companyId: selectedCompany.id, dateFrom, dateTo },
           { onProgress: () => undefined },
