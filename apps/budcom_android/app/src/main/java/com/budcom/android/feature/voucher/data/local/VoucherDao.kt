@@ -29,7 +29,47 @@ interface VoucherDao {
     @Query("DELETE FROM cached_voucher_ledger_lines WHERE companyId = :companyId AND voucherId = :voucherId") suspend fun deleteLedgerLines(companyId: String, voucherId: String)
     @Query("DELETE FROM cached_voucher_inventory_lines WHERE companyId = :companyId AND voucherId = :voucherId") suspend fun deleteInventoryLines(companyId: String, voucherId: String)
 
-    @Transaction suspend fun storeList(companyId: String, rows: List<VoucherEntity>, syncedAt: Long) {
+    @Query("SELECT voucherId FROM cached_vouchers WHERE companyId = :companyId AND date BETWEEN :from AND :to AND voucherId NOT IN (:keepIds)")
+    suspend fun staleVoucherIdsInScope(companyId: String, from: String, to: String, keepIds: List<String>): List<String>
+    @Query("SELECT voucherId FROM cached_vouchers WHERE companyId = :companyId AND date BETWEEN :from AND :to")
+    suspend fun voucherIdsInScope(companyId: String, from: String, to: String): List<String>
+    @Query("DELETE FROM cached_vouchers WHERE companyId = :companyId AND voucherId IN (:voucherIds)")
+    suspend fun deleteVouchersById(companyId: String, voucherIds: List<String>)
+    @Query("DELETE FROM cached_voucher_details WHERE companyId = :companyId AND voucherId IN (:voucherIds)")
+    suspend fun deleteDetailsById(companyId: String, voucherIds: List<String>)
+    @Query("DELETE FROM cached_voucher_ledger_lines WHERE companyId = :companyId AND voucherId IN (:voucherIds)")
+    suspend fun deleteLedgerLinesById(companyId: String, voucherIds: List<String>)
+    @Query("DELETE FROM cached_voucher_inventory_lines WHERE companyId = :companyId AND voucherId IN (:voucherIds)")
+    suspend fun deleteInventoryLinesById(companyId: String, voucherIds: List<String>)
+
+    /**
+     * Scope-bounded full replacement for one authoritative company+date-window refresh: [rows]
+     * is treated as the COMPLETE truth for [scopeFrom]..[scopeTo] (matching the Connector's own
+     * windowed-refresh contract), so any previously-cached voucher in that scope absent from
+     * [rows] — cancelled, back-dated out of range, or a stale duplicate under a changed derived
+     * id — is pruned along with its detail/line rows, never left as a phantom. Vouchers outside
+     * the scope are untouched. The whole operation is one Room [Transaction], so observers only
+     * ever see the prior complete state or the next complete state, never a partial mix.
+     */
+    @Transaction
+    suspend fun storeList(
+        companyId: String,
+        rows: List<VoucherEntity>,
+        syncedAt: Long,
+        scopeFrom: String,
+        scopeTo: String,
+    ) {
+        val staleIds = if (rows.isEmpty()) {
+            voucherIdsInScope(companyId, scopeFrom, scopeTo)
+        } else {
+            staleVoucherIdsInScope(companyId, scopeFrom, scopeTo, rows.map { it.voucherId })
+        }
+        if (staleIds.isNotEmpty()) {
+            deleteVouchersById(companyId, staleIds)
+            deleteDetailsById(companyId, staleIds)
+            deleteLedgerLinesById(companyId, staleIds)
+            deleteInventoryLinesById(companyId, staleIds)
+        }
         if (rows.isNotEmpty()) upsertVouchers(rows)
         upsertMeta(VoucherCacheMetaEntity(companyId, syncedAt))
     }

@@ -4,7 +4,19 @@ import com.budcom.android.feature.voucher.domain.model.*
 import javax.inject.Inject
 
 interface VoucherLocalDataSource {
-    suspend fun storeList(companyId: String, items: List<VoucherSummary>, syncedAt: Long)
+    /**
+     * [scopeFrom]/[scopeTo] must be the COMPLETE authoritative range [items] represents (the
+     * refresh query's own date range) — any previously-cached voucher in that scope absent from
+     * [items] is pruned as part of this same transactional replacement, never left as a stale
+     * phantom entry.
+     */
+    suspend fun storeList(
+        companyId: String,
+        items: List<VoucherSummary>,
+        syncedAt: Long,
+        scopeFrom: String,
+        scopeTo: String,
+    )
     suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long)
     suspend fun list(query: VoucherQuery): VoucherPage?
     suspend fun details(companyId: String, voucherId: String): VoucherDetails?
@@ -13,8 +25,19 @@ interface VoucherLocalDataSource {
 }
 
 class RoomVoucherLocalDataSource @Inject constructor(private val dao: VoucherDao) : VoucherLocalDataSource {
-    override suspend fun storeList(companyId: String, items: List<VoucherSummary>, syncedAt: Long) =
-        dao.storeList(companyId, items.distinctBy { it.identity.id }.map { it.entity(companyId, syncedAt) }, syncedAt)
+    override suspend fun storeList(
+        companyId: String,
+        items: List<VoucherSummary>,
+        syncedAt: Long,
+        scopeFrom: String,
+        scopeTo: String,
+    ) = dao.storeList(
+        companyId,
+        items.distinctBy { it.identity.id }.map { it.entity(companyId, syncedAt) },
+        syncedAt,
+        scopeFrom,
+        scopeTo,
+    )
 
     override suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long) {
         val id = details.summary.identity.id

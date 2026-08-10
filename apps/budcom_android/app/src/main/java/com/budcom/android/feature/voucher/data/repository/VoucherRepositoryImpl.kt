@@ -61,24 +61,75 @@ class VoucherRepositoryImpl @Inject constructor(
 
     override suspend fun refreshVouchers(query: VoucherQuery): AppResult<VoucherPage> =
         withContext(dispatchers.io) {
-            when (transportGate.resolve()) {
-                ConnectorTransportSelection.LEGACY -> when (val result = remoteDataSource.fetchVouchers(query)) {
-                    is ApiResult.Success -> persistAndReturn(query, result.data)
-                    is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(result.error))
+            val complete = when (transportGate.resolve()) {
+                ConnectorTransportSelection.LEGACY -> fetchCompleteWindow(query) { pageQuery ->
+                    when (val result = remoteDataSource.fetchVouchers(pageQuery)) {
+                        is ApiResult.Success -> AppResult.Success(result.data)
+                        is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(result.error))
+                    }
                 }
-
-                ConnectorTransportSelection.AUTHENTICATED -> when (val result = authenticatedRemoteDataSource.fetchVouchers(query)) {
-                    is AppResult.Success -> persistAndReturn(query, result.value)
-                    is AppResult.Failure -> result
+                ConnectorTransportSelection.AUTHENTICATED -> fetchCompleteWindow(query) { pageQuery ->
+                    authenticatedRemoteDataSource.fetchVouchers(pageQuery)
                 }
+            }
+            when (complete) {
+                is AppResult.Success -> persistAndReturn(query, complete.value)
+                is AppResult.Failure -> complete
             }
         }
 
-    private suspend fun persistAndReturn(query: VoucherQuery, page: VoucherPage): AppResult<VoucherPage> {
+    /**
+     * An explicit refresh must be a COMPLETE authoritative extraction for [query]'s whole date
+     * window before anything is persisted: [persistAndReturn] treats the result as the full
+     * truth for that scope and prunes any previously-cached voucher in scope that's absent from
+     * it. A single UI-sized page would make that pruning actively destructive — vouchers sitting
+     * on a later page would look "gone" and get deleted. Fetches with [REFRESH_FETCH_PAGE_SIZE]
+     * (independent of the caller's own display page size) until the Connector reports no more
+     * pages, bounded by [MAX_REFRESH_PAGES] as a hard safety cap against a runaway loop. Always
+     * unfiltered (companyId + dateRange only) regardless of any search/type/number/party filter
+     * on the caller's own [query]: the fetched set becomes the pruning baseline for the whole
+     * scope in [persistAndReturn], so a filtered fetch would wrongly delete every non-matching
+     * (but otherwise valid) cached voucher in that window. The caller's filters are applied only
+     * when reading back from Room afterward, not during this network fetch.
+     */
+    private suspend fun fetchCompleteWindow(
+        query: VoucherQuery,
+        fetchPage: suspend (VoucherQuery) -> AppResult<VoucherPage>,
+    ): AppResult<List<VoucherSummary>> {
+        val accumulated = mutableListOf<VoucherSummary>()
+        var page = 1
+        while (true) {
+            val pageQuery = VoucherQuery(
+                companyId = query.companyId,
+                dateRange = query.dateRange,
+                page = page,
+                pageSize = REFRESH_FETCH_PAGE_SIZE,
+            )
+            when (val result = fetchPage(pageQuery)) {
+                is AppResult.Failure -> return result
+                is AppResult.Success -> {
+                    accumulated += result.value.items
+                    if (!result.value.canLoadMore) return AppResult.Success(accumulated)
+                    if (page >= MAX_REFRESH_PAGES) {
+                        return AppResult.Failure(AppError.Message(WINDOW_TOO_LARGE_MESSAGE))
+                    }
+                    page += 1
+                }
+            }
+        }
+    }
+
+    private suspend fun persistAndReturn(query: VoucherQuery, items: List<VoucherSummary>): AppResult<VoucherPage> {
         val syncedAt = timeProvider.nowEpochMillis()
-        localDataSource.storeList(query.companyId, page.items, syncedAt)
+        localDataSource.storeList(
+            query.companyId,
+            items,
+            syncedAt,
+            query.dateRange.from,
+            query.dateRange.to,
+        )
         val refreshed = localDataSource.list(query)
-            ?: page.copy(cacheState = VoucherCacheState.Live, lastSyncedAt = syncedAt)
+            ?: VoucherPage(query.companyId, emptyList(), query.page, query.pageSize, items.size, 1)
         return AppResult.Success(refreshed.copy(cacheState = VoucherCacheState.Live, lastSyncedAt = syncedAt))
     }
 
@@ -123,5 +174,9 @@ class VoucherRepositoryImpl @Inject constructor(
     companion object {
         const val NO_CACHE_MESSAGE = "No offline data available. Connect to BUDCOM Desktop and synchronize once."
         const val NO_CACHE_DETAILS_MESSAGE = "No offline data available for this voucher. Connect to BUDCOM Desktop and synchronize once."
+        private const val REFRESH_FETCH_PAGE_SIZE = 100
+        private const val MAX_REFRESH_PAGES = 500
+        const val WINDOW_TOO_LARGE_MESSAGE =
+            "This date range has too many vouchers to refresh at once. Narrow the range and try again."
     }
 }

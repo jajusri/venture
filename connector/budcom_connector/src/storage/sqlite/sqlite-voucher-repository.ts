@@ -13,6 +13,7 @@ import type {
   VoucherAllocationOwner,
   VoucherRepositoryPort,
   VoucherSnapshotMetadata,
+  VoucherSnapshotMetrics,
   VoucherSnapshotStatus,
 } from '../../services/voucher/voucher-repository.interface.js';
 import type { SqliteDatabase } from './sqlite-database.js';
@@ -397,6 +398,113 @@ export class SqliteVoucherRepository implements VoucherRepositoryPort {
     syncRunId: string,
   ): Promise<void> {
     return this.discardSnapshot(companyId, syncRunId);
+  }
+
+  carryForwardVouchersOutsideWindow(
+    companyId: string,
+    fromSnapshotId: string,
+    toSnapshotId: string,
+    excludeDateFrom: string,
+    excludeDateTo: string,
+  ): Promise<VoucherSnapshotMetrics> {
+    return this.database.runInTransaction(() => {
+      this.requireWritableSnapshot(companyId, toSnapshotId);
+      this.markSnapshotWriting(companyId, toSnapshotId);
+      const params = {
+        companyId,
+        fromSnapshotId,
+        toSnapshotId,
+        dateFrom: excludeDateFrom,
+        dateTo: excludeDateTo,
+      };
+      // Eligibility (outside the refreshed window, not already staged fresh this sync) is
+      // computed ONCE into a temp table and reused by all four inserts below. Re-running the
+      // "not already in toSnapshotId" check live against each statement would be wrong: the
+      // header insert below mutates toSnapshotId's voucher_headers, which would make every
+      // just-carried-forward id look "already present" to the next statement's subquery and
+      // silently exclude its own child rows from being copied at all.
+      this.db().prepare('DROP TABLE IF EXISTS temp.voucher_carry_forward_ids').run();
+      this.db().prepare(`
+        CREATE TEMP TABLE voucher_carry_forward_ids AS
+        SELECT voucher_id FROM voucher_headers
+        WHERE company_id = @companyId AND snapshot_id = @fromSnapshotId
+          AND (voucher_date < @dateFrom OR voucher_date > @dateTo)
+          AND voucher_id NOT IN (
+            SELECT voucher_id FROM voucher_headers
+            WHERE company_id = @companyId AND snapshot_id = @toSnapshotId
+          )
+      `).run(params);
+      const eligibleVoucherIds = `SELECT voucher_id FROM voucher_carry_forward_ids`;
+      // better-sqlite3 rejects any named parameter bound to a statement that doesn't reference
+      // it, so the four copy statements below get their own minimal param set (no dateFrom/
+      // dateTo — that filtering already happened when the temp table was built above).
+      const copyParams = { companyId, fromSnapshotId, toSnapshotId, toCompanyId: companyId };
+      const headerResult = this.db().prepare(`
+        INSERT INTO voucher_headers (
+          company_id, snapshot_id, voucher_id, identity_version, guid, master_id,
+          alter_id, voucher_key, voucher_retain_key, voucher_date, effective_date,
+          voucher_type, voucher_number, reference_number, narration, narration_preview,
+          party_name, amount, amount_side, amount_comparable, voucher_status, data_quality,
+          ledger_entry_count, inventory_entry_count, allocation_count, voucher_json
+        )
+        SELECT
+          @toCompanyId, @toSnapshotId, voucher_id, identity_version, guid, master_id,
+          alter_id, voucher_key, voucher_retain_key, voucher_date, effective_date,
+          voucher_type, voucher_number, reference_number, narration, narration_preview,
+          party_name, amount, amount_side, amount_comparable, voucher_status, data_quality,
+          ledger_entry_count, inventory_entry_count, allocation_count, voucher_json
+        FROM voucher_headers
+        WHERE company_id = @companyId AND snapshot_id = @fromSnapshotId
+          AND voucher_id IN (${eligibleVoucherIds})
+      `).run(copyParams);
+      // Every count below reflects actual rows inserted by THIS operation (RunResult.changes),
+      // not a re-derived query — a voucher excluded from the header insert above because a
+      // fresh-extraction row already claimed its voucherId (date moved into the refreshed
+      // window) must not be double-counted as carried forward, since it was never inserted here.
+      const ledgerResult = this.db().prepare(`
+        INSERT INTO voucher_ledger_entries (
+          company_id, snapshot_id, voucher_id, line_number, ledger_name, amount,
+          amount_side, is_deemed_positive, reference_type, reference_name, allocation_count
+        )
+        SELECT
+          @toCompanyId, @toSnapshotId, voucher_id, line_number, ledger_name, amount,
+          amount_side, is_deemed_positive, reference_type, reference_name, allocation_count
+        FROM voucher_ledger_entries
+        WHERE company_id = @companyId AND snapshot_id = @fromSnapshotId
+          AND voucher_id IN (${eligibleVoucherIds})
+      `).run(copyParams);
+      const inventoryResult = this.db().prepare(`
+        INSERT INTO voucher_inventory_entries (
+          company_id, snapshot_id, voucher_id, line_number, item_name, quantity,
+          actual_quantity, billed_quantity, unit, rate, amount, amount_side, allocation_count
+        )
+        SELECT
+          @toCompanyId, @toSnapshotId, voucher_id, line_number, item_name, quantity,
+          actual_quantity, billed_quantity, unit, rate, amount, amount_side, allocation_count
+        FROM voucher_inventory_entries
+        WHERE company_id = @companyId AND snapshot_id = @fromSnapshotId
+          AND voucher_id IN (${eligibleVoucherIds})
+      `).run(copyParams);
+      const allocationResult = this.db().prepare(`
+        INSERT INTO voucher_allocations (
+          company_id, snapshot_id, voucher_id, owner_type, owner_line_number,
+          allocation_index, allocation_type, source_name, values_json
+        )
+        SELECT
+          @toCompanyId, @toSnapshotId, voucher_id, owner_type, owner_line_number,
+          allocation_index, allocation_type, source_name, values_json
+        FROM voucher_allocations
+        WHERE company_id = @companyId AND snapshot_id = @fromSnapshotId
+          AND voucher_id IN (${eligibleVoucherIds})
+      `).run(copyParams);
+      this.db().prepare('DROP TABLE IF EXISTS temp.voucher_carry_forward_ids').run();
+      return {
+        voucherCount: Number(headerResult.changes),
+        ledgerEntryCount: Number(ledgerResult.changes),
+        inventoryEntryCount: Number(inventoryResult.changes),
+        allocationCount: Number(allocationResult.changes),
+      };
+    });
   }
 
   promoteCompleteSnapshot(

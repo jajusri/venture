@@ -65,6 +65,23 @@ export interface CompanyScopedVoucherSnapshotWriter {
   getActiveSnapshotMetadata(companyId: string): Promise<VoucherSnapshotMetadata | null>;
   getSnapshotMetrics(companyId: string, snapshotId: string): Promise<VoucherSnapshotMetrics>;
   failStaleSnapshots(companyId: string, reason: string): Promise<number>;
+  /**
+   * Copies vouchers (and their ledger/inventory/allocation rows) from `fromSnapshotId` into the
+   * still-writable `toSnapshotId`, restricted to `voucher_date` OUTSIDE [excludeDateFrom,
+   * excludeDateTo] and excluding any voucherId already staged in `toSnapshotId` (so a freshly
+   * re-extracted voucher whose date moved into the refreshed window always wins over a stale
+   * carried-forward copy of the same identity). Enables windowed refresh: a sync of one bounded
+   * window re-verifies that window live from Tally while carrying forward everything outside it
+   * unchanged, so the resulting snapshot is always a complete, authoritative replacement — never
+   * a partial one — without requiring the whole company history to be re-extracted every time.
+   */
+  carryForwardVouchersOutsideWindow(
+    companyId: string,
+    fromSnapshotId: string,
+    toSnapshotId: string,
+    excludeDateFrom: string,
+    excludeDateTo: string,
+  ): Promise<VoucherSnapshotMetrics>;
 
   /** Compatibility aliases for the pre-persistence synchronization contract. */
   beginStaging(companyId: string, syncRunId: string, period: VoucherDateRange): Promise<void>;

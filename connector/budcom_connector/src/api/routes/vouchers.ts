@@ -61,7 +61,10 @@ export function createVouchersRouter(
           { onProgress: () => undefined },
           { requested: false },
         );
-        const completed = result.outcome === 'completed' || result.outcome === 'already_current';
+        // 'already_current' can no longer be produced by synchronize() — every explicit sync
+        // now performs a real live extraction — kept only as a defensive no-op so a regression
+        // there would surface as a status mismatch rather than being silently masked here.
+        const completed = result.outcome === 'completed' || (result.outcome as string) === 'already_current';
         res.status(result.outcome === 'conflict' ? 409 : 200).json({
           schemaVersion: SCHEMA_VERSION,
           syncRunId: result.snapshotId ?? `voucher-${Date.now()}`,

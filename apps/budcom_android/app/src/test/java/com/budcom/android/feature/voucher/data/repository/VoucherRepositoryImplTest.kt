@@ -697,6 +697,106 @@ class VoucherRepositoryImplTest {
         assertEquals("v-1", local.lastStoreDetailsId)
     }
 
+    // ====================== Windowed refresh scope-bounded replacement ======================
+
+    @Test
+    fun `refreshVouchers fetches every page of the window before persisting anything`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemotePaged(
+            pages = listOf(
+                listOf(sampleSummary(id = "v-1")),
+                listOf(sampleSummary(id = "v-2")),
+            ),
+        )
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = remote,
+        )
+
+        repository.refreshVouchers(query())
+
+        assertEquals(2, remote.callCount)
+        assertEquals(1, local.storeListCalls)
+        assertEquals(setOf("v-1", "v-2"), local.storedItems.map { it.identity.id }.toSet())
+    }
+
+    @Test
+    fun `refreshVouchers strips search and type filters from the network fetch, applying them only on read-back`() = runTest(dispatcher) {
+        val local = FakeLocal(listValue = samplePage())
+        val remote = FakeAuthenticatedListRemotePaged(pages = listOf(listOf(sampleSummary())))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = remote,
+        )
+        val filtered = query().copy(searchText = "acme", voucherType = "Sales", partyName = "Acme")
+
+        repository.refreshVouchers(filtered)
+
+        assertEquals(null, remote.lastQuery?.searchText)
+        assertEquals(null, remote.lastQuery?.voucherType)
+        assertEquals(null, remote.lastQuery?.partyName)
+        // The read-back after persisting still applies the caller's own filtered query.
+        assertEquals("company-a", local.lastListCompany)
+    }
+
+    @Test
+    fun `a windowed refresh prunes a previously-cached voucher in scope that is absent from the fresh result`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        local.stored["company-a"] = mutableListOf(
+            sampleSummary(id = "v-stale").copy(date = "2026-07-10"),
+            sampleSummary(id = "v-kept").copy(date = "2026-07-15"),
+        )
+        val remote = FakeAuthenticatedListRemotePaged(
+            pages = listOf(listOf(sampleSummary(id = "v-kept").copy(date = "2026-07-15"))),
+        )
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = remote,
+        )
+
+        repository.refreshVouchers(query().copy(dateRange = VoucherDateRange("2026-07-01", "2026-07-27")))
+
+        val remaining = local.stored["company-a"]!!.map { it.identity.id }.toSet()
+        assertEquals(setOf("v-kept"), remaining)
+    }
+
+    @Test
+    fun `a windowed refresh never prunes a cached voucher outside the requested date range`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        local.stored["company-a"] = mutableListOf(
+            sampleSummary(id = "v-outside").copy(date = "2026-06-01"),
+        )
+        val remote = FakeAuthenticatedListRemotePaged(pages = listOf(emptyList()))
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = remote,
+        )
+
+        repository.refreshVouchers(query().copy(dateRange = VoucherDateRange("2026-07-01", "2026-07-27")))
+
+        assertEquals(setOf("v-outside"), local.stored["company-a"]!!.map { it.identity.id }.toSet())
+    }
+
+    @Test
+    fun `refreshVouchers fails without persisting anything if the window exceeds the page safety cap`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemotePaged(neverEnds = true)
+        val repository = repo(
+            local = local,
+            transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED),
+            authenticatedListRemote = remote,
+        )
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(0, local.storeListCalls)
+    }
+
     // ============================== Fakes ==============================
 
     private fun repo(
@@ -773,6 +873,52 @@ class VoucherRepositoryImplTest {
             error("UnreachableAuthenticatedListRemote must never be called on the LEGACY path")
     }
 
+    /** Simulates a multi-page Connector result set, one [pages] entry served per call in order. */
+    private class FakeAuthenticatedListRemotePaged(
+        private val pages: List<List<VoucherSummary>> = emptyList(),
+        private val neverEnds: Boolean = false,
+    ) : AuthenticatedVoucherListRemoteDataSource {
+        var callCount = 0
+            private set
+        var lastQuery: VoucherQuery? = null
+            private set
+
+        override suspend fun fetchVouchers(query: VoucherQuery): AppResult<VoucherPage> {
+            lastQuery = query
+            callCount++
+            if (neverEnds) {
+                val filler = VoucherSummary(
+                    identity = VoucherIdentity("v-$callCount"),
+                    date = "2026-07-15",
+                    type = "Sales",
+                    number = null,
+                    partyName = null,
+                    referenceNumber = null,
+                    amount = null,
+                    status = VoucherStatus.Active,
+                    dataQuality = VoucherDataQuality.Complete,
+                )
+                return AppResult.Success(
+                    VoucherPage("company-a", listOf(filler), query.page, query.pageSize, Int.MAX_VALUE, Int.MAX_VALUE),
+                )
+            }
+            val index = query.page - 1
+            val items = pages.getOrElse(index) { emptyList() }
+            return AppResult.Success(
+                VoucherPage(
+                    companyId = "company-a",
+                    items = items,
+                    page = query.page,
+                    pageSize = query.pageSize,
+                    totalItems = pages.sumOf { it.size },
+                    // canLoadMore = page < totalPages, so totalPages = pages.size makes the fake
+                    // stop exactly after serving its last configured page.
+                    totalPages = pages.size.coerceAtLeast(1),
+                ),
+            )
+        }
+    }
+
     private class FakeAuthenticatedDetailRemote(
         private val result: AppResult<VoucherDetails>,
     ) : AuthenticatedVoucherDetailRemoteDataSource {
@@ -826,13 +972,24 @@ class VoucherRepositoryImplTest {
         var storeDetailsCalls = 0
         var lastStoreDetailsCompany: String? = null
         var lastStoreDetailsId: String? = null
+        var lastScopeFrom: String? = null
+        var lastScopeTo: String? = null
         val stored = mutableMapOf<String, MutableList<VoucherSummary>>()
 
-        override suspend fun storeList(companyId: String, items: List<VoucherSummary>, syncedAt: Long) {
+        override suspend fun storeList(
+            companyId: String,
+            items: List<VoucherSummary>,
+            syncedAt: Long,
+            scopeFrom: String,
+            scopeTo: String,
+        ) {
             storeListCalls += 1
             storedItems = items
             lastStoreCompany = companyId
+            lastScopeFrom = scopeFrom
+            lastScopeTo = scopeTo
             stored.getOrPut(companyId) { mutableListOf() }.also { bucket ->
+                bucket.removeAll { it.date in scopeFrom..scopeTo && items.none { item -> item.identity.id == it.identity.id } }
                 items.forEach { item ->
                     bucket.removeAll { it.identity.id == item.identity.id }
                     bucket.add(item)

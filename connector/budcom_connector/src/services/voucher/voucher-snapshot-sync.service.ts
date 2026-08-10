@@ -151,27 +151,19 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
         if (!['Pending', 'Writing', 'Validated'].includes(stale.status)) continue;
         await this.repository.rollbackSnapshot(company, stale.snapshotId);
       }
+      // A matching requested period is never treated as evidence Tally content is unchanged —
+      // every explicit sync performs a real live extraction for its requested window. Coverage
+      // outside that window is preserved by carrying it forward from the active snapshot below,
+      // so the new snapshot is always a complete authoritative replacement, not a partial one.
       const active = await this.repository.getActiveSnapshotMetadata(company);
-      if (
-        active?.period.dateFrom === period.dateFrom &&
-        active.period.dateTo === period.dateTo
-      ) {
-        finishPhase();
-        return result({
-          logger: this.logger,
-          company,
-          period,
-          snapshotId: active.snapshotId,
-          outcome: 'already_current',
-          phaseDurations,
-          previousActiveSnapshotPreserved: true,
-          notificationFailureCount,
-          startedAt,
-          startedMs,
-        });
-      }
+      const storedPeriod = active
+        ? {
+            dateFrom: active.period.dateFrom < period.dateFrom ? active.period.dateFrom : period.dateFrom,
+            dateTo: active.period.dateTo > period.dateTo ? active.period.dateTo : period.dateTo,
+          }
+        : period;
       snapshotId = randomUUID();
-      await this.repository.createSnapshot(company, snapshotId, period);
+      await this.repository.createSnapshot(company, snapshotId, storedPeriod);
       snapshotStarted = true;
 
       await emit('extracting');
@@ -214,6 +206,24 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
         await this.repository.writeVoucherBatch(company, snapshotId, batch);
         persistedVoucherCount += batch.length;
         await emit('staging', offset + batch.length, extractionResult.items.length);
+      }
+      checkCancellation(cancellation);
+
+      if (active) {
+        checkCancellation(cancellation);
+        const carriedForward = await this.repository.carryForwardVouchersOutsideWindow(
+          company,
+          active.snapshotId,
+          snapshotId,
+          period.dateFrom,
+          period.dateTo,
+        );
+        persistedVoucherCount += carriedForward.voucherCount;
+        metrics.acceptedVoucherCount += carriedForward.voucherCount;
+        metrics.ledgerEntryCount += carriedForward.ledgerEntryCount;
+        metrics.inventoryEntryCount += carriedForward.inventoryEntryCount;
+        metrics.allocationCount += carriedForward.allocationCount;
+        await emit('staging', extractionResult.items.length, extractionResult.items.length);
       }
       checkCancellation(cancellation);
 

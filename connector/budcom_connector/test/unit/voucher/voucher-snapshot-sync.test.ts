@@ -29,6 +29,7 @@ import { APPROVED_VOUCHER_FIXTURE_XML } from '../../fixtures/vouchers/approved-v
 
 const PERIOD = { dateFrom: '2026-07-27', dateTo: '2026-07-27' };
 const NEXT_PERIOD = { dateFrom: '2026-07-28', dateTo: '2026-07-28' };
+const OLDER_PERIOD = { dateFrom: '2026-07-01', dateTo: '2026-07-01' };
 const tempDirs: string[] = [];
 const databases: SqliteDatabase[] = [];
 let vouchers: readonly VoucherDetails[];
@@ -218,6 +219,10 @@ describe('VoucherSnapshotSyncServiceImpl', () => {
       });
       expect(await repo.getSnapshot('company-a', failed.snapshotId!)).toBeNull();
       expect((await repo.getActiveSnapshotMetadata('company-a'))?.snapshotId).toBe(first.snapshotId);
+      // A failed windowed refresh must leave the previous snapshot's actual content intact and
+      // fully readable, not just its metadata pointer.
+      const active = await repo.querySnapshot('company-a');
+      expect(active.map((voucher) => voucher.voucherId)).toEqual([vouchers[0]!.voucherId]);
     },
   );
 
@@ -286,24 +291,119 @@ describe('VoucherSnapshotSyncServiceImpl', () => {
     expect((await other).outcome).toBe('completed');
   });
 
-  it('returns already_current for a repeated company/period without extracting again', async () => {
+  it('performs a real live extraction on a same-day second explicit sync with an identical period, never short-circuiting', async () => {
+    // Regression test for the already_current bug: matching date strings must never be treated
+    // as proof Tally content is unchanged. A repeated explicit sync for the same window must
+    // always re-read Tally, never returning 'already_current' or skipping extraction.
     const repo = repository();
     const extract = vi.fn(async () => extractionResult([vouchers[0]!]));
     const sync = service(repo, extract);
     const first = await sync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
-    const duplicate = await sync.synchronize(
-      { companyId: 'company-a', ...PERIOD },
+    const second = await sync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    expect(extract).toHaveBeenCalledTimes(2);
+    expect(second.outcome).toBe('completed');
+    expect(second.promotionOccurred).toBe(true);
+    expect(second.snapshotId).not.toBe(first.snapshotId);
+  });
+
+  it('creates no duplicate logical voucher when an identical re-extraction changes nothing', async () => {
+    const repo = repository();
+    const sync = service(repo, async () => extractionResult([vouchers[0]!]));
+    await sync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+    await sync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    const active = await repo.querySnapshot('company-a');
+    expect(active).toHaveLength(1);
+    expect(active[0]!.voucherId).toBe(vouchers[0]!.voucherId);
+  });
+
+  it('carries forward vouchers outside the refreshed window instead of discarding them', async () => {
+    // The core windowed-refresh invariant: a sync of one window must not erase coverage of a
+    // different, previously-synced window — the resulting snapshot is a complete union, not a
+    // partial replacement.
+    const repo = repository();
+    const sync = service(repo, async (_company, period) =>
+      extractionResult([period.dateFrom === PERIOD.dateFrom ? vouchers[0]! : vouchers[1]!]),
+    );
+    await sync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+    const second = await sync.synchronize(
+      { companyId: 'company-a', ...NEXT_PERIOD },
       observer,
       notCancelled,
     );
 
-    expect(duplicate).toMatchObject({
-      outcome: 'already_current',
-      snapshotId: first.snapshotId,
-      previousActiveSnapshotPreserved: true,
-      promotionOccurred: false,
+    const active = await repo.querySnapshot('company-a');
+    const activeIds = active.map((voucher) => voucher.voucherId).sort();
+    expect(activeIds).toEqual([vouchers[0]!.voucherId, vouchers[1]!.voucherId].sort());
+    expect(second.vouchersPersisted).toBe(2);
+    expect((await repo.getActiveSnapshotMetadata('company-a'))?.period).toEqual({
+      dateFrom: PERIOD.dateFrom,
+      dateTo: NEXT_PERIOD.dateTo,
     });
-    expect(extract).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes a back-dated voucher visible once its window is reconciled, without disturbing the already-refreshed recent window', async () => {
+    const repo = repository();
+    const sync = service(repo, async (_company, period) =>
+      extractionResult([period.dateFrom === NEXT_PERIOD.dateFrom ? vouchers[1]! : vouchers[0]!]),
+    );
+    // Fast recent-window refresh happens first, matching the Phase A / Phase B ordering.
+    await sync.synchronize({ companyId: 'company-a', ...NEXT_PERIOD }, observer, notCancelled);
+    // Background historical reconciliation later discovers the back-dated voucher.
+    await sync.synchronize({ companyId: 'company-a', ...OLDER_PERIOD }, observer, notCancelled);
+
+    const active = await repo.querySnapshot('company-a');
+    const activeIds = active.map((voucher) => voucher.voucherId).sort();
+    expect(activeIds).toEqual([vouchers[0]!.voucherId, vouchers[1]!.voucherId].sort());
+  });
+
+  it('replaces the old value of an edited voucher (party/amount/etc.) after its window is resynced, with no duplicate row', async () => {
+    const repo = repository();
+    const original = vouchers[0]!;
+    const edited: VoucherDetails = {
+      ...original,
+      partyName: 'Changed Party Pvt Ltd',
+      narration: 'Corrected narration',
+      amount: original.amount ? { ...original.amount, amount: '999999' } : original.amount,
+    };
+    const sync = service(repo, async () => extractionResult([original]));
+    await sync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    const resync = service(repo, async () => extractionResult([edited]));
+    await resync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    const active = await repo.querySnapshot('company-a');
+    expect(active).toHaveLength(1);
+    expect(active[0]!.partyName).toBe('Changed Party Pvt Ltd');
+    expect(active[0]!.narration).toBe('Corrected narration');
+  });
+
+  it('removes a cancelled/deleted voucher from the active view once its window is resynced without it', async () => {
+    const repo = repository();
+    const firstSync = service(repo, async () => extractionResult([vouchers[0]!, vouchers[1]!]));
+    await firstSync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    // Tally no longer returns vouchers[1] for this window — it was cancelled/deleted.
+    const resync = service(repo, async () => extractionResult([vouchers[0]!]));
+    await resync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    const active = await repo.querySnapshot('company-a');
+    expect(active.map((voucher) => voucher.voucherId)).toEqual([vouchers[0]!.voucherId]);
+  });
+
+  it('never carries forward or otherwise touches another company\'s vouchers', async () => {
+    const repo = repository();
+    await service(repo, async () => extractionResult([vouchers[0]!]))
+      .synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+    await service(repo, async () => extractionResult([vouchers[1]!]))
+      .synchronize({ companyId: 'company-b', ...PERIOD }, observer, notCancelled);
+
+    await service(repo, async () => extractionResult([vouchers[1]!]))
+      .synchronize({ companyId: 'company-a', ...NEXT_PERIOD }, observer, notCancelled);
+
+    const companyB = await repo.querySnapshot('company-b');
+    expect(companyB.map((voucher) => voucher.voucherId)).toEqual([vouchers[1]!.voucherId]);
   });
 
   it('rolls back interrupted snapshots on restart and preserves company isolation', async () => {
