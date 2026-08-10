@@ -22,6 +22,12 @@ import com.budcom.android.feature.sync.domain.usecase.ObserveSyncProgressUseCase
 import com.budcom.android.feature.sync.domain.usecase.RefreshSyncOverviewUseCase
 import com.budcom.android.feature.sync.domain.usecase.RunAvailableSyncsUseCase
 import com.budcom.android.feature.sync.domain.usecase.StartTargetSyncUseCase
+import com.budcom.android.feature.voucher.domain.model.VoucherDetails
+import com.budcom.android.feature.voucher.domain.model.VoucherPage
+import com.budcom.android.feature.voucher.domain.model.VoucherQuery
+import com.budcom.android.feature.voucher.domain.model.VoucherSummary
+import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
+import com.budcom.android.feature.voucher.domain.usecase.RefreshVouchersUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -46,6 +52,7 @@ class SyncViewModelTest {
     private lateinit var company: SyncVmFakeCompany
     private lateinit var connectivity: SyncVmFakeConnectivity
     private lateinit var statusPort: FakeObserveSyncStatus
+    private lateinit var voucherRepository: SyncVmFakeVoucherRepository
 
     @Before
     fun setUp() {
@@ -54,6 +61,7 @@ class SyncViewModelTest {
         company = SyncVmFakeCompany("estimation")
         connectivity = SyncVmFakeConnectivity(true)
         statusPort = FakeObserveSyncStatus()
+        voucherRepository = SyncVmFakeVoucherRepository()
     }
 
     @After
@@ -61,11 +69,14 @@ class SyncViewModelTest {
         Dispatchers.resetMain()
     }
 
+    private fun startTargetSync() =
+        StartTargetSyncUseCase(repository, company, RefreshVouchersUseCase(voucherRepository))
+
     private fun createVm() = SyncViewModel(
         refreshOverview = RefreshSyncOverviewUseCase(repository, company),
-        startTargetSync = StartTargetSyncUseCase(repository, company),
+        startTargetSync = startTargetSync(),
         cancelTargetSync = CancelTargetSyncUseCase(repository),
-        runAvailableSyncs = RunAvailableSyncsUseCase(StartTargetSyncUseCase(repository, company)),
+        runAvailableSyncs = RunAvailableSyncsUseCase(startTargetSync()),
         observeProgress = ObserveSyncProgressUseCase(repository),
         syncStatusPort = statusPort,
         companySession = company,
@@ -219,6 +230,22 @@ private class SyncVmFakeCompany(initial: String?) : CompanySessionPort {
         AppResult.Success(SelectedCompanyStatus(selected.value, selected.value))
     override suspend fun validateSessionStatus(): AppResult<SessionValidationStatus> =
         error("unused")
+}
+
+/** Always succeeds with an empty page — the Sync-tab Voucher tests here care about the
+ * Connector-extraction outcome, not the follow-up window fetch itself (that has its own
+ * dedicated coverage in SyncUseCasesTest). */
+private class SyncVmFakeVoucherRepository : VoucherRepository {
+    override suspend fun listVouchers(query: VoucherQuery): AppResult<VoucherPage> = error("unused")
+    override suspend fun refreshVouchers(query: VoucherQuery): AppResult<VoucherPage> =
+        AppResult.Success(
+            VoucherPage(companyId = "estimation", items = emptyList(), page = 1, pageSize = 50, totalItems = 0, totalPages = 1),
+        )
+    override suspend fun getVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> =
+        error("unused")
+    override suspend fun refreshVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> =
+        error("unused")
+    override suspend fun getCachedVoucherSummary(companyId: String, voucherId: String): VoucherSummary? = null
 }
 
 private class SyncVmFakeConnectivity(initial: Boolean) : NetworkConnectivityObserver {

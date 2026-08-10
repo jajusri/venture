@@ -10,6 +10,9 @@ import com.budcom.android.feature.sync.domain.model.SyncProgress
 import com.budcom.android.feature.sync.domain.model.SyncTarget
 import com.budcom.android.feature.sync.domain.model.isActive
 import com.budcom.android.feature.sync.domain.repository.SyncRepository
+import com.budcom.android.feature.voucher.domain.model.VoucherDateRangeDefaults
+import com.budcom.android.feature.voucher.domain.model.VoucherQuery
+import com.budcom.android.feature.voucher.domain.usecase.RefreshVouchersUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -33,9 +36,21 @@ class RefreshSyncOverviewUseCase @Inject constructor(
     }
 }
 
+/**
+ * For [SyncTarget.Vouchers], a Connector-side extraction success is not the whole user-facing
+ * operation: the freshly-promoted authoritative window still has to reach Android's own offline
+ * store before the user should see "Completed". [refreshVouchers] is the same complete-window
+ * fetch-and-atomically-persist path the Vouchers screen's own Refresh already uses (Room pruning,
+ * pagination-completeness proof, and all) — reused here rather than duplicated, so the one
+ * Sync-tab action ends with the new Voucher already queryable from Room, with no second manual
+ * Refresh required. A failure at this second step is reported as this operation's failure, even
+ * though the Connector-side extraction itself already succeeded: a half-finished chain must never
+ * be presented to the user as a completed sync.
+ */
 class StartTargetSyncUseCase @Inject constructor(
     private val repository: SyncRepository,
     private val companySession: CompanySessionPort,
+    private val refreshVouchers: RefreshVouchersUseCase,
 ) {
     suspend operator fun invoke(
         target: SyncTarget,
@@ -48,7 +63,22 @@ class StartTargetSyncUseCase @Inject constructor(
             )
         }
         repository.bindCompany(companyId)
-        return repository.startSync(target, mode)
+        val started = repository.startSync(target, mode)
+        if (target != SyncTarget.Vouchers) return started
+        val extraction = (started as? AppResult.Success)?.value as? SyncOutcome.Succeeded
+            ?: return started
+        return completeVoucherWindowFetch(companyId, extraction)
+    }
+
+    private suspend fun completeVoucherWindowFetch(
+        companyId: String,
+        extraction: SyncOutcome.Succeeded,
+    ): AppResult<SyncOutcome> {
+        val query = VoucherQuery(companyId, VoucherDateRangeDefaults.lastDaysInclusive())
+        return when (val refreshed = refreshVouchers(query)) {
+            is AppResult.Success -> AppResult.Success(extraction)
+            is AppResult.Failure -> refreshed
+        }
     }
 }
 
