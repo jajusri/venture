@@ -1,10 +1,15 @@
 package com.budcom.android.feature.voucher.domain.usecase
 
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.feature.company.domain.repository.CompanyRepository
 import com.budcom.android.feature.voucher.domain.model.VoucherDateRange
 import com.budcom.android.feature.voucher.domain.model.VoucherPage
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
 import com.budcom.android.feature.voucher.domain.model.VoucherWindowPlanner
+import java.time.Clock
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -31,6 +36,15 @@ sealed interface VoucherReconciliationOutcome {
  * (rather than only its first window) IS "Full Reconcile" (Section 2) — the same window walk run
  * to completion instead of stopping after the fast pass.
  *
+ * Full Reconcile's overall coverage is NOT an arbitrary fixed lookback: it derives from the
+ * company's own authoritative Tally `BOOKSFROM` date (already surfaced end-to-end as
+ * [com.budcom.android.feature.company.domain.model.ConnectorCompany.booksFrom], cached locally
+ * via [CompanyRepository.loadCompanies]) — the true "beginning of this company's voucher
+ * history," not an invented boundary. `booksFrom` is not always populated by every Tally
+ * install/version; when it's absent for a given company, this falls back to
+ * [VoucherWindowPlanner.DEFAULT_TOTAL_LOOKBACK_DAYS] as an explicit, documented degraded
+ * behavior, not a silent substitute for a real accounting-period boundary.
+ *
  * One authoritative reconciliation run per company at a time (Section 9): a concurrent call for
  * a company already reconciling returns [VoucherReconciliationOutcome.AlreadyRunning] immediately
  * rather than racing a second competing walk — this is what makes repeated Sync-button presses
@@ -42,18 +56,22 @@ sealed interface VoucherReconciliationOutcome {
 @Singleton
 class ReconcileVoucherWindowsUseCase @Inject constructor(
     private val refreshVouchers: RefreshVouchersUseCase,
+    private val companyRepository: CompanyRepository,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     private val locks = ConcurrentHashMap<String, Mutex>()
 
     suspend operator fun invoke(
         companyId: String,
-        totalLookbackDays: Long = VoucherWindowPlanner.DEFAULT_TOTAL_LOOKBACK_DAYS,
         onWindowSynced: suspend (VoucherDateRange, AppResult<VoucherPage>) -> Unit = { _, _ -> },
     ): VoucherReconciliationOutcome {
         val lock = locks.getOrPut(companyId) { Mutex() }
         if (!lock.tryLock()) return VoucherReconciliationOutcome.AlreadyRunning
         try {
-            val windows = VoucherWindowPlanner.plan(totalLookbackDays = totalLookbackDays)
+            val windows = VoucherWindowPlanner.plan(
+                totalLookbackDays = resolveAuthoritativeLookbackDays(companyId),
+                clock = clock,
+            )
             windows.forEachIndexed { index, window ->
                 val result = refreshVouchers(VoucherQuery(companyId = companyId, dateRange = window))
                 onWindowSynced(window, result)
@@ -65,5 +83,23 @@ class ReconcileVoucherWindowsUseCase @Inject constructor(
         } finally {
             lock.unlock()
         }
+    }
+
+    /**
+     * Reads the LOCALLY CACHED company list (never triggers a network discovery call — this is a
+     * scope lookup, not itself a sync) and resolves this company's `booksFrom` into a lookback
+     * day count from "today." Falls back to [VoucherWindowPlanner.DEFAULT_TOTAL_LOOKBACK_DAYS]
+     * when the company isn't in the cache, `booksFrom` is null, or it doesn't parse as a plain
+     * ISO date — never throws, never blocks reconciliation on a missing/malformed field.
+     */
+    private suspend fun resolveAuthoritativeLookbackDays(companyId: String): Long {
+        val companies = (companyRepository.loadCompanies() as? AppResult.Success)?.value?.items
+        val booksFrom = companies?.firstOrNull { it.id == companyId }?.booksFrom
+        val parsedBooksFrom = booksFrom?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        val today = LocalDate.now(clock.withZone(ZoneOffset.UTC))
+        return parsedBooksFrom
+            ?.let { ChronoUnit.DAYS.between(it, today) + 1 }
+            ?.takeIf { it > 0 }
+            ?: VoucherWindowPlanner.DEFAULT_TOTAL_LOOKBACK_DAYS
     }
 }

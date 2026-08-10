@@ -4,9 +4,13 @@ import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
+import com.budcom.android.feature.company.domain.model.CompanyDiscoverySnapshot
+import com.budcom.android.feature.company.domain.model.ConnectorSessionSnapshot
+import com.budcom.android.feature.company.domain.model.SessionValidationOutcome
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
+import com.budcom.android.feature.company.domain.repository.CompanyRepository
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.voucher.domain.model.VoucherCacheState
 import com.budcom.android.feature.voucher.domain.model.VoucherDataQuality
@@ -17,6 +21,7 @@ import com.budcom.android.feature.voucher.domain.model.VoucherStatus
 import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
 import com.budcom.android.feature.voucher.domain.usecase.LoadVouchersUseCase
+import com.budcom.android.feature.voucher.domain.usecase.ReconcileVoucherWindowsUseCase
 import com.budcom.android.feature.voucher.domain.usecase.RefreshVouchersUseCase
 import com.budcom.android.navigation.Routes
 import kotlinx.coroutines.Dispatchers
@@ -61,10 +66,20 @@ class VoucherBrowserViewModelTest {
         Dispatchers.resetMain()
     }
 
+    // Background reconciliation is wired to its OWN throwaway repository, decoupled from
+    // [repository], for every test in this file except the "background reconciliation wiring"
+    // group below — this file is about VoucherBrowserViewModel's foreground behavior, which
+    // predates and is independent of reconciliation (covered thoroughly in its own
+    // ReconcileVoucherWindowsUseCaseTest); sharing [repository] here would make every existing
+    // refreshCalls/listCalls assertion also count the background walk's own calls.
     private fun createVm(query: String = "") = VoucherBrowserViewModel(
         savedStateHandle = SavedStateHandle(mapOf(Routes.QUERY_ARG to query)),
         loadVouchers = LoadVouchersUseCase(repository),
         refreshVouchers = RefreshVouchersUseCase(repository),
+        reconcileVoucherWindows = ReconcileVoucherWindowsUseCase(
+            RefreshVouchersUseCase(FakeVoucherRepository()),
+            FakeCompanyRepository(),
+        ),
         companySession = companySession,
         connectivityObserver = connectivity,
     )
@@ -203,6 +218,71 @@ class VoucherBrowserViewModelTest {
         advanceUntilIdle()
         assertEquals("acme", repository.lastListQuery?.searchText)
     }
+
+    // ====================== Background reconciliation wiring (BUDCOM MVP-1 Section 3/4) ======================
+
+    @Test
+    fun `an explicit Refresh also starts background historical reconciliation, reaching Completed`() = runTest(dispatcher) {
+        val vm = VoucherBrowserViewModel(
+            savedStateHandle = SavedStateHandle(mapOf(Routes.QUERY_ARG to "")),
+            loadVouchers = LoadVouchersUseCase(repository),
+            refreshVouchers = RefreshVouchersUseCase(repository),
+            reconcileVoucherWindows = ReconcileVoucherWindowsUseCase(RefreshVouchersUseCase(repository), FakeCompanyRepository()),
+            companySession = companySession,
+            connectivityObserver = connectivity,
+        )
+        advanceUntilIdle()
+        assertEquals(VoucherHistoryReconciliationStatus.NotStarted, vm.uiState.value.historyReconciliationStatus)
+
+        vm.onEvent(VoucherBrowserEvent.Refresh)
+        advanceUntilIdle()
+
+        assertEquals(VoucherHistoryReconciliationStatus.Completed, vm.uiState.value.historyReconciliationStatus)
+    }
+
+    @Test
+    fun `a passive Load never starts background reconciliation`() = runTest(dispatcher) {
+        val vm = VoucherBrowserViewModel(
+            savedStateHandle = SavedStateHandle(mapOf(Routes.QUERY_ARG to "")),
+            loadVouchers = LoadVouchersUseCase(repository),
+            refreshVouchers = RefreshVouchersUseCase(repository),
+            reconcileVoucherWindows = ReconcileVoucherWindowsUseCase(RefreshVouchersUseCase(repository), FakeCompanyRepository()),
+            companySession = companySession,
+            connectivityObserver = connectivity,
+        )
+        advanceUntilIdle()
+
+        assertEquals(VoucherHistoryReconciliationStatus.NotStarted, vm.uiState.value.historyReconciliationStatus)
+    }
+
+    @Test
+    fun `a failed background reconciliation window is reflected as Failed, never silently treated as complete`() = runTest(dispatcher) {
+        val flaky = object : VoucherRepository by repository {
+            var calls = 0
+            override suspend fun refreshVouchers(query: VoucherQuery): AppResult<VoucherPage> {
+                calls += 1
+                return if (calls >= 2) AppResult.Failure(AppError.Offline()) else repository.refreshVouchers(query)
+            }
+        }
+        val vm = VoucherBrowserViewModel(
+            savedStateHandle = SavedStateHandle(mapOf(Routes.QUERY_ARG to "")),
+            loadVouchers = LoadVouchersUseCase(repository),
+            refreshVouchers = RefreshVouchersUseCase(repository),
+            reconcileVoucherWindows = ReconcileVoucherWindowsUseCase(RefreshVouchersUseCase(flaky), FakeCompanyRepository()),
+            companySession = companySession,
+            connectivityObserver = connectivity,
+        )
+        advanceUntilIdle()
+
+        vm.onEvent(VoucherBrowserEvent.Refresh)
+        advanceUntilIdle()
+
+        assertEquals(VoucherHistoryReconciliationStatus.Failed, vm.uiState.value.historyReconciliationStatus)
+        // The foreground refresh (this file's core contract) must be unaffected by the
+        // background walk's later failure — cached rows remain visible, no foreground error.
+        assertEquals(1, vm.uiState.value.vouchers.size)
+        assertNull(vm.uiState.value.error)
+    }
 }
 
 private class FakeVoucherRepository : VoucherRepository {
@@ -255,6 +335,31 @@ private class FakeConnectivity(online: Boolean) : NetworkConnectivityObserver {
     private val flow = MutableStateFlow(online)
     override val isOnline: Flow<Boolean> = flow
     override fun current(): Boolean = flow.value
+}
+
+/** booksFrom-less by design: these tests exercise the browser, not reconciliation-scope resolution. */
+private class FakeCompanyRepository : CompanyRepository {
+    override fun observeSelectedCompanyId(): Flow<String?> = MutableStateFlow(null)
+    override suspend fun loadCompanies(): AppResult<CompanyDiscoverySnapshot> =
+        AppResult.Success(
+            CompanyDiscoverySnapshot(
+                items = emptyList(),
+                schemaVersion = "1.0.0",
+                dataFreshnessAt = "2026-07-27T00:00:00Z",
+                contractVersion = "1",
+                status = "SUCCESS",
+                tallyReachable = true,
+                dataQualityStatus = null,
+                dataQualityReason = null,
+                reason = null,
+            ),
+        )
+    override suspend fun refreshCompanies(): AppResult<CompanyDiscoverySnapshot> = loadCompanies()
+    override suspend fun getSession(): AppResult<ConnectorSessionSnapshot> = AppResult.Failure(AppError.Message("unused"))
+    override suspend fun restoreSelection(): AppResult<SessionValidationOutcome?> = AppResult.Failure(AppError.Message("unused"))
+    override suspend fun selectCompany(companyId: String): AppResult<SessionValidationOutcome> = AppResult.Failure(AppError.Message("unused"))
+    override suspend fun validateSession(): AppResult<SessionValidationOutcome> = AppResult.Failure(AppError.Message("unused"))
+    override suspend fun clearSelection(): AppResult<Unit> = AppResult.Failure(AppError.Message("unused"))
 }
 
 private fun sampleSummary() = VoucherSummary(

@@ -82,10 +82,16 @@ class VoucherRepositoryImpl @Inject constructor(
      * An explicit refresh must be a COMPLETE authoritative extraction for [query]'s whole date
      * window before anything is persisted: [persistAndReturn] treats the result as the full
      * truth for that scope and prunes any previously-cached voucher in scope that's absent from
-     * it. A single UI-sized page would make that pruning actively destructive — vouchers sitting
-     * on a later page would look "gone" and get deleted. Fetches with [REFRESH_FETCH_PAGE_SIZE]
-     * (independent of the caller's own display page size) until the Connector reports no more
-     * pages, bounded by [MAX_REFRESH_PAGES] as a hard safety cap against a runaway loop. Always
+     * it. An INCOMPLETE remote window must never become pruning authority — completeness is
+     * proven two independent ways before this returns success: (1) the endpoint's own pagination
+     * metadata says there is no more (`canLoadMore == false`), AND (2) the number of items
+     * actually accumulated matches the endpoint's own reported total. Either signal alone could
+     * be wrong (inconsistent/buggy metadata, a stuck page repeating itself); both must agree.
+     * Any inconsistency — a total that changes between pages, an empty page that still claims
+     * more exist — fails closed rather than silently trusting a partial result. Fetches with
+     * [REFRESH_FETCH_PAGE_SIZE] (independent of the caller's own display page size);
+     * [MAX_REFRESH_PAGES] exists only as a sanity/runaway guard (not a normal operational limit)
+     * and, like every other failure path here, fails closed without persisting anything. Always
      * unfiltered (companyId + dateRange only) regardless of any search/type/number/party filter
      * on the caller's own [query]: the fetched set becomes the pruning baseline for the whole
      * scope in [persistAndReturn], so a filtered fetch would wrongly delete every non-matching
@@ -98,6 +104,7 @@ class VoucherRepositoryImpl @Inject constructor(
     ): AppResult<List<VoucherSummary>> {
         val accumulated = mutableListOf<VoucherSummary>()
         var page = 1
+        var provenTotal: Int? = null
         while (true) {
             val pageQuery = VoucherQuery(
                 companyId = query.companyId,
@@ -108,8 +115,24 @@ class VoucherRepositoryImpl @Inject constructor(
             when (val result = fetchPage(pageQuery)) {
                 is AppResult.Failure -> return result
                 is AppResult.Success -> {
-                    accumulated += result.value.items
-                    if (!result.value.canLoadMore) return AppResult.Success(accumulated)
+                    val pageData = result.value
+                    if (provenTotal != null && pageData.totalItems != provenTotal) {
+                        return AppResult.Failure(AppError.Message(INCOMPLETE_WINDOW_MESSAGE))
+                    }
+                    provenTotal = pageData.totalItems
+                    accumulated += pageData.items
+                    if (pageData.items.isEmpty() && pageData.canLoadMore) {
+                        // A page claiming more pages exist while returning nothing is invalid
+                        // pagination metadata, not proof of anything — never loop on it.
+                        return AppResult.Failure(AppError.Message(INCOMPLETE_WINDOW_MESSAGE))
+                    }
+                    if (!pageData.canLoadMore) {
+                        return if (accumulated.size == provenTotal) {
+                            AppResult.Success(accumulated)
+                        } else {
+                            AppResult.Failure(AppError.Message(INCOMPLETE_WINDOW_MESSAGE))
+                        }
+                    }
                     if (page >= MAX_REFRESH_PAGES) {
                         return AppResult.Failure(AppError.Message(WINDOW_TOO_LARGE_MESSAGE))
                     }
@@ -175,8 +198,13 @@ class VoucherRepositoryImpl @Inject constructor(
         const val NO_CACHE_MESSAGE = "No offline data available. Connect to BUDCOM Desktop and synchronize once."
         const val NO_CACHE_DETAILS_MESSAGE = "No offline data available for this voucher. Connect to BUDCOM Desktop and synchronize once."
         private const val REFRESH_FETCH_PAGE_SIZE = 100
-        private const val MAX_REFRESH_PAGES = 500
+        // A sanity/runaway guard only (100,000 pages = up to 10,000,000 vouchers) — real windows
+        // should never approach this; it exists to fail closed rather than loop forever if the
+        // remote side is genuinely misbehaving, not to cap legitimate large windows.
+        private const val MAX_REFRESH_PAGES = 100_000
         const val WINDOW_TOO_LARGE_MESSAGE =
             "This date range has too many vouchers to refresh at once. Narrow the range and try again."
+        const val INCOMPLETE_WINDOW_MESSAGE =
+            "Could not confirm a complete voucher list for this date range. Nothing was changed locally."
     }
 }

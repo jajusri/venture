@@ -797,6 +797,105 @@ class VoucherRepositoryImplTest {
         assertEquals(0, local.storeListCalls)
     }
 
+    // ====================== Complete-window fetch completeness proof (BUDCOM MVP-1 Section 1) ======================
+
+    @Test
+    fun `499 records across 5 pages are all fetched and persisted`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemotePaged(totalRecords = 499, recordsPerPage = 100)
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(499, local.storedItems.size)
+    }
+
+    @Test
+    fun `exactly 500 records across the old page-count boundary are all fetched and persisted`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemotePaged(totalRecords = 500, recordsPerPage = 100)
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(500, local.storedItems.size)
+    }
+
+    @Test
+    fun `501 records — one past the old boundary — are all fetched and persisted, not silently truncated`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemotePaged(totalRecords = 501, recordsPerPage = 100)
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(501, local.storedItems.size)
+    }
+
+    @Test
+    fun `a window with many pages well beyond the old 500-page cap still completes and persists everything`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        // 60,000 records / 100 per page = 600 pages — beyond the old MAX_REFRESH_PAGES=500 cap.
+        val remote = FakeAuthenticatedListRemotePaged(totalRecords = 60_000, recordsPerPage = 100)
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(60_000, local.storedItems.size)
+    }
+
+    @Test
+    fun `remote pagination failure midway through a window persists nothing and fails the refresh`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemotePaged(totalRecords = 1_000, recordsPerPage = 100, failOnPage = 5)
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(0, local.storeListCalls)
+    }
+
+    @Test
+    fun `a page reporting a different total than earlier pages fails closed without persisting`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemotePaged(totalRecords = 300, recordsPerPage = 100, corruptTotalOnPage = 2)
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(0, local.storeListCalls)
+    }
+
+    @Test
+    fun `a page claiming more pages exist while returning zero items fails closed without persisting`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemotePaged(totalRecords = 300, recordsPerPage = 100, emptyButClaimsMoreOnPage = 2)
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(0, local.storeListCalls)
+    }
+
+    @Test
+    fun `no pruning ever happens when window completeness could not be proven`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        local.stored["company-a"] = mutableListOf(sampleSummary(id = "v-existing").copy(date = "2026-07-10"))
+        val remote = FakeAuthenticatedListRemotePaged(totalRecords = 300, recordsPerPage = 100, failOnPage = 2)
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        repository.refreshVouchers(query().copy(dateRange = VoucherDateRange("2026-07-01", "2026-07-27")))
+
+        assertEquals(setOf("v-existing"), local.stored["company-a"]!!.map { it.identity.id }.toSet())
+    }
+
     // ============================== Fakes ==============================
 
     private fun repo(
@@ -873,10 +972,23 @@ class VoucherRepositoryImplTest {
             error("UnreachableAuthenticatedListRemote must never be called on the LEGACY path")
     }
 
-    /** Simulates a multi-page Connector result set, one [pages] entry served per call in order. */
+    /**
+     * Simulates a multi-page Connector result set. Two modes:
+     * - [pages]: literal per-call page contents, in order (existing small-scenario tests).
+     * - [totalRecords]: generates `ceil(totalRecords / recordsPerPage)` pages of synthetic
+     *   distinct vouchers on the fly — for boundary/scale tests without listing every record.
+     * [failOnPage] fails that one page outright. [corruptTotalOnPage] reports a different
+     * `totalItems` than every other page (inconsistent metadata). [emptyButClaimsMoreOnPage]
+     * returns zero items on that page while still claiming more pages exist (invalid metadata).
+     */
     private class FakeAuthenticatedListRemotePaged(
         private val pages: List<List<VoucherSummary>> = emptyList(),
         private val neverEnds: Boolean = false,
+        private val totalRecords: Int? = null,
+        private val recordsPerPage: Int = 100,
+        private val failOnPage: Int? = null,
+        private val corruptTotalOnPage: Int? = null,
+        private val emptyButClaimsMoreOnPage: Int? = null,
     ) : AuthenticatedVoucherListRemoteDataSource {
         var callCount = 0
             private set
@@ -886,6 +998,7 @@ class VoucherRepositoryImplTest {
         override suspend fun fetchVouchers(query: VoucherQuery): AppResult<VoucherPage> {
             lastQuery = query
             callCount++
+            if (failOnPage == query.page) return AppResult.Failure(AppError.Offline())
             if (neverEnds) {
                 val filler = VoucherSummary(
                     identity = VoucherIdentity("v-$callCount"),
@@ -900,6 +1013,21 @@ class VoucherRepositoryImplTest {
                 )
                 return AppResult.Success(
                     VoucherPage("company-a", listOf(filler), query.page, query.pageSize, Int.MAX_VALUE, Int.MAX_VALUE),
+                )
+            }
+            if (totalRecords != null) {
+                val totalPages = ((totalRecords + recordsPerPage - 1) / recordsPerPage).coerceAtLeast(1)
+                val startIndex = (query.page - 1) * recordsPerPage
+                val endIndex = minOf(startIndex + recordsPerPage, totalRecords)
+                val items = if (emptyButClaimsMoreOnPage == query.page) {
+                    emptyList()
+                } else {
+                    (startIndex until endIndex).map { filler("v-$it") }
+                }
+                val reportedTotal = if (corruptTotalOnPage == query.page) totalRecords + 1 else totalRecords
+                val reportedTotalPages = if (emptyButClaimsMoreOnPage == query.page) totalPages + 1 else totalPages
+                return AppResult.Success(
+                    VoucherPage("company-a", items, query.page, query.pageSize, reportedTotal, reportedTotalPages),
                 )
             }
             val index = query.page - 1
@@ -917,6 +1045,18 @@ class VoucherRepositoryImplTest {
                 ),
             )
         }
+
+        private fun filler(id: String) = VoucherSummary(
+            identity = VoucherIdentity(id),
+            date = "2026-07-15",
+            type = "Sales",
+            number = null,
+            partyName = null,
+            referenceNumber = null,
+            amount = null,
+            status = VoucherStatus.Active,
+            dataQuality = VoucherDataQuality.Complete,
+        )
     }
 
     private class FakeAuthenticatedDetailRemote(

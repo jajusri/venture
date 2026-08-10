@@ -10,7 +10,9 @@ import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
 import com.budcom.android.feature.voucher.domain.usecase.LoadVouchersUseCase
+import com.budcom.android.feature.voucher.domain.usecase.ReconcileVoucherWindowsUseCase
 import com.budcom.android.feature.voucher.domain.usecase.RefreshVouchersUseCase
+import com.budcom.android.feature.voucher.domain.usecase.VoucherReconciliationOutcome
 import com.budcom.android.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -29,6 +31,7 @@ class VoucherBrowserViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val loadVouchers: LoadVouchersUseCase,
     private val refreshVouchers: RefreshVouchersUseCase,
+    private val reconcileVoucherWindows: ReconcileVoucherWindowsUseCase,
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
 ) : ViewModel() {
@@ -40,6 +43,7 @@ class VoucherBrowserViewModel @Inject constructor(
 
     private var searchJob: Job? = null
     private var loadJob: Job? = null
+    private var reconcileJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -49,9 +53,40 @@ class VoucherBrowserViewModel @Inject constructor(
         }
         viewModelScope.launch {
             companySession.observeSelectedCompanyId().distinctUntilChanged().collect { companyId ->
-                _uiState.update { it.copy(companyId = companyId) }
+                // A new company has no bearing on a reconciliation walk for the previous one.
+                reconcileJob?.cancel()
+                reconcileJob = null
+                _uiState.update {
+                    it.copy(
+                        companyId = companyId,
+                        historyReconciliationStatus = VoucherHistoryReconciliationStatus.NotStarted,
+                    )
+                }
                 onEvent(VoucherBrowserEvent.Load)
             }
+        }
+    }
+
+    /**
+     * USER EXPLICIT VOUCHER SYNC (BUDCOM MVP-1 Section 3): the fast recent-window refresh above
+     * already committed and is what the visible list/[lastSyncedAt] reflect. This continues the
+     * rest of the permanent snapshot architecture in the background — progressively older
+     * windows, up to the company's authoritative history scope — without blocking or re-running
+     * the foreground refresh. [ReconcileVoucherWindowsUseCase]'s own per-company single-flight
+     * guard makes it safe to call opportunistically on every explicit sync: an already-running
+     * walk just returns immediately and this is a no-op.
+     */
+    private fun continueBackgroundReconciliation(companyId: String) {
+        if (reconcileJob?.isActive == true) return
+        reconcileJob = viewModelScope.launch {
+            _uiState.update { it.copy(historyReconciliationStatus = VoucherHistoryReconciliationStatus.InProgress) }
+            val outcome = reconcileVoucherWindows(companyId)
+            val status = when (outcome) {
+                is VoucherReconciliationOutcome.Completed -> VoucherHistoryReconciliationStatus.Completed
+                is VoucherReconciliationOutcome.PartiallyCompleted -> VoucherHistoryReconciliationStatus.Failed
+                VoucherReconciliationOutcome.AlreadyRunning -> return@launch
+            }
+            _uiState.update { it.copy(historyReconciliationStatus = status) }
         }
     }
 
@@ -163,6 +198,7 @@ class VoucherBrowserViewModel @Inject constructor(
                             lastSyncedAt = pageData.lastSyncedAt,
                         )
                     }
+                    if (refreshing) continueBackgroundReconciliation(companyId)
                 }
                 is AppResult.Failure -> {
                     _uiState.update { state ->

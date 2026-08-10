@@ -29,6 +29,16 @@ data class VoucherBrowserUiState(
     val refreshError: String? = null,
     val cacheState: VoucherCacheState = VoucherCacheState.NoCache,
     val lastSyncedAt: Long? = null,
+    /**
+     * [lastSyncedAt]/[cacheState] describe only the currently-viewed window's fast refresh —
+     * they must never be read as "all voucher history is reconciled." This field is the
+     * separate, honest signal for the background historical-reconciliation walk (BUDCOM MVP-1
+     * Section 4): a recent-window refresh can complete and show current data while older windows
+     * are still mid-reconciliation, e.g. a voucher moved from an older date into the current
+     * window looks correct immediately, but the stale old-window representation isn't provably
+     * gone until [VoucherHistoryReconciliationStatus.Completed].
+     */
+    val historyReconciliationStatus: VoucherHistoryReconciliationStatus = VoucherHistoryReconciliationStatus.NotStarted,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isLoadingMore
     val hasContent: Boolean get() = vouchers.isNotEmpty()
@@ -40,6 +50,9 @@ data class VoucherBrowserUiState(
         val to: String = range.to
     }
 }
+
+/** Distinct from [VoucherCacheState]: describes the background full-history walk, not the currently-viewed window. */
+enum class VoucherHistoryReconciliationStatus { NotStarted, InProgress, Completed, Failed }
 
 internal fun VoucherCacheState.statusText(lastSyncedAt: Long?): String = when (this) {
     VoucherCacheState.Live -> "Live"
