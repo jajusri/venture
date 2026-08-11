@@ -46,6 +46,7 @@ import { FileLogWriter } from '../application/file-log-writer.js';
 import {
   assertAllowedIpcChannel,
   assertBoundedIpcPayload,
+  validateChooseStorageModeInput,
   validateCompanyId,
   validateCredentialId,
   validateExportDirectory,
@@ -54,6 +55,17 @@ import {
   validateSettingsInput,
   validateSyncOptions,
 } from '../application/ipc-allowlist.js';
+import { PrivateStorageLocatorStore } from '../application/private-storage/private-storage-locator-store.js';
+import { PowerShellRemovableVolumeEnumerator } from '../application/private-storage/removable-volume-enumerator.js';
+import {
+  createPrivateVault,
+  isPrivateVaultStillPresent,
+  privateConnectorDataDir,
+  privateStorageMarkerPath,
+  readExistingVaultOnDrive,
+  resolvePrivateVault,
+} from '../application/private-storage/private-storage-resolver.js';
+import type { StorageGateState, StorageResolution } from '../application/private-storage/private-storage-types.js';
 import { LogService } from '../application/log-service.js';
 import { NodeProcessSpawner } from '../application/node-process-spawner.js';
 import { RecoveryService } from '../application/recovery-service.js';
@@ -260,6 +272,123 @@ let dashboardService = createDashboardService(resolved.connectorBaseUrl);
 let companyService = createCompanyService(resolved.connectorBaseUrl);
 let ledgerService = createLedgerService(resolved.connectorBaseUrl);
 let stockItemService = createStockItemService(resolved.connectorBaseUrl);
+
+// ---- Private Removable Storage (see docs — storage-mode decision made once, before the very
+// first Connector data-directory use; see resolveStorageGate()/activateConnectorLifecycle() below). ----
+const privateStorageLocatorStore = new PrivateStorageLocatorStore(appDataLayout.userDataRoot);
+const removableVolumeEnumerator = new PowerShellRemovableVolumeEnumerator();
+
+let storageGateState: StorageGateState = { kind: 'resolving' };
+let privateStorageWatchdogTimer: ReturnType<typeof setInterval> | null = null;
+const PRIVATE_STORAGE_WATCHDOG_INTERVAL_MS = 10_000;
+
+function stopPrivateStorageWatchdog(): void {
+  if (privateStorageWatchdogTimer) {
+    clearInterval(privateStorageWatchdogTimer);
+    privateStorageWatchdogTimer = null;
+  }
+}
+
+/**
+ * Bounded (10s) presence re-check while running in Private Removable Storage mode. On loss:
+ * marks storage unavailable and stops the Connector — never redirects writes elsewhere, never
+ * constructs a replacement database. Does not attempt to gracefully quiesce a write that might
+ * be physically in flight at the exact instant of removal — see docs/technical-debt (private
+ * storage) for the honest limitation this implies; the Connector's own storage layer has no
+ * fallback/auto-recreate code path regardless, so a request that slips through fails cleanly
+ * rather than corrupting or recreating anything.
+ */
+function startPrivateStorageWatchdog(driveLetter: string, vaultId: string): void {
+  stopPrivateStorageWatchdog();
+  privateStorageWatchdogTimer = setInterval(() => {
+    if (isPrivateVaultStillPresent(driveLetter, vaultId)) return;
+    stopPrivateStorageWatchdog();
+    storageGateState = { kind: 'unavailable', reason: 'missing' };
+    logService.appendStructured({
+      level: 'warning',
+      message: 'Private BUDCOM storage disconnected while running.',
+      event: 'private_storage_lost',
+      component: 'private-storage',
+      metadata: { driveLetter },
+    });
+    void lifecycleService.stopConnector();
+    notifyRenderer();
+  }, PRIVATE_STORAGE_WATCHDOG_INTERVAL_MS);
+}
+
+/**
+ * Runs once at startup (and again on an explicit user retry) to decide whether the Connector may
+ * use its business-data storage yet. Never silently falls back to Standard/AppData for a
+ * configured Private installation, and never starts the Connector against storage that hasn't
+ * been positively resolved. A locator file that fails to parse is treated the same as "missing"
+ * (fail closed), not as "no decision made" — re-triggering first-run here could create a second,
+ * orphaned vault.
+ */
+async function resolveStorageGate(): Promise<void> {
+  stopPrivateStorageWatchdog();
+  if (!privateStorageLocatorStore.exists()) {
+    storageGateState = { kind: 'first-run' };
+    return;
+  }
+  const record = privateStorageLocatorStore.load();
+  if (!record) {
+    storageGateState = { kind: 'unavailable', reason: 'missing' };
+    return;
+  }
+  if (record.mode === 'standard') {
+    storageGateState = { kind: 'ready', mode: 'standard' };
+    return;
+  }
+
+  const resolution: StorageResolution = await resolvePrivateVault(record, removableVolumeEnumerator);
+  if (resolution.status !== 'resolved') {
+    storageGateState = { kind: 'unavailable', reason: resolution.status === 'mismatched' ? 'mismatched' : 'missing' };
+    return;
+  }
+
+  settingsService.overrideLifecycleContext({
+    connectorDatabaseDir: resolution.dataRoot,
+    privateStorageExpectedVaultId: resolution.vaultId,
+    privateStorageMarkerPath: privateStorageMarkerPath(resolution.driveLetter),
+  });
+  resolved = settingsService.getResolvedConfig();
+
+  if (resolution.driveLetter !== record.lastKnownDriveLetter || resolution.volumeLabel !== record.lastKnownVolumeLabel) {
+    privateStorageLocatorStore.save({
+      ...record,
+      lastKnownDriveLetter: resolution.driveLetter,
+      lastKnownVolumeLabel: resolution.volumeLabel,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  storageGateState = {
+    kind: 'ready',
+    mode: 'private-removable',
+    driveLetter: resolution.driveLetter,
+    volumeLabel: resolution.volumeLabel,
+  };
+  startPrivateStorageWatchdog(resolution.driveLetter, resolution.vaultId);
+}
+
+/**
+ * (Re)constructs and starts the Connector lifecycle against whatever `resolved` currently
+ * contains — identical to what startConnectorWithRouteResolution() has always done for its one
+ * unconditional call, factored out so the storage-gate IPC handlers (choose/retry) can trigger
+ * the exact same activation once storage resolves, without re-running networkWatcher.start() or
+ * resolveStorageGate() a second time. Caller is responsible for only calling this once
+ * storageGateState.kind === 'ready' (checked at both call sites).
+ */
+async function activateConnectorLifecycle(): Promise<void> {
+  if (resolved.effective.connectorBindMode === 'trusted-lan') {
+    trustedLanCoordinator.requestEvaluation(lastNetworkResolution);
+    await trustedLanCoordinator.settle();
+  } else {
+    lifecycleService = createLifecycleService();
+    diagnosticsService = createDiagnosticsService();
+    await lifecycleService.initialize();
+  }
+}
 
 // Route-backed network state. activeNetworkAdapter feeds computeEffectiveLifecycleConfig() so a
 // trusted-LAN Connector is always spawned bound to the current default-route adapter, never a
@@ -941,6 +1070,75 @@ function registerIpcHandlers(): void {
     }
     return { ok: true };
   });
+  registerIpcHandler('desktop:get-storage-status', async () => storageGateState);
+  registerIpcHandler('desktop:list-removable-volumes', async () => removableVolumeEnumerator.listRemovableVolumes());
+  registerIpcHandler('desktop:choose-storage-mode', async (input: unknown) => {
+    const choice = validateChooseStorageModeInput(input);
+    const now = new Date().toISOString();
+
+    if (choice.mode === 'standard') {
+      const saveResult = privateStorageLocatorStore.save({
+        schemaVersion: 1,
+        mode: 'standard',
+        vaultId: null,
+        lastKnownDriveLetter: null,
+        lastKnownVolumeLabel: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      if (!saveResult.ok) {
+        return { ok: false, message: saveResult.message };
+      }
+      storageGateState = { kind: 'ready', mode: 'standard' };
+      await activateConnectorLifecycle();
+      notifyRenderer();
+      return { ok: true, state: storageGateState };
+    }
+
+    let vaultId: string;
+    try {
+      const existing = readExistingVaultOnDrive(choice.driveLetter);
+      vaultId = existing ? existing.vaultId : createPrivateVault(choice.driveLetter).vaultId;
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+
+    const volumes = await removableVolumeEnumerator.listRemovableVolumes();
+    const volumeLabel = volumes.find((volume) => volume.driveLetter.toUpperCase() === choice.driveLetter.toUpperCase())?.label ?? null;
+
+    const saveResult = privateStorageLocatorStore.save({
+      schemaVersion: 1,
+      mode: 'private-removable',
+      vaultId,
+      lastKnownDriveLetter: choice.driveLetter,
+      lastKnownVolumeLabel: volumeLabel,
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (!saveResult.ok) {
+      return { ok: false, message: saveResult.message };
+    }
+
+    settingsService.overrideLifecycleContext({
+      connectorDatabaseDir: privateConnectorDataDir(choice.driveLetter, vaultId),
+      privateStorageExpectedVaultId: vaultId,
+      privateStorageMarkerPath: privateStorageMarkerPath(choice.driveLetter),
+    });
+    resolved = settingsService.getResolvedConfig();
+    storageGateState = { kind: 'ready', mode: 'private-removable', driveLetter: choice.driveLetter, volumeLabel };
+    startPrivateStorageWatchdog(choice.driveLetter, vaultId);
+    await activateConnectorLifecycle();
+    notifyRenderer();
+    return { ok: true, state: storageGateState };
+  });
+  registerIpcHandler('desktop:retry-storage-connection', async () => {
+    await resolveStorageGate();
+    if (storageGateState.kind === 'ready') {
+      await activateConnectorLifecycle();
+    }
+    notifyRenderer();
+    return storageGateState;
+  });
 }
 
 /**
@@ -957,18 +1155,21 @@ async function startConnectorWithRouteResolution(): Promise<void> {
   // first Connector spawn below already reflects the live network, not a stale hand-typed value.
   await networkWatcher.start();
 
-  if (resolved.effective.connectorBindMode === 'trusted-lan') {
+  // Storage-mode decision (Standard vs. Private Removable Storage) must be resolved before the
+  // Connector ever gets a chance to open/create its database — first-run shows the setup screen
+  // and skips activation entirely below; an already-configured Private installation whose vault
+  // can't be found shows "storage not connected" and likewise never activates the Connector. The
+  // renderer's storage-gate IPC handlers call activateConnectorLifecycle() directly once the user
+  // resolves either case, without repeating networkWatcher.start()/resolveStorageGate() here.
+  await resolveStorageGate();
+  if (storageGateState.kind === 'ready') {
     // Route the very first bind through the same authoritative eligibility check every later
     // rebind uses — a Public/unknown-profile network must never get an initial LAN bind either.
-    trustedLanCoordinator.requestEvaluation(lastNetworkResolution);
-    await trustedLanCoordinator.settle();
-  } else {
-    lifecycleService = createLifecycleService();
-    diagnosticsService = createDiagnosticsService();
-    await lifecycleService.initialize();
+    await activateConnectorLifecycle();
   }
 
   desktopStartupComplete = true;
+  notifyRenderer();
 }
 
 export function bootstrapApp(): void {

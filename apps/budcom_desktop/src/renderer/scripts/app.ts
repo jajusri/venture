@@ -19,6 +19,9 @@ import type {
 } from '../../application/types.js';
 import type { ConnectorLifecycleStatus } from '../../application/connector-lifecycle-types.js';
 import type { MobileAccessStatus } from '../../application/mobile-access-status-service.js';
+import type { RemovableVolumeInfo } from '../../application/private-storage/removable-volume-enumerator.js';
+import type { ChooseStorageModeResult, StorageGateState } from '../../application/private-storage/private-storage-types.js';
+import { renderStorageGate } from './storage-gate.js';
 
 export interface DesktopBridge {
   getDashboardState(): Promise<DashboardState>;
@@ -59,6 +62,10 @@ export interface DesktopBridge {
   cancelPairing(): Promise<ActivePairingSessionView>;
   listTrustedPairingDevices(): Promise<readonly TrustedPairingDeviceSummary[]>;
   revokeTrustedPairingDevice(credentialId: string): Promise<{ ok: boolean; message: string }>;
+  getStorageStatus(): Promise<StorageGateState>;
+  listRemovableVolumes(): Promise<readonly RemovableVolumeInfo[]>;
+  chooseStorageMode(input: { mode: 'standard' } | { mode: 'private-removable'; driveLetter: string }): Promise<ChooseStorageModeResult>;
+  retryStorageConnection(): Promise<StorageGateState>;
   onStatusUpdated(listener: () => void): () => void;
 }
 
@@ -2053,6 +2060,17 @@ export function bindNavigation(): void {
 }
 
 export async function startDesktopShell(): Promise<void> {
+  // Storage-mode decision (first run) or "storage not connected" must be resolved before the
+  // normal dashboard flow queries the Connector — otherwise the very first thing a first-run
+  // user would see is a confusing "cannot reach connector" error behind the setup prompt.
+  // renderStorageGate() blocks (showing the appropriate screen) until resolved, then this
+  // function re-enters itself once to run the normal flow below against the now-ready backend.
+  const storageReady = await renderStorageGate();
+  if (!storageReady) {
+    await startDesktopShell();
+    return;
+  }
+
   bindNavigation();
   bindCompanyActions();
   bindLedgerActions();

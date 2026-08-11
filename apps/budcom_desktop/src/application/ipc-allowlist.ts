@@ -47,6 +47,10 @@ export const ALLOWED_IPC_CHANNELS = [
   'desktop:cancel-pairing',
   'desktop:list-trusted-pairing-devices',
   'desktop:revoke-trusted-pairing-device',
+  'desktop:get-storage-status',
+  'desktop:list-removable-volumes',
+  'desktop:choose-storage-mode',
+  'desktop:retry-storage-connection',
 ] as const;
 
 export type AllowedIpcChannel = (typeof ALLOWED_IPC_CHANNELS)[number];
@@ -148,4 +152,28 @@ export function validateLedgerQuery(value: unknown): { query: string; page: numb
 
 export function validateStockItemQuery(value: unknown): { query: string; page: number; pageSize: number } {
   return validateLedgerQuery(value);
+}
+
+export type ChooseStorageModeInput =
+  | { readonly mode: 'standard' }
+  | { readonly mode: 'private-removable'; readonly driveLetter: string };
+
+const DRIVE_LETTER_PATTERN = /^[A-Za-z]:\\?$/;
+
+export function validateChooseStorageModeInput(value: unknown): ChooseStorageModeInput {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Storage mode selection payload must be an object.');
+  }
+  const input = value as Record<string, unknown>;
+  if (input.mode === 'standard') {
+    return { mode: 'standard' };
+  }
+  if (input.mode === 'private-removable') {
+    if (typeof input.driveLetter !== 'string' || !DRIVE_LETTER_PATTERN.test(input.driveLetter.trim())) {
+      throw new Error('driveLetter must look like "E:\\".');
+    }
+    const normalized = input.driveLetter.trim().replace(/\\?$/, '\\');
+    return { mode: 'private-removable', driveLetter: normalized };
+  }
+  throw new Error('mode must be "standard" or "private-removable".');
 }

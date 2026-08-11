@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type { ConnectorLifecycleStatus } from '../application/connector-lifecycle-types.js';
 import type { MobileAccessStatus } from '../application/mobile-access-status-service.js';
+import type { RemovableVolumeInfo } from '../application/private-storage/removable-volume-enumerator.js';
+import type { ChooseStorageModeResult, StorageGateState } from '../application/private-storage/private-storage-types.js';
 import type {
   ActivePairingSessionView,
   CompanyListResult,
@@ -65,6 +67,10 @@ export interface DesktopBridge {
   cancelPairing(): Promise<ActivePairingSessionView>;
   listTrustedPairingDevices(): Promise<readonly TrustedPairingDeviceSummary[]>;
   revokeTrustedPairingDevice(credentialId: string): Promise<{ ok: boolean; message: string }>;
+  getStorageStatus(): Promise<StorageGateState>;
+  listRemovableVolumes(): Promise<readonly RemovableVolumeInfo[]>;
+  chooseStorageMode(input: { mode: 'standard' } | { mode: 'private-removable'; driveLetter: string }): Promise<ChooseStorageModeResult>;
+  retryStorageConnection(): Promise<StorageGateState>;
   onStatusUpdated(listener: () => void): () => void;
 }
 
@@ -107,6 +113,10 @@ const desktopBridge: DesktopBridge = {
   cancelPairing: () => ipcRenderer.invoke('desktop:cancel-pairing'),
   listTrustedPairingDevices: () => ipcRenderer.invoke('desktop:list-trusted-pairing-devices'),
   revokeTrustedPairingDevice: (credentialId) => ipcRenderer.invoke('desktop:revoke-trusted-pairing-device', credentialId),
+  getStorageStatus: () => ipcRenderer.invoke('desktop:get-storage-status'),
+  listRemovableVolumes: () => ipcRenderer.invoke('desktop:list-removable-volumes'),
+  chooseStorageMode: (input) => ipcRenderer.invoke('desktop:choose-storage-mode', input),
+  retryStorageConnection: () => ipcRenderer.invoke('desktop:retry-storage-connection'),
   onStatusUpdated: (listener) => {
     const channel = 'desktop:status-updated';
     const wrapped = (): void => listener();

@@ -156,6 +156,10 @@ function baseBridge() {
     cancelPairing: vi.fn(),
     listTrustedPairingDevices: vi.fn(),
     revokeTrustedPairingDevice: vi.fn(),
+    getStorageStatus: vi.fn(async () => ({ kind: 'ready' as const, mode: 'standard' as const })),
+    listRemovableVolumes: vi.fn(async () => []),
+    chooseStorageMode: vi.fn(),
+    retryStorageConnection: vi.fn(),
     onStatusUpdated: vi.fn((listener: () => void) => {
       statusListener = listener;
       return () => {
