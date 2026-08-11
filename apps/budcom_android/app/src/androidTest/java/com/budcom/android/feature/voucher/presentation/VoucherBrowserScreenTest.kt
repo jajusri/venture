@@ -72,9 +72,9 @@ class VoucherBrowserScreenTest {
         assertTrue(openedId == "v-1")
     }
 
-    // Phase 3T-1: a long party name must not hide the date column, and the row must still render
-    // the formatted date without crashing — the Row's three equal-weight, ellipsized Text children
-    // already guarantee this structurally (unchanged in this phase); this proves it end-to-end.
+    // Phase 3T-1, updated for the LEFT type/number · CENTER party · RIGHT date row layout: a long
+    // party name must not hide the date column, and the row must still render the formatted date
+    // without crashing — CENTER absorbs the ellipsis, RIGHT (date) is never weighted/truncated.
     @Test
     fun rowWithLongPartyNameStillShowsNumberAndDate() {
         composeRule.setContent {
@@ -100,7 +100,7 @@ class VoucherBrowserScreenTest {
             }
         }
         composeRule.onNodeWithTag("voucher_row_v-1").assertIsDisplayed()
-        composeRule.onNodeWithText("S-1").assertIsDisplayed()
+        composeRule.onNodeWithText("Sales · S-1").assertIsDisplayed()
         composeRule.onNodeWithText("07 Aug 2026").assertIsDisplayed()
     }
 
