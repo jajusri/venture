@@ -13,8 +13,11 @@ import com.budcom.android.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -32,6 +35,9 @@ class LedgerBrowserViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(LedgerBrowserUiState(searchQuery = initialQuery))
     val uiState: StateFlow<LedgerBrowserUiState> = _uiState.asStateFlow()
+
+    private val _effects = MutableSharedFlow<LedgerBrowserEffect>(extraBufferCapacity = 1)
+    val effects: SharedFlow<LedgerBrowserEffect> = _effects.asSharedFlow()
 
     private var searchJob: Job? = null
     private var loadJob: Job? = null
@@ -64,14 +70,17 @@ class LedgerBrowserViewModel @Inject constructor(
                 }
             }
             is LedgerBrowserEvent.LedgerTapped -> {
-                val notice = if (event.ledgerId.isBlank()) {
-                    "Unable to open this ledger: its identifier is missing."
-                } else if (_uiState.value.ledgers.none { it.id == event.ledgerId }) {
-                    "Unable to open this ledger: it is no longer in the current list."
-                } else {
-                    "Ledger details are not available in this release."
+                val notice = when {
+                    event.ledgerId.isBlank() -> "Unable to open this ledger: its identifier is missing."
+                    _uiState.value.ledgers.none { it.id == event.ledgerId } ->
+                        "Unable to open this ledger: it is no longer in the current list."
+                    else -> null
                 }
-                _uiState.update { it.copy(selectedLedgerNotice = notice) }
+                if (notice != null) {
+                    _uiState.update { it.copy(selectedLedgerNotice = notice) }
+                } else {
+                    viewModelScope.launch { _effects.emit(LedgerBrowserEffect.OpenLedgerStatement(event.ledgerId)) }
+                }
             }
             LedgerBrowserEvent.DismissLedgerNotice -> {
                 _uiState.update { it.copy(selectedLedgerNotice = null) }

@@ -29,6 +29,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import app.cash.turbine.test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LedgerBrowserViewModelTest {
@@ -105,12 +106,15 @@ class LedgerBrowserViewModelTest {
     }
 
     @Test
-    fun `tapping a ledger row triggers an explicit functional response instead of a dead tap`() = runTest(dispatcher) {
+    fun `tapping a resolvable ledger row navigates to its statement instead of a dead tap`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
         assertEquals(null, vm.uiState.value.selectedLedgerNotice)
-        vm.onEvent(LedgerBrowserEvent.LedgerTapped("guid:cash"))
-        assertTrue(vm.uiState.value.selectedLedgerNotice != null)
+        vm.effects.test {
+            vm.onEvent(LedgerBrowserEvent.LedgerTapped("guid:cash"))
+            assertEquals(LedgerBrowserEffect.OpenLedgerStatement("guid:cash"), awaitItem())
+        }
+        assertEquals(null, vm.uiState.value.selectedLedgerNotice)
     }
 
     @Test
@@ -122,10 +126,18 @@ class LedgerBrowserViewModelTest {
     }
 
     @Test
+    fun `tapping a ledger no longer in the list does not fail silently`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(LedgerBrowserEvent.LedgerTapped("guid:stale"))
+        assertTrue(vm.uiState.value.selectedLedgerNotice?.contains("no longer") == true)
+    }
+
+    @Test
     fun `dismissing the ledger notice clears it`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
-        vm.onEvent(LedgerBrowserEvent.LedgerTapped("guid:cash"))
+        vm.onEvent(LedgerBrowserEvent.LedgerTapped(""))
         assertTrue(vm.uiState.value.selectedLedgerNotice != null)
         vm.onEvent(LedgerBrowserEvent.DismissLedgerNotice)
         assertEquals(null, vm.uiState.value.selectedLedgerNotice)

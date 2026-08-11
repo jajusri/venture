@@ -20,6 +20,8 @@ import com.budcom.android.feature.dashboard.presentation.DashboardRoute
 import com.budcom.android.feature.diagnostics.presentation.DiagnosticsRoute
 import com.budcom.android.feature.discovery.presentation.ConnectorDiscoveryRoute
 import com.budcom.android.feature.masterdata.ledger.presentation.LedgerBrowserRoute
+import com.budcom.android.feature.masterdata.ledger.presentation.LedgerStatementRoute
+import com.budcom.android.feature.masterdata.ledger.presentation.LedgerStatementViewModel
 import com.budcom.android.feature.masterdata.presentation.MasterDataHubScreen
 import com.budcom.android.feature.masterdata.stockitem.presentation.StockItemBrowserRoute
 import com.budcom.android.feature.pairing.presentation.SecurePairingRoute
@@ -152,7 +154,26 @@ fun BudcomNavHost(
                 },
             ),
         ) {
-            LedgerBrowserRoute()
+            LedgerBrowserRoute(
+                onOpenLedgerStatement = { ledgerId ->
+                    navController.navigate(Routes.ledgerStatement(ledgerId))
+                },
+            )
+        }
+        composable(
+            route = Routes.LEDGER_STATEMENT,
+            arguments = listOf(
+                navArgument(LedgerStatementViewModel.LEDGER_ID_ARG) {
+                    type = NavType.StringType
+                },
+            ),
+        ) {
+            LedgerStatementRoute(
+                onBack = { navController.popBackStack() },
+                onOpenVoucherDetails = { voucherId ->
+                    navController.navigate(Routes.voucherDetails(voucherId))
+                },
+            )
         }
         composable(
             route = Routes.STOCK_ITEMS,

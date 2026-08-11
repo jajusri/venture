@@ -21,12 +21,17 @@ data class LedgerBrowserUiState(
     val dataFreshnessAt: String? = null,
     val isOnline: Boolean = true,
     val error: MasterDataUiError? = null,
-    /** Set when the user taps a ledger row; ledger details are not yet implemented, so this
-     * gives an explicit, non-silent response instead of a dead tap. Cleared on dismissal. */
+    /** Set only when a tap cannot be resolved to a real ledger (blank/stale id) — an explicit,
+     * non-silent response instead of a dead tap. A resolvable tap instead emits
+     * [LedgerBrowserEffect.OpenLedgerStatement]. Cleared on dismissal. */
     val selectedLedgerNotice: String? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isLoadingMore
     val hasContent: Boolean get() = ledgers.isNotEmpty()
+}
+
+sealed interface LedgerBrowserEffect {
+    data class OpenLedgerStatement(val ledgerId: String) : LedgerBrowserEffect
 }
 
 data class LedgerRowUi(

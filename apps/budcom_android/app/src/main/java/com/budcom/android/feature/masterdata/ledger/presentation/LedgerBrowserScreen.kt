@@ -47,9 +47,17 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun LedgerBrowserRoute(
+    onOpenLedgerStatement: (String) -> Unit,
     viewModel: LedgerBrowserViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is LedgerBrowserEffect.OpenLedgerStatement -> onOpenLedgerStatement(effect.ledgerId)
+            }
+        }
+    }
     LedgerBrowserScreen(
         state = state,
         onEvent = viewModel::onEvent,
