@@ -63,6 +63,25 @@ data class VoucherBrowserUiState(
 /** Distinct from [VoucherCacheState]: describes the background full-history walk, not the currently-viewed window. */
 enum class VoucherHistoryReconciliationStatus { NotStarted, InProgress, Completed, Failed }
 
+/**
+ * Lightweight, truthful label for the background historical-reconciliation walk — deliberately
+ * not a progress dashboard, just an honest one-line state. Returns null for [VoucherHistoryReconciliationStatus.NotStarted]
+ * (nothing meaningful to say yet, so showing nothing is more honest than a placeholder). Never
+ * claims "Full history" when [VoucherBrowserUiState.historyReconciliationScopeIsAuthoritative] is
+ * false — that specifically means BOOKSFROM was unavailable and only a fallback window was
+ * walked, so the label says "Available history" instead.
+ */
+fun VoucherBrowserUiState.reconciliationStatusLabel(): String? = when (historyReconciliationStatus) {
+    VoucherHistoryReconciliationStatus.NotStarted -> null
+    VoucherHistoryReconciliationStatus.InProgress -> "Recent vouchers updated · Historical reconciliation in progress"
+    VoucherHistoryReconciliationStatus.Completed -> if (historyReconciliationScopeIsAuthoritative == true) {
+        "History reconciled · Scope: authoritative"
+    } else {
+        "Available history reconciled · Complete historical scope unavailable"
+    }
+    VoucherHistoryReconciliationStatus.Failed -> "Historical reconciliation did not complete · Showing available data"
+}
+
 internal fun VoucherCacheState.statusText(lastSyncedAt: Long?): String = when (this) {
     VoucherCacheState.Live -> "Live"
     VoucherCacheState.Offline -> "Offline · Last synced ${lastSyncedAt?.let(::formatSyncTime) ?: "unknown"}"
@@ -102,21 +121,25 @@ internal fun AppError.toVoucherUiError(): MasterDataUiError = toMasterDataUiErro
 
 internal fun VoucherSummary.toRowUi(): VoucherRowUi {
     val numberLabel = number?.takeIf { it.isNotBlank() } ?: "—"
-    val secondary = listOfNotNull(
-        partyName,
-        referenceNumber?.let { "Ref: $it" },
-    ).joinToString(" · ").ifBlank { null }
+    val statusLabel = status.name.lowercase().replaceFirstChar { it.titlecase() }
     val amount = amount?.let { money ->
         val side = money.side?.name?.lowercase()
         if (side != null) "${money.value} ($side)" else money.value
     }
+    // Party name now has its own dedicated primary-line column (see VoucherRowCard), so the
+    // secondary line carries only what doesn't already have a place: reference, status, amount.
+    val secondary = listOfNotNull(
+        referenceNumber?.takeIf { it.isNotBlank() }?.let { "Ref: $it" },
+        statusLabel,
+        amount,
+    ).joinToString(" · ").ifBlank { null }
     return VoucherRowUi(
         id = identity.id,
         primaryLabel = numberLabel,
         secondaryLabel = secondary,
         dateLabel = formatVoucherDate(date),
         typeLabel = type,
-        statusLabel = status.name.lowercase().replaceFirstChar { it.titlecase() },
+        statusLabel = statusLabel,
         amountLabel = amount,
         partyName = partyName,
     )
