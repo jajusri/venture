@@ -53,9 +53,41 @@ class InvoiceShareContentTest {
     }
 
     @Test
+    fun `voucher date is rendered in the PDF header`() {
+        val lines = voucherHeaderLines(details())
+        assertTrue(lines.any { it.contains("Date: 27 Jul 2026") })
+    }
+
+    @Test
+    fun `historical back-dated voucher shows its own date, not any other`() {
+        val backDated = details().copy(summary = details().summary.copy(date = "2020-01-15"))
+        val lines = voucherHeaderLines(backDated)
+        assertTrue(lines.any { it.contains("Date: 15 Jan 2020") })
+        assertFalse(lines.any { it.contains("2026") })
+    }
+
+    @Test
+    fun `voucher date rendering is independent of the current device date`() {
+        // No clock/current-time input exists anywhere in voucherHeaderLines' signature — this
+        // test documents that invariant: the only date-shaped input is the Voucher's own.
+        val lines = voucherHeaderLines(details())
+        assertEquals(lines, voucherHeaderLines(details()))
+    }
+
+    @Test
+    fun `resynced voucher whose authoritative date changed renders the new date`() {
+        val original = voucherHeaderLines(details())
+        val resynced = voucherHeaderLines(details().copy(summary = details().summary.copy(date = "2026-10-01")))
+        assertTrue(original.any { it.contains("Date: 27 Jul 2026") })
+        assertTrue(resynced.any { it.contains("Date: 01 Oct 2026") })
+        assertFalse(resynced.any { it.contains("27 Jul 2026") })
+    }
+
+    @Test
     fun `estimate uses exact heading labels columns and footer`() {
         assertEquals("ESTIMATE", EstimatePdfText.HEADING)
         assertEquals("Est. Voucher No.", EstimatePdfText.VOUCHER_LABEL)
+        assertEquals("Date", EstimatePdfText.DATE_LABEL)
         assertEquals("Est. To", EstimatePdfText.BUYER_LABEL)
         assertEquals(listOf("Sl. No.", "Item Description", "Qty", "Unit", "Rate", "Amount"), EstimatePdfText.COLUMNS)
         assertEquals(6, EstimatePdfText.COLUMNS.size)

@@ -10,6 +10,7 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
+import com.budcom.android.feature.voucher.presentation.formatVoucherDate
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -141,7 +142,7 @@ internal object InvoicePdfRenderer {
             strokeWidth = 0.65f
         }
 
-        val voucherLines = wrapEstimateText("${EstimatePdfText.VOUCHER_LABEL}: ${details.summary.number.orEmpty()}", 52).take(2)
+        val voucherLines = voucherHeaderLines(details)
         val buyerLines = wrapEstimateText("${EstimatePdfText.BUYER_LABEL}: ${details.summary.partyName.orEmpty()}", 52).take(2)
         val firstHeaderTop = 77f + maxOf(voucherLines.size, buyerLines.size).coerceAtLeast(1) * 11f
         val rows = planEstimateItems(
@@ -292,6 +293,7 @@ internal object InvoicePdfRenderer {
 internal object EstimatePdfText {
     const val HEADING = "ESTIMATE"
     const val VOUCHER_LABEL = "Est. Voucher No."
+    const val DATE_LABEL = "Date"
     const val BUYER_LABEL = "Est. To"
     const val NARRATION_LABEL = "Narration"
     const val TOTAL_LABEL = "TOTAL"
@@ -345,6 +347,17 @@ internal fun planEstimateItems(
         EstimateItemLayout(page, y, y + height, description, item).also { y += height }
     }
 }
+
+/**
+ * Voucher No. and Date lines for the PDF header. Date is this Voucher's own authoritative date
+ * ([VoucherDetails.summary]`.date`, sourced from Room, never the device clock/PDF-creation/sync
+ * timestamp) — a back-dated Voucher renders its own historical date here, unchanged by when the
+ * PDF happens to be generated. A pure function of [details] so it's testable without a Canvas.
+ */
+internal fun voucherHeaderLines(details: VoucherDetails): List<String> = (
+    wrapEstimateText("${EstimatePdfText.VOUCHER_LABEL}: ${details.summary.number.orEmpty()}", 52) +
+        wrapEstimateText("${EstimatePdfText.DATE_LABEL}: ${formatVoucherDate(details.summary.date)}", 52)
+    ).take(3)
 
 internal fun wrapEstimateText(text: String, maxChars: Int): List<String> {
     if (text.isBlank()) return listOf("")
