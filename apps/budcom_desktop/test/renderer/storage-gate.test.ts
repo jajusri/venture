@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderStorageGate } from '../../src/renderer/scripts/storage-gate.js';
 
@@ -23,6 +23,11 @@ const STORAGE_GATE_MARKUP = `
       <button type="button" id="storage-gate-retry"></button>
       <button type="button" id="storage-gate-locate"></button>
       <button type="button" id="storage-gate-exit"></button>
+    </div>
+    <div id="storage-gate-timeout" class="hidden">
+      <p class="storage-gate-unavailable-message">BUDCOM is taking longer than expected to start.</p>
+      <button type="button" id="storage-gate-timeout-retry"></button>
+      <button type="button" id="storage-gate-timeout-exit"></button>
     </div>
   </div>
 `;
@@ -70,5 +75,112 @@ describe('storage-gate retry button — concurrency guard', () => {
     // A click after the button re-enables is a genuinely new, separate retry attempt.
     retryButton.dispatchEvent(new Event('click', { bubbles: true }));
     expect(retryStorageConnection).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('storage-gate resolving state — bounded re-poll (P1: false "storage not connected")', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('A: resolving -> standard never shows the unavailable or timeout screen', async () => {
+    document.body.innerHTML = STORAGE_GATE_MARKUP;
+    const getStorageStatus = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: 'resolving' as const })
+      .mockResolvedValueOnce({ kind: 'resolving' as const })
+      .mockResolvedValueOnce({ kind: 'ready' as const, mode: 'standard' as const });
+    window.budcomDesktop = {
+      getStorageStatus,
+      retryStorageConnection: vi.fn(),
+    } as unknown as typeof window.budcomDesktop;
+
+    const resultPromise = renderStorageGate();
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await resultPromise;
+
+    expect(result).toBe(true);
+    expect(document.getElementById('storage-gate-unavailable')?.classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('storage-gate-timeout')?.classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('storage-gate-overlay')?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('B: resolving -> private-removable ready never shows the unavailable or timeout screen', async () => {
+    document.body.innerHTML = STORAGE_GATE_MARKUP;
+    const getStorageStatus = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: 'resolving' as const })
+      .mockResolvedValueOnce({
+        kind: 'ready' as const,
+        mode: 'private-removable' as const,
+        driveLetter: 'E:\\',
+        volumeLabel: 'BUDCOM-USB',
+      });
+    window.budcomDesktop = {
+      getStorageStatus,
+      retryStorageConnection: vi.fn(),
+    } as unknown as typeof window.budcomDesktop;
+
+    const resultPromise = renderStorageGate();
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await resultPromise;
+
+    expect(result).toBe(true);
+    expect(document.getElementById('storage-gate-unavailable')?.classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('storage-gate-timeout')?.classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('storage-gate-overlay')?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('C: resolving -> genuine unavailable only shows the unavailable screen once the backend actually reports it', async () => {
+    document.body.innerHTML = STORAGE_GATE_MARKUP;
+    const getStorageStatus = vi
+      .fn()
+      .mockResolvedValueOnce({ kind: 'resolving' as const })
+      .mockResolvedValueOnce({ kind: 'unavailable' as const, reason: 'missing' as const });
+    window.budcomDesktop = {
+      getStorageStatus,
+      retryStorageConnection: vi.fn(),
+    } as unknown as typeof window.budcomDesktop;
+
+    void renderStorageGate();
+    await vi.advanceTimersByTimeAsync(1000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.getElementById('storage-gate-unavailable')?.classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('storage-gate-timeout')?.classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('storage-gate-unavailable-detail')?.textContent).toContain(
+      'Connect the removable storage device',
+    );
+  });
+
+  it('D: resolving persisting past the bounded timeout shows an honest generic startup screen, never "storage missing"', async () => {
+    document.body.innerHTML = STORAGE_GATE_MARKUP;
+    const getStorageStatus = vi.fn(async () => ({ kind: 'resolving' as const }));
+    window.budcomDesktop = {
+      getStorageStatus,
+      retryStorageConnection: vi.fn(),
+    } as unknown as typeof window.budcomDesktop;
+
+    void renderStorageGate();
+    // Well past the 6s bound, but not unbounded.
+    await vi.advanceTimersByTimeAsync(7000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.getElementById('storage-gate-timeout')?.classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('storage-gate-unavailable')?.classList.contains('hidden')).toBe(true);
+
+    const message = document.querySelector('#storage-gate-timeout .storage-gate-unavailable-message')?.textContent ?? '';
+    expect(message.toLowerCase()).not.toContain('not connected');
+    expect(message.toLowerCase()).not.toContain('missing');
+
+    // Bounded: ~6000ms / 200ms poll interval, not unbounded polling.
+    expect(getStorageStatus.mock.calls.length).toBeGreaterThan(0);
+    expect(getStorageStatus.mock.calls.length).toBeLessThan(50);
   });
 });

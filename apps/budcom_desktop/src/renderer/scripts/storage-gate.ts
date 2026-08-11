@@ -185,6 +185,80 @@ async function runUnavailableFlow(overlay: HTMLElement, reason: 'missing' | 'mis
   });
 }
 
+/** How often the renderer re-checks a still-'resolving' startup state. Cheap: getStorageStatus()
+ * just reads main.ts's in-memory storageGateState, no I/O. */
+const STORAGE_GATE_RESOLVING_POLL_INTERVAL_MS = 200;
+/** Bounded ceiling on how long 'resolving' is treated as "still starting up" before surfacing an
+ * honest timeout state. Covers realistic resolution latency (e.g. a slow PowerShell removable-
+ * volume enumeration) without leaving the user staring at a stuck screen indefinitely. */
+const STORAGE_GATE_RESOLVING_TIMEOUT_MS = 6000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Bridges the transient window between window creation and main.ts's resolveStorageGate()
+ * settling (main.ts creates the window and starts this resolution concurrently, not
+ * sequentially — see bootstrapApp()). Polls the cheap in-memory getStorageStatus() read until it
+ * moves off 'resolving' or the bounded interval above elapses; never waits unboundedly.
+ */
+async function waitForStorageGateResolution(initial: StorageGateState): Promise<StorageGateState> {
+  let state = initial;
+  const deadline = Date.now() + STORAGE_GATE_RESOLVING_TIMEOUT_MS;
+  while (state.kind === 'resolving' && Date.now() < deadline) {
+    await sleep(STORAGE_GATE_RESOLVING_POLL_INTERVAL_MS);
+    state = await window.budcomDesktop.getStorageStatus();
+  }
+  return state;
+}
+
+/**
+ * Shows an honest "still starting up" screen once bounded polling has genuinely timed out —
+ * deliberately distinct from runUnavailableFlow(): a slow first check says nothing about whether
+ * a private vault is missing, so this must never reuse that wording. Retry forces a fresh,
+ * fully-awaited resolveStorageGate() via IPC (never itself returns 'resolving'), so the caller's
+ * dispatch loop always has a concrete state to act on afterward.
+ */
+async function runStartupTimeoutFlow(overlay: HTMLElement): Promise<StorageGateState> {
+  const section = byId<HTMLElement>('storage-gate-timeout');
+  const setupSection = byId<HTMLElement>('storage-gate-setup');
+  const unavailableSection = byId<HTMLElement>('storage-gate-unavailable');
+  hide(setupSection);
+  hide(unavailableSection);
+  show(section);
+  show(overlay);
+
+  const retryButton = byId<HTMLButtonElement>('storage-gate-timeout-retry');
+  const exitButton = byId<HTMLButtonElement>('storage-gate-timeout-exit');
+
+  return new Promise<StorageGateState>((resolve) => {
+    const onRetry = (): void => {
+      // Same overlapping-click guard as runUnavailableFlow's Retry — see its comment.
+      if (retryButton.disabled) return;
+      retryButton.disabled = true;
+      void (async () => {
+        try {
+          const state = await window.budcomDesktop.retryStorageConnection();
+          cleanup();
+          resolve(state);
+        } finally {
+          retryButton.disabled = false;
+        }
+      })();
+    };
+    const onExit = (): void => {
+      window.close();
+    };
+    function cleanup(): void {
+      retryButton.removeEventListener('click', onRetry);
+      exitButton.removeEventListener('click', onExit);
+    }
+    retryButton.addEventListener('click', onRetry);
+    exitButton.addEventListener('click', onExit);
+  });
+}
+
 /**
  * Checks the current storage-gate state and, if it blocks normal startup, shows the appropriate
  * screen and waits for the user to resolve it. Returns true when the app may proceed to its
@@ -193,27 +267,34 @@ async function runUnavailableFlow(overlay: HTMLElement, reason: 'missing' | 'mis
  * once this resolves, since the gate itself does not know how to initialize the dashboard.
  */
 export async function renderStorageGate(): Promise<boolean> {
-  const state: StorageGateState = await window.budcomDesktop.getStorageStatus();
+  let state: StorageGateState = await window.budcomDesktop.getStorageStatus();
 
-  if (state.kind === 'ready') {
-    // No DOM dependency in the common (already-resolved) case — deliberately does not require
-    // the overlay markup to exist at all, so a host page without it (e.g. a minimal test
-    // fixture) behaves exactly like a normal ready launch, not an error.
-    document.getElementById('storage-gate-overlay')?.classList.add('hidden');
-    return true;
-  }
+  for (;;) {
+    if (state.kind === 'resolving') {
+      // Transient startup state, never a failure — bounded-wait it before deciding anything.
+      state = await waitForStorageGateResolution(state);
+    }
 
-  const overlay = byId<HTMLElement>('storage-gate-overlay');
-  if (state.kind === 'first-run') {
-    await runSetupFlow(overlay);
-    return false;
+    if (state.kind === 'ready') {
+      // No DOM dependency in the common (already-resolved) case — deliberately does not require
+      // the overlay markup to exist at all, so a host page without it (e.g. a minimal test
+      // fixture) behaves exactly like a normal ready launch, not an error.
+      document.getElementById('storage-gate-overlay')?.classList.add('hidden');
+      return true;
+    }
+
+    const overlay = byId<HTMLElement>('storage-gate-overlay');
+    if (state.kind === 'first-run') {
+      await runSetupFlow(overlay);
+      return false;
+    }
+    if (state.kind === 'unavailable') {
+      await runUnavailableFlow(overlay, state.reason);
+      return false;
+    }
+    // Still 'resolving' after the bounded wait above: an honest generic startup-initialization
+    // delay, never a false "private storage missing" claim. Retry re-dispatches on whatever
+    // concrete state it settles to.
+    state = await runStartupTimeoutFlow(overlay);
   }
-  if (state.kind === 'unavailable') {
-    await runUnavailableFlow(overlay, state.reason);
-    return false;
-  }
-  // 'resolving' — main process hasn't finished its own first check yet; treat as blocking and
-  // let the caller retry shortly rather than racing ahead into a dashboard with no storage.
-  await runUnavailableFlow(overlay, 'missing');
-  return false;
 }
