@@ -53,7 +53,7 @@ class DefaultVoucherRemoteDataSource @Inject constructor(
     override suspend fun fetchVouchers(query: VoucherQuery): ApiResult<VoucherPage> =
         withBoundedAttempts {
             safeApiCall(errorMapper, connectivityObserver) {
-                api.listVouchers(
+                val envelope = api.listVouchers(
                     company = query.companyId,
                     from = query.dateRange.from,
                     to = query.dateRange.to,
@@ -64,7 +64,10 @@ class DefaultVoucherRemoteDataSource @Inject constructor(
                     voucherType = query.normalizedOptional(query.voucherType),
                     voucherNumber = query.normalizedOptional(query.voucherNumber),
                     partyName = query.normalizedOptional(query.partyName),
-                ).toDomain()
+                    includeDetails = if (query.includeDetails) true else null,
+                )
+                val page = envelope.toDomain()
+                if (query.includeDetails) page.copy(fullDetails = envelope.data.toDetailsDomain()) else page
             }
         }
 

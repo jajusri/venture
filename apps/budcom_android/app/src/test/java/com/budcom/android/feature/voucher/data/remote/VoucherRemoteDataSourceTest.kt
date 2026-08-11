@@ -153,6 +153,7 @@ class VoucherRemoteDataSourceTest {
             voucherType: String?,
             voucherNumber: String?,
             partyName: String?,
+            includeDetails: Boolean?,
         ): VoucherListEnvelopeDto {
             listCalls += 1
             if (succeedsOnAttempt != null && listCalls >= succeedsOnAttempt) {
@@ -185,6 +186,7 @@ class VoucherRemoteDataSourceTest {
         var lastVoucherType: String? = null
         var lastVoucherNumber: String? = null
         var lastPartyName: String? = null
+        var lastIncludeDetails: Boolean? = null
 
         override suspend fun listVouchers(
             company: String,
@@ -197,6 +199,7 @@ class VoucherRemoteDataSourceTest {
             voucherType: String?,
             voucherNumber: String?,
             partyName: String?,
+            includeDetails: Boolean?,
         ): VoucherListEnvelopeDto {
             listCalls += 1
             lastCompany = company
@@ -209,6 +212,7 @@ class VoucherRemoteDataSourceTest {
             lastVoucherType = voucherType
             lastVoucherNumber = voucherNumber
             lastPartyName = partyName
+            lastIncludeDetails = includeDetails
             return VoucherListEnvelopeDto(
                 schemaVersion = "1.0.0",
                 data = VoucherListDataDto(

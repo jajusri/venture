@@ -428,7 +428,7 @@ class VoucherRepositoryImplTest {
     @Test
     fun `an authoritative empty authenticated list success still advances freshness, matching legacy semantics`() = runTest(dispatcher) {
         val local = FakeLocal(listValue = samplePage().copy(items = emptyList(), totalItems = 0, totalPages = 0))
-        val emptyPage = samplePage().copy(items = emptyList(), totalItems = 0, totalPages = 0)
+        val emptyPage = samplePage().copy(items = emptyList(), totalItems = 0, totalPages = 0, fullDetails = emptyList())
         val authenticated = FakeAuthenticatedListRemote(AppResult.Success(emptyPage))
         val repository = repo(
             local = local,
@@ -896,6 +896,107 @@ class VoucherRepositoryImplTest {
         assertEquals(setOf("v-existing"), local.stored["company-a"]!!.map { it.identity.id }.toSet())
     }
 
+    // ==================== Offline-complete window sync ====================
+
+    @Test
+    fun `successful window sync stores full details, not just summaries`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemote(AppResult.Success(samplePage()))
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(1, local.storeListWithDetailsCalls)
+        assertEquals(1, local.storedFullDetails.size)
+        assertTrue("ledger/accounting lines must be part of the persisted payload", local.storedFullDetails.single().inventoryEntries.isNotEmpty())
+    }
+
+    @Test
+    fun `every refresh, including a historical background-reconciliation window, requests and stores full details`() = runTest(dispatcher) {
+        // Not "recent" — an old window, the kind ReconcileVoucherWindowsUseCase walks through in
+        // the background. refreshVouchers must not special-case "is this the fast window?" — every
+        // window it's asked to refresh becomes fully offline-ready.
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemote(AppResult.Success(samplePage()))
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+        val historicalWindow = query().copy(dateRange = VoucherDateRange("2024-01-01", "2024-01-31"))
+
+        repository.refreshVouchers(historicalWindow)
+
+        assertEquals(1, local.storeListWithDetailsCalls)
+        assertEquals(1, local.storedFullDetails.size)
+    }
+
+    @Test
+    fun `a page missing full details when details were requested fails the window closed`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        // A page whose summary items exist but fullDetails is null — a transport/mapping bug that
+        // silently lost detail data must never be persisted as though it were complete.
+        val incompletePage = samplePage().copy(fullDetails = null)
+        val remote = FakeAuthenticatedListRemote(AppResult.Success(incompletePage))
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(0, local.storeListCalls)
+        assertEquals(0, local.storeListWithDetailsCalls)
+    }
+
+    @Test
+    fun `a page whose detail count does not match its item count fails the window closed`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val mismatched = samplePage().copy(fullDetails = emptyList())
+        val remote = FakeAuthenticatedListRemote(AppResult.Success(mismatched))
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(0, local.storeListWithDetailsCalls)
+    }
+
+    @Test
+    fun `detail-transfer failure on a later page never touches Room, and the previous good window survives`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        local.stored["company-a"] = mutableListOf(sampleSummary(id = "v-existing").copy(date = "2026-07-10"))
+        // Page 1 is a complete, well-formed page; page 2 loses its detail data.
+        val remote = object : AuthenticatedVoucherListRemoteDataSource {
+            override suspend fun fetchVouchers(query: VoucherQuery): AppResult<VoucherPage> {
+                val item = sampleSummary(id = "v-page${query.page}")
+                return AppResult.Success(
+                    VoucherPage(
+                        "company-a", listOf(item), query.page, query.pageSize, 2, 2,
+                        fullDetails = if (query.page == 1) listOf(item.toEmptyDetails()) else null,
+                    ),
+                )
+            }
+        }
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query().copy(pageSize = 1))
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(0, local.storeListCalls)
+        assertEquals(0, local.storeListWithDetailsCalls)
+        assertEquals(setOf("v-existing"), local.stored["company-a"]!!.map { it.identity.id }.toSet())
+    }
+
+    @Test
+    fun `a 10,000-Voucher window is fetched in bounded 100-item pages, not one unbounded payload or one call per Voucher`() = runTest(dispatcher) {
+        val local = FakeLocal()
+        val remote = FakeAuthenticatedListRemotePaged(totalRecords = 10_000, recordsPerPage = 100)
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(100, remote.callCount)
+        assertEquals(1, local.storeListWithDetailsCalls)
+        assertEquals(10_000, local.storedFullDetails.size)
+    }
+
     // ============================== Fakes ==============================
 
     private fun repo(
@@ -1012,7 +1113,10 @@ class VoucherRepositoryImplTest {
                     dataQuality = VoucherDataQuality.Complete,
                 )
                 return AppResult.Success(
-                    VoucherPage("company-a", listOf(filler), query.page, query.pageSize, Int.MAX_VALUE, Int.MAX_VALUE),
+                    VoucherPage(
+                        "company-a", listOf(filler), query.page, query.pageSize, Int.MAX_VALUE, Int.MAX_VALUE,
+                        fullDetails = if (query.includeDetails) listOf(filler.toEmptyDetails()) else null,
+                    ),
                 )
             }
             if (totalRecords != null) {
@@ -1027,7 +1131,10 @@ class VoucherRepositoryImplTest {
                 val reportedTotal = if (corruptTotalOnPage == query.page) totalRecords + 1 else totalRecords
                 val reportedTotalPages = if (emptyButClaimsMoreOnPage == query.page) totalPages + 1 else totalPages
                 return AppResult.Success(
-                    VoucherPage("company-a", items, query.page, query.pageSize, reportedTotal, reportedTotalPages),
+                    VoucherPage(
+                        "company-a", items, query.page, query.pageSize, reportedTotal, reportedTotalPages,
+                        fullDetails = if (query.includeDetails) items.map { it.toEmptyDetails() } else null,
+                    ),
                 )
             }
             val index = query.page - 1
@@ -1042,6 +1149,7 @@ class VoucherRepositoryImplTest {
                     // canLoadMore = page < totalPages, so totalPages = pages.size makes the fake
                     // stop exactly after serving its last configured page.
                     totalPages = pages.size.coerceAtLeast(1),
+                    fullDetails = if (query.includeDetails) items.map { it.toEmptyDetails() } else null,
                 ),
             )
         }
@@ -1115,6 +1223,8 @@ class VoucherRepositoryImplTest {
         var lastScopeFrom: String? = null
         var lastScopeTo: String? = null
         val stored = mutableMapOf<String, MutableList<VoucherSummary>>()
+        var storeListWithDetailsCalls = 0
+        var storedFullDetails: List<VoucherDetails> = emptyList()
 
         override suspend fun storeList(
             companyId: String,
@@ -1136,6 +1246,19 @@ class VoucherRepositoryImplTest {
                 }
             }
         }
+        override suspend fun storeListWithDetails(
+            companyId: String,
+            items: List<VoucherDetails>,
+            syncedAt: Long,
+            scopeFrom: String,
+            scopeTo: String,
+        ) {
+            storeListWithDetailsCalls += 1
+            storedFullDetails = items
+            // Same authoritative-window replacement as storeList, just derived from full details —
+            // every storeList-based assertion in this file continues to hold for the detail path too.
+            storeList(companyId, items.map { it.summary }, syncedAt, scopeFrom, scopeTo)
+        }
         override suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long) {
             storeDetailsCalls += 1
             lastStoreDetailsCompany = companyId
@@ -1149,7 +1272,8 @@ class VoucherRepositoryImplTest {
 
     private fun query(companyId: String = "company-a") = VoucherQuery(companyId, VoucherDateRange("2026-07-01", "2026-07-27"))
 
-    private fun samplePage(companyId: String = "company-a") = VoucherPage(companyId, listOf(sampleSummary()), 1, 50, 1, 1)
+    private fun samplePage(companyId: String = "company-a") =
+        VoucherPage(companyId, listOf(sampleSummary()), 1, 50, 1, 1, fullDetails = listOf(sampleDetails()))
 
     private fun sampleDetails(voucherId: String = "v-1") = VoucherDetails(
         sampleSummary(id = voucherId), "2026-07-27", "cached", emptyList(),
@@ -1168,3 +1292,11 @@ class VoucherRepositoryImplTest {
         dataQuality = VoucherDataQuality.Complete,
     )
 }
+
+private fun VoucherSummary.toEmptyDetails() = VoucherDetails(
+    summary = this,
+    effectiveDate = null,
+    narration = null,
+    ledgerEntries = emptyList(),
+    inventoryEntries = emptyList(),
+)

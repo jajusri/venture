@@ -23,6 +23,7 @@ interface VoucherDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertVouchers(rows: List<VoucherEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertVoucher(row: VoucherEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertDetail(row: VoucherDetailEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertDetails(rows: List<VoucherDetailEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertLedgerLines(rows: List<VoucherLedgerLineEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertInventoryLines(rows: List<VoucherInventoryLineEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertMeta(row: VoucherCacheMetaEntity)
@@ -73,6 +74,50 @@ interface VoucherDao {
         if (rows.isNotEmpty()) upsertVouchers(rows)
         upsertMeta(VoucherCacheMetaEntity(companyId, syncedAt))
     }
+
+    /**
+     * Same authoritative-window replacement as [storeList], but also atomically persists the
+     * complete per-Voucher detail (ledger/inventory lines, narration, effectiveDate) that came
+     * back in the same offline-complete sync response — so every Voucher in [rows] is immediately
+     * usable (list, detail, Share/PDF) with no follow-up per-Voucher download. Old ledger/
+     * inventory lines for every fresh id are cleared before re-inserting (not just upserted): a
+     * Voucher whose line count shrank between syncs must not keep phantom trailing rows, matching
+     * the same clear-then-insert pattern [storeDetails] already uses for a single Voucher.
+     */
+    @Transaction
+    suspend fun storeListWithDetails(
+        companyId: String,
+        rows: List<VoucherEntity>,
+        details: List<VoucherDetailEntity>,
+        ledgerLines: List<VoucherLedgerLineEntity>,
+        inventoryLines: List<VoucherInventoryLineEntity>,
+        syncedAt: Long,
+        scopeFrom: String,
+        scopeTo: String,
+    ) {
+        val staleIds = if (rows.isEmpty()) {
+            voucherIdsInScope(companyId, scopeFrom, scopeTo)
+        } else {
+            staleVoucherIdsInScope(companyId, scopeFrom, scopeTo, rows.map { it.voucherId })
+        }
+        if (staleIds.isNotEmpty()) {
+            deleteVouchersById(companyId, staleIds)
+            deleteDetailsById(companyId, staleIds)
+            deleteLedgerLinesById(companyId, staleIds)
+            deleteInventoryLinesById(companyId, staleIds)
+        }
+        if (rows.isNotEmpty()) {
+            val freshIds = rows.map { it.voucherId }
+            upsertVouchers(rows)
+            deleteLedgerLinesById(companyId, freshIds)
+            deleteInventoryLinesById(companyId, freshIds)
+            upsertDetails(details)
+            if (ledgerLines.isNotEmpty()) upsertLedgerLines(ledgerLines)
+            if (inventoryLines.isNotEmpty()) upsertInventoryLines(inventoryLines)
+        }
+        upsertMeta(VoucherCacheMetaEntity(companyId, syncedAt))
+    }
+
     @Transaction suspend fun storeDetails(header: VoucherEntity, detail: VoucherDetailEntity, ledger: List<VoucherLedgerLineEntity>, inventory: List<VoucherInventoryLineEntity>) {
         upsertVoucher(header); upsertDetail(detail)
         deleteLedgerLines(header.companyId, header.voucherId); deleteInventoryLines(header.companyId, header.voucherId)

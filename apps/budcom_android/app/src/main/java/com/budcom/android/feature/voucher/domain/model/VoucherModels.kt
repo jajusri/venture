@@ -36,6 +36,12 @@ data class VoucherSort(
 
 /**
  * Typed list/search query for Connector `GET /api/v1/vouchers`.
+ *
+ * [includeDetails] requests the complete per-item payload (ledger/inventory entries, narration,
+ * effectiveDate) in the same bounded response, instead of a second per-voucher round trip.
+ * Defaults to `false` (ordinary interactive list/browse/search traffic) — set only by the
+ * offline-complete sync path, which needs every synchronized Voucher to be immediately usable
+ * without a follow-up download.
  */
 data class VoucherQuery(
     val companyId: String,
@@ -47,6 +53,7 @@ data class VoucherQuery(
     val page: Int = 1,
     val pageSize: Int = 50,
     val sort: VoucherSort = VoucherSort(),
+    val includeDetails: Boolean = false,
 )
 
 enum class VoucherStatus {
@@ -92,6 +99,12 @@ data class VoucherSummary(
     val dataQuality: VoucherDataQuality,
 )
 
+/**
+ * [fullDetails], when non-null, is the complete per-item detail payload for this same page —
+ * present only when the query that produced this page set [VoucherQuery.includeDetails]. `null`
+ * means "not requested," not "empty": callers must not infer completeness/absence of detail data
+ * from an empty list here, only from `null` vs non-null.
+ */
 data class VoucherPage(
     val companyId: String,
     val items: List<VoucherSummary>,
@@ -101,6 +114,7 @@ data class VoucherPage(
     val totalPages: Int,
     val cacheState: VoucherCacheState = VoucherCacheState.Live,
     val lastSyncedAt: Long? = null,
+    val fullDetails: List<VoucherDetails>? = null,
 ) {
     val canLoadMore: Boolean get() = page < totalPages
 }

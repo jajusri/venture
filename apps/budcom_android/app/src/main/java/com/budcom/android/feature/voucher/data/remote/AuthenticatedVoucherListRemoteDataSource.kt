@@ -43,7 +43,9 @@ class DefaultAuthenticatedVoucherListRemoteDataSource @Inject constructor(
         val operation = AuthenticatedConnectorOperation.ListVouchers(queryParams = query.toAuthenticatedQueryParams())
         return when (val result = port.execute(operation)) {
             is AuthenticatedConnectorResult.Success -> runCatching {
-                json.decodeFromString(VoucherListEnvelopeDto.serializer(), result.payload.rawJson).toDomain()
+                val envelope = json.decodeFromString(VoucherListEnvelopeDto.serializer(), result.payload.rawJson)
+                val page = envelope.toDomain()
+                if (query.includeDetails) page.copy(fullDetails = envelope.data.toDetailsDomain()) else page
             }.fold(
                 onSuccess = { AppResult.Success(it) },
                 onFailure = { AppResult.Failure(AppError.Serialization("The Connector response could not be parsed.", it)) },
@@ -71,4 +73,5 @@ private fun VoucherQuery.toAuthenticatedQueryParams(): Map<String, String> = bui
     normalizedOptional(voucherType)?.let { put("voucherType", it) }
     normalizedOptional(voucherNumber)?.let { put("voucherNumber", it) }
     normalizedOptional(partyName)?.let { put("partyName", it) }
+    if (includeDetails) put("includeDetails", "true")
 }

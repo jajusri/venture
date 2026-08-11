@@ -20,6 +20,7 @@ interface VoucherApi {
         @Query("voucherType") voucherType: String? = null,
         @Query("voucherNumber") voucherNumber: String? = null,
         @Query("partyName") partyName: String? = null,
+        @Query("includeDetails") includeDetails: Boolean? = null,
     ): VoucherListEnvelopeDto
 
     @GET("api/v1/vouchers/{id}")

@@ -19,24 +19,15 @@ internal fun VoucherListEnvelopeDto.toDomain(): VoucherPage = data.toDomain()
 
 internal fun VoucherListDataDto.toDomain(): VoucherPage = VoucherPage(
     companyId = companyId,
-    items = items.map { it.toDomain() },
+    items = items.map { it.toDomain().summary },
     page = pagination.page,
     pageSize = pagination.pageSize,
     totalItems = pagination.totalItems,
     totalPages = pagination.totalPages,
 )
 
-internal fun VoucherPublicRecordDto.toDomain(): VoucherSummary = VoucherSummary(
-    identity = VoucherIdentity(id = id),
-    date = date,
-    type = type,
-    number = number?.takeIf { it.isNotBlank() },
-    partyName = partyName?.takeIf { it.isNotBlank() },
-    referenceNumber = referenceNumber?.takeIf { it.isNotBlank() },
-    amount = amount?.toDomain(),
-    status = status.toVoucherStatus(),
-    dataQuality = dataQuality.toVoucherDataQuality(),
-)
+/** Full per-item detail view of the same response [toDomain] summarizes — see [VoucherListDataDto]. */
+internal fun VoucherListDataDto.toDetailsDomain(): List<VoucherDetails> = items.map { it.toDomain() }
 
 internal fun VoucherPublicDetailsDto.toDomain(): VoucherDetails = VoucherDetails(
     summary = VoucherSummary(

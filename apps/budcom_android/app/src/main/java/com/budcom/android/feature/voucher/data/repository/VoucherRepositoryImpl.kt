@@ -61,14 +61,18 @@ class VoucherRepositoryImpl @Inject constructor(
 
     override suspend fun refreshVouchers(query: VoucherQuery): AppResult<VoucherPage> =
         withContext(dispatchers.io) {
+            // An explicit refresh always fetches the complete offline-ready window — every
+            // synchronized Voucher must be immediately usable (list, detail, Share/PDF) with no
+            // follow-up per-Voucher download, regardless of which screen triggered the refresh.
+            val detailQuery = query.copy(includeDetails = true)
             val complete = when (transportGate.resolve()) {
-                ConnectorTransportSelection.LEGACY -> fetchCompleteWindow(query) { pageQuery ->
+                ConnectorTransportSelection.LEGACY -> fetchCompleteWindow(detailQuery) { pageQuery ->
                     when (val result = remoteDataSource.fetchVouchers(pageQuery)) {
                         is ApiResult.Success -> AppResult.Success(result.data)
                         is ApiResult.Failure -> AppResult.Failure(errorMapper.toAppError(result.error))
                     }
                 }
-                ConnectorTransportSelection.AUTHENTICATED -> fetchCompleteWindow(query) { pageQuery ->
+                ConnectorTransportSelection.AUTHENTICATED -> fetchCompleteWindow(detailQuery) { pageQuery ->
                     authenticatedRemoteDataSource.fetchVouchers(pageQuery)
                 }
             }
@@ -98,11 +102,24 @@ class VoucherRepositoryImpl @Inject constructor(
      * (but otherwise valid) cached voucher in that window. The caller's filters are applied only
      * when reading back from Room afterward, not during this network fetch.
      */
+    /**
+     * [details] is non-null only when [VoucherQuery.includeDetails] was set — every page must
+     * then carry a [VoucherPage.fullDetails] list matching that page's [VoucherPage.items] 1:1
+     * (same source response, so always true unless a transport/mapping bug loses data in
+     * flight); any mismatch fails the whole window closed rather than persisting a Voucher whose
+     * detail data silently doesn't correspond to its summary.
+     */
+    private data class CompleteWindow(
+        val items: List<VoucherSummary>,
+        val details: List<VoucherDetails>?,
+    )
+
     private suspend fun fetchCompleteWindow(
         query: VoucherQuery,
         fetchPage: suspend (VoucherQuery) -> AppResult<VoucherPage>,
-    ): AppResult<List<VoucherSummary>> {
+    ): AppResult<CompleteWindow> {
         val accumulated = mutableListOf<VoucherSummary>()
+        val detailsAccumulated = if (query.includeDetails) mutableListOf<VoucherDetails>() else null
         var page = 1
         var provenTotal: Int? = null
         while (true) {
@@ -111,6 +128,7 @@ class VoucherRepositoryImpl @Inject constructor(
                 dateRange = query.dateRange,
                 page = page,
                 pageSize = REFRESH_FETCH_PAGE_SIZE,
+                includeDetails = query.includeDetails,
             )
             when (val result = fetchPage(pageQuery)) {
                 is AppResult.Failure -> return result
@@ -121,6 +139,13 @@ class VoucherRepositoryImpl @Inject constructor(
                     }
                     provenTotal = pageData.totalItems
                     accumulated += pageData.items
+                    if (detailsAccumulated != null) {
+                        val pageDetails = pageData.fullDetails
+                        if (pageDetails == null || pageDetails.size != pageData.items.size) {
+                            return AppResult.Failure(AppError.Message(INCOMPLETE_WINDOW_MESSAGE))
+                        }
+                        detailsAccumulated += pageDetails
+                    }
                     if (pageData.items.isEmpty() && pageData.canLoadMore) {
                         // A page claiming more pages exist while returning nothing is invalid
                         // pagination metadata, not proof of anything — never loop on it.
@@ -128,7 +153,7 @@ class VoucherRepositoryImpl @Inject constructor(
                     }
                     if (!pageData.canLoadMore) {
                         return if (accumulated.size == provenTotal) {
-                            AppResult.Success(accumulated)
+                            AppResult.Success(CompleteWindow(accumulated, detailsAccumulated))
                         } else {
                             AppResult.Failure(AppError.Message(INCOMPLETE_WINDOW_MESSAGE))
                         }
@@ -142,17 +167,28 @@ class VoucherRepositoryImpl @Inject constructor(
         }
     }
 
-    private suspend fun persistAndReturn(query: VoucherQuery, items: List<VoucherSummary>): AppResult<VoucherPage> {
+    private suspend fun persistAndReturn(query: VoucherQuery, window: CompleteWindow): AppResult<VoucherPage> {
         val syncedAt = timeProvider.nowEpochMillis()
-        localDataSource.storeList(
-            query.companyId,
-            items,
-            syncedAt,
-            query.dateRange.from,
-            query.dateRange.to,
-        )
+        val details = window.details
+        if (details != null) {
+            localDataSource.storeListWithDetails(
+                query.companyId,
+                details,
+                syncedAt,
+                query.dateRange.from,
+                query.dateRange.to,
+            )
+        } else {
+            localDataSource.storeList(
+                query.companyId,
+                window.items,
+                syncedAt,
+                query.dateRange.from,
+                query.dateRange.to,
+            )
+        }
         val refreshed = localDataSource.list(query)
-            ?: VoucherPage(query.companyId, emptyList(), query.page, query.pageSize, items.size, 1)
+            ?: VoucherPage(query.companyId, emptyList(), query.page, query.pageSize, window.items.size, 1)
         return AppResult.Success(refreshed.copy(cacheState = VoucherCacheState.Live, lastSyncedAt = syncedAt))
     }
 

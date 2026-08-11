@@ -17,6 +17,19 @@ interface VoucherLocalDataSource {
         scopeFrom: String,
         scopeTo: String,
     )
+    /**
+     * Same authoritative-window replacement as [storeList], but [items] carry complete detail
+     * data (ledger/inventory lines, narration, effectiveDate) persisted atomically alongside the
+     * summary rows — every Voucher in scope becomes immediately usable offline with no follow-up
+     * per-Voucher download.
+     */
+    suspend fun storeListWithDetails(
+        companyId: String,
+        items: List<VoucherDetails>,
+        syncedAt: Long,
+        scopeFrom: String,
+        scopeTo: String,
+    )
     suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long)
     suspend fun list(query: VoucherQuery): VoucherPage?
     suspend fun details(companyId: String, voucherId: String): VoucherDetails?
@@ -38,6 +51,32 @@ class RoomVoucherLocalDataSource @Inject constructor(private val dao: VoucherDao
         scopeFrom,
         scopeTo,
     )
+
+    override suspend fun storeListWithDetails(
+        companyId: String,
+        items: List<VoucherDetails>,
+        syncedAt: Long,
+        scopeFrom: String,
+        scopeTo: String,
+    ) {
+        val distinct = items.distinctBy { it.summary.identity.id }
+        dao.storeListWithDetails(
+            companyId,
+            distinct.map { it.summary.entity(companyId, syncedAt) },
+            distinct.map { VoucherDetailEntity(companyId, it.summary.identity.id, it.effectiveDate, it.narration, syncedAt) },
+            distinct.flatMap { details ->
+                val id = details.summary.identity.id
+                details.ledgerEntries.map { VoucherLedgerLineEntity(companyId, id, it.lineNumber, it.ledgerName, it.amount.value, it.amount.side?.name, it.isDeemedPositive) }
+            },
+            distinct.flatMap { details ->
+                val id = details.summary.identity.id
+                details.inventoryEntries.map { VoucherInventoryLineEntity(companyId, id, it.lineNumber, it.itemName, it.quantity, it.rate, it.amount?.value, it.amount?.side?.name) }
+            },
+            syncedAt,
+            scopeFrom,
+            scopeTo,
+        )
+    }
 
     override suspend fun storeDetails(companyId: String, details: VoucherDetails, syncedAt: Long) {
         val id = details.summary.identity.id

@@ -121,6 +121,113 @@ class VoucherDaoTest {
         assertEquals(listOf("v-2"), remaining)
     }
 
+    @Test
+    fun storeListWithDetails_persistsSummaryAndFullDetailAtomicallyInOneWindowSync() = runBlocking {
+        dao.storeListWithDetails(
+            "co-a",
+            listOf(entity("co-a", "v-1", "2026-07-10")),
+            listOf(VoucherDetailEntity("co-a", "v-1", "2026-07-10", "delivered by noon", 1_000L)),
+            listOf(VoucherLedgerLineEntity("co-a", "v-1", 1, "Cash", "100", "Debit", null)),
+            listOf(VoucherInventoryLineEntity("co-a", "v-1", 1, "Item", "1", "100", "100", "Debit")),
+            1_000L,
+            "2026-07-01",
+            "2026-07-27",
+        )
+
+        // Immediately queryable — no second per-Voucher download needed for list, detail,
+        // ledger, or inventory data.
+        assertEquals(listOf("v-1"), dao.vouchers("co-a").map { it.voucherId })
+        assertEquals("delivered by noon", dao.detail("co-a", "v-1")?.narration)
+        assertEquals(1, dao.ledgerLines("co-a", "v-1").size)
+        assertEquals(1, dao.inventoryLines("co-a", "v-1").size)
+    }
+
+    @Test
+    fun storeListWithDetails_shrunkenLineCountLeavesNoPhantomTrailingLines() = runBlocking {
+        dao.storeListWithDetails(
+            "co-a",
+            listOf(entity("co-a", "v-1", "2026-07-10")),
+            listOf(VoucherDetailEntity("co-a", "v-1", "2026-07-10", null, 1_000L)),
+            listOf(
+                VoucherLedgerLineEntity("co-a", "v-1", 1, "Cash", "100", "Debit", null),
+                VoucherLedgerLineEntity("co-a", "v-1", 2, "Sales", "100", "Credit", null),
+            ),
+            listOf(
+                VoucherInventoryLineEntity("co-a", "v-1", 1, "Item A", "1", "50", "50", "Debit"),
+                VoucherInventoryLineEntity("co-a", "v-1", 2, "Item B", "1", "50", "50", "Debit"),
+            ),
+            1_000L,
+            "2026-07-01",
+            "2026-07-27",
+        )
+
+        // Resynced with fewer lines than before (an edited Voucher) — the old line 2s must not
+        // survive as phantom rows.
+        dao.storeListWithDetails(
+            "co-a",
+            listOf(entity("co-a", "v-1", "2026-07-10")),
+            listOf(VoucherDetailEntity("co-a", "v-1", "2026-07-10", null, 2_000L)),
+            listOf(VoucherLedgerLineEntity("co-a", "v-1", 1, "Cash", "100", "Debit", null)),
+            listOf(VoucherInventoryLineEntity("co-a", "v-1", 1, "Item A", "1", "100", "100", "Debit")),
+            2_000L,
+            "2026-07-01",
+            "2026-07-27",
+        )
+
+        assertEquals(1, dao.ledgerLines("co-a", "v-1").size)
+        assertEquals(1, dao.inventoryLines("co-a", "v-1").size)
+    }
+
+    @Test
+    fun storeListWithDetails_prunesStaleVoucherAndItsDetailLinesTogether() = runBlocking {
+        dao.storeListWithDetails(
+            "co-a",
+            listOf(entity("co-a", "v-1", "2026-07-10")),
+            listOf(VoucherDetailEntity("co-a", "v-1", "2026-07-10", null, 1_000L)),
+            listOf(VoucherLedgerLineEntity("co-a", "v-1", 1, "Cash", "100", "Debit", null)),
+            emptyList(),
+            1_000L,
+            "2026-07-01",
+            "2026-07-27",
+        )
+
+        // v-1 cancelled: absent from the next authoritative offline-complete window refresh.
+        dao.storeListWithDetails("co-a", emptyList(), emptyList(), emptyList(), emptyList(), 2_000L, "2026-07-01", "2026-07-27")
+
+        assertEquals(null, dao.detail("co-a", "v-1"))
+        assertTrue(dao.ledgerLines("co-a", "v-1").isEmpty())
+    }
+
+    @Test
+    fun storeListWithDetails_neverTouchesAnotherCompany() = runBlocking {
+        dao.storeListWithDetails(
+            "co-a",
+            listOf(entity("co-a", "v-1", "2026-07-10")),
+            listOf(VoucherDetailEntity("co-a", "v-1", "2026-07-10", null, 1_000L)),
+            emptyList(),
+            emptyList(),
+            1_000L,
+            "2026-01-01",
+            "2026-12-31",
+        )
+        dao.storeListWithDetails(
+            "co-b",
+            listOf(entity("co-b", "v-2", "2026-07-10")),
+            listOf(VoucherDetailEntity("co-b", "v-2", "2026-07-10", null, 1_000L)),
+            emptyList(),
+            emptyList(),
+            1_000L,
+            "2026-01-01",
+            "2026-12-31",
+        )
+
+        dao.storeListWithDetails("co-a", emptyList(), emptyList(), emptyList(), emptyList(), 2_000L, "2026-01-01", "2026-12-31")
+
+        assertEquals(0, dao.vouchers("co-a").size)
+        assertEquals(1, dao.vouchers("co-b").size)
+        assertEquals("2026-07-10", dao.detail("co-b", "v-2")?.effectiveDate)
+    }
+
     private fun entity(companyId: String, voucherId: String, date: String) = VoucherEntity(
         companyId = companyId,
         voucherId = voucherId,
