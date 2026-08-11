@@ -41,6 +41,7 @@ export class TallyConnectionManager {
   private lastErrorAt?: string;
   private lastErrorCode?: string;
   private lastErrorMessage?: string;
+  private recoveryProbe: Promise<boolean> | null = null;
 
   constructor(private readonly options: TallyConnectionManagerOptions) {
     this.runtimeLimits = resolveTallyRuntimeLimits(options.config);
@@ -110,6 +111,7 @@ export class TallyConnectionManager {
     try {
       await this.exchange(this.requestBuilder.buildConnectivityCheck(), {
         collectionId: 'License Info',
+        isRecoveryProbe: true,
       });
       this.markConnected();
       this.lastSuccessfulPingAt = new Date().toISOString();
@@ -121,6 +123,36 @@ export class TallyConnectionManager {
     }
   }
 
+  /**
+   * Autonomous half-open recovery (BUDCOM MVP-1 V7-D fix): a circuit that has been OPEN long
+   * enough to become HALF_OPEN previously had no path back to CLOSED, because every normal
+   * operation (company discovery, ledger/voucher sync, etc.) is deliberately NOT an
+   * [ApprovedOperationId.HealthCheck] and so the policy engine denied it with
+   * REQUIRE_MANUAL_APPROVAL forever — there was nothing else in the codebase that ever sent the
+   * one request type (the health-probe / "License Info" ping) allowed through HALF_OPEN and
+   * capable of calling `recordSuccess()`. A full Desktop/Connector restart was the only way out,
+   * since the breaker's state is a plain in-memory field that only resets at construction.
+   *
+   * Fix: any call to [exchange] that finds the circuit HALF_OPEN (and is not itself the probe,
+   * which would otherwise recurse) first awaits a single-flighted [ping] before proceeding. If
+   * the probe succeeds, the breaker is now CLOSED and this same call's own request proceeds
+   * normally in the same round-trip — the user's next ordinary action (e.g. clicking "Refresh
+   * Companies") is what surfaces recovery, but the probe — not that specific action — is what
+   * actually closes the circuit, so this recovers regardless of which caller happens to arrive
+   * first. If the probe fails, the breaker reopens with a fresh cooldown and this call fails with
+   * the ordinary "circuit breaker is open" error rather than the confusing half-open rejection.
+   * [recoveryProbe] caches the in-flight promise so concurrent callers share one probe instead of
+   * each independently hammering Tally (thundering-herd safety).
+   */
+  private async attemptHalfOpenRecovery(): Promise<boolean> {
+    if (!this.recoveryProbe) {
+      this.recoveryProbe = this.ping().finally(() => {
+        this.recoveryProbe = null;
+      });
+    }
+    return this.recoveryProbe;
+  }
+
   async exchange(
     xml: string,
     metadata: {
@@ -130,6 +162,8 @@ export class TallyConnectionManager {
       maxResponseBytes?: number;
       responseLimitLabel?: string;
       signal?: AbortSignal;
+      /** Marks this call as the HALF_OPEN recovery probe itself, so it isn't re-gated behind another probe. */
+      isRecoveryProbe?: boolean;
     } = {},
   ): Promise<TallyExchangeResult> {
     if (!this.running) {
@@ -138,6 +172,10 @@ export class TallyConnectionManager {
         'Tally connection manager is not running',
         503,
       );
+    }
+
+    if (!metadata.isRecoveryProbe && this.requestGuard.circuitState === 'half_open') {
+      await this.attemptHalfOpenRecovery();
     }
 
     let attempt = 0;
