@@ -24,6 +24,7 @@ import {
   assertWriteTargetContained,
   toPlatformComparablePath,
 } from '../../infrastructure/security/path-containment.js';
+import { assertPrivateStorageVaultPresent } from '../private-storage-guard.js';
 
 export interface LedgerStorageBundle {
   readonly database: SqliteDatabase;
@@ -46,6 +47,11 @@ export class SqliteStorageService implements LocalDatabaseService {
 
   async start(): Promise<void> {
     if (this.running) return;
+    // Fails closed BEFORE any directory is created or the database is opened — a private-mode
+    // vault mismatch/absence must never fall through to mkdirSync silently creating a fresh
+    // database on the wrong (or now-missing) drive. No-op for every standard-storage
+    // installation (both config fields null there).
+    assertPrivateStorageVaultPresent(this.config);
     const databasePath = path.join(this.config.databasePath, 'budcom-ledger.db');
     const database = new SqliteDatabase({ databasePath });
     try {

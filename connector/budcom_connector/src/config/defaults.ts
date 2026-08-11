@@ -97,6 +97,20 @@ export interface ConnectorConfig {
    * secureTransportEnabled's value — see the middleware's own doc comment.
    */
   readonly secureLanRouteProtectionEnabled: boolean;
+  /**
+   * Defense-in-depth guard for Private Removable Storage mode. When both this and
+   * privateStorageMarkerPath are set, SqliteStorageService refuses to open/create the database
+   * unless the marker file at privateStorageMarkerPath exists and its own `vaultId` matches this
+   * value exactly — see storage/private-storage-guard.ts. Null (the default) means no check runs
+   * at all, so every existing Standard-storage installation's behavior is byte-for-byte
+   * unchanged. This check exists independently of whatever presence-checking Desktop does before
+   * ever spawning the Connector: it is the Connector's own last line of defense against silently
+   * opening/creating a fresh database on a wrong or lookalike drive that happens to have been
+   * assigned the expected drive letter.
+   */
+  readonly privateStorageExpectedVaultId: string | null;
+  /** Path to the vault marker file checked against privateStorageExpectedVaultId. Null (default) disables the check. */
+  readonly privateStorageMarkerPath: string | null;
 }
 
 export const TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT = 10 * 1024 * 1024;
@@ -157,4 +171,6 @@ export const defaultConfig: ConnectorConfig = {
   secureTransportPort: 8443,
   transportIdentityDir: './data/transport',
   secureLanRouteProtectionEnabled: false,
+  privateStorageExpectedVaultId: null,
+  privateStorageMarkerPath: null,
 };

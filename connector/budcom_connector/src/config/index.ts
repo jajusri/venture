@@ -230,6 +230,8 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
       process.env.BUDCOM_SECURE_LAN_ROUTE_PROTECTION_ENABLED,
       defaultConfig.secureLanRouteProtectionEnabled,
     ),
+    privateStorageExpectedVaultId: process.env.BUDCOM_PRIVATE_STORAGE_VAULT_ID?.trim() || null,
+    privateStorageMarkerPath: process.env.BUDCOM_PRIVATE_STORAGE_MARKER_PATH?.trim() || null,
     ...overrides,
   };
 

@@ -53,6 +53,8 @@ export function createTestConnectorConfig(basePath: string): ConnectorConfig {
     secureTransportPort: 8443,
     transportIdentityDir: path.join(basePath, 'transport'),
     secureLanRouteProtectionEnabled: false,
+    privateStorageExpectedVaultId: null,
+    privateStorageMarkerPath: null,
   };
 }
 
