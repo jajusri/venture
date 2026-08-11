@@ -17,6 +17,7 @@ import com.budcom.android.feature.voucher.sharing.InvoiceShareResult
 import com.budcom.android.feature.voucher.sharing.PreparedInvoicePdf
 import com.budcom.android.feature.voucher.sharing.isShareableInvoice
 import com.budcom.android.feature.voucher.sharing.shareIneligibilityReason
+import com.budcom.android.feature.voucher.sharing.summaryShareIneligibilityReason
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -168,7 +169,16 @@ class VoucherDetailsViewModel @Inject constructor(
                                 detailsNotStored = true,
                                 knownSummary = knownSummary?.toRowUi(),
                                 canShareInvoice = false,
-                                shareUnavailableReason = null,
+                                // Full details (ledger/inventory lines) aren't available yet, so
+                                // sharing genuinely isn't possible right now — but the already-cached
+                                // summary is enough to say WHY: either this voucher was never going
+                                // to be shareable (same reason as the full-details path), or it looks
+                                // eligible and just needs its details downloaded first. Either way,
+                                // never silently hide the share action without explanation.
+                                shareUnavailableReason = knownSummary?.summaryShareIneligibilityReason()
+                                    ?: knownSummary?.let {
+                                        "Download this voucher's details to share it as an invoice."
+                                    },
                             )
                         }
                     } else {

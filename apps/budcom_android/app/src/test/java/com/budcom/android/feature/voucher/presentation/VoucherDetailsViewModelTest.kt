@@ -221,13 +221,46 @@ class VoucherDetailsViewModelTest {
         }
 
     @Test
-    fun `not-stored state exposes the locally known summary and no share action`() = runTest(dispatcher) {
+    fun `not-stored state exposes the locally known summary and explains why sharing is unavailable, never silent`() =
+        runTest(dispatcher) {
+            repository.result = AppResult.Failure(AppError.Message("unused"))
+            repository.summaryResult = sampleDetails().summary
+            val vm = createVm()
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.detailsNotStored)
+            assertEquals("S-1", vm.uiState.value.knownSummary?.primaryLabel)
+            assertFalse(vm.uiState.value.canShareInvoice)
+            // The cached summary already looks like an eligible Sales invoice — only its full
+            // details (ledger/inventory lines) are missing, so the reason must say so, not go silent.
+            assertEquals(
+                "Download this voucher's details to share it as an invoice.",
+                vm.uiState.value.shareUnavailableReason,
+            )
+        }
+
+    @Test
+    fun `not-stored state for a genuinely ineligible voucher type gives the same reason as the full-details path`() =
+        runTest(dispatcher) {
+            repository.result = AppResult.Failure(AppError.Message("unused"))
+            repository.summaryResult = sampleDetails().summary.copy(type = "Payment")
+            val vm = createVm()
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.detailsNotStored)
+            assertFalse(vm.uiState.value.canShareInvoice)
+            assertEquals(
+                "Only sales vouchers can be shared as an invoice.",
+                vm.uiState.value.shareUnavailableReason,
+            )
+        }
+
+    @Test
+    fun `not-stored state with no locally known summary at all still has no reason to give`() = runTest(dispatcher) {
         repository.result = AppResult.Failure(AppError.Message("unused"))
-        repository.summaryResult = sampleDetails().summary
+        repository.summaryResult = null
         val vm = createVm()
         advanceUntilIdle()
         assertTrue(vm.uiState.value.detailsNotStored)
-        assertEquals("S-1", vm.uiState.value.knownSummary?.primaryLabel)
+        assertEquals(null, vm.uiState.value.knownSummary)
         assertFalse(vm.uiState.value.canShareInvoice)
         assertEquals(null, vm.uiState.value.shareUnavailableReason)
     }

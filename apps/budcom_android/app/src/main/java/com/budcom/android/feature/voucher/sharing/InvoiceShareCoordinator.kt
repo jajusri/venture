@@ -5,6 +5,7 @@ import android.net.Uri
 import com.budcom.android.feature.voucher.domain.model.VoucherDataQuality
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
 import com.budcom.android.feature.voucher.domain.model.VoucherStatus
+import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 
 interface InvoiceShareCoordinator {
     suspend fun preparePdf(details: VoucherDetails): InvoiceShareResult<PreparedInvoicePdf>
@@ -30,22 +31,33 @@ fun VoucherDetails.isShareableInvoice(): Boolean = shareIneligibilityReason() ==
 /**
  * Concise, honest reason sharing is unavailable for this voucher, or `null` when it is
  * eligible. Mirrors the conditions in [isShareableInvoice] so the UI can explain an
- * ineligible voucher instead of silently hiding the share action.
+ * ineligible voucher instead of silently hiding the share action. A pure function of this
+ * voucher's own [summary] — belongs to the individual voucher, never affected by any other
+ * voucher (same party, other transaction type, or otherwise).
  */
-fun VoucherDetails.shareIneligibilityReason(): String? {
-    if (!summary.type.trim().equals("sales", ignoreCase = true)) {
+fun VoucherDetails.shareIneligibilityReason(): String? = summary.summaryShareIneligibilityReason()
+
+/**
+ * The subset of [shareIneligibilityReason] decidable from [VoucherSummary] alone (no ledger/
+ * inventory lines required) — used both by the full-details path above and by
+ * [VoucherDetailsViewModel] when only the cached summary is available, so a voucher whose
+ * details have not been individually downloaded yet still gets an honest explanation instead
+ * of the share action silently vanishing.
+ */
+fun VoucherSummary.summaryShareIneligibilityReason(): String? {
+    if (!type.trim().equals("sales", ignoreCase = true)) {
         return "Only sales vouchers can be shared as an invoice."
     }
-    if (summary.status != VoucherStatus.Active) {
+    if (status != VoucherStatus.Active) {
         return "Cancelled vouchers cannot be shared as an invoice."
     }
-    if (summary.dataQuality != VoucherDataQuality.Complete) {
+    if (dataQuality != VoucherDataQuality.Complete) {
         return "This voucher's synced data is incomplete, so it cannot be shared as an invoice."
     }
-    if (summary.number.isNullOrBlank()) {
+    if (number.isNullOrBlank()) {
         return "This voucher is missing a voucher number, so it cannot be shared as an invoice."
     }
-    if (summary.date.isBlank()) {
+    if (date.isBlank()) {
         return "This voucher is missing a date, so it cannot be shared as an invoice."
     }
     return null
