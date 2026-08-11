@@ -298,6 +298,44 @@ describe('production Voucher API', () => {
     expect(response.body.data.items[0]).not.toHaveProperty('voucherJson');
   });
 
+  it('omits ledger/inventory/narration/effectiveDate by default (ordinary list/browse traffic)', async () => {
+    await promote('company-a', 'snapshot-a');
+    const response = await request(app).get(listPath);
+
+    expect(response.status).toBe(200);
+    for (const item of response.body.data.items) {
+      expect(item).not.toHaveProperty('ledgerEntries');
+      expect(item).not.toHaveProperty('inventoryEntries');
+      expect(item).not.toHaveProperty('narration');
+      expect(item).not.toHaveProperty('effectiveDate');
+    }
+  });
+
+  it('includes complete ledger/inventory/narration/effectiveDate when includeDetails=true, in the same bounded response', async () => {
+    await promote('company-a', 'snapshot-a');
+    const response = await request(app).get(`${listPath}&includeDetails=true`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.items).toHaveLength(vouchers.length);
+    for (const item of response.body.data.items) {
+      const source = vouchers.find((voucher) => voucher.voucherId === item.id)!;
+      expect(item.ledgerEntries).toHaveLength(source.ledgerEntries.length);
+      expect(item.inventoryEntries).toHaveLength(source.inventoryEntries.length);
+      expect(item).toHaveProperty('narration');
+      expect(item).toHaveProperty('effectiveDate');
+    }
+    // Same pagination envelope as the summary-only response — no new request shape.
+    expect(response.body.data.pagination).toMatchObject({ totalItems: vouchers.length });
+  });
+
+  it('ignores any value for includeDetails other than the literal string "true"', async () => {
+    await promote('company-a', 'snapshot-a');
+    const response = await request(app).get(`${listPath}&includeDetails=yes`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.items[0]).not.toHaveProperty('ledgerEntries');
+  });
+
   it('searches by type, number, party, and free text', async () => {
     await promote('company-a', 'snapshot-a');
     const target = vouchers.find((voucher) => voucher.voucherNumber && voucher.partyName)!;

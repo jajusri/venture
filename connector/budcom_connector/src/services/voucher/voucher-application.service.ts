@@ -50,9 +50,10 @@ export class VoucherApplicationServiceImpl implements VoucherApplicationService 
     );
     const totalItems = ordered.length;
     const start = (query.criteria.page - 1) * query.criteria.pageSize;
+    const mapItem = query.includeDetails ? toPublicDetails : toPublicRecord;
     return {
       companyId: query.companyId,
-      items: ordered.slice(start, start + query.criteria.pageSize).map(toPublicRecord),
+      items: ordered.slice(start, start + query.criteria.pageSize).map(mapItem),
       pagination: {
         page: query.criteria.page,
         pageSize: query.criteria.pageSize,

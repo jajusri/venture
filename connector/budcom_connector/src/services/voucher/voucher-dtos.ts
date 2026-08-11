@@ -15,6 +15,14 @@ export interface VoucherListQueryDto {
   readonly criteria: VoucherSearchCriteria;
   readonly voucherNumber?: string;
   readonly partyName?: string;
+  /**
+   * When true, each returned item is a complete [VoucherPublicDetails] (ledger/inventory
+   * entries, narration, effectiveDate) instead of a bare [VoucherPublicRecord] — the data is
+   * already loaded into memory by querySnapshot() either way, so this costs nothing extra
+   * server-side; it only changes what's included in the response. Intended for the offline-
+   * complete sync path, not ordinary interactive list/browse/search traffic.
+   */
+  readonly includeDetails?: boolean;
 }
 
 export interface VoucherDetailsQueryDto {

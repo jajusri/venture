@@ -159,6 +159,7 @@ function listHandler(application: VoucherApplicationService) {
       criteria,
       ...(voucherNumber ? { voucherNumber } : {}),
       ...(partyName ? { partyName } : {}),
+      ...(singleString(query.includeDetails) === 'true' ? { includeDetails: true } : {}),
     });
     res.status(200).json({ schemaVersion: SCHEMA_VERSION, data: result });
   });
