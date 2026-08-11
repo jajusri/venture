@@ -438,11 +438,23 @@ private class FakeRemote(
         callCount++
         return pageResults[query.page] ?: defaultResult
     }
+
+    override suspend fun fetchLedgerStatement(
+        ledgerId: String,
+        range: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementDateRange,
+    ): ApiResult<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement> =
+        error("fetchLedgerStatement is not exercised by ledger-list tests")
 }
 
 private object UnreachableRemote : LedgerRemoteDataSource {
     override suspend fun fetchLedgers(query: LedgerQuery): ApiResult<LedgerPage> =
         error("UnreachableRemote must never be called on the AUTHENTICATED path")
+
+    override suspend fun fetchLedgerStatement(
+        ledgerId: String,
+        range: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementDateRange,
+    ): ApiResult<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement> =
+        error("fetchLedgerStatement is not exercised by ledger-list tests")
 }
 
 private class FakeAuthenticatedRemote(

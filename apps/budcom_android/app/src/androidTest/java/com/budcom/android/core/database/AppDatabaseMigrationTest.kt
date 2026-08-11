@@ -356,4 +356,101 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 3 -> 4 migration (adding the Ledger-statement cache tables) preserves
+     * every pre-existing row and never falls back to a destructive recreation — the same class of
+     * proof as [migrate1To2_preservesExistingRowsAndAddsPairedConnectorsOnly] and
+     * [migrate2To3_preservesExistingRowsAndAddsVoucherCacheTablesOnly], now for the MVP-1 Ledger
+     * statement feature.
+     *
+     * Starts from a real version-3 database built from the committed `3.json` schema, populated
+     * with representative rows exactly as a real installed app would have on disk today.
+     */
+    @Test
+    fun migrate3To4_preservesExistingRowsAndAddsLedgerStatementTablesOnly() {
+        val db34DbName = "migration-test-db-3-4"
+
+        var db = helper.createDatabase(db34DbName, 3)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_ledgers (companyId, id, name, alias, parentGroup, status, closingAmount, " +
+                "closingCurrencyCode, closingSide, dataQuality, syncedAt, dataFreshnessAt) " +
+                "VALUES ('acme-001', 'ledger-1', 'Cash', NULL, 'Current Assets', 'ACTIVE', '1000.00', 'INR', " +
+                "'DEBIT', 'GOOD', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_vouchers (companyId, voucherId, date, type, number, partyName, " +
+                "referenceNumber, amountValue, amountSide, status, dataQuality, lastSyncedAt) VALUES " +
+                "('acme-001', 'v-1', '2026-01-15', 'Sales', 'S-1', 'Beta Traders', 'PO-99', '500.00', " +
+                "'DEBIT', 'Active', 'Complete', 1736899200000)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db34DbName, 4, false, DatabaseModule.MIGRATION_3_4)
+
+        db.query("SELECT name FROM cached_companies WHERE id = 'acme-001'").use { cursor ->
+            assertTrue("existing company row must survive the migration", cursor.moveToFirst())
+            assertEquals("Acme Corp", cursor.getString(0))
+        }
+        db.query("SELECT name FROM cached_ledgers WHERE companyId = 'acme-001' AND id = 'ledger-1'").use { cursor ->
+            assertTrue("existing ledger row must survive the migration", cursor.moveToFirst())
+            assertEquals("Cash", cursor.getString(0))
+        }
+        db.query("SELECT partyName FROM cached_vouchers WHERE companyId = 'acme-001' AND voucherId = 'v-1'").use { cursor ->
+            assertTrue("existing voucher row must survive the migration", cursor.moveToFirst())
+            assertEquals("Beta Traders", cursor.getString(0))
+        }
+
+        fun columnsOf(table: String): Map<String, String> {
+            val columns = mutableMapOf<String, String>()
+            db.query("PRAGMA table_info(`$table`)").use { cursor ->
+                val nameIdx = cursor.getColumnIndexOrThrow("name")
+                val typeIdx = cursor.getColumnIndexOrThrow("type")
+                while (cursor.moveToNext()) {
+                    columns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+                }
+            }
+            return columns
+        }
+
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "ledgerId" to "TEXT", "periodFrom" to "TEXT", "periodTo" to "TEXT",
+                "ledgerName" to "TEXT", "parentGroup" to "TEXT", "openingAmount" to "TEXT", "openingSide" to "TEXT",
+                "closingAmount" to "TEXT", "closingSide" to "TEXT", "transactionsComplete" to "INTEGER",
+                "balanceAvailable" to "INTEGER", "syncedFrom" to "TEXT", "syncedTo" to "TEXT",
+                "coverageMessage" to "TEXT", "lastSyncedAt" to "INTEGER",
+            ),
+            columnsOf("cached_ledger_statements"),
+        )
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "ledgerId" to "TEXT", "periodFrom" to "TEXT", "periodTo" to "TEXT",
+                "lineIndex" to "INTEGER", "voucherId" to "TEXT", "date" to "TEXT", "voucherType" to "TEXT",
+                "voucherNumber" to "TEXT", "referenceNumber" to "TEXT", "narration" to "TEXT", "debit" to "TEXT",
+                "credit" to "TEXT", "runningAmount" to "TEXT", "runningSide" to "TEXT",
+            ),
+            columnsOf("cached_ledger_statement_transactions"),
+        )
+
+        db.execSQL(
+            "INSERT INTO cached_ledger_statements (companyId, ledgerId, periodFrom, periodTo, ledgerName, " +
+                "parentGroup, openingAmount, openingSide, closingAmount, closingSide, transactionsComplete, " +
+                "balanceAvailable, syncedFrom, syncedTo, coverageMessage, lastSyncedAt) VALUES " +
+                "('acme-001', 'ledger-1', '2026-07-01', '2026-07-31', 'Cash', 'Current Assets', '0', 'Dr', " +
+                "'500', 'Dr', 1, 1, '2026-07-01', '2026-08-10', NULL, 1736899200000)",
+        )
+        db.query(
+            "SELECT closingAmount FROM cached_ledger_statements WHERE companyId = 'acme-001' AND ledgerId = 'ledger-1'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("500", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

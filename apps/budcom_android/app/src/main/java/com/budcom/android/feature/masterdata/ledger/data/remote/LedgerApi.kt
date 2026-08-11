@@ -1,6 +1,7 @@
 package com.budcom.android.feature.masterdata.ledger.data.remote
 
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 /**
@@ -15,4 +16,12 @@ interface LedgerApi {
         @Query("sortBy") sortBy: String = "name",
         @Query("sortDirection") sortDirection: String = "asc",
     ): LedgerListResponseDto
+
+    /** Confirmed Connector Ledger statement endpoint: `GET /ledgers/{id}/statement`. */
+    @GET("ledgers/{id}/statement")
+    suspend fun getLedgerStatement(
+        @Path("id") ledgerId: String,
+        @Query("from") from: String,
+        @Query("to") to: String,
+    ): LedgerStatementEnvelopeDto
 }

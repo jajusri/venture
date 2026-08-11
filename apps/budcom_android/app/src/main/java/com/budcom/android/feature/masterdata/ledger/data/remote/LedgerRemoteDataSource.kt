@@ -8,11 +8,14 @@ import com.budcom.android.core.network.safeApiCall
 import com.budcom.android.core.network.withRetry
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementDateRange
 import javax.inject.Inject
 import javax.inject.Singleton
 
 interface LedgerRemoteDataSource {
     suspend fun fetchLedgers(query: LedgerQuery): ApiResult<LedgerPage>
+    suspend fun fetchLedgerStatement(ledgerId: String, range: LedgerStatementDateRange): ApiResult<LedgerStatement>
 }
 
 @Singleton
@@ -33,6 +36,16 @@ class DefaultLedgerRemoteDataSource @Inject constructor(
                     sortBy = query.toApiSortBy(),
                     sortDirection = query.toApiSortDirection(),
                 ).toDomain()
+            }
+        }
+
+    override suspend fun fetchLedgerStatement(
+        ledgerId: String,
+        range: LedgerStatementDateRange,
+    ): ApiResult<LedgerStatement> =
+        withRetry(RetryPolicy.None) {
+            safeApiCall(errorMapper, connectivityObserver) {
+                api.getLedgerStatement(ledgerId = ledgerId, from = range.from, to = range.to).toDomain()
             }
         }
 }

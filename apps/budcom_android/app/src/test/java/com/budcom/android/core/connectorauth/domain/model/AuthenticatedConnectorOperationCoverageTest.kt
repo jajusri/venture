@@ -32,6 +32,7 @@ private fun allOperations(): List<AuthenticatedConnectorOperation> = listOf(
     AuthenticatedConnectorOperation.GetGstRegistrations("company-1"),
     AuthenticatedConnectorOperation.GetLedgers(),
     AuthenticatedConnectorOperation.GetLedgerById("ledger-1"),
+    AuthenticatedConnectorOperation.GetLedgerStatement("ledger-1"),
     AuthenticatedConnectorOperation.StartLedgerSync,
     AuthenticatedConnectorOperation.CancelLedgerSync,
     AuthenticatedConnectorOperation.LedgerSyncStatus,
@@ -69,13 +70,13 @@ private fun allOperations(): List<AuthenticatedConnectorOperation> = listOf(
 class AuthenticatedConnectorOperationCoverageTest {
 
     // 51. every Phase 3P DEVICE_CREDENTIAL_REQUIRED business route (per the Phase 4 spec's own
-    // reconciled list) has an explicit typed operation — 53 members: 2 diagnostics + 5
-    // companies/session + 12 master-data + 11 ledger + 11 stock-item + 6 voucher + 5 reserved
-    // stubs + 1 device self-service.
+    // reconciled list) has an explicit typed operation, plus the MVP-1 Ledger statement route
+    // added afterward — 54 members: 2 diagnostics + 5 companies/session + 12 master-data + 12
+    // ledger + 11 stock-item + 6 voucher + 5 reserved stubs + 1 device self-service.
     @Test
-    fun `exactly the 53 specified routes are represented, each with a unique path+method`() {
+    fun `exactly the 54 specified routes are represented, each with a unique path+method`() {
         val operations = allOperations()
-        assertEquals(53, operations.size)
+        assertEquals(54, operations.size)
         val signatures = operations.map { it.method to it.route() }
         assertEquals("no duplicate (method, path) pairs", signatures.size, signatures.toSet().size)
     }
@@ -101,12 +102,12 @@ class AuthenticatedConnectorOperationCoverageTest {
 
     // 54. all ledger sync/status/storage routes are represented
     @Test
-    fun `all eleven ledger routes are represented`() {
+    fun `all twelve ledger routes are represented`() {
         val routes = allOperations().map { it.route() }
         listOf(
-            "/ledgers", "/ledgers/ledger-1", "/sync/ledgers", "/sync/ledgers/cancel",
-            "/sync/ledgers/status", "/sync/ledgers/statistics", "/sync/ledgers/runs",
-            "/sync/ledgers/runs/run-1", "/sync/ledgers/clear-cache",
+            "/ledgers", "/ledgers/ledger-1", "/ledgers/ledger-1/statement", "/sync/ledgers",
+            "/sync/ledgers/cancel", "/sync/ledgers/status", "/sync/ledgers/statistics",
+            "/sync/ledgers/runs", "/sync/ledgers/runs/run-1", "/sync/ledgers/clear-cache",
             "/storage/ledgers/integrity-check", "/storage/ledgers/backup",
         ).forEach { assertTrue("missing $it", routes.contains(it)) }
     }

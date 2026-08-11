@@ -146,6 +146,23 @@ sealed class AuthenticatedConnectorOperation(
         override val pathSegments = listOf("ledgers", ledgerId)
     }
 
+    /**
+     * Matches the confirmed Connector route `GET /ledgers/{id}/statement` exactly (date-ranged
+     * party ledger: opening balance, dated Dr/Cr transactions, running balance, closing balance).
+     * `ledgerId` may not be blank for the same reason [GetVoucherById] validates its own
+     * arguments — a blank id would only ever produce a request the route's own server-side
+     * validation rejects.
+     */
+    data class GetLedgerStatement(
+        val ledgerId: String,
+        override val queryParams: Map<String, String> = emptyMap(),
+    ) : AuthenticatedConnectorOperation(ConnectorHttpMethod.GET) {
+        init {
+            require(ledgerId.isNotBlank()) { "ledgerId must not be blank." }
+        }
+        override val pathSegments = listOf("ledgers", ledgerId, "statement")
+    }
+
     data object StartLedgerSync : AuthenticatedConnectorOperation(ConnectorHttpMethod.POST, ConnectorTimeoutProfile.SYNC) {
         override val pathSegments = listOf("sync", "ledgers")
     }
