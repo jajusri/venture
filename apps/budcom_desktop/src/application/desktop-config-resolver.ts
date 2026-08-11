@@ -178,6 +178,9 @@ export interface ResolveDesktopConfigOptions {
   readonly connectorTallyAuditPath?: string;
   readonly connectorTransportIdentityDir?: string;
   readonly connectorId?: string;
+  /** Private Removable Storage mode only — see connector-lifecycle-config.ts. */
+  readonly privateStorageExpectedVaultId?: string;
+  readonly privateStorageMarkerPath?: string;
 }
 
 export function resolveDesktopConfig(
@@ -212,6 +215,8 @@ export function resolveDesktopConfig(
     connectorTallyAuditPath: options.connectorTallyAuditPath,
     connectorTransportIdentityDir: options.connectorTransportIdentityDir,
     connectorId: options.connectorId,
+    privateStorageExpectedVaultId: options.privateStorageExpectedVaultId,
+    privateStorageMarkerPath: options.privateStorageMarkerPath,
   });
 
   return {

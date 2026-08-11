@@ -52,6 +52,15 @@ export interface ConnectorLifecycleResolutionContext {
    * Connector child process as BUDCOM_CONNECTOR_ID so it never has to generate its own.
    */
   readonly connectorId?: string;
+  /**
+   * Private Removable Storage mode only. When both are set, passed through as
+   * BUDCOM_PRIVATE_STORAGE_VAULT_ID / BUDCOM_PRIVATE_STORAGE_MARKER_PATH so the Connector's own
+   * private-storage-guard refuses to open/create its database unless the vault marker at this
+   * path still matches this vaultId — see connector src/storage/private-storage-guard.ts. Absent
+   * (the default) for every standard-storage launch, which leaves this whole check inert.
+   */
+  readonly privateStorageExpectedVaultId?: string;
+  readonly privateStorageMarkerPath?: string;
 }
 
 export function resolveConnectorLifecycleConfig(
@@ -142,6 +151,12 @@ export function resolveConnectorLifecycleConfig(
   }
   if (context.connectorId) {
     childEnvOverrides.BUDCOM_CONNECTOR_ID = context.connectorId;
+  }
+  if (context.privateStorageExpectedVaultId) {
+    childEnvOverrides.BUDCOM_PRIVATE_STORAGE_VAULT_ID = context.privateStorageExpectedVaultId;
+  }
+  if (context.privateStorageMarkerPath) {
+    childEnvOverrides.BUDCOM_PRIVATE_STORAGE_MARKER_PATH = context.privateStorageMarkerPath;
   }
   if (shouldSpawnConnectorViaElectronNode(connectorExecutable)) {
     childEnvOverrides.ELECTRON_RUN_AS_NODE = '1';

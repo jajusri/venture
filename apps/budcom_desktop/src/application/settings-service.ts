@@ -26,7 +26,7 @@ export class SettingsService {
   private readonly connectorExecutable: string;
   private resolved: ResolvedDesktopConfig;
   private configStatus: string;
-  private readonly lifecycleContext: ResolveDesktopConfigOptions;
+  private lifecycleContext: ResolveDesktopConfigOptions;
   private pendingDraft: Partial<DesktopConfigV1> | null = null;
 
   constructor(options: SettingsServiceOptions) {
@@ -45,6 +45,22 @@ export class SettingsService {
   }
 
   getResolvedConfig(): ResolvedDesktopConfig {
+    return this.resolved;
+  }
+
+  /**
+   * Merges [patch] into the lifecycle context used for every subsequent resolution (this
+   * call's own re-resolution included) — used exactly once, before the very first Connector
+   * spawn, to point connectorDatabaseDir at a resolved Private Removable Storage vault instead
+   * of the AppData default. Never called at all for a standard-storage launch, so that launch's
+   * behavior is unchanged. Unlike every other field this service resolves, storage-mode is
+   * decided once at startup (see main.ts's storage-gate flow) rather than through the general
+   * save-settings/reinitializeRuntimeServices() path — a data-root change is a file-location
+   * decision made before anything opens the database, not a live config toggle.
+   */
+  overrideLifecycleContext(patch: Partial<ResolveDesktopConfigOptions>): ResolvedDesktopConfig {
+    this.lifecycleContext = { ...this.lifecycleContext, ...patch };
+    this.resolved = resolveDesktopConfig(this.configStore.getConfig(), getEnvironmentDefaults(this.isDevelopment), this.lifecycleContext);
     return this.resolved;
   }
 
