@@ -143,16 +143,27 @@ async function runUnavailableFlow(overlay: HTMLElement, reason: 'missing' | 'mis
 
   await new Promise<void>((resolve) => {
     const onRetry = (): void => {
+      // Without this guard, rapid repeat clicks each start their own overlapping
+      // desktop:retry-storage-connection call — main.ts's activateConnectorLifecycle()
+      // reassigns a shared module-level lifecycleService per call with no queuing, so two
+      // in-flight retries can each spawn/track a Connector process, orphaning the earlier one.
+      // runSetupFlow's continueButton already guards this way; retryButton needs the same guard.
+      if (retryButton.disabled) return;
+      retryButton.disabled = true;
       void (async () => {
-        const state = await window.budcomDesktop.retryStorageConnection();
-        if (state.kind === 'ready') {
-          cleanup();
-          hide(overlay);
-          resolve();
-        } else if (state.kind === 'unavailable') {
-          detailEl.textContent = state.reason === 'mismatched'
-            ? 'Still not connected: a different removable device is present at the expected drive letter.'
-            : 'Still not connected. Check the cable/drive and retry.';
+        try {
+          const state = await window.budcomDesktop.retryStorageConnection();
+          if (state.kind === 'ready') {
+            cleanup();
+            hide(overlay);
+            resolve();
+          } else if (state.kind === 'unavailable') {
+            detailEl.textContent = state.reason === 'mismatched'
+              ? 'Still not connected: a different removable device is present at the expected drive letter.'
+              : 'Still not connected. Check the cable/drive and retry.';
+          }
+        } finally {
+          retryButton.disabled = false;
         }
       })();
     };
