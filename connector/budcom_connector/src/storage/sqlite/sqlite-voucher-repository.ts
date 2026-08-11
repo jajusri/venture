@@ -9,6 +9,7 @@ import type {
   VoucherStatistics,
   VoucherStructuredValue,
 } from '../../erp/voucher/voucher-domain.js';
+import type { VoucherLedgerMovement } from '../../erp/voucher/voucher-ledger-movement.js';
 import type {
   VoucherAllocationOwner,
   VoucherRepositoryPort,
@@ -644,6 +645,69 @@ export class SqliteVoucherRepository implements VoucherRepositoryPort {
         cancelledVouchers: totals.cancelled ?? 0,
       };
     });
+  }
+
+  findLedgerMovements(
+    companyId: string,
+    ledgerName: string,
+    dateFrom: string,
+    dateTo: string,
+  ): Promise<readonly VoucherLedgerMovement[]> {
+    return this.database.runInTransaction(() => {
+      const snapshotId = this.activeSnapshotId(companyId);
+      if (!snapshotId) return [];
+      const exact = this.queryLedgerMovements(companyId, snapshotId, dateFrom, dateTo, {
+        exact: ledgerName,
+      });
+      if (exact.length > 0) return exact;
+      return this.queryLedgerMovements(companyId, snapshotId, dateFrom, dateTo, {
+        normalized: ledgerName,
+      });
+    });
+  }
+
+  private queryLedgerMovements(
+    companyId: string,
+    snapshotId: string,
+    dateFrom: string,
+    dateTo: string,
+    match: { exact: string } | { normalized: string },
+  ): readonly VoucherLedgerMovement[] {
+    const nameFilter = 'exact' in match
+      ? 'e.ledger_name = @ledgerName'
+      : 'lower(trim(e.ledger_name)) = lower(trim(@ledgerName))';
+    const ledgerName = 'exact' in match ? match.exact : match.normalized;
+    const rows = this.db().prepare(`
+      SELECT
+        h.voucher_id AS voucherId,
+        h.voucher_date AS date,
+        h.voucher_type AS voucherType,
+        h.voucher_number AS voucherNumber,
+        h.reference_number AS referenceNumber,
+        h.narration AS narration,
+        e.line_number AS lineNumber,
+        e.amount AS amount,
+        e.amount_side AS amountSide
+      FROM voucher_ledger_entries e
+      JOIN voucher_headers h
+        ON h.company_id = e.company_id AND h.snapshot_id = e.snapshot_id AND h.voucher_id = e.voucher_id
+      WHERE e.company_id = @companyId AND e.snapshot_id = @snapshotId
+        AND ${nameFilter}
+        AND h.voucher_date BETWEEN @dateFrom AND @dateTo
+        AND h.voucher_status = 'active'
+      ORDER BY h.voucher_date, h.voucher_id, e.line_number
+    `).all({ companyId, snapshotId, ledgerName, dateFrom, dateTo }) as Array<{
+      voucherId: string;
+      date: string;
+      voucherType: string;
+      voucherNumber: string | null;
+      referenceNumber: string | null;
+      narration: string | null;
+      lineNumber: number;
+      amount: string;
+      amountSide: 'debit' | 'credit' | null;
+    }>;
+    return rows.map((row) => ({ ...row }));
   }
 
   private storeVoucherSync(

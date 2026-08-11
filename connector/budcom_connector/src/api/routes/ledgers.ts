@@ -3,9 +3,23 @@ import { Router } from 'express';
 import { asyncHandler } from '../../infrastructure/errors/error-handler.js';
 import type { LedgerSearchParams } from '../../erp/ledger/ledger-domain.js';
 import type { LedgerSyncService } from '../../services/ledger/ledger-sync.service.js';
+import {
+  businessDateIsoDaysBefore,
+  businessTodayIso,
+} from '../../services/voucher/voucher-business-date.js';
 
 const ALLOWED_SORT = new Set(['name', 'parentGroup', 'closingBalance', 'syncedAt']);
 const MAX_PAGE_SIZE = 100;
+/** Matches the Ledger statement's own default lookback when no explicit "from" is given. */
+const DEFAULT_STATEMENT_LOOKBACK_DAYS = 29;
+
+function parseStatementRange(query: Record<string, unknown>): { from: string; to: string } {
+  const to = typeof query.to === 'string' && query.to.trim() ? query.to.trim() : businessTodayIso();
+  const from = typeof query.from === 'string' && query.from.trim()
+    ? query.from.trim()
+    : businessDateIsoDaysBefore(to, DEFAULT_STATEMENT_LOOKBACK_DAYS);
+  return { from, to };
+}
 
 function parseLedgerSearchParams(query: Record<string, unknown>): LedgerSearchParams {
   const page = Math.max(1, Number.parseInt(String(query.page ?? '1'), 10) || 1);
@@ -54,6 +68,24 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
         schemaVersion: '1.0.0',
         dataFreshnessAt: new Date().toISOString(),
         ledger,
+      });
+    }),
+  );
+
+  router.get(
+    '/ledgers/:id/statement',
+    asyncHandler(async (req, res) => {
+      const ledgerId = String(req.params.id).slice(0, 128);
+      const { from, to } = parseStatementRange(req.query as Record<string, unknown>);
+      const statement = await ledgerSync.getLedgerStatement(ledgerId, from, to);
+      if (!statement) {
+        res.status(404).json({ code: 'NOT_FOUND', message: `Ledger '${ledgerId}' was not found.` });
+        return;
+      }
+      res.status(200).json({
+        schemaVersion: '1.0.0',
+        dataFreshnessAt: new Date().toISOString(),
+        statement,
       });
     }),
   );

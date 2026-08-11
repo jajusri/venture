@@ -8,12 +8,25 @@ import type {
   VoucherSearchResult,
   VoucherStatistics,
 } from '../../erp/voucher/voucher-domain.js';
+import type { VoucherLedgerMovement } from '../../erp/voucher/voucher-ledger-movement.js';
 
 /** Read operations always require explicit company scope. */
 export interface CompanyScopedVoucherReader {
   findById(companyId: string, voucherId: string): Promise<VoucherDetails | null>;
   search(companyId: string, criteria: VoucherSearchCriteria): Promise<VoucherSearchResult>;
   getStatistics(companyId: string, period: VoucherDateRange): Promise<VoucherStatistics>;
+  /**
+   * Every posting line in the active snapshot whose `ledgerName` matches (exact match first,
+   * case/whitespace-insensitive fallback only if that finds nothing) within [dateFrom, dateTo],
+   * excluding cancelled vouchers. Powers the Ledger statement feature — reads only, no new
+   * extraction/storage. Ordered by voucher date, then voucher id, then line number.
+   */
+  findLedgerMovements(
+    companyId: string,
+    ledgerName: string,
+    dateFrom: string,
+    dateTo: string,
+  ): Promise<readonly VoucherLedgerMovement[]>;
 }
 
 /**

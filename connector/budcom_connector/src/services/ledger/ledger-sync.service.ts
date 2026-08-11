@@ -42,12 +42,29 @@ import { assertSessionValidation } from '../session/session-error-mapper.js';
 import type { SqliteStorageService } from '../../storage/sqlite/storage-service.js';
 import type { SyncRunRepository } from '../../storage/sqlite/sync-run-repository.js';
 import { STORAGE_SCHEMA_VERSION } from '../../storage/sqlite/schema.js';
+import type { VoucherRepositoryPort } from '../voucher/voucher-repository.interface.js';
+import type { VoucherLedgerMovement } from '../../erp/voucher/voucher-ledger-movement.js';
+import { businessTodayIso } from '../voucher/voucher-business-date.js';
+import type { LedgerStatement, LedgerStatementTransaction } from '../../erp/ledger/ledger-statement-domain.js';
+import {
+  addDecimals,
+  type AmountSide,
+  type DecimalValue,
+  sideFromSigned,
+  signedFromSide,
+  subtractDecimals,
+  sumDecimals,
+  ZERO_DECIMAL,
+} from '../../erp/shared/decimal-money.js';
 
 const BATCH_SIZE = 250;
+const MAX_STATEMENT_RANGE_DAYS = 366;
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface LedgerSyncService extends SyncEngineService {
   getLedgers(params: LedgerSearchParams): Promise<LedgerSearchResult>;
   getLedgerById(ledgerId: string): Promise<LedgerDetails | null>;
+  getLedgerStatement(ledgerId: string, dateFrom: string, dateTo: string): Promise<LedgerStatement | null>;
   getStatistics(): Promise<LedgerStatistics>;
   getSyncProgress(): LedgerSyncProgress;
   getStorageStatus(): StorageStatus;
@@ -89,6 +106,10 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     return this.repositoryOverride ?? this.storage.getBundle().ledgerRepository;
   }
 
+  private get voucherRepository(): VoucherRepositoryPort {
+    return this.storage.getBundle().voucherRepository;
+  }
+
   private get syncRuns(): SyncRunRepository {
     return this.syncRunsOverride ?? this.storage.getBundle().syncRunRepository;
   }
@@ -127,6 +148,115 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
   async getLedgerById(ledgerId: string): Promise<LedgerDetails | null> {
     const companyId = await this.requireCompanyId();
     return this.repository.findById(companyId, ledgerId);
+  }
+
+  async getLedgerStatement(
+    ledgerId: string,
+    dateFrom: string,
+    dateTo: string,
+  ): Promise<LedgerStatement | null> {
+    if (!this.running) {
+      throw new AppError(ErrorCodes.SERVICE_UNAVAILABLE, 'Ledger sync service is not running.', 503);
+    }
+    validateStatementDateRange(dateFrom, dateTo);
+    const companyId = await this.requireCompanyId();
+    const ledger = await this.repository.findById(companyId, ledgerId);
+    if (!ledger) return null;
+
+    const syncedDate = businessTodayIso(new Date(ledger.syncedAt));
+    const snapshot = await this.voucherRepository.getActiveSnapshotMetadata(companyId);
+
+    const requiredTo = syncedDate > dateTo ? syncedDate : dateTo;
+    const transactionsComplete = Boolean(
+      snapshot && snapshot.period.dateFrom <= dateFrom && snapshot.period.dateTo >= dateTo,
+    );
+    const balanceCoverageComplete = Boolean(
+      snapshot && snapshot.period.dateFrom <= dateFrom && snapshot.period.dateTo >= requiredTo,
+    );
+    const balanceAnchorAvailable = syncedDate >= dateFrom;
+    const balanceAvailable = balanceAnchorAvailable && balanceCoverageComplete && Boolean(ledger.closingBalance);
+
+    const visibleFrom = transactionsComplete || !snapshot
+      ? dateFrom
+      : maxDateIso(dateFrom, snapshot.period.dateFrom);
+    const visibleTo = transactionsComplete || !snapshot
+      ? dateTo
+      : minDateIso(dateTo, snapshot.period.dateTo);
+    const movements = snapshot && visibleFrom <= visibleTo
+      ? await this.voucherRepository.findLedgerMovements(companyId, ledger.name, visibleFrom, visibleTo)
+      : [];
+
+    let openingBalance: { readonly amount: string; readonly side: AmountSide } | null = null;
+    let closingBalance: { readonly amount: string; readonly side: AmountSide } | null = null;
+    let runningByLine: ReadonlyMap<string, DecimalValue> | null = null;
+
+    if (balanceAvailable && ledger.closingBalance) {
+      const closingNow = signedFromSide(ledger.closingBalance.amount, ledger.closingBalance.side);
+      const movementsToSynced = dateFrom <= syncedDate
+        ? await this.voucherRepository.findLedgerMovements(companyId, ledger.name, dateFrom, syncedDate)
+        : [];
+      const netToSynced = sumDecimals(movementsToSynced.map(movementAsSigned));
+      const openingDecimal = subtractDecimals(closingNow, netToSynced);
+      openingBalance = sideFromSigned(openingDecimal);
+
+      const netInPeriod = sumDecimals(movements.map(movementAsSigned));
+      const closingDecimal = addDecimals(openingDecimal, netInPeriod);
+      closingBalance = sideFromSigned(closingDecimal);
+
+      const running = new Map<string, DecimalValue>();
+      let cursor = openingDecimal;
+      for (const movement of movements) {
+        cursor = addDecimals(cursor, movementAsSigned(movement));
+        running.set(runningKey(movement), cursor);
+      }
+      runningByLine = running;
+    }
+
+    const transactions: LedgerStatementTransaction[] = movements.map((movement) => ({
+      voucherId: movement.voucherId,
+      date: movement.date,
+      voucherType: movement.voucherType,
+      voucherNumber: movement.voucherNumber,
+      referenceNumber: movement.referenceNumber,
+      narration: movement.narration,
+      debit: movement.amountSide === 'debit' ? movement.amount : null,
+      credit: movement.amountSide === 'credit' ? movement.amount : null,
+      runningBalance: runningByLine
+        ? sideFromSigned(runningByLine.get(runningKey(movement)) ?? ZERO_DECIMAL)
+        : null,
+    }));
+
+    const messages: string[] = [];
+    if (!transactionsComplete) {
+      messages.push(
+        'Some transactions in this period may be missing from the statement — sync vouchers for '
+        + 'this date range to complete it.',
+      );
+    }
+    if (!balanceAvailable) {
+      messages.push(
+        balanceAnchorAvailable
+          ? 'Opening/closing balance unavailable — sync vouchers for this date range to compute it.'
+          : 'Opening/closing balance unavailable: the selected period ends before this ledger was last synced.',
+      );
+    }
+
+    return {
+      ledgerId: ledger.id,
+      ledgerName: ledger.name,
+      parentGroup: ledger.parentGroup,
+      period: { from: dateFrom, to: dateTo },
+      openingBalance,
+      closingBalance,
+      transactions,
+      coverage: {
+        transactionsComplete,
+        balanceAvailable,
+        syncedFrom: snapshot?.period.dateFrom ?? null,
+        syncedTo: snapshot?.period.dateTo ?? null,
+        message: messages.length > 0 ? messages.join(' ') : null,
+      },
+    };
   }
 
   async getStatistics(): Promise<LedgerStatistics> {
@@ -667,4 +797,48 @@ function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
     };
     signal.addEventListener('abort', onAbort, { once: true });
   });
+}
+
+function validateStatementDateRange(dateFrom: string, dateTo: string): void {
+  if (!ISO_DATE_PATTERN.test(dateFrom) || !ISO_DATE_PATTERN.test(dateTo)) {
+    throw new AppError(ErrorCodes.VALIDATION_ERROR, 'Ledger statement dates must use YYYY-MM-DD.', 400);
+  }
+  if (dateFrom > dateTo) {
+    throw new AppError(
+      ErrorCodes.VALIDATION_ERROR,
+      'Ledger statement "from" date must not be after "to".',
+      400,
+    );
+  }
+  const fromMs = Date.parse(`${dateFrom}T00:00:00Z`);
+  const toMs = Date.parse(`${dateTo}T00:00:00Z`);
+  if (Math.floor((toMs - fromMs) / 86_400_000) + 1 > MAX_STATEMENT_RANGE_DAYS) {
+    throw new AppError(
+      ErrorCodes.VALIDATION_ERROR,
+      `Ledger statement date range exceeds ${MAX_STATEMENT_RANGE_DAYS} days.`,
+      400,
+    );
+  }
+}
+
+function maxDateIso(a: string, b: string): string {
+  return a > b ? a : b;
+}
+
+function minDateIso(a: string, b: string): string {
+  return a < b ? a : b;
+}
+
+function movementAsSigned(movement: VoucherLedgerMovement): DecimalValue {
+  if (!movement.amountSide) return ZERO_DECIMAL;
+  return signedFromSide(movement.amount, movement.amountSide);
+}
+
+/**
+ * A movement's own composite storage key (voucherId + lineNumber) — unique within a single
+ * ledger's statement, so it's safe to use as the running-balance lookup key even though the
+ * same voucher can contribute more than one line to the same ledger.
+ */
+function runningKey(movement: VoucherLedgerMovement): string {
+  return `${movement.voucherId}:${movement.lineNumber}`;
 }

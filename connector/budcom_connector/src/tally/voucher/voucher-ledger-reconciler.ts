@@ -4,6 +4,7 @@ import type {
   VoucherLedgerEntry,
 } from '../../erp/voucher/voucher-domain.js';
 import { normalizeGuid } from './voucher-ledger-parser.js';
+import { formatDecimal, parseDecimal, rescale } from '../../erp/shared/decimal-money.js';
 
 export function joinAndReconcileVoucherLedgers(
   vouchers: readonly VoucherDetails[],
@@ -76,30 +77,6 @@ function toVoucherLedgerEntry(
     isDeemedPositive: entry.isDeemedPositive,
     allocations: [],
   };
-}
-
-interface Decimal {
-  readonly coefficient: bigint;
-  readonly scale: number;
-}
-
-function parseDecimal(value: string): Decimal {
-  const negative = value.startsWith('-');
-  const unsigned = negative ? value.slice(1) : value;
-  const [whole, fraction = ''] = unsigned.split('.');
-  const coefficient = BigInt(`${whole}${fraction}` || '0') * (negative ? -1n : 1n);
-  return { coefficient, scale: fraction.length };
-}
-
-function rescale(value: Decimal, scale: number): bigint {
-  return value.coefficient * (10n ** BigInt(scale - value.scale));
-}
-
-function formatDecimal(coefficient: bigint, scale: number): string {
-  if (scale === 0) return coefficient.toString();
-  const raw = coefficient.toString().padStart(scale + 1, '0');
-  const formatted = `${raw.slice(0, -scale)}.${raw.slice(-scale)}`;
-  return formatted.replace(/\.?0+$/, '') || '0';
 }
 
 function absoluteDecimal(value: string): string {
