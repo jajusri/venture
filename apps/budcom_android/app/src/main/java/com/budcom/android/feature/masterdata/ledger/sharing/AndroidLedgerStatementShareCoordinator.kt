@@ -139,7 +139,7 @@ internal object LedgerStatementPdfRenderer {
             strokeWidth = 0.65f
         }
 
-        val headerLines = buildHeaderLines(companyName, statement)
+        val headerLines = buildHeaderLines(companyName, statement) { text -> wrapToWidth(text, CONTENT_RIGHT - MARGIN, subHeading) }
         val firstHeaderTop = 40f + headerLines.size * 14f + 10f
         val rows = planStatementRows(statement.transactions, firstHeaderTop + HEADER_ROW_HEIGHT, MARGIN + HEADER_ROW_HEIGHT, TABLE_BOTTOM) { text ->
             wrapToWidth(text, columnEdges[2] - columnEdges[1] - 10f, body)
@@ -176,9 +176,13 @@ internal object LedgerStatementPdfRenderer {
         }
     }
 
-    private fun buildHeaderLines(companyName: String?, statement: LedgerStatement): List<String> = buildList {
-        companyName?.trim()?.takeIf(String::isNotBlank)?.let { add(it) }
-        add(statement.ledgerName + (statement.parentGroup?.let { " ($it)" } ?: ""))
+    private fun buildHeaderLines(
+        companyName: String?,
+        statement: LedgerStatement,
+        wrap: (String) -> List<String>,
+    ): List<String> = buildList {
+        companyName?.trim()?.takeIf(String::isNotBlank)?.let { addAll(wrap(it)) }
+        addAll(wrap(statement.ledgerName + (statement.parentGroup?.let { " ($it)" } ?: "")))
         add("Statement period: ${statement.period.from} to ${statement.period.to}")
         add("Opening balance: ${statement.openingBalance.toLabel() ?: "Not available"}")
     }
