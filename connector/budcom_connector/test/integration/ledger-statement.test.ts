@@ -223,6 +223,59 @@ describe('GET /ledgers/:id/statement', () => {
     expect(receipt.runningBalance).toEqual({ amount: '500', side: 'debit' });
   });
 
+  // Same-day tiebreak must reflect the order vouchers were staged in (Tally's own response
+  // order, preserved via SQLite rowid) — never an arbitrary sort by the GUID-derived voucherId.
+  // voucherIds are deliberately chosen so a lexicographic sort would reverse the expected order.
+  it('orders same-day transactions by staging order, not by voucherId', async () => {
+    const { app, storage } = await setupLedgerStatementApi();
+    await storage.getBundle().ledgerRepository.upsertMany('estimation', [
+      sampleLedgerDetails({
+        id: LEDGER_ID,
+        name: 'Acme Traders',
+        closingBalance: { amount: '3000', currencyCode: 'INR', side: 'Dr' },
+        syncedAt: '2026-08-10T09:00:00.000Z',
+      }),
+    ]);
+    await seedPromotedSnapshot(
+      storage,
+      'estimation',
+      'snap-1',
+      { dateFrom: '2026-07-01', dateTo: '2026-08-10' },
+      [
+        voucherFixture({
+          voucherId: 'v-zzz-staged-first',
+          date: '2026-07-05',
+          voucherType: 'Sales',
+          voucherNumber: 'S-001',
+          ledgerEntries: [
+            { lineNumber: 1, ledgerName: 'Acme Traders', amount: '1000', side: 'debit' },
+            { lineNumber: 2, ledgerName: 'Sales Account', amount: '1000', side: 'credit' },
+          ],
+        }),
+        voucherFixture({
+          voucherId: 'v-aaa-staged-second',
+          date: '2026-07-05',
+          voucherType: 'Sales',
+          voucherNumber: 'S-002',
+          ledgerEntries: [
+            { lineNumber: 1, ledgerName: 'Acme Traders', amount: '2000', side: 'debit' },
+            { lineNumber: 2, ledgerName: 'Sales Account', amount: '2000', side: 'credit' },
+          ],
+        }),
+      ],
+    );
+
+    const response = await request(app)
+      .get(`/ledgers/${LEDGER_ID}/statement`)
+      .query({ from: '2026-07-01', to: '2026-07-31' });
+
+    expect(response.status).toBe(200);
+    expect(response.body.statement.transactions.map((t: { voucherId: string }) => t.voucherId)).toEqual([
+      'v-zzz-staged-first',
+      'v-aaa-staged-second',
+    ]);
+  });
+
   it('never identifies a transaction`s voucher by display number — voucherId is the stable identity', async () => {
     const { app, storage } = await setupLedgerStatementApi();
     await storage.getBundle().ledgerRepository.upsertMany('estimation', [

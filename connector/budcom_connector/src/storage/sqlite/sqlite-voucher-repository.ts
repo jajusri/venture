@@ -695,7 +695,7 @@ export class SqliteVoucherRepository implements VoucherRepositoryPort {
         AND ${nameFilter}
         AND h.voucher_date BETWEEN @dateFrom AND @dateTo
         AND h.voucher_status = 'active'
-      ORDER BY h.voucher_date, h.voucher_id, e.line_number
+      ORDER BY h.voucher_date, h.rowid, e.line_number
     `).all({ companyId, snapshotId, ledgerName, dateFrom, dateTo }) as Array<{
       voucherId: string;
       date: string;
