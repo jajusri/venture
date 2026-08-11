@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createPrivateVault,
+  hasExistingStandardModeDatabase,
   isPrivateVaultStillPresent,
   privateConnectorDataDir,
   resolvePrivateVault,
@@ -124,5 +125,17 @@ describe('isPrivateVaultStillPresent', () => {
   it('is false when the drive/marker has disappeared — the hot-removal case', () => {
     const fs = fakeFs();
     expect(isPrivateVaultStillPresent('E:\\', 'vault-1', fs)).toBe(false);
+  });
+});
+
+describe('hasExistingStandardModeDatabase', () => {
+  it('is true when a Connector database already exists at the given directory — an existing Standard user upgrading', () => {
+    const fs = fakeFs({ 'C:\\AppData\\connector-data\\budcom-ledger.db': 'not real sqlite bytes, presence is what matters' });
+    expect(hasExistingStandardModeDatabase('C:\\AppData\\connector-data', fs)).toBe(true);
+  });
+
+  it('is false for a genuinely fresh install with no prior database', () => {
+    const fs = fakeFs();
+    expect(hasExistingStandardModeDatabase('C:\\AppData\\connector-data', fs)).toBe(false);
   });
 });

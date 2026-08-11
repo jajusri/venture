@@ -59,6 +59,7 @@ import { PrivateStorageLocatorStore } from '../application/private-storage/priva
 import { PowerShellRemovableVolumeEnumerator } from '../application/private-storage/removable-volume-enumerator.js';
 import {
   createPrivateVault,
+  hasExistingStandardModeDatabase,
   isPrivateVaultStillPresent,
   privateConnectorDataDir,
   privateStorageMarkerPath,
@@ -327,6 +328,22 @@ function startPrivateStorageWatchdog(driveLetter: string, vaultId: string): void
 async function resolveStorageGate(): Promise<void> {
   stopPrivateStorageWatchdog();
   if (!privateStorageLocatorStore.exists()) {
+    // See hasExistingStandardModeDatabase()'s doc comment: an existing Standard user upgrading
+    // into a build with this feature must silently continue on Standard, never see the picker.
+    if (hasExistingStandardModeDatabase(appDataLayout.connectorDataDir)) {
+      const now = new Date().toISOString();
+      privateStorageLocatorStore.save({
+        schemaVersion: 1,
+        mode: 'standard',
+        vaultId: null,
+        lastKnownDriveLetter: null,
+        lastKnownVolumeLabel: null,
+        createdAt: now,
+        updatedAt: now,
+      });
+      storageGateState = { kind: 'ready', mode: 'standard' };
+      return;
+    }
     storageGateState = { kind: 'first-run' };
     return;
   }

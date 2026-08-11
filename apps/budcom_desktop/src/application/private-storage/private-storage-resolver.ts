@@ -145,3 +145,19 @@ export function isPrivateVaultStillPresent(
 export function privateStorageMarkerPath(driveLetter: string): string {
   return markerPathOf(driveLetter);
 }
+
+/**
+ * True when a real Connector database already exists at the default Standard/AppData location.
+ * The private-storage locator file is new with this feature, so its mere absence can't
+ * distinguish a genuinely fresh install from an existing Standard-mode user upgrading into a
+ * build that has this feature for the first time — both look identical to the caller otherwise.
+ * An existing user must never be shown the storage picker: selecting Private there would point
+ * the Connector at a brand-new empty vault while their real data sits untouched but unreachable
+ * in AppData, which reads exactly like data loss.
+ */
+export function hasExistingStandardModeDatabase(
+  connectorDataDir: string,
+  fsImpl: Pick<PrivateStorageResolverFsPort, 'existsSync'> = fs,
+): boolean {
+  return fsImpl.existsSync(path.join(connectorDataDir, 'budcom-ledger.db'));
+}
