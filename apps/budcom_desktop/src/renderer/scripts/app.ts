@@ -749,8 +749,25 @@ export async function loadCompanies(): Promise<void> {
   }
 }
 
+/**
+ * TD-014 continuation: previously observed after a Desktop restart — the backend/Connector
+ * session can auto-recover a previously-selected company (e.g. ESTIMATION) slightly after it
+ * first becomes reachable, so the very first post-restart snapshot can still read
+ * NO_COMPANY_SELECTED even though the backend is about to settle on an active company on its
+ * own. isDashboardHealthy() treating "reachable" alone as done let the bounded recovery loop
+ * stop immediately on that first snapshot, leaving the renderer showing "no company" forever
+ * until the user manually reselected it — even though the backend already had it. Requiring the
+ * session to have actually settled (not just be reachable) before calling recovery "done" closes
+ * that race: the loop now keeps polling, on the same existing bounded schedule, until either a
+ * company becomes active or the schedule is exhausted — unchanged behavior for a genuinely
+ * company-less installation, which still ends the same way it always did once the bounded
+ * attempts run out.
+ */
 function isDashboardHealthy(): boolean {
-  return latestDashboardState?.connectorReachable === true;
+  return (
+    latestDashboardState?.connectorReachable === true
+    && latestDashboardState.sessionStatus !== 'NO_COMPANY_SELECTED'
+  );
 }
 
 /** Cancels any pending bounded-recovery retry without scheduling a new one — used on teardown. */

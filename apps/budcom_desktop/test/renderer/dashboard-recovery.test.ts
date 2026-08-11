@@ -446,6 +446,31 @@ describe('TD-014 bounded dashboard/company auto-recovery', () => {
     expect(getCompanies).toHaveBeenCalledTimes(3); // initial cycle + 2 bounded retry cycles
   });
 
+  it('recovers a company the backend re-selects shortly after becoming reachable, with no manual reselection and no lifecycle push — the Desktop-restart race', async () => {
+    const bridge = baseBridge();
+    // The Connector is reachable immediately after a Desktop restart, but its own session
+    // recovery (re-selecting the previously active company) has not finished yet — exactly the
+    // reported bug's starting snapshot. connectorReachable alone must not be read as "healthy"
+    // here, or the bounded recovery loop stops before the company ever appears.
+    const dashboard = mutableDashboardState(
+      dashboardState({ sessionStatus: 'NO_COMPANY_SELECTED', companyName: '—', companyId: '—' }),
+    );
+    const getCompanies = vi.fn(ok(SUCCESS_COMPANIES));
+    window.budcomDesktop = { ...bridge, getDashboardState: dashboard.fn, getCompanies } as unknown as typeof window.budcomDesktop;
+
+    await startDesktopShell();
+    expect(document.getElementById('footer-company')?.textContent).toBe('');
+
+    // The backend finishes recovering ESTIMATION on its own. bridge.__fireStatusUpdated() is
+    // deliberately never called — nothing but the bounded recovery timer may catch this.
+    dashboard.set(dashboardState());
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(document.getElementById('footer-company')?.textContent).toBe('· ESTIMATION');
+    expect(document.getElementById('dashboard-company-name')?.textContent).toBe('ESTIMATION');
+    expect(bridge.onStatusUpdated).toHaveBeenCalledTimes(1); // registered; the listener itself never invoked
+  });
+
   // 20. successful recovery does not require application restart
   // (implicit throughout — every test above recovers within the same startDesktopShell() call,
   // with no re-import/re-init of the module.)
