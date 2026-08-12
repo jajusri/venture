@@ -39,7 +39,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.budcom.android.BuildConfig
 import com.budcom.android.R
 import com.budcom.android.feature.dashboard.domain.model.DashboardOperationalMode
@@ -74,6 +77,17 @@ fun DashboardRoute(
                 DashboardNavigation.Diagnostics -> onOpenDiagnostics()
                 DashboardNavigation.Settings -> onOpenSettings()
             }
+        }
+    }
+    // Foreground reconciliation backstop (TD-network-loss-callback-unreliable): re-derives
+    // Connector reachability whenever the Dashboard is actively resumed, and on a bounded
+    // interval for as long as it stays resumed, so a missed/delayed OS network callback can
+    // never leave a stale "Fully operational" state displayed indefinitely. Automatically
+    // starts/stops with the RESUMED lifecycle state via repeatOnLifecycle's own cancellation.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(viewModel, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.reconcileWhileActive()
         }
     }
     DashboardScreen(

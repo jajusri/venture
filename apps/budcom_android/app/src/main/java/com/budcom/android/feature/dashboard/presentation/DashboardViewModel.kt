@@ -10,6 +10,7 @@ import com.budcom.android.feature.dashboard.domain.usecase.RefreshDashboardUseCa
 import com.budcom.android.feature.dashboard.domain.usecase.ValidateDashboardSessionUseCase
 import com.budcom.android.feature.sync.domain.port.ObserveSyncStatusPort
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -37,6 +38,30 @@ class DashboardViewModel @Inject constructor(
 
     @Volatile
     private var refreshInFlight = false
+
+    /**
+     * Foreground/lifecycle reconciliation backstop. Call from a `repeatOnLifecycle(RESUMED)`
+     * block in the Compose layer: cancellation when the screen leaves the active state
+     * (backgrounded, locked, navigated away) stops this via ordinary structured-concurrency
+     * cancellation of the enclosing coroutine — no separate start/stop bookkeeping is needed.
+     *
+     * Physical iQOO testing showed the OS network-loss callback that drives [refresh]'s
+     * automatic reconnect (see the `wentOffline`/`cameBackOnline` handling below) fires
+     * reliably only ~1 in 10 times, which can leave "Fully operational" stale indefinitely with
+     * no other trigger. This reuses the exact same bounded [refresh] path (and its
+     * [refreshInFlight] guard) that manual Refresh and the network-restore auto-refresh already
+     * use — it is a backstop for a missed/delayed OS callback, not a second reconnect
+     * implementation. [NetworkConnectivityObserver.current] is a fresh synchronous OS query
+     * (not a cached callback value), so each tick re-derives the true state regardless of
+     * whether the network callback ever fired.
+     */
+    suspend fun reconcileWhileActive() {
+        refresh(isInitial = false)
+        while (true) {
+            delay(FOREGROUND_RECONCILE_INTERVAL_MS)
+            refresh(isInitial = false)
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -206,6 +231,17 @@ class DashboardViewModel @Inject constructor(
                 ).withAuthoritativeMode()
             }
         }
+    }
+
+    companion object {
+        /**
+         * [reconcileWhileActive] tick interval. Chosen as roughly double the Connector
+         * health-probe's own connect timeout (`NetworkConstants.CONNECT_TIMEOUT_SECONDS` = 15s),
+         * so a missed OS network callback is corrected well within one screen-viewing session
+         * while never being so frequent that a slow/failing probe could still be in flight when
+         * the next tick is due — though [refreshInFlight] makes overlap impossible either way.
+         */
+        const val FOREGROUND_RECONCILE_INTERVAL_MS = 30_000L
     }
 }
 

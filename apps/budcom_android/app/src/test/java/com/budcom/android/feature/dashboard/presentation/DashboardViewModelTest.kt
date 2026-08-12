@@ -38,8 +38,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -354,6 +356,201 @@ class DashboardViewModelTest {
 
         assertEquals("ESTIMATION", viewModel.uiState.value.selectedCompanyName)
         assertEquals(0, repository.restoreCalls)
+    }
+
+    // --- Foreground reconciliation backstop (P1 iQOO hardening) ---
+    //
+    // Physical testing showed the OS network-loss callback fires reliably only ~1 in 10 times,
+    // so these tests deliberately leave `connectivity.online` untouched (simulating a callback
+    // that never fires) and instead flip the Connector *health probe* result directly — the only
+    // way reconcileWhileActive()'s fresh re-probe can be proven to be the thing that caught the
+    // change, not the existing wentOffline/cameBackOnline network-flow path (already covered by
+    // the tests above, which remain unchanged and must keep passing).
+
+    @Test
+    fun `foreground reconciliation discovers connector unreachable despite missed network-loss callback`() = runTest(dispatcher) {
+        company.selectedIdFlow.value = "estimation"
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        company.validateResult = AppResult.Success(
+            SessionValidationStatus(SessionValidity.Valid, "estimation", "ESTIMATION"),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertEquals(DashboardOperationalMode.FullyOperational, viewModel.uiState.value.operationalMode)
+
+        // Connector becomes unreachable, but isOnline is deliberately left untouched — the OS
+        // callback never told the app anything changed.
+        connector.probe = AppResult.Failure(AppError.Offline())
+        assertEquals(
+            "state must still be stale before reconciliation runs",
+            DashboardOperationalMode.FullyOperational,
+            viewModel.uiState.value.operationalMode,
+        )
+
+        val job = launch { viewModel.reconcileWhileActive() }
+        runCurrent()
+
+        // mapSnapshotToUiState()'s pre-existing keepStaleHealth debounce (anti-flicker for a
+        // single transient probe failure right after a healthy state) means the *first* failed
+        // reconciliation tick updates connectorConnected but not yet operationalMode — this is
+        // unrelated pre-existing behavior shared by every refresh() caller, not something this
+        // backstop should override. A second consecutive failed tick clears it, which is still a
+        // short bounded interval (2x FOREGROUND_RECONCILE_INTERVAL_MS at worst), never
+        // indefinite.
+        assertEquals(false, viewModel.uiState.value.connectorConnected)
+        assertEquals(DashboardOperationalMode.PartiallyAvailable, viewModel.uiState.value.operationalMode)
+
+        advanceTimeBy(DashboardViewModel.FOREGROUND_RECONCILE_INTERVAL_MS)
+        runCurrent()
+
+        assertEquals(DashboardOperationalMode.ConnectorUnavailable, viewModel.uiState.value.operationalMode)
+        assertEquals(false, viewModel.uiState.value.connectorConnected)
+
+        job.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `foreground reconciliation restores fully operational despite missed network-restore callback`() = runTest(dispatcher) {
+        company.selectedIdFlow.value = "estimation"
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        company.validateResult = AppResult.Success(
+            SessionValidationStatus(SessionValidity.Valid, "estimation", "ESTIMATION"),
+        )
+        connector.probe = AppResult.Failure(AppError.Offline())
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertEquals(DashboardOperationalMode.ConnectorUnavailable, viewModel.uiState.value.operationalMode)
+
+        // Connector recovers, but isOnline is deliberately left untouched throughout — the OS
+        // never signalled a restore either.
+        connector.probe = AppResult.Success(sampleProbe(ready = true))
+
+        val job = launch { viewModel.reconcileWhileActive() }
+        runCurrent()
+
+        assertEquals(DashboardOperationalMode.FullyOperational, viewModel.uiState.value.operationalMode)
+        assertEquals(true, viewModel.uiState.value.connectorConnected)
+
+        job.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `pairing and selected company survive reconciliation discovering unreachability`() = runTest(dispatcher) {
+        // Room-backed local data (vouchers/ledgers) is out of scope for this assertion: neither
+        // DashboardViewModel nor any use case it calls holds a Room DAO reference at all, so
+        // reconciliation is architecturally incapable of touching it — see the task's final
+        // report for the inspection trail backing that claim.
+        company.selectedIdFlow.value = "estimation"
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        val baseUrlBefore = viewModel.uiState.value.baseUrl
+
+        connector.probe = AppResult.Failure(AppError.Offline())
+        val job = launch { viewModel.reconcileWhileActive() }
+        runCurrent()
+        // See the sibling "discovers connector unreachable" test for why a second tick is
+        // needed: mapSnapshotToUiState()'s pre-existing single-blip anti-flicker debounce.
+        advanceTimeBy(DashboardViewModel.FOREGROUND_RECONCILE_INTERVAL_MS)
+        runCurrent()
+
+        assertEquals(DashboardOperationalMode.ConnectorUnavailable, viewModel.uiState.value.operationalMode)
+        assertEquals(baseUrlBefore, viewModel.uiState.value.baseUrl)
+        assertEquals("estimation", viewModel.uiState.value.selectedCompanyId)
+        assertEquals("ESTIMATION", viewModel.uiState.value.selectedCompanyName)
+
+        job.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `repeated resumes do not create duplicate concurrent probes`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        connector.delayMillis = 5_000
+        connector.probeCalls = 0
+
+        // Simulates rapid resume/pause/resume (e.g. quick app-switcher flicks), each starting a
+        // fresh reconcileWhileActive() call while the previous probe is still in flight.
+        val job1 = launch { viewModel.reconcileWhileActive() }
+        val job2 = launch { viewModel.reconcileWhileActive() }
+        val job3 = launch { viewModel.reconcileWhileActive() }
+        runCurrent()
+
+        assertEquals(1, connector.probeCalls)
+
+        job1.cancel()
+        job2.cancel()
+        job3.cancel()
+    }
+
+    @Test
+    fun `repeating foreground reconciliation stops immediately when lifecycle leaves active state`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        connector.probeCalls = 0
+
+        // Standing in for repeatOnLifecycle(RESUMED): the coroutine hosting reconcileWhileActive
+        // is what a real screen-exit cancels.
+        val job = launch { viewModel.reconcileWhileActive() }
+        runCurrent()
+        assertEquals(1, connector.probeCalls)
+
+        advanceTimeBy(DashboardViewModel.FOREGROUND_RECONCILE_INTERVAL_MS)
+        runCurrent()
+        assertEquals(2, connector.probeCalls)
+
+        job.cancel()
+        advanceUntilIdle()
+
+        assertEquals(2, connector.probeCalls)
+    }
+
+    @Test
+    fun `foreground reconciliation ticks stay bounded to one call per interval across repeated cycles`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        connector.probeCalls = 0
+
+        val job = launch { viewModel.reconcileWhileActive() }
+        runCurrent()
+        repeat(4) {
+            advanceTimeBy(DashboardViewModel.FOREGROUND_RECONCILE_INTERVAL_MS)
+            runCurrent()
+        }
+
+        // 1 immediate tick + 4 interval ticks — never more than one probe per interval, no
+        // reconnect-loop pile-up.
+        assertEquals(5, connector.probeCalls)
+
+        job.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `manual refresh still works while reconciliation loop is active and after it stops`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val job = launch { viewModel.reconcileWhileActive() }
+        runCurrent()
+        val callsAfterFirstTick = connector.probeCalls
+
+        viewModel.onEvent(DashboardEvent.Refresh)
+        runCurrent()
+        assertTrue(connector.probeCalls >= callsAfterFirstTick)
+
+        job.cancel()
+        advanceUntilIdle()
+        val callsAfterCancel = connector.probeCalls
+
+        viewModel.onEvent(DashboardEvent.Refresh)
+        advanceUntilIdle()
+
+        assertEquals(callsAfterCancel + 1, connector.probeCalls)
+        assertEquals(true, viewModel.uiState.value.connectorConnected)
     }
 }
 
