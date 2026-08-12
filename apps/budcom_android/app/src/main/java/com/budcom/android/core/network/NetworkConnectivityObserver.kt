@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +28,15 @@ interface NetworkConnectivityObserver {
 
 /**
  * [ConnectivityManager]-backed [NetworkConnectivityObserver].
+ *
+ * Tracks the system's *default* network via [ConnectivityManager.registerDefaultNetworkCallback]
+ * rather than a capability-filtered [ConnectivityManager.registerNetworkCallback]. Physical
+ * testing showed the capability-filtered "listener" form reliably delivered `onAvailable` when
+ * Wi-Fi reconnected but could miss or indefinitely delay `onLost` while the app was backgrounded
+ * (screen locked) — the default-network callback is the same signal backing the OS's own
+ * connectivity indicator, so platform/OEM power management treats its transitions as
+ * higher-priority and less eligible for deferral. This does not change what "online" means
+ * (still "is there a validated internet-capable network") — only which OS signal reports it.
  */
 @Singleton
 class DefaultNetworkConnectivityObserver @Inject constructor(
@@ -64,11 +72,7 @@ class DefaultNetworkConnectivityObserver @Inject constructor(
             }
         }
 
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-
-        connectivityManager.registerNetworkCallback(request, callback)
+        connectivityManager.registerDefaultNetworkCallback(callback)
         awaitClose { connectivityManager.unregisterNetworkCallback(callback) }
     }.distinctUntilChanged()
 }
