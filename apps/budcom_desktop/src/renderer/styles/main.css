@@ -600,6 +600,14 @@ body {
   background: rgba(15, 23, 42, 0.85);
 }
 
+/* .storage-gate-overlay's own display:flex is declared above .hidden's display:none in source
+   order; at equal specificity the later rule wins the cascade, so .hidden alone can never hide
+   this element. This override, matched on both classes together, restores precedence to .hidden
+   regardless of rule order elsewhere in the file. */
+.storage-gate-overlay.hidden {
+  display: none;
+}
+
 .storage-gate-panel {
   width: min(560px, 90vw);
   max-height: 85vh;
