@@ -97,6 +97,44 @@ After clarification, Claude should restate the final execution boundary concisel
 
 Do not continue on assumptions when the answer could materially change the result.
 
+### Complete Clarification Gate
+
+When Claude asks multiple consequential clarification questions, the clarification gate remains OPEN until EVERY material question has been answered or explicitly resolved.
+
+If the user answers only some of the questions (e.g. only Q1 of Q1/Q2/Q3, or Q1 and Q3 but not Q2):
+
+- record and preserve every answered question;
+- keep every unanswered question explicitly unresolved;
+- ask ONLY the unresolved question(s) again;
+- do not begin substantive implementation.
+
+None of the following count as resolving an unanswered consequential question:
+
+- silence;
+- omission;
+- an incomplete response;
+- "okay";
+- "yes" where it does not unambiguously answer the specific question;
+- answering only another question in the set;
+- failure to mention the question;
+- continuation of conversation.
+
+A consequential question is CLOSED only when:
+
+1. the user explicitly answers it; or
+2. the user explicitly delegates that decision to Claude; or
+3. the user explicitly authorizes Claude's stated recommendation/default; or
+4. new repository/evidence makes the question objectively irrelevant — Claude must explicitly state why it became irrelevant.
+
+Before substantive implementation begins after a clarification round, Claude must account for the full clarification set:
+
+- if every material question is resolved, state: **"Clarification gate: CLOSED — all material questions resolved."**
+- if any remain unresolved, state: **"Clarification gate: OPEN — unresolved questions: Qx, Qy."** and ask only those questions.
+
+Do not repeatedly ask an already-resolved question unless new evidence materially invalidates the earlier answer.
+
+**Asking the question is not enough — the material answer must actually be received or explicitly resolved.**
+
 ---
 
 ## 6. Step 5 — Establish a Baseline
@@ -224,6 +262,20 @@ After the user/ChatGPT answers:
 - continue the original execution plan.
 
 This protocol exists specifically to prevent loss of a half-processed prompt and unnecessary Claude-usage waste.
+
+### Complete Clarification Gate applies to checkpoints too
+
+If a checkpoint asks multiple consequential questions and the user answers only some of them, the Step 4 Complete Clarification Gate governs here as well:
+
+- preserve all valid completed work;
+- preserve every answered decision;
+- keep every unanswered decision explicitly unresolved;
+- re-ask only the unresolved question(s);
+- do not cross the consequential decision boundary those questions gate until they are resolved.
+
+Safe independent work that cannot prejudice any unresolved decision may continue only if the existing rules in this document already permit it (see Step 7). Do not treat "safe independent work" as a loophole to implement around an unanswered consequential question.
+
+See Step 4's Complete Clarification Gate for the full OPEN/CLOSED protocol and question-closure criteria — the same rule governs both the initial gate and every mid-execution checkpoint.
 
 ---
 
