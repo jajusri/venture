@@ -40,9 +40,18 @@ class DashboardViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            // Tracks isOnline transitions so a network drop/restore refreshes Connector
+            // reachability automatically, without waiting for a manual Refresh tap. `null`
+            // means "no prior emission yet" (app just started), which must never itself count
+            // as a transition.
+            var previousIsOnline: Boolean? = null
             observeDashboardContext().collect { context ->
+                val wentOffline = previousIsOnline == true && !context.isOnline
+                val cameBackOnline = previousIsOnline == false && context.isOnline
+                previousIsOnline = context.isOnline
+
                 _uiState.update { state ->
-                    state.copy(
+                    val next = state.copy(
                         isOnline = context.isOnline,
                         baseUrl = context.baseUrl.ifBlank { state.baseUrl },
                         selectedCompanyId = context.selectedCompanyId,
@@ -54,7 +63,25 @@ class DashboardViewModel @Inject constructor(
                             state.sessionValidity
                         },
                         selectedCompanyName = context.selectedCompanyName,
-                    ).withAuthoritativeMode()
+                    )
+                    if (wentOffline) {
+                        // Invalidate stale reachability immediately (no network round-trip —
+                        // we already know locally there is no route). Pairing, selected
+                        // company, and synced data are untouched.
+                        next.copy(
+                            connectorConnected = false,
+                            connectorError = DashboardUiError.Offline("Device is offline."),
+                        ).withAuthoritativeMode()
+                    } else {
+                        next.withAuthoritativeMode()
+                    }
+                }
+
+                if (cameBackOnline) {
+                    // Reuse the exact same bounded refresh path manual Refresh uses — no
+                    // second reconnect implementation. refreshInFlight already guards against
+                    // overlapping this with a concurrent manual/initial refresh.
+                    refresh(isInitial = false)
                 }
             }
         }

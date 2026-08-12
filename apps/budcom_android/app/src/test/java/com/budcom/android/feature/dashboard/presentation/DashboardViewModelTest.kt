@@ -123,6 +123,123 @@ class DashboardViewModelTest {
     }
 
     @Test
+    fun `network loss immediately marks connector unavailable without a network probe`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertEquals(true, viewModel.uiState.value.connectorConnected)
+        val probeCallsBeforeLoss = connector.probeCalls
+
+        connectivity.online.value = false
+        advanceUntilIdle()
+
+        assertEquals(false, viewModel.uiState.value.connectorConnected)
+        assertEquals(DashboardOperationalMode.Offline, viewModel.uiState.value.operationalMode)
+        assertTrue(viewModel.uiState.value.connectorError is DashboardUiError.Offline)
+        // Invalidation is a local, immediate state update — no network round-trip attempted.
+        assertEquals(probeCallsBeforeLoss, connector.probeCalls)
+    }
+
+    @Test
+    fun `network restoration triggers exactly one bounded refresh and returns to fully operational`() = runTest(dispatcher) {
+        company.selectedIdFlow.value = "estimation"
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        company.validateResult = AppResult.Success(
+            SessionValidationStatus(SessionValidity.Valid, "estimation", "ESTIMATION"),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertEquals(DashboardOperationalMode.FullyOperational, viewModel.uiState.value.operationalMode)
+
+        connectivity.online.value = false
+        advanceUntilIdle()
+        val probeCallsAfterLoss = connector.probeCalls
+
+        connectivity.online.value = true
+        advanceUntilIdle()
+
+        assertEquals(probeCallsAfterLoss + 1, connector.probeCalls)
+        assertEquals(DashboardOperationalMode.FullyOperational, viewModel.uiState.value.operationalMode)
+        assertEquals(true, viewModel.uiState.value.connectorConnected)
+    }
+
+    @Test
+    fun `paired endpoint and selected company survive a loss-restore cycle`() = runTest(dispatcher) {
+        company.selectedIdFlow.value = "estimation"
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        val baseUrlBefore = viewModel.uiState.value.baseUrl
+
+        connectivity.online.value = false
+        advanceUntilIdle()
+        assertEquals("estimation", viewModel.uiState.value.selectedCompanyId)
+        assertEquals(baseUrlBefore, viewModel.uiState.value.baseUrl)
+
+        connectivity.online.value = true
+        advanceUntilIdle()
+        assertEquals("estimation", viewModel.uiState.value.selectedCompanyId)
+        assertEquals(baseUrlBefore, viewModel.uiState.value.baseUrl)
+    }
+
+    @Test
+    fun `dashboard context re-emissions unrelated to connectivity do not trigger extra refreshes`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        connectivity.online.value = false
+        advanceUntilIdle()
+        connectivity.online.value = true
+        advanceUntilIdle()
+        val probeCallsAfterRestore = connector.probeCalls
+
+        // Company selection changes re-emit observeDashboardContext() while isOnline stays
+        // true — must not be misread as another online transition (duplicate reconnect).
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        advanceUntilIdle()
+
+        assertEquals(probeCallsAfterRestore, connector.probeCalls)
+    }
+
+    @Test
+    fun `repeated loss-restore cycles never leave stale offline state`() = runTest(dispatcher) {
+        company.selectedIdFlow.value = "estimation"
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        company.validateResult = AppResult.Success(
+            SessionValidationStatus(SessionValidity.Valid, "estimation", "ESTIMATION"),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        repeat(3) {
+            connectivity.online.value = false
+            advanceUntilIdle()
+            assertEquals(DashboardOperationalMode.Offline, viewModel.uiState.value.operationalMode)
+            assertEquals(false, viewModel.uiState.value.connectorConnected)
+
+            connectivity.online.value = true
+            advanceUntilIdle()
+            assertEquals(DashboardOperationalMode.FullyOperational, viewModel.uiState.value.operationalMode)
+            assertEquals(true, viewModel.uiState.value.connectorConnected)
+        }
+    }
+
+    @Test
+    fun `manual refresh still works after an automatic reconnect`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        connectivity.online.value = false
+        advanceUntilIdle()
+        connectivity.online.value = true
+        advanceUntilIdle()
+        val probeCallsAfterAutoReconnect = connector.probeCalls
+
+        viewModel.onEvent(DashboardEvent.Refresh)
+        advanceUntilIdle()
+
+        assertEquals(probeCallsAfterAutoReconnect + 1, connector.probeCalls)
+        assertEquals(true, viewModel.uiState.value.connectorConnected)
+    }
+
+    @Test
     fun `not ready when readiness 503`() = runTest(dispatcher) {
         connector.probe = AppResult.Success(sampleProbe(ready = false))
         val viewModel = createViewModel()
