@@ -1,0 +1,236 @@
+package com.budcom.android.feature.masterdata.ledger.domain.usecase
+
+import com.budcom.android.core.common.AppResult
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerEntity
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementDao
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementRow
+import com.budcom.android.feature.masterdata.ledger.data.local.VoucherNarrationRow
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Unit-tests the Kotlin-level algorithm ([GetLocalLedgerStatementUseCase]) against fake DAOs.
+ * The real Room SQL filtering this algorithm depends on (Sales-only counting, active-status
+ * filtering, company/ledger scoping) is verified separately against a real in-memory database in
+ * [com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementDaoTest] — this file
+ * assumes the DAO contract and tests what the use case does with whatever the DAO returns.
+ */
+class GetLocalLedgerStatementUseCaseTest {
+    private val clock: Clock = Clock.fixed(Instant.parse("2026-08-12T04:00:00Z"), ZoneId.of("Asia/Kolkata"))
+    private val ledgerDao = FakeLedgerDao()
+    private val movementDao = FakeLedgerMovementDao()
+    private val useCase = GetLocalLedgerStatementUseCase(ledgerDao, movementDao, clock)
+
+    private val ledger = LedgerEntity(
+        companyId = "estimation", id = "ledger-1", name = "Asif Bhai, Supplier Khilwat", alias = null,
+        parentGroup = "Sundry Debtors", status = "active", closingAmount = "1000", closingSide = "dr",
+        closingCurrencyCode = "INR", dataQuality = "complete", syncedAt = "2026-08-12T03:56:42Z", dataFreshnessAt = null,
+    )
+
+    private fun row(voucherId: String, date: String, type: String, amount: String, side: String) =
+        LedgerMovementRow(voucherId, date, type, "v-$voucherId", null, 1, amount, side)
+
+    @Test
+    fun `Last7Sales anchors from at the earliest of the last 7 Sales vouchers only`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.lastSales = listOf(
+            row("s7", "2026-08-10", "Sales", "10", "dr"),
+            row("s6", "2026-08-05", "Sales", "10", "dr"),
+            row("s5", "2026-08-01", "Sales", "10", "dr"),
+            row("s4", "2026-07-26", "Sales", "10", "dr"),
+            row("s3", "2026-07-20", "Sales", "10", "dr"),
+            row("s2", "2026-07-15", "Sales", "10", "dr"),
+            row("s1", "2026-07-10", "Sales", "10", "dr"),
+        )
+        movementDao.movements = movementDao.lastSales
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Last7Sales)
+        val statement = (result as AppResult.Success).value
+        assertEquals("2026-07-10", statement.period.from)
+        assertEquals("2026-08-12", statement.period.to)
+    }
+
+    @Test
+    fun `Receipts Payments and Journals never consume the Last-7-Sales count`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        // The fake's lastSalesMovements already models the DAO's own Sales-only SQL filter (see
+        // LedgerMovementDaoTest for that filter proven against a real database) — this test
+        // proves the USE CASE anchors on exactly what that filtered set contains, not on the
+        // wider movements list which does include Receipt/Payment/Journal rows.
+        movementDao.lastSales = listOf(
+            row("s3", "2026-08-05", "Sales", "10", "dr"),
+            row("s2", "2026-07-20", "Sales", "10", "dr"),
+            row("s1", "2026-07-01", "Sales", "10", "dr"),
+        )
+        movementDao.movements = movementDao.lastSales + listOf(
+            row("r1", "2026-08-08", "Receipt", "5", "cr"),
+            row("p1", "2026-08-09", "Payment", "5", "dr"),
+            row("j1", "2026-08-11", "Journal", "5", "dr"),
+        )
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Last7Sales)
+        val statement = (result as AppResult.Success).value
+        assertEquals("2026-07-01", statement.period.from)
+        // All non-Sales movements from that boundary onward are still included in the DISPLAY
+        // window (they just don't affect where the window starts).
+        assertEquals(6, statement.transactions.size)
+    }
+
+    @Test
+    fun `fewer than 7 Sales vouchers uses all of them as the boundary`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.lastSales = listOf(
+            row("s2", "2026-08-01", "Sales", "10", "dr"),
+            row("s1", "2026-07-15", "Sales", "10", "dr"),
+        )
+        movementDao.movements = movementDao.lastSales
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Last7Sales)
+        val statement = (result as AppResult.Success).value
+        assertEquals("2026-07-15", statement.period.from)
+    }
+
+    @Test
+    fun `zero Sales vouchers falls back to this ledger's own earliest known movement`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.lastSales = emptyList()
+        movementDao.movements = listOf(row("r1", "2026-06-01", "Receipt", "5", "cr"))
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Last7Sales)
+        val statement = (result as AppResult.Success).value
+        assertEquals("2026-06-01", statement.period.from)
+    }
+
+    @Test
+    fun `custom period is used verbatim`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-01-01", "2026-01-31"))
+        val statement = (result as AppResult.Success).value
+        assertEquals("2026-01-01", statement.period.from)
+        assertEquals("2026-01-31", statement.period.to)
+    }
+
+    @Test
+    fun `opening closing and running balances anchor on the ledger's synced closing balance`() = runBlockingTest {
+        ledgerDao.entity = ledger // closing 1000 Dr as of 2026-08-12
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "200", "dr"))
+        movementDao.lastSales = movementDao.movements
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"))
+        val statement = (result as AppResult.Success).value
+
+        // Opening = closing(1000 Dr) - netToSynced(200 Dr, since the one movement is on/before
+        // syncedAt) = 800 Dr.
+        assertEquals("800", statement.openingBalance?.amount)
+        assertEquals("1000", statement.closingBalance?.amount)
+        assertEquals(1, statement.transactions.size)
+        assertEquals("1000", statement.transactions[0].runningBalance?.amount)
+        assertTrue(statement.coverage.balanceAvailable)
+    }
+
+    @Test
+    fun `a Cr movement reduces a Dr balance correctly`() = runBlockingTest {
+        ledgerDao.entity = ledger // closing 1000 Dr
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Receipt", "300", "cr"))
+        movementDao.lastSales = emptyList()
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"))
+        val statement = (result as AppResult.Success).value
+        // Opening = 1000 - (-300) = 1300 Dr; closing = 1300 + (-300) = 1000 Dr (back to anchor).
+        assertEquals("1300", statement.openingBalance?.amount)
+        assertEquals("1000", statement.closingBalance?.amount)
+    }
+
+    @Test
+    fun `balance is unavailable and never fabricated when the ledger has no synced closing balance`() = runBlockingTest {
+        ledgerDao.entity = ledger.copy(closingAmount = null, closingSide = null)
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "200", "dr"))
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"))
+        val statement = (result as AppResult.Success).value
+        assertNull(statement.openingBalance)
+        assertNull(statement.closingBalance)
+        assertNull(statement.transactions[0].runningBalance)
+        assertFalse(statement.coverage.balanceAvailable)
+        assertTrue(statement.coverage.message!!.contains("balance has not been synced"))
+    }
+
+    @Test
+    fun `balance is unavailable when the period starts before the ledger's last balance sync`() = runBlockingTest {
+        ledgerDao.entity = ledger // syncedAt 2026-08-12
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-09-01", "2026-09-30"))
+        val statement = (result as AppResult.Success).value
+        assertFalse(statement.coverage.balanceAvailable)
+    }
+
+    @Test
+    fun `coverage is honestly incomplete when the requested period predates any locally synced Voucher`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.earliestDate = "2026-07-01"
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-01-01", "2026-01-31"))
+        val statement = (result as AppResult.Success).value
+        assertFalse(statement.coverage.transactionsComplete)
+        assertTrue(statement.coverage.message!!.contains("2026-07-01"))
+    }
+
+    @Test
+    fun `an unsynced ledger returns a failure rather than a fabricated empty statement`() = runBlockingTest {
+        ledgerDao.entity = null
+        val result = useCase("estimation", "not-synced", LedgerPeriodSelection.Last7Sales)
+        assertTrue(result is AppResult.Failure)
+    }
+
+    @Test
+    fun `company and ledger scope are passed through to every DAO call`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"))
+        assertEquals("estimation" to "ledger-1", ledgerDao.lastLookup)
+        assertEquals("estimation" to ledger.name, movementDao.lastRangeScope)
+    }
+}
+
+private class FakeLedgerDao : LedgerDao {
+    var entity: LedgerEntity? = null
+    var lastLookup: Pair<String, String>? = null
+
+    override suspend fun countForCompany(companyId: String): Int = if (entity != null) 1 else 0
+    override suspend fun findById(companyId: String, ledgerId: String): LedgerEntity? {
+        lastLookup = companyId to ledgerId
+        return entity?.takeIf { it.companyId == companyId && it.id == ledgerId }
+    }
+    override suspend fun upsertAll(entities: List<LedgerEntity>) = error("not used")
+    override suspend fun deleteForCompany(companyId: String) = error("not used")
+    override suspend fun queryPage(
+        companyId: String, query: String?, sortBy: String, ascending: Int, limit: Int, offset: Int,
+    ): List<LedgerEntity> = error("not used")
+    override suspend fun countMatching(companyId: String, query: String?): Int = error("not used")
+}
+
+private class FakeLedgerMovementDao : LedgerMovementDao {
+    var lastSales: List<LedgerMovementRow> = emptyList()
+    var movements: List<LedgerMovementRow> = emptyList()
+    var earliestDate: String? = "2000-01-01"
+    var lastRangeScope: Pair<String, String>? = null
+
+    override suspend fun lastSalesMovements(companyId: String, ledgerName: String, limit: Int): List<LedgerMovementRow> =
+        lastSales.take(limit)
+    override suspend fun movementsInRange(companyId: String, ledgerName: String, from: String, to: String): List<LedgerMovementRow> {
+        lastRangeScope = companyId to ledgerName
+        return movements.filter { it.date in from..to }
+    }
+    override suspend fun narrations(companyId: String, voucherIds: List<String>): List<VoucherNarrationRow> = emptyList()
+    override suspend fun earliestSyncedDate(companyId: String): String? = earliestDate
+}
+
+/** No coroutine test dispatcher is needed: every DAO call here is a synchronous fake, so a plain
+ * blocking runner keeps these tests simple without pulling in kotlinx-coroutines-test. */
+private fun runBlockingTest(block: suspend () -> Unit) = kotlinx.coroutines.runBlocking { block() }

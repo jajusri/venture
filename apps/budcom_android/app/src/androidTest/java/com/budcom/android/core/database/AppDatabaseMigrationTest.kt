@@ -453,4 +453,84 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 4 -> 5 migration (three indices supporting the local-first Ledger
+     * statement's queries over the existing Voucher cache) is purely additive: every pre-existing
+     * row in every table survives untouched, and no table is created, dropped, or destructively
+     * recreated — this migration adds indices only, never a `fallbackToDestructiveMigration()`.
+     */
+    @Test
+    fun migrate4To5_preservesExistingRowsAndAddsIndicesOnly() {
+        val db45DbName = "migration-test-db-4-5"
+
+        var db = helper.createDatabase(db45DbName, 4)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_ledgers (companyId, id, name, alias, parentGroup, status, closingAmount, " +
+                "closingCurrencyCode, closingSide, dataQuality, syncedAt, dataFreshnessAt) " +
+                "VALUES ('acme-001', 'ledger-1', 'Cash', NULL, 'Current Assets', 'ACTIVE', '1000.00', 'INR', " +
+                "'DEBIT', 'GOOD', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_vouchers (companyId, voucherId, date, type, number, partyName, " +
+                "referenceNumber, amountValue, amountSide, status, dataQuality, lastSyncedAt) VALUES " +
+                "('acme-001', 'v-1', '2026-01-15', 'Sales', 'S-1', 'Beta Traders', 'PO-99', '500.00', " +
+                "'DEBIT', 'Active', 'Complete', 1736899200000)",
+        )
+        db.execSQL(
+            "INSERT INTO cached_voucher_ledger_lines (companyId, voucherId, lineNumber, ledgerName, " +
+                "amountValue, amountSide, isDeemedPositive) VALUES " +
+                "('acme-001', 'v-1', 1, 'Cash', '500.00', 'CREDIT', 1)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db45DbName, 5, false, DatabaseModule.MIGRATION_4_5)
+
+        db.query("SELECT name FROM cached_companies WHERE id = 'acme-001'").use { cursor ->
+            assertTrue("existing company row must survive the migration", cursor.moveToFirst())
+            assertEquals("Acme Corp", cursor.getString(0))
+        }
+        db.query("SELECT name FROM cached_ledgers WHERE companyId = 'acme-001' AND id = 'ledger-1'").use { cursor ->
+            assertTrue("existing ledger row must survive the migration", cursor.moveToFirst())
+            assertEquals("Cash", cursor.getString(0))
+        }
+        db.query("SELECT partyName FROM cached_vouchers WHERE companyId = 'acme-001' AND voucherId = 'v-1'").use { cursor ->
+            assertTrue("existing voucher row must survive the migration", cursor.moveToFirst())
+            assertEquals("Beta Traders", cursor.getString(0))
+        }
+        db.query(
+            "SELECT ledgerName FROM cached_voucher_ledger_lines WHERE companyId = 'acme-001' AND voucherId = 'v-1'",
+        ).use { cursor ->
+            assertTrue("existing ledger-line row must survive the migration", cursor.moveToFirst())
+            assertEquals("Cash", cursor.getString(0))
+        }
+
+        // Assert: the three new indices exist with exactly the expected name/table/uniqueness.
+        val indexNames = mutableSetOf<String>()
+        db.query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('cached_vouchers', 'cached_voucher_ledger_lines')")
+            .use { cursor ->
+                while (cursor.moveToNext()) indexNames.add(cursor.getString(0))
+            }
+        assertTrue("date index must exist", indexNames.contains("index_cached_vouchers_companyId_date"))
+        assertTrue("status index must exist", indexNames.contains("index_cached_vouchers_companyId_status"))
+        assertTrue(
+            "ledgerName index must exist",
+            indexNames.contains("index_cached_voucher_ledger_lines_companyId_ledgerName"),
+        )
+
+        // Assert: the indexed queries the local-first Ledger statement depends on are genuinely
+        // usable post-migration (not just present in sqlite_master).
+        db.query(
+            "SELECT voucherId FROM cached_vouchers WHERE companyId = 'acme-001' AND date = '2026-01-15'",
+        ).use { cursor -> assertTrue(cursor.moveToFirst()) }
+        db.query(
+            "SELECT ledgerName FROM cached_voucher_ledger_lines WHERE companyId = 'acme-001' AND ledgerName = 'Cash'",
+        ).use { cursor -> assertTrue(cursor.moveToFirst()) }
+
+        db.close()
+    }
 }

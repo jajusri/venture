@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.budcom.android.feature.company.data.local.CompanyDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerStatementDao
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemDao
 import com.budcom.android.feature.voucher.data.local.VoucherDao
@@ -32,7 +33,7 @@ object DatabaseModule {
         context,
         AppDatabase::class.java,
         DatabaseConstants.NAME,
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
         .build()
 
     @Provides
@@ -52,6 +53,9 @@ object DatabaseModule {
 
     @Provides
     fun provideLedgerStatementDao(db: AppDatabase): LedgerStatementDao = db.ledgerStatementDao()
+
+    @Provides
+    fun provideLedgerMovementDao(db: AppDatabase): LedgerMovementDao = db.ledgerMovementDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -119,6 +123,31 @@ object DatabaseModule {
                     "`referenceNumber` TEXT, `narration` TEXT, `debit` TEXT, `credit` TEXT, " +
                     "`runningAmount` TEXT, `runningSide` TEXT, " +
                     "PRIMARY KEY(`companyId`, `ledgerId`, `periodFrom`, `periodTo`, `lineIndex`))",
+            )
+        }
+    }
+
+    /**
+     * Additive-only: three indices supporting the local-first Ledger statement's Last-7-Sales/
+     * date-period/coverage queries directly over the existing (already fully-populated, see
+     * [com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementDao]'s doc comment)
+     * `cached_vouchers`/`cached_voucher_ledger_lines` tables. No table created, no column added,
+     * no row touched — every pre-existing row and every pre-existing query continues to work
+     * unchanged; this migration only makes the new Ledger queries fast instead of full-scanning.
+     */
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_cached_vouchers_companyId_date` " +
+                    "ON `cached_vouchers` (`companyId`, `date`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_cached_vouchers_companyId_status` " +
+                    "ON `cached_vouchers` (`companyId`, `status`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_cached_voucher_ledger_lines_companyId_ledgerName` " +
+                    "ON `cached_voucher_ledger_lines` (`companyId`, `ledgerName`)",
             )
         }
     }

@@ -7,6 +7,7 @@ import com.budcom.android.feature.company.data.local.CompanyDiscoveryMetaEntity
 import com.budcom.android.feature.company.data.local.CompanyEntity
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerEntity
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerStatementDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerStatementEntity
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerStatementTransactionEntity
@@ -41,4 +42,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun voucherDao(): VoucherDao
     abstract fun pairedConnectorDao(): PairedConnectorDao
     abstract fun ledgerStatementDao(): LedgerStatementDao
+    abstract fun ledgerMovementDao(): LedgerMovementDao
 }

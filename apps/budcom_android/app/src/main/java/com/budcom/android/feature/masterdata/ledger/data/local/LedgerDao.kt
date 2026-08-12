@@ -11,6 +11,9 @@ interface LedgerDao {
     @Query("SELECT COUNT(*) FROM cached_ledgers WHERE companyId = :companyId")
     suspend fun countForCompany(companyId: String): Int
 
+    @Query("SELECT * FROM cached_ledgers WHERE companyId = :companyId AND id = :ledgerId")
+    suspend fun findById(companyId: String, ledgerId: String): LedgerEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<LedgerEntity>)
 
