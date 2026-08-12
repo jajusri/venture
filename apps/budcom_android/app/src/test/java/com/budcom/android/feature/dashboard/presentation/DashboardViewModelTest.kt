@@ -99,6 +99,7 @@ class DashboardViewModelTest {
                 },
             ),
             observeSyncStatus = syncStatus,
+            connectivityObserver = connectivity,
         )
     }
 
@@ -465,6 +466,63 @@ class DashboardViewModelTest {
         advanceUntilIdle()
     }
 
+    // --- Known-network-loss short-circuit (P1 immediate-offline hardening) ---
+    //
+    // These use `connectivity.currentOverride` (not `connectivity.online`) so the isOnline Flow
+    // driving the pre-existing wentOffline collector in init{} stays untouched — proving the new
+    // reconcileOnce() gate itself is what reacts, not the older Flow-driven path, exactly
+    // mirroring the production gap between a missed callback and a fresh current() query.
+
+    @Test
+    fun `foreground reconciliation with known network loss immediately clears stale fully operational without a Connector probe`() = runTest(dispatcher) {
+        company.selectedIdFlow.value = "estimation"
+        company.selectedCompanyFlow.value = SessionSelectedCompany("estimation", "ESTIMATION")
+        company.validateResult = AppResult.Success(
+            SessionValidationStatus(SessionValidity.Valid, "estimation", "ESTIMATION"),
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        assertEquals(DashboardOperationalMode.FullyOperational, viewModel.uiState.value.operationalMode)
+        val baseUrlBefore = viewModel.uiState.value.baseUrl
+        val probeCallsBefore = connector.probeCalls
+
+        // The OS callback never fires (isOnline Flow stays stuck at true) but a fresh current()
+        // query — exactly what reconciliation performs — already knows there is no usable
+        // network.
+        connectivity.currentOverride = false
+
+        val job = launch { viewModel.reconcileWhileActive() }
+        runCurrent()
+
+        assertEquals(DashboardOperationalMode.Offline, viewModel.uiState.value.operationalMode)
+        assertEquals(false, viewModel.uiState.value.connectorConnected)
+        assertEquals(false, viewModel.uiState.value.isOnline)
+        // No Connector HTTP probe was spent on a probe that cannot possibly succeed.
+        assertEquals(probeCallsBefore, connector.probeCalls)
+        // Pairing (endpoint) and selected company survive.
+        assertEquals(baseUrlBefore, viewModel.uiState.value.baseUrl)
+        assertEquals("estimation", viewModel.uiState.value.selectedCompanyId)
+        assertEquals("ESTIMATION", viewModel.uiState.value.selectedCompanyName)
+
+        job.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `foreground reconciliation with a usable network still runs the existing refresh path`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        val probeCallsBefore = connector.probeCalls
+
+        val job = launch { viewModel.reconcileWhileActive() }
+        runCurrent()
+
+        assertEquals(probeCallsBefore + 1, connector.probeCalls)
+
+        job.cancel()
+        advanceUntilIdle()
+    }
+
     @Test
     fun `repeated resumes do not create duplicate concurrent probes`() = runTest(dispatcher) {
         val viewModel = createViewModel()
@@ -633,7 +691,17 @@ private class DashboardMigrationRepository(
 private class FakeConnectivity(initiallyOnline: Boolean) : NetworkConnectivityObserver {
     val online = MutableStateFlow(initiallyOnline)
     override val isOnline: Flow<Boolean> = online
-    override fun current(): Boolean = online.value
+
+    /**
+     * Lets a test simulate the production gap this fake otherwise can't: real
+     * [NetworkConnectivityObserver.current] is a fresh synchronous OS query, independent of
+     * whether the callback-driven [isOnline] Flow ever emitted (a missed/delayed OS callback).
+     * `null` (the default) keeps every existing test's behavior unchanged — [current] simply
+     * mirrors [online]. Setting this lets a test hold [online] fixed (simulating "the callback
+     * never fired") while [current] reports the true fresh value on its own.
+     */
+    var currentOverride: Boolean? = null
+    override fun current(): Boolean = currentOverride ?: online.value
 }
 
 private class FakeSyncStatus : ObserveSyncStatusPort {

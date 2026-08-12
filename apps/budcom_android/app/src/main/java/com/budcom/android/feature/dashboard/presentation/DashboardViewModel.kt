@@ -3,6 +3,7 @@ package com.budcom.android.feature.dashboard.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidity
 import com.budcom.android.feature.dashboard.domain.usecase.ObserveDashboardContextUseCase
 import com.budcom.android.feature.dashboard.domain.usecase.ProbeConnectorConnectionUseCase
@@ -28,6 +29,7 @@ class DashboardViewModel @Inject constructor(
     private val validateDashboardSession: ValidateDashboardSessionUseCase,
     private val observeDashboardContext: ObserveDashboardContextUseCase,
     private val observeSyncStatus: ObserveSyncStatusPort,
+    private val connectivityObserver: NetworkConnectivityObserver,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -56,10 +58,36 @@ class DashboardViewModel @Inject constructor(
      * whether the network callback ever fired.
      */
     suspend fun reconcileWhileActive() {
-        refresh(isInitial = false)
+        reconcileOnce()
         while (true) {
             delay(FOREGROUND_RECONCILE_INTERVAL_MS)
+            reconcileOnce()
+        }
+    }
+
+    /**
+     * A known "no usable network" fact is authoritative and local — checking it first and
+     * short-circuiting straight to an immediate offline state when it is false means a
+     * foreground reconciliation tick never spends the Connector health probe's connect timeout
+     * (or any network I/O at all) on a probe that cannot possibly succeed. This bypasses
+     * [mapSnapshotToUiState]'s `keepStaleHealth` anti-flicker debounce via [withAuthoritativeMode]
+     * — the same bypass the `wentOffline` transition below already uses — precisely because that
+     * debounce exists for *ambiguous* transient probe failures while a network route exists, not
+     * for an authoritative local fact that no network exists at all. When a network route does
+     * exist, this falls through to the unchanged [refresh] path (and its debounce) exactly as
+     * before.
+     */
+    private fun reconcileOnce() {
+        if (connectivityObserver.current()) {
             refresh(isInitial = false)
+        } else {
+            _uiState.update { state ->
+                state.copy(
+                    isOnline = false,
+                    connectorConnected = false,
+                    connectorError = DashboardUiError.Offline("Device is offline."),
+                ).withAuthoritativeMode()
+            }
         }
     }
 
