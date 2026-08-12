@@ -6,11 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementDateRange
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementDateRangeDefaults
-import com.budcom.android.feature.masterdata.ledger.domain.usecase.GetLedgerStatementUseCase
-import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgerStatementUseCase
+import com.budcom.android.feature.masterdata.ledger.domain.usecase.GetLocalLedgerStatementUseCase
+import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgerCoverageUseCase
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareCoordinator
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareResult
 import com.budcom.android.feature.masterdata.ledger.sharing.PreparedLedgerStatementPdf
@@ -34,8 +33,8 @@ import javax.inject.Inject
 @HiltViewModel
 class LedgerStatementViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
-    private val getLedgerStatement: GetLedgerStatementUseCase,
-    private val refreshLedgerStatement: RefreshLedgerStatementUseCase,
+    private val getLocalStatement: GetLocalLedgerStatementUseCase,
+    private val refreshCoverage: RefreshLedgerCoverageUseCase,
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
     private val shareCoordinator: LedgerStatementShareCoordinator,
@@ -45,10 +44,8 @@ class LedgerStatementViewModel @Inject constructor(
         ?.let { URLDecoder.decode(it, "UTF-8") }
         .orEmpty()
 
-    private val defaultRange = LedgerStatementDateRangeDefaults.lastDaysInclusive()
-
     private val _uiState = MutableStateFlow(
-        LedgerStatementUiState(ledgerId = ledgerId, fromDate = defaultRange.from, toDate = defaultRange.to),
+        LedgerStatementUiState(ledgerId = ledgerId, periodSelection = LedgerPeriodSelection.Last7Sales),
     )
     val uiState: StateFlow<LedgerStatementUiState> = _uiState.asStateFlow()
 
@@ -80,8 +77,14 @@ class LedgerStatementViewModel @Inject constructor(
             LedgerStatementEvent.Refresh -> load(refreshing = true)
             LedgerStatementEvent.Retry -> load(refreshing = false)
             is LedgerStatementEvent.PeriodChanged -> {
-                _uiState.update { it.copy(fromDate = event.from, toDate = event.to) }
-                load(refreshing = true)
+                // Custom period, from the date dialog. Locked contract: changing the period is a
+                // Room-only read — it must never itself trigger a network call.
+                _uiState.update { it.copy(periodSelection = LedgerPeriodSelection.Custom(event.from, event.to)) }
+                load(refreshing = false)
+            }
+            is LedgerStatementEvent.PeriodSelected -> {
+                _uiState.update { it.copy(periodSelection = event.period) }
+                load(refreshing = false)
             }
             is LedgerStatementEvent.TransactionTapped -> {
                 if (event.voucherId.isNotBlank()) {
@@ -121,7 +124,6 @@ class LedgerStatementViewModel @Inject constructor(
                 return@launch
             }
 
-            val range = LedgerStatementDateRange(_uiState.value.fromDate, _uiState.value.toDate)
             _uiState.update {
                 when {
                     refreshing -> it.copy(isRefreshing = true, refreshError = null)
@@ -130,11 +132,22 @@ class LedgerStatementViewModel @Inject constructor(
                 }
             }
 
-            val result = if (refreshing) {
-                refreshLedgerStatement(companyId, ledgerId, range)
-            } else {
-                getLedgerStatement(companyId, ledgerId, range)
+            // Refresh's only job is to bring Room up to date via the NORMAL Voucher sync
+            // mechanism, scoped to whatever window is currently on screen — never a bespoke
+            // per-ledger network call. A refresh failure is surfaced but does not itself stop the
+            // subsequent local read: existing cached content must remain visible.
+            var refreshFailureMessage: String? = null
+            if (refreshing) {
+                val window = _uiState.value.fromDate to _uiState.value.toDate
+                if (window.first.isNotBlank() && window.second.isNotBlank()) {
+                    when (val refreshResult = refreshCoverage(companyId, window.first, window.second)) {
+                        is AppResult.Failure -> refreshFailureMessage = refreshResult.error.toLedgerStatementUiError().displayMessage()
+                        is AppResult.Success -> Unit
+                    }
+                }
             }
+
+            val result = getLocalStatement(companyId, ledgerId, _uiState.value.periodSelection)
             when (result) {
                 is AppResult.Success -> {
                     loadedStatement = result.value
@@ -143,7 +156,9 @@ class LedgerStatementViewModel @Inject constructor(
                             isInitialLoading = false,
                             isRefreshing = false,
                             error = null,
-                            refreshError = null,
+                            refreshError = refreshFailureMessage,
+                            fromDate = result.value.period.from,
+                            toDate = result.value.period.to,
                             content = result.value.toContentUi(lastSyncedAt = null),
                         )
                     }
@@ -153,7 +168,7 @@ class LedgerStatementViewModel @Inject constructor(
                         state.copy(
                             isInitialLoading = false,
                             isRefreshing = false,
-                            refreshError = result.error.toLedgerStatementUiError().displayMessage(),
+                            refreshError = refreshFailureMessage ?: result.error.toLedgerStatementUiError().displayMessage(),
                         )
                     } else {
                         state.copy(isInitialLoading = false, isRefreshing = false, error = result.error.toLedgerStatementUiError())

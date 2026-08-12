@@ -1,6 +1,7 @@
 package com.budcom.android.feature.masterdata.ledger.presentation
 
 import com.budcom.android.core.common.AppError
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementAmount
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementTransaction
@@ -12,6 +13,10 @@ data class LedgerStatementUiState(
     val isInitialLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val isOnline: Boolean = true,
+    val periodSelection: LedgerPeriodSelection = LedgerPeriodSelection.Last7Sales,
+    /** Last RESOLVED concrete range (output of [periodSelection], not an independent input) —
+     * populated after a successful local read; used to pre-fill the Custom-period dialog and to
+     * scope [LedgerStatementEvent.Refresh]'s bounded Voucher-sync window. */
     val fromDate: String = "",
     val toDate: String = "",
     val content: LedgerStatementContentUi? = null,
@@ -54,6 +59,7 @@ sealed interface LedgerStatementEvent {
     data object Refresh : LedgerStatementEvent
     data object Retry : LedgerStatementEvent
     data class PeriodChanged(val from: String, val to: String) : LedgerStatementEvent
+    data class PeriodSelected(val period: LedgerPeriodSelection) : LedgerStatementEvent
     /** Ignored for a blank id — a transaction row always carries the real Voucher identity, so a
      * blank id here means the row itself is malformed, never a legitimate deep link to reject. */
     data class TransactionTapped(val voucherId: String) : LedgerStatementEvent

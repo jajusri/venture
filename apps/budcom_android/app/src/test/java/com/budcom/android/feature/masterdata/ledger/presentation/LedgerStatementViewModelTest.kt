@@ -10,17 +10,23 @@ import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
-import com.budcom.android.feature.masterdata.ledger.domain.model.AmountSide
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementAmount
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementCoverage
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementDateRange
-import com.budcom.android.feature.masterdata.ledger.domain.repository.LedgerStatementRepository
-import com.budcom.android.feature.masterdata.ledger.domain.usecase.GetLedgerStatementUseCase
-import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgerStatementUseCase
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerEntity
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementDao
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementRow
+import com.budcom.android.feature.masterdata.ledger.data.local.VoucherNarrationRow
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
+import com.budcom.android.feature.masterdata.ledger.domain.usecase.GetLocalLedgerStatementUseCase
+import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgerCoverageUseCase
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareCoordinator
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareResult
 import com.budcom.android.feature.masterdata.ledger.sharing.PreparedLedgerStatementPdf
+import com.budcom.android.feature.voucher.domain.model.VoucherDetails
+import com.budcom.android.feature.voucher.domain.model.VoucherPage
+import com.budcom.android.feature.voucher.domain.model.VoucherQuery
+import com.budcom.android.feature.voucher.domain.model.VoucherSummary
+import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
+import com.budcom.android.feature.voucher.domain.usecase.RefreshVouchersUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -32,6 +38,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -39,7 +46,9 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class LedgerStatementViewModelTest {
     private val dispatcher = StandardTestDispatcher()
-    private lateinit var repository: FakeRepository
+    private lateinit var ledgerDao: FakeLedgerDao
+    private lateinit var movementDao: FakeLedgerMovementDao
+    private lateinit var voucherRepository: FakeVoucherRepository
     private lateinit var companySession: FakeCompanySession
     private lateinit var connectivity: StatementFakeConnectivity
     private lateinit var shareCoordinator: FakeShareCoordinator
@@ -47,10 +56,20 @@ class LedgerStatementViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
-        repository = FakeRepository()
+        ledgerDao = FakeLedgerDao()
+        movementDao = FakeLedgerMovementDao()
+        voucherRepository = FakeVoucherRepository()
         companySession = FakeCompanySession("estimation")
         connectivity = StatementFakeConnectivity(true)
         shareCoordinator = FakeShareCoordinator()
+        // A ledger with no synced balance and no local movements is a benign default; individual
+        // tests override via [ledgerDao.entity]/[movementDao] as needed.
+        ledgerDao.entity = LedgerEntity(
+            companyId = "estimation", id = "ledger-1", name = "Acme Traders", alias = null,
+            parentGroup = "Sundry Debtors", status = "active", closingAmount = null,
+            closingCurrencyCode = null, closingSide = null, dataQuality = "complete",
+            syncedAt = "2026-08-01T00:00:00Z", dataFreshnessAt = null,
+        )
     }
 
     @After
@@ -60,20 +79,19 @@ class LedgerStatementViewModelTest {
 
     private fun createVm(ledgerId: String = "ledger-1") = LedgerStatementViewModel(
         savedStateHandle = SavedStateHandle(mapOf(LedgerStatementViewModel.LEDGER_ID_ARG to ledgerId)),
-        getLedgerStatement = GetLedgerStatementUseCase(repository),
-        refreshLedgerStatement = RefreshLedgerStatementUseCase(repository),
+        getLocalStatement = GetLocalLedgerStatementUseCase(ledgerDao, movementDao),
+        refreshCoverage = RefreshLedgerCoverageUseCase(RefreshVouchersUseCase(voucherRepository)),
         companySession = companySession,
         connectivityObserver = connectivity,
         shareCoordinator = shareCoordinator,
     )
 
     @Test
-    fun `loads the cached statement on start`() = runTest(dispatcher) {
-        repository.cached = sampleStatement()
+    fun `loads the local statement on start with zero network calls`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
         assertEquals("Acme Traders", vm.uiState.value.content?.ledgerName)
-        assertEquals(0, repository.refreshCalls)
+        assertEquals(0, voucherRepository.refreshCalls)
     }
 
     @Test
@@ -86,10 +104,9 @@ class LedgerStatementViewModelTest {
 
     @Test
     fun `a failed refresh preserves the existing content and surfaces a refresh error`() = runTest(dispatcher) {
-        repository.cached = sampleStatement()
         val vm = createVm()
         advanceUntilIdle()
-        repository.refreshResult = AppResult.Failure(AppError.Timeout())
+        voucherRepository.refreshResult = AppResult.Failure(AppError.Timeout())
         vm.onEvent(LedgerStatementEvent.Refresh)
         advanceUntilIdle()
         assertEquals("Acme Traders", vm.uiState.value.content?.ledgerName)
@@ -97,20 +114,41 @@ class LedgerStatementViewModelTest {
     }
 
     @Test
-    fun `changing the period triggers a refresh with the new range`() = runTest(dispatcher) {
-        repository.cached = sampleStatement()
+    fun `selecting a period reads Room only and never triggers a network call`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(LedgerStatementEvent.PeriodSelected(LedgerPeriodSelection.ThisMonth))
+        advanceUntilIdle()
+        assertEquals(LedgerPeriodSelection.ThisMonth, vm.uiState.value.periodSelection)
+        assertEquals("no period change may call the Connector", 0, voucherRepository.refreshCalls)
+    }
+
+    @Test
+    fun `a custom period change reads Room only and never triggers a network call`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
         vm.onEvent(LedgerStatementEvent.PeriodChanged("2026-01-01", "2026-01-31"))
         advanceUntilIdle()
-        assertEquals("2026-01-01", repository.lastRange?.from)
-        assertEquals("2026-01-31", repository.lastRange?.to)
-        assertEquals(1, repository.refreshCalls)
+        assertEquals("2026-01-01", vm.uiState.value.fromDate)
+        assertEquals("2026-01-31", vm.uiState.value.toDate)
+        assertEquals(0, voucherRepository.refreshCalls)
+    }
+
+    @Test
+    fun `explicit Refresh scopes the Connector call to the currently displayed window`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        val shownFrom = vm.uiState.value.fromDate
+        val shownTo = vm.uiState.value.toDate
+        vm.onEvent(LedgerStatementEvent.Refresh)
+        advanceUntilIdle()
+        assertEquals(shownFrom, voucherRepository.lastQuery?.dateRange?.from)
+        assertEquals(shownTo, voucherRepository.lastQuery?.dateRange?.to)
+        assertEquals(1, voucherRepository.refreshCalls)
     }
 
     @Test
     fun `tapping a transaction with a real voucherId emits an open-voucher-details effect`() = runTest(dispatcher) {
-        repository.cached = sampleStatement()
         val vm = createVm()
         advanceUntilIdle()
         vm.effects.test {
@@ -121,7 +159,6 @@ class LedgerStatementViewModelTest {
 
     @Test
     fun `tapping a transaction with a blank voucherId never emits a navigation effect`() = runTest(dispatcher) {
-        repository.cached = sampleStatement()
         val vm = createVm()
         advanceUntilIdle()
         vm.effects.test {
@@ -132,7 +169,6 @@ class LedgerStatementViewModelTest {
 
     @Test
     fun `sharing the PDF after a successful prepare launches a share intent`() = runTest(dispatcher) {
-        repository.cached = sampleStatement()
         val vm = createVm()
         advanceUntilIdle()
         shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
@@ -149,7 +185,6 @@ class LedgerStatementViewModelTest {
 
     @Test
     fun `a failed PDF prepare surfaces a share error instead of a silent failure`() = runTest(dispatcher) {
-        repository.cached = sampleStatement()
         val vm = createVm()
         advanceUntilIdle()
         shareCoordinator.prepareResult = LedgerStatementShareResult.Failure("boom")
@@ -157,44 +192,65 @@ class LedgerStatementViewModelTest {
         advanceUntilIdle()
         assertEquals("boom", vm.uiState.value.shareError)
     }
+
+    @Test
+    fun `an unsynced ledger shows an error rather than a fabricated empty statement`() = runTest(dispatcher) {
+        ledgerDao.entity = null
+        val vm = createVm()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.error != null)
+        assertNull(vm.uiState.value.content)
+    }
 }
 
-private fun sampleStatement() = LedgerStatement(
-    ledgerId = "ledger-1",
-    ledgerName = "Acme Traders",
-    parentGroup = "Sundry Debtors",
-    period = LedgerStatementDateRange("2026-07-01", "2026-07-31"),
-    openingBalance = LedgerStatementAmount("0", AmountSide.Dr),
-    closingBalance = LedgerStatementAmount("500", AmountSide.Dr),
-    transactions = emptyList(),
-    coverage = LedgerStatementCoverage(true, true, "2026-07-01", "2026-08-10", null),
-)
+private class FakeLedgerDao : LedgerDao {
+    var entity: LedgerEntity? = null
 
-private class FakeRepository : LedgerStatementRepository {
-    var cached: LedgerStatement? = null
-    var refreshResult: AppResult<LedgerStatement>? = null
+    override suspend fun countForCompany(companyId: String): Int = if (entity != null) 1 else 0
+    override suspend fun findById(companyId: String, ledgerId: String): LedgerEntity? =
+        entity?.takeIf { it.companyId == companyId && it.id == ledgerId }
+    override suspend fun upsertAll(entities: List<LedgerEntity>) = error("not used by this test")
+    override suspend fun deleteForCompany(companyId: String) = error("not used by this test")
+    override suspend fun queryPage(
+        companyId: String, query: String?, sortBy: String, ascending: Int, limit: Int, offset: Int,
+    ): List<LedgerEntity> = error("not used by this test")
+    override suspend fun countMatching(companyId: String, query: String?): Int = error("not used by this test")
+}
+
+private class FakeLedgerMovementDao : LedgerMovementDao {
+    var lastSales: List<LedgerMovementRow> = emptyList()
+    var movements: List<LedgerMovementRow> = emptyList()
+    var earliestDate: String? = null
+
+    override suspend fun lastSalesMovements(companyId: String, ledgerName: String, limit: Int): List<LedgerMovementRow> =
+        lastSales.take(limit)
+    override suspend fun movementsInRange(companyId: String, ledgerName: String, from: String, to: String): List<LedgerMovementRow> =
+        movements.filter { it.date in from..to }
+    override suspend fun narrations(companyId: String, voucherIds: List<String>): List<VoucherNarrationRow> = emptyList()
+    override suspend fun earliestSyncedDate(companyId: String): String? = earliestDate
+}
+
+private class FakeVoucherRepository : VoucherRepository {
+    var refreshResult: AppResult<VoucherPage>? = null
     var refreshCalls = 0
         private set
-    var lastRange: LedgerStatementDateRange? = null
+    var lastQuery: VoucherQuery? = null
 
-    override suspend fun getLedgerStatement(
-        companyId: String,
-        ledgerId: String,
-        range: LedgerStatementDateRange,
-    ): AppResult<LedgerStatement> {
-        lastRange = range
-        return cached?.let { AppResult.Success(it) } ?: AppResult.Failure(AppError.Message("no cache"))
-    }
+    override suspend fun listVouchers(query: VoucherQuery): AppResult<VoucherPage> = error("not used by this test")
 
-    override suspend fun refreshLedgerStatement(
-        companyId: String,
-        ledgerId: String,
-        range: LedgerStatementDateRange,
-    ): AppResult<LedgerStatement> {
+    override suspend fun refreshVouchers(query: VoucherQuery): AppResult<VoucherPage> {
         refreshCalls++
-        lastRange = range
-        return refreshResult ?: cached?.let { AppResult.Success(it) } ?: AppResult.Failure(AppError.Message("no cache"))
+        lastQuery = query
+        return refreshResult ?: AppResult.Success(
+            VoucherPage(query.companyId, emptyList(), 1, query.pageSize, 0, 0),
+        )
     }
+
+    override suspend fun getVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> =
+        error("not used by this test")
+    override suspend fun refreshVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> =
+        error("not used by this test")
+    override suspend fun getCachedVoucherSummary(companyId: String, voucherId: String): VoucherSummary? = null
 }
 
 private class FakeShareCoordinator : LedgerStatementShareCoordinator {
@@ -202,7 +258,7 @@ private class FakeShareCoordinator : LedgerStatementShareCoordinator {
     var shareIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
 
     override suspend fun preparePdf(
-        statement: LedgerStatement,
+        statement: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement,
         companyName: String?,
     ): LedgerStatementShareResult<PreparedLedgerStatementPdf> = prepareResult
 

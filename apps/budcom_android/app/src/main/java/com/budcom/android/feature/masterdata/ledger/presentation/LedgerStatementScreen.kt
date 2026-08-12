@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
@@ -134,6 +137,11 @@ fun LedgerStatementScreen(
                     content = state.content,
                     isOnline = state.isOnline,
                     refreshError = state.refreshError,
+                    periodSelection = state.periodSelection,
+                    onSelectPeriod = { period ->
+                        if (period is LedgerPeriodSelection.Custom) showPeriodDialog = true
+                        else onEvent(LedgerStatementEvent.PeriodSelected(period))
+                    },
                     onTransactionTapped = { voucherId -> onEvent(LedgerStatementEvent.TransactionTapped(voucherId)) },
                     onChangePeriod = { showPeriodDialog = true },
                 )
@@ -183,11 +191,50 @@ fun LedgerStatementScreen(
     }
 }
 
+private val PERIOD_QUICK_CHOICES: List<Pair<String, LedgerPeriodSelection>> = listOf(
+    "Last 7 Sales" to LedgerPeriodSelection.Last7Sales,
+    "This Month" to LedgerPeriodSelection.ThisMonth,
+    "Current FY" to LedgerPeriodSelection.CurrentFinancialYear,
+    "Previous FY" to LedgerPeriodSelection.PreviousFinancialYear,
+    "Last 30 Days" to LedgerPeriodSelection.Last30Days,
+    "Custom" to LedgerPeriodSelection.Custom("", ""),
+)
+
+/** Locked period selector (Phase 9/Date-period requirements): selecting any of these is a
+ * Room-only read (see [LedgerStatementViewModel.onEvent]'s [LedgerStatementEvent.PeriodSelected]
+ * handling) — no network call is triggered by a period change. */
+@Composable
+private fun LedgerPeriodSelectorRow(selected: LedgerPeriodSelection, onSelect: (LedgerPeriodSelection) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .testTag("ledger_statement_period_selector"),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        for ((label, period) in PERIOD_QUICK_CHOICES) {
+            val isSelected = period::class == selected::class
+            TextButton(
+                onClick = { onSelect(period) },
+                modifier = Modifier.testTag("ledger_statement_period_choice_$label"),
+            ) {
+                Text(
+                    label,
+                    style = if (isSelected) MaterialTheme.typography.labelLarge else MaterialTheme.typography.labelMedium,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun LedgerStatementContent(
     content: LedgerStatementContentUi,
     isOnline: Boolean,
     refreshError: String?,
+    periodSelection: LedgerPeriodSelection,
+    onSelectPeriod: (LedgerPeriodSelection) -> Unit,
     onTransactionTapped: (String) -> Unit,
     onChangePeriod: () -> Unit,
 ) {
@@ -204,6 +251,7 @@ private fun LedgerStatementContent(
                 }
                 Text(content.ledgerName, style = MaterialTheme.typography.titleLarge)
                 content.parentGroup?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                LedgerPeriodSelectorRow(selected = periodSelection, onSelect = onSelectPeriod)
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clickable(onClick = onChangePeriod),
                     horizontalArrangement = Arrangement.SpaceBetween,
