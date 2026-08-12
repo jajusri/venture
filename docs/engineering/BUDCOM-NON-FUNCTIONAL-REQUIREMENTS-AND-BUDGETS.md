@@ -128,4 +128,26 @@ During Controlled Pilot:
 4. define release thresholds;
 5. update this document with measured targets.
 
+## 10. Scale discipline
+
+**Design irreversible decisions as though BUDCOM may one day serve a
+billion users. Build reversible implementations only for the scale that
+evidence justifies today.**
+
+- Avoid structural ceilings in identities, contracts, data ownership,
+  migrations, trust boundaries, and modularity.
+- Do NOT prematurely build billion-user infrastructure — no premature
+  cloud/microservice/global-scale mandate.
+- Scale infrastructure only when evidence demands it.
+- Prefer evolution over future rewrites.
+
+Internal shorthand: **billion-user engineering discipline, current-user
+infrastructure, evidence-driven scaling.**
+
+This does not claim current infrastructure supports billion-user scale.
+It governs how irreversible decisions (identity, contracts, schema,
+trust boundaries) are shaped so they do not need a future rewrite, while
+actual implementation scale stays matched to real evidence — never
+ahead of it.
+
 **MEASURE FIRST, THEN LOCK NUMBERS — BUT NEVER ABANDON THE LIGHTWEIGHT PRINCIPLE.**

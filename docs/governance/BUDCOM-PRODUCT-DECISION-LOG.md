@@ -75,6 +75,23 @@ Each entry should contain:
 
 **Status:** Locked
 
+### PDL-011 — Architecture completeness for major capabilities
+**Decision:** For every major BUDCOM capability, the following must be explicitly known and evidenced (in code, architecture notes, or this log) rather than left as an undocumented assumption: source of truth, stable identity, ownership/layer responsibility, persistence location, migration path, failure behavior, recovery behavior where relevant, and replacement/evolution path.
+
+**Why:** Undocumented architectural assumptions silently become defects, rediscovery cost, or migration risk later.
+
+**Status:** Locked
+
+### PDL-012 — Complexity must earn its place
+**Decision:** Architectural or product complexity must be justified by meaningful business value — time saved, mistakes prevented, improved visibility, stronger business relationships, better recovery/resilience, better decisions, or materially better user experience — never by technical interest alone.
+
+**Status:** Locked
+
+### PDL-013 — Sophisticated internals, simple experience
+**Decision:** Users must never need to understand Room, snapshots, reconciliation internals, Connector internals, SPKI, storage architecture, or network-discovery mechanics. Where possible, the UI communicates simple truthful states: Connected, Fresh, Syncing/Pending, Offline, Needs attention, Done. Important state must never be hidden, but technical complexity must never be exposed unnecessarily.
+
+**Status:** Locked
+
 ---
 
 ## New decision template

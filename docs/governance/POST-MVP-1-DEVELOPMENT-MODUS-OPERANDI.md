@@ -234,4 +234,12 @@ are planned rather than discovered mid-task, upgrades are justified by
 ROI, and the Product Owner spends substantially more time deciding what
 BUDCOM should become than supervising implementation.
 
+## 16. Correct path by design
+
+Repository structure, APIs, schemas, helpers, tests, release scripts,
+prompts, and governance should naturally guide future developers and AI
+agents toward the approved architecture. If doing the wrong thing is
+easier than doing the right thing, improve the system rather than
+relying on discipline alone to compensate.
+
 **LOCKED.**
