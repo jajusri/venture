@@ -111,6 +111,59 @@ class GetLocalLedgerStatementUseCaseTest {
     }
 
     @Test
+    fun `a same-day Receipt on the 7th-Sales boundary date is not truncated`() = runBlockingTest {
+        // Locked contract: the Last-7-Sales lower boundary is a DATE, not a voucher position. If
+        // the 7th (oldest-of-the-7) Sales lands on 2026-06-10 and a Receipt for the same ledger
+        // also happened on 2026-06-10, that Receipt must appear in the statement — never dropped
+        // just because it isn't itself one of the 7 counted Sales.
+        ledgerDao.entity = ledger
+        movementDao.lastSales = listOf(
+            row("s7", "2026-08-10", "Sales", "10", "dr"),
+            row("s6", "2026-08-05", "Sales", "10", "dr"),
+            row("s5", "2026-08-01", "Sales", "10", "dr"),
+            row("s4", "2026-07-26", "Sales", "10", "dr"),
+            row("s3", "2026-07-20", "Sales", "10", "dr"),
+            row("s2", "2026-07-15", "Sales", "10", "dr"),
+            row("s1", "2026-06-10", "Sales", "10", "dr"), // the 7th/boundary Sales
+        )
+        val sameDayReceipt = row("r-same-day", "2026-06-10", "Receipt", "5", "cr")
+        movementDao.movements = movementDao.lastSales + sameDayReceipt
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Last7Sales)
+        val statement = (result as AppResult.Success).value
+
+        assertEquals("2026-06-10", statement.period.from)
+        assertTrue(
+            "same-day Receipt on the boundary date must be included, not truncated",
+            statement.transactions.any { it.voucherId == "r-same-day" },
+        )
+    }
+
+    @Test
+    fun `movements on the boundary date are returned in deterministic date-then-voucherId order`() = runBlockingTest {
+        // Multiple movement types landing on the same date (Sales + Receipt + Payment + Journal)
+        // must come back in a stable, repeatable order — the fake mirrors the real DAO's
+        // `date ASC, voucherId ASC, lineNumber ASC` contract (see LedgerMovementDaoTest for the
+        // real-SQL proof of that same ordering).
+        ledgerDao.entity = ledger
+        val sameDay = listOf(
+            row("v-journal", "2026-08-05", "Journal", "5", "dr"),
+            row("v-payment", "2026-08-05", "Payment", "5", "dr"),
+            row("v-receipt", "2026-08-05", "Receipt", "5", "cr"),
+            row("v-sales", "2026-08-05", "Sales", "10", "dr"),
+        ).sortedBy { it.voucherId } // fake's `.filter` preserves input order — feed it pre-sorted
+        movementDao.lastSales = listOf(row("v-sales", "2026-08-05", "Sales", "10", "dr"))
+        movementDao.movements = sameDay
+
+        val first = (useCase("estimation", "ledger-1", LedgerPeriodSelection.Last7Sales) as AppResult.Success).value
+        val second = (useCase("estimation", "ledger-1", LedgerPeriodSelection.Last7Sales) as AppResult.Success).value
+
+        val expectedOrder = listOf("v-journal", "v-payment", "v-receipt", "v-sales")
+        assertEquals(expectedOrder, first.transactions.map { it.voucherId })
+        assertEquals("repeated query must return the identical order", first.transactions.map { it.voucherId }, second.transactions.map { it.voucherId })
+    }
+
+    @Test
     fun `custom period is used verbatim`() = runBlockingTest {
         ledgerDao.entity = ledger
         val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-01-01", "2026-01-31"))

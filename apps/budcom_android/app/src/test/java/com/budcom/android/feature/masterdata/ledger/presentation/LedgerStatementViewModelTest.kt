@@ -27,6 +27,9 @@ import com.budcom.android.feature.voucher.domain.model.VoucherQuery
 import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
 import com.budcom.android.feature.voucher.domain.usecase.RefreshVouchersUseCase
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -77,9 +80,11 @@ class LedgerStatementViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createVm(ledgerId: String = "ledger-1") = LedgerStatementViewModel(
+    private val fixedClock: Clock = Clock.fixed(Instant.parse("2026-08-12T04:00:00Z"), ZoneId.of("Asia/Kolkata"))
+
+    private fun createVm(ledgerId: String = "ledger-1", clock: Clock = fixedClock) = LedgerStatementViewModel(
         savedStateHandle = SavedStateHandle(mapOf(LedgerStatementViewModel.LEDGER_ID_ARG to ledgerId)),
-        getLocalStatement = GetLocalLedgerStatementUseCase(ledgerDao, movementDao),
+        getLocalStatement = GetLocalLedgerStatementUseCase(ledgerDao, movementDao, clock),
         refreshCoverage = RefreshLedgerCoverageUseCase(RefreshVouchersUseCase(voucherRepository)),
         companySession = companySession,
         connectivityObserver = connectivity,
@@ -184,6 +189,53 @@ class LedgerStatementViewModelTest {
     }
 
     @Test
+    fun `switching to Previous Financial Year updates the displayed period and the PDF is prepared from that same period`() = runTest(dispatcher) {
+        // Locked period/PDF/Share contract: whatever period is currently selected must be the
+        // single source of truth both for what's displayed AND for what SharePdf hands to the
+        // share coordinator — never a stale or default (Last-7-Sales) period.
+        val vm = createVm()
+        advanceUntilIdle()
+
+        vm.onEvent(LedgerStatementEvent.PeriodSelected(LedgerPeriodSelection.PreviousFinancialYear))
+        advanceUntilIdle()
+        assertEquals("2025-04-01", vm.uiState.value.fromDate)
+        assertEquals("2026-03-31", vm.uiState.value.toDate)
+        assertEquals(0, voucherRepository.refreshCalls)
+
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.shareIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.onEvent(LedgerStatementEvent.SharePdf)
+        advanceUntilIdle()
+
+        assertEquals("2025-04-01", shareCoordinator.lastPreparedStatement?.period?.from)
+        assertEquals("2026-03-31", shareCoordinator.lastPreparedStatement?.period?.to)
+    }
+
+    @Test
+    fun `switching to Current Financial Year after Previous Financial Year re-anchors the PDF to the new period, not a stale one`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+
+        vm.onEvent(LedgerStatementEvent.PeriodSelected(LedgerPeriodSelection.PreviousFinancialYear))
+        advanceUntilIdle()
+        vm.onEvent(LedgerStatementEvent.PeriodSelected(LedgerPeriodSelection.CurrentFinancialYear))
+        advanceUntilIdle()
+        assertEquals("2026-04-01", vm.uiState.value.fromDate)
+        assertEquals("2026-08-12", vm.uiState.value.toDate)
+
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        vm.onEvent(LedgerStatementEvent.SharePdf)
+        advanceUntilIdle()
+
+        assertEquals("2026-04-01", shareCoordinator.lastPreparedStatement?.period?.from)
+        assertEquals("2026-08-12", shareCoordinator.lastPreparedStatement?.period?.to)
+    }
+
+    @Test
     fun `a failed PDF prepare surfaces a share error instead of a silent failure`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
@@ -256,11 +308,16 @@ private class FakeVoucherRepository : VoucherRepository {
 private class FakeShareCoordinator : LedgerStatementShareCoordinator {
     var prepareResult: LedgerStatementShareResult<PreparedLedgerStatementPdf> = LedgerStatementShareResult.Failure("unused")
     var shareIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
+    var lastPreparedStatement: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement? = null
+        private set
 
     override suspend fun preparePdf(
         statement: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement,
         companyName: String?,
-    ): LedgerStatementShareResult<PreparedLedgerStatementPdf> = prepareResult
+    ): LedgerStatementShareResult<PreparedLedgerStatementPdf> {
+        lastPreparedStatement = statement
+        return prepareResult
+    }
 
     override fun createPdfShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> = shareIntentResult
 

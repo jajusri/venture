@@ -25,6 +25,9 @@ import com.budcom.android.feature.voucher.domain.model.VoucherDateRange
 import com.budcom.android.feature.voucher.domain.model.VoucherDetails
 import com.budcom.android.feature.voucher.domain.model.VoucherIdentity
 import com.budcom.android.feature.voucher.domain.model.VoucherInventoryLine
+import com.budcom.android.feature.voucher.domain.model.VoucherLedgerLine
+import com.budcom.android.feature.voucher.domain.model.VoucherMoney
+import com.budcom.android.feature.voucher.domain.model.VoucherMoneySide
 import com.budcom.android.feature.voucher.domain.model.VoucherPage
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
 import com.budcom.android.feature.voucher.domain.model.VoucherStatus
@@ -995,6 +998,47 @@ class VoucherRepositoryImplTest {
         assertEquals(100, remote.callCount)
         assertEquals(1, local.storeListWithDetailsCalls)
         assertEquals(10_000, local.storedFullDetails.size)
+    }
+
+    @Test
+    fun `one normal window sync persists movements for every ledger the window's vouchers touch, in a single write`() = runTest(dispatcher) {
+        // The core local-first Ledger architectural property (BUDCOM MVP-1 Ledger relaunch,
+        // Phase C): a single ordinary company/date-window Voucher sync must populate every ledger
+        // the fetched vouchers' ledger lines touch — never a per-ledger HTTP fetch or a per-ledger
+        // sync loop, and never requiring the Ledger screen to have been opened first. This proves
+        // it at the repository boundary: one refreshVouchers() call, vouchers whose ledger lines
+        // span three distinct ledgers, exactly one storeListWithDetails() write carrying all three.
+        val local = FakeLocal()
+        val voucherTouchingA = sampleDetails(voucherId = "v-a").copy(
+            ledgerEntries = listOf(VoucherLedgerLine(1, "Ledger A", VoucherMoney("100", VoucherMoneySide.Debit), null)),
+        )
+        val voucherTouchingB = sampleDetails(voucherId = "v-b").copy(
+            ledgerEntries = listOf(VoucherLedgerLine(1, "Ledger B", VoucherMoney("200", VoucherMoneySide.Debit), null)),
+        )
+        val voucherTouchingC = sampleDetails(voucherId = "v-c").copy(
+            ledgerEntries = listOf(VoucherLedgerLine(1, "Ledger C", VoucherMoney("300", VoucherMoneySide.Debit), null)),
+        )
+        val remote = FakeAuthenticatedListRemote(
+            AppResult.Success(
+                VoucherPage(
+                    "company-a",
+                    listOf(voucherTouchingA.summary, voucherTouchingB.summary, voucherTouchingC.summary),
+                    1, 100, 3, 1,
+                    fullDetails = listOf(voucherTouchingA, voucherTouchingB, voucherTouchingC),
+                ),
+            ),
+        )
+        val repository = repo(local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.AUTHENTICATED), authenticatedListRemote = remote)
+
+        val result = repository.refreshVouchers(query())
+
+        assertTrue(result is AppResult.Success)
+        // Exactly ONE write for the whole window — no per-ledger loop.
+        assertEquals(1, local.storeListWithDetailsCalls)
+        val ledgerNamesPersisted = local.storedFullDetails.flatMap { it.ledgerEntries }.map { it.ledgerName }.toSet()
+        assertEquals(setOf("Ledger A", "Ledger B", "Ledger C"), ledgerNamesPersisted)
+        // No per-ledger network call either: the single list fetch is the only remote call made.
+        assertEquals(1, remote.callCount)
     }
 
     // ============================== Fakes ==============================
