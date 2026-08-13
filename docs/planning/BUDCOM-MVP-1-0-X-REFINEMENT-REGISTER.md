@@ -62,17 +62,20 @@ already committed on `main`:
   path decides whether to spend a Connector HTTP probe, correcting to
   Offline immediately when Android already knows no usable network exists.
 
-Candidate `continuity.10` (versionCode 11) bundles all four fixes and is
-built and artifact-verified, pending the physical acceptance sequence defined
-in that build's task report. This is the reference example for how
+Candidate `continuity.10` (versionCode 11) bundled all four fixes and was
+built and artifact-verified. This is the reference example for how
 connectivity/state-correctness findings should be classified, hardened, and
 tracked here: narrow, evidence-based, each with regression tests, none
 expanding product scope.
 
-**Outstanding:** physical retest of continuity.10 per the retest sequence
-(Wi-Fi OFF/ON ×3, lock/unlock, manual Refresh) — see the build task's final
-report for the exact steps. Until physically confirmed, this item remains
-**automated-validation-complete, physical-acceptance-pending**.
+**Status: PHYSICALLY ACCEPTED / CLOSED.** Confirmed on the iQOO Z10 5G during
+`continuity.13` (versionCode 14) physical acceptance (2026-08-13): Wi-Fi OFF
+produced automatic Offline state and Wi-Fi ON produced automatic recovery,
+with no manual Refresh required. continuity.10's fixes carried forward
+unchanged through `continuity.11`–`continuity.13`; the physical retest was
+performed against `continuity.13`, the first candidate in the lineage to
+reach full end-to-end acceptance — see §9 for the complete continuity.13
+acceptance record.
 
 ## 5. Technical-debt entries that are also 1.0.x-eligible (cross-reference only)
 
@@ -159,5 +162,64 @@ general release ladder this register operates within.
   moves there instead of staying here.
 - `BUDCOM-PRODUCT-DECISION-LOG.md` PDL-005 — the locked 1.0.x boundary
   decision this register implements.
+
+## 9. continuity.11–continuity.13 physical acceptance record (categories 1–3)
+
+### Connector response NetworkOnMainThreadException fix (category 3 — narrow hardening)
+
+`AuthenticatedConnectorApiClient` crashed intermittently with
+`NetworkOnMainThreadException` because response-body consumption
+(`mapResponse`/`readBoundedBody`) ran outside the `runInterruptible(Dispatchers.IO)`
+boundary. Fixed at `e1ff03092daf6d209a40c077a086a3b0d2bd739f` ("fix(android):
+consume connector responses off main thread"), first shipped in the
+`continuity.11` candidate lineage.
+
+**Status: PHYSICALLY ACCEPTED / CLOSED.** Confirmed on the iQOO Z10 5G during
+`continuity.13` (versionCode 14) acceptance (2026-08-13): one normal Sync,
+two heavier Syncs, and an incidental mid-sync cancel all completed with the
+app process alive throughout and zero new `NetworkOnMainThreadException`,
+app crash, or ANR (live ADB-monitored).
+
+### Detailed Ledger Sharing (category 1 — essential item)
+
+Adds an item-level Detailed statement mode alongside the existing Summary
+statement, plus a persisted default and a fast-share path — landed at
+`bd3d2f4ec5da4dc178bb42c5279f7589885bb003` ("feat(android): detailed ledger
+sharing and fast share flow"). A physical-acceptance defect (item Rate blank
+on every Detailed row, because Tally's stored rate is a compound display
+string like `26.00/Nos` rather than a plain decimal) was found during
+`continuity.12` acceptance and fixed at
+`6b2a090e5cda66b225ef43ad46331742dfe84480` ("fix(android): preserve detailed
+ledger rate text"), shipped in `continuity.13`.
+
+**Status: PHYSICALLY ACCEPTED / CLOSED.** Confirmed on the iQOO Z10 5G during
+`continuity.13` acceptance (2026-08-13):
+- existing Date / Particulars / Dr / Cr / Balance hierarchy preserved
+- item name / Qty+Unit / Rate / Amount displayed within Particulars,
+  including compound Tally rate text (e.g. `26.00/Nos`) preserved verbatim
+- item Total correct; narration supported; voucher-level Dr/Cr/Balance
+  preserved (never repeated per item); all tested items included
+- Save PDF — PASS
+- WhatsApp Select — PASS
+- persisted Summary/Detailed default (Settings → Ledger Sharing) — PASS
+- fast-share saved-default path (single tap, no options screen) — PASS
+
+### continuity.13 (versionCode 14) — overall physical acceptance
+
+Physically accepted end-to-end on the iQOO Z10 5G, 2026-08-13, at HEAD
+`583d13c996513677aa91a9b1a70b2e562e46c3cb`. In-place ADB update across the
+`continuity.10` → `continuity.13` lineage: pairing survived, ESTIMATION
+remained the selected company, local Ledger/Voucher data survived, and no
+uninstall, data clear, or re-pair was required at any step — satisfying
+freeze criterion 3 (§7) for the areas covered above. See §4 for the Wi-Fi
+OFF/ON connectivity-regression confirmation, also performed under this
+acceptance pass.
+
+**Note:** during physical-acceptance log monitoring, an `adb logcat -c`
+inadvertently cleared the logcat crash *buffer*. The historical crash text
+had already been captured in the build task's report before this happened,
+and `ApplicationExitInfo` (an independent, device-persisted record) retained
+the full historical crash timeline unaffected. No continuity.13 acceptance
+evidence was lost.
 
 **LOCKED STRUCTURE — CONTENT ACTIVE.**
