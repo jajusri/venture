@@ -176,8 +176,16 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
         applyConnectorTimeoutProfile(client, profile)
 
     /**
-     * Runs the blocking OkHttp call on [Dispatchers.IO] via [runInterruptible], so cancelling the
-     * calling coroutine interrupts the underlying socket wait rather than leaking it. A resulting
+     * Runs the blocking OkHttp call **and** the response-body read on [Dispatchers.IO] via
+     * [runInterruptible], so cancelling the calling coroutine interrupts the underlying socket
+     * wait rather than leaking it. The entire [Response] lifetime — [Call.execute], [mapResponse],
+     * and [readBoundedBody]'s body consumption — must stay inside this single [runInterruptible]
+     * block: [mapResponse] returns only a fully-materialized [AuthenticatedConnectorResult] (plain
+     * String/Int/Boolean fields, never a live [Response]/[ResponseBody]/[okio.Source]), so nothing
+     * network-backed escapes the IO boundary. Splitting body consumption out of this block was the
+     * historical cause of `NetworkOnMainThreadException` crashes: [Call.execute] alone does not
+     * guarantee the response body is already fully buffered, and callers of this port's [execute]
+     * commonly run on `Dispatchers.Main.immediate` (e.g. `viewModelScope.launch`). A resulting
      * [CancellationException] is caught here (not rethrown) specifically to satisfy this port's
      * contract of returning a typed [AuthenticatedConnectorResult.Cancelled] value rather than
      * propagating cancellation past this boundary.
@@ -188,8 +196,10 @@ class OkHttpAuthenticatedConnectorApiClient @Inject constructor(
         credentialId: String,
         operation: AuthenticatedConnectorOperation,
     ): AuthenticatedConnectorResult = try {
-        runInterruptible(Dispatchers.IO) { client.newCall(request).execute() }.use { response ->
-            mapResponse(response, credentialId, operation)
+        runInterruptible(Dispatchers.IO) {
+            client.newCall(request).execute().use { response ->
+                mapResponse(response, credentialId, operation)
+            }
         }
     } catch (e: CancellationException) {
         AuthenticatedConnectorResult.Cancelled

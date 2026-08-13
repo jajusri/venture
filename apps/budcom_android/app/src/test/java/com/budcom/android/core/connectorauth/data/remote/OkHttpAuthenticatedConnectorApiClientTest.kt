@@ -17,10 +17,14 @@ import com.budcom.android.core.pairing.domain.model.TrustedConnectorEndpoint
 import com.budcom.android.core.security.DefaultSpkiFingerprintVerifier
 import com.budcom.android.core.util.TimeProvider
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.Call
+import okhttp3.EventListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
@@ -28,10 +32,14 @@ import okhttp3.tls.HeldCertificate
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 private const val SUPER_SECRET_TOKEN = "super-secret-bearer-value-xyz"
 
@@ -496,6 +504,100 @@ class OkHttpAuthenticatedConnectorApiClientTest {
             results += client.execute(AuthenticatedConnectorOperation.GetCompanies)
         }
         // Give the call a moment to actually reach the blocking read before cancelling it.
+        kotlinx.coroutines.delay(150)
+        job.cancel()
+        withTimeout(5_000) { job.join() }
+
+        assertEquals(listOf(AuthenticatedConnectorResult.Cancelled), results)
+    }
+
+    // Regression for the historical NetworkOnMainThreadException crash (six confirmed physical
+    // occurrences, most recently continuity.10 on 2026-08-13): Call.execute() alone was already
+    // dispatched off-main, and a test that only proves that would not have caught the defect —
+    // the actual crash happened inside mapResponse()/readBoundedBody()'s response-body read,
+    // which used to run *after* runInterruptible(Dispatchers.IO) returned, on whatever dispatcher
+    // called executeRequest() (typically Dispatchers.Main.immediate via viewModelScope.launch).
+    //
+    // JVM unit tests have no Android Looper/StrictMode to instantiate, so the strongest available
+    // deterministic proxy is: confine the *calling* coroutine to a single named thread standing in
+    // for Main, throttle the MockWebServer response body so it cannot possibly be fully buffered
+    // by the time Call.execute() returns (forcing a real additional socket read during the body
+    // consumption phase), and use OkHttp's own EventListener.responseBodyStart — which fires on
+    // whichever thread is actually performing that read — to observe where it really happened.
+    // This exercises the exact previous defect: before the fix, this test fails because the body
+    // read happens on the confined "main-like" thread; after the fix, it happens on Dispatchers.IO.
+
+    @Test
+    fun `response body consumption happens off the calling coroutine's confined dispatcher, not just Call_execute`() = runBlocking {
+        val (server, heldCertificate) = newServer()
+        val bodyJson = """{"companies":[]}"""
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody(bodyJson)
+                // Trickles the body slowly enough that it cannot already be fully buffered when
+                // Call.execute() returns (which only needs the status line + headers) — forcing a
+                // genuine additional blocking read during readBoundedBody()'s source.request().
+                .throttleBody(1, 20, TimeUnit.MILLISECONDS),
+        )
+        val bodyReadThread = AtomicReference<Thread?>()
+        val instrumentedFactory = object : PinnedHttpClientFactory {
+            override fun create(endpoint: TrustedConnectorEndpoint) =
+                factory.create(endpoint).newBuilder()
+                    .eventListener(object : EventListener() {
+                        override fun responseBodyStart(call: Call) {
+                            bodyReadThread.set(Thread.currentThread())
+                        }
+                    })
+                    .build()
+        }
+        val (client, _) = readyClient(server, heldCertificate, instrumentedFactory)
+
+        val mainLikeExecutor = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "test-main-like") }
+        val mainLikeDispatcher = mainLikeExecutor.asCoroutineDispatcher()
+        try {
+            // The entire client.execute() call is launched from a coroutine confined to
+            // "test-main-like" — standing in for a ViewModel's viewModelScope.launch on
+            // Dispatchers.Main.immediate.
+            val result = withContext(mainLikeDispatcher) {
+                client.execute(AuthenticatedConnectorOperation.GetCompanies)
+            }
+
+            assertEquals(
+                AuthenticatedConnectorResult.Success(AuthenticatedConnectorResponsePayload(bodyJson)),
+                result,
+            )
+            val threadThatReadTheBody = bodyReadThread.get()
+            assertNotNull("responseBodyStart never fired — the body was never actually read", threadThatReadTheBody)
+            assertNotEquals(
+                "response body was consumed on the confined main-like thread — the historical crash boundary",
+                "test-main-like",
+                threadThatReadTheBody!!.name,
+            )
+        } finally {
+            mainLikeDispatcher.close()
+            mainLikeExecutor.shutdown()
+        }
+    }
+
+    @Test
+    fun `cancelling while the response body is mid-read still yields Cancelled, not a crash or hang`() = runBlocking {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"companies":[]}""")
+                // Slow enough that the body read is still genuinely in flight when cancelled,
+                // exercising cancellation inside the now-expanded runInterruptible boundary rather
+                // than only during the earlier connect/header phase (already covered above).
+                .throttleBody(1, 200, TimeUnit.MILLISECONDS),
+        )
+        val (client, _) = readyClient(server, heldCertificate)
+
+        val results = mutableListOf<AuthenticatedConnectorResult>()
+        val job = launch(Dispatchers.Default) {
+            results += client.execute(AuthenticatedConnectorOperation.GetCompanies)
+        }
         kotlinx.coroutines.delay(150)
         job.cancel()
         withTimeout(5_000) { job.join() }
