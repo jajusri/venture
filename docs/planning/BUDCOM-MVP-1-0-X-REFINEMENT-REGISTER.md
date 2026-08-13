@@ -111,10 +111,16 @@ capability.
 **Identified:** 2026-08-11, during V3R-1/V3.5 physical acceptance testing on
 the unified-voucher candidate (commit `3343cdd`).
 
-**Status:** Recorded only — explicitly deferred by the Product Owner during
-physical acceptance ("record only, do not implement now"). Do not implement
-until explicitly requested, and until the connectivity/state-correctness
-physical acceptance sequence above concludes.
+**Status: IMPLEMENTED / CLOSED.** Landed at `b2e59cb21bbcd9f079e57d005ec314eded115e77`
+("feat(android): polish voucher list row layout and surface reconciliation
+status", 2026-08-11) — the same day this item was identified, predating the
+`continuity.10`–`continuity.13` lineage. `VoucherRowCard` now renders LEFT =
+type/number, CENTER = flexible ellipsized party name, RIGHT = date (fixed
+width, never weighted, never wrapped or squeezed). Covered by
+`VoucherBrowserUiStateTest.kt` (10 tests). This register entry was not
+updated at the time the fix landed; corrected here during `continuity.14`
+final-polish scoping (2026-08-13) after re-discovering the fix already
+existed. Physically re-confirmed visually during `continuity.14` acceptance.
 
 **Touches:** `apps/budcom_android/app/src/main/java/com/budcom/android/feature/voucher/` list row rendering (Compose UI).
 
