@@ -140,6 +140,7 @@ class GetLocalLedgerStatementUseCase @Inject constructor(
             LedgerStatement(
                 ledgerId = ledger.id,
                 ledgerName = ledger.name,
+                ledgerAlias = ledger.alias,
                 parentGroup = ledger.parentGroup,
                 period = LedgerStatementDateRange(range.from, range.to),
                 openingBalance = opening,

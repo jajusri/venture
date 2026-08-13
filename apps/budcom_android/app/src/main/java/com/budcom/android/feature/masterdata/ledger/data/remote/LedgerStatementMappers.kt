@@ -12,6 +12,7 @@ internal fun LedgerStatementEnvelopeDto.toDomain(): LedgerStatement = statement.
 internal fun LedgerStatementDto.toDomain(): LedgerStatement = LedgerStatement(
     ledgerId = ledgerId,
     ledgerName = ledgerName,
+    ledgerAlias = null,
     parentGroup = parentGroup?.takeIf { it.isNotBlank() },
     period = LedgerStatementDateRange(period.from, period.to),
     openingBalance = openingBalance?.toDomain(),

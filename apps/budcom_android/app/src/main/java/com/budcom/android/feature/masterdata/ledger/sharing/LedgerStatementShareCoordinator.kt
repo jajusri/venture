@@ -13,6 +13,12 @@ interface LedgerStatementShareCoordinator {
      * caller-visible state prematurely, when WhatsApp is not installed. */
     fun createWhatsAppShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent>
 
+    /** Same generic PDF share intent, targeted at a specific resolved recipient (opens WhatsApp
+     * directly on that chat with the PDF attached). [e164Number] must already be a normalized
+     * `+91XXXXXXXXXX`-style number — this never resolves or validates a recipient itself. The
+     * user still performs the final Send inside WhatsApp; BUDCOM never sends automatically. */
+    fun createWhatsAppDirectIntent(pdf: PreparedLedgerStatementPdf, e164Number: String): LedgerStatementShareResult<Intent>
+
     /** A view-only intent for the optional Preview PDF action — never a send action. */
     fun createPreviewIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent>
     suspend fun savePdf(pdf: PreparedLedgerStatementPdf, destination: Uri): LedgerStatementShareResult<Unit>

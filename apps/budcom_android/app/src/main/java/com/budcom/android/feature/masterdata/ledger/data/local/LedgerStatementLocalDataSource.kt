@@ -86,6 +86,7 @@ private fun LedgerStatementEntity.toDomain(
 ): LedgerStatement = LedgerStatement(
     ledgerId = ledgerId,
     ledgerName = ledgerName,
+    ledgerAlias = null,
     parentGroup = parentGroup,
     period = LedgerStatementDateRange(periodFrom, periodTo),
     openingBalance = amountOf(openingAmount, openingSide),

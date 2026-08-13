@@ -175,6 +175,7 @@ class LedgerStatementScreenTest {
             ),
         ),
         coverageMessage: String? = null,
+        whatsAppToPartyAvailable: Boolean = false,
     ) = LedgerStatementContentUi(
         ledgerName = "Cash",
         parentGroup = "Cash-in-Hand",
@@ -184,5 +185,6 @@ class LedgerStatementScreenTest {
         rows = rows,
         coverageMessage = coverageMessage,
         lastSyncedAt = null,
+        whatsAppToPartyAvailable = whatsAppToPartyAvailable,
     )
 }

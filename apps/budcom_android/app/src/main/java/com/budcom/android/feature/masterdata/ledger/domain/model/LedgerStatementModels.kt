@@ -71,6 +71,7 @@ data class LedgerStatementCoverage(
 data class LedgerStatement(
     val ledgerId: String,
     val ledgerName: String,
+    val ledgerAlias: String?,
     val parentGroup: String?,
     val period: LedgerStatementDateRange,
     val openingBalance: LedgerStatementAmount?,

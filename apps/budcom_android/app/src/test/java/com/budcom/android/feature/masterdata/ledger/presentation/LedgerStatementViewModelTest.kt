@@ -342,7 +342,9 @@ class LedgerStatementViewModelTest {
     }
 
     @Test
-    fun `WhatsApp to Party always surfaces a disabled error and releases the PDF without ever launching a send`() = runTest(dispatcher) {
+    fun `WhatsApp to Party surfaces a disabled error and releases the PDF when no recipient resolves`() = runTest(dispatcher) {
+        // Default fixture ledger has alias = null: no explicit mobile field and no valid alias
+        // fallback, so this must never fabricate a recipient or launch a send.
         val vm = createVm()
         advanceUntilIdle()
         shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
@@ -355,6 +357,58 @@ class LedgerStatementViewModelTest {
         }
         assertEquals(1, shareCoordinator.releaseCalls)
         assertTrue(vm.uiState.value.shareError.orEmpty().contains("no phone number is linked"))
+    }
+
+    @Test
+    fun `WhatsApp to Party opens a direct-targeted intent when a valid 10-digit alias resolves`() = runTest(dispatcher) {
+        ledgerDao.entity = ledgerDao.entity!!.copy(alias = "9876543210")
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.whatsAppDirectIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.WhatsAppToParty))
+            advanceUntilIdle()
+            assertTrue(awaitItem() is LedgerStatementShareEffect.LaunchShare)
+        }
+        assertEquals("+919876543210", shareCoordinator.lastWhatsAppDirectNumber)
+        assertEquals(0, shareCoordinator.releaseCalls)
+    }
+
+    @Test
+    fun `WhatsApp to Party never sends automatically - it only ever hands the caller an intent to launch`() = runTest(dispatcher) {
+        // The ViewModel/coordinator layer has no send/dispatch API at all: success can only ever
+        // surface as a LaunchShare effect (an Intent for the Activity to start), which requires
+        // the user to complete the Send themselves inside WhatsApp.
+        ledgerDao.entity = ledgerDao.entity!!.copy(alias = "9876543210")
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.whatsAppDirectIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.WhatsAppToParty))
+            advanceUntilIdle()
+            assertTrue(awaitItem() is LedgerStatementShareEffect.LaunchShare)
+            expectNoEvents()
+        }
+    }
+
+    @Test
+    fun `WhatsApp to Party recipient resolution never triggers a Connector or Tally network call`() = runTest(dispatcher) {
+        ledgerDao.entity = ledgerDao.entity!!.copy(alias = "9876543210")
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.whatsAppDirectIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.WhatsAppToParty))
+        advanceUntilIdle()
+        assertEquals(0, voucherRepository.refreshCalls)
     }
 
     @Test
@@ -463,6 +517,9 @@ private class FakeShareCoordinator : LedgerStatementShareCoordinator {
     var prepareResult: LedgerStatementShareResult<PreparedLedgerStatementPdf> = LedgerStatementShareResult.Failure("unused")
     var shareIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
     var whatsAppIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
+    var whatsAppDirectIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
+    var lastWhatsAppDirectNumber: String? = null
+        private set
     var previewIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
     var lastPreparedStatement: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement? = null
         private set
@@ -479,6 +536,10 @@ private class FakeShareCoordinator : LedgerStatementShareCoordinator {
 
     override fun createPdfShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> = shareIntentResult
     override fun createWhatsAppShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> = whatsAppIntentResult
+    override fun createWhatsAppDirectIntent(pdf: PreparedLedgerStatementPdf, e164Number: String): LedgerStatementShareResult<Intent> {
+        lastWhatsAppDirectNumber = e164Number
+        return whatsAppDirectIntentResult
+    }
     override fun createPreviewIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> = previewIntentResult
 
     override suspend fun savePdf(pdf: PreparedLedgerStatementPdf, destination: Uri): LedgerStatementShareResult<Unit> =

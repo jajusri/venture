@@ -41,10 +41,10 @@ enum class LedgerSharingDefaultPeriod {
 
 /**
  * Selectable default share destinations. [LedgerShareDestination.WhatsAppToParty] is intentionally
- * not a member here — BUDCOM does not yet resolve a party phone/WhatsApp number locally (that
- * capability is reserved for MVP-1.1 Connect's "search every ledger by phone number"), so it can
- * never be a meaningful default; it remains selectable only per-share, always disabled, from the
- * advanced options surface.
+ * not a member here — its recipient is resolved per-party (an explicit mobile field when one
+ * exists, or a plausible 10-digit ledger Alias fallback today) and can be unavailable for a given
+ * party, so it can never be a meaningful *default*; it remains selectable only per-share,
+ * conditionally enabled, from the advanced options surface.
  */
 enum class LedgerShareDefaultDestination {
     WhatsAppSelect,
@@ -64,8 +64,9 @@ enum class LedgerShareDefaultDestination {
  * always-disabled [WhatsAppToParty].
  */
 enum class LedgerShareDestination {
-    /** Always disabled today — see [LedgerShareDefaultDestination]'s doc comment. Never silently
-     * sends; BUDCOM does not currently have a way to resolve who to send to. */
+    /** Enabled only when a recipient resolves for the current party — see
+     * [com.budcom.android.feature.masterdata.ledger.sharing.resolveWhatsAppRecipient]. Never
+     * silently sends; the user always performs the final Send inside WhatsApp. */
     WhatsAppToParty,
     WhatsAppSelect,
     AndroidShare,

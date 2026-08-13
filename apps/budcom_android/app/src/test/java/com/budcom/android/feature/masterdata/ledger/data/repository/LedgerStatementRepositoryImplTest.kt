@@ -170,6 +170,7 @@ class LedgerStatementRepositoryImplTest {
 private fun sampleStatement(closing: String = "500"): LedgerStatement = LedgerStatement(
     ledgerId = "ledger-1",
     ledgerName = "Acme Traders",
+    ledgerAlias = null,
     parentGroup = "Sundry Debtors",
     period = LedgerStatementDateRange("2026-07-01", "2026-07-31"),
     openingBalance = LedgerStatementAmount("0", AmountSide.Dr),

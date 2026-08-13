@@ -8,6 +8,8 @@ import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementTransaction
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferences
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDestination
+import com.budcom.android.feature.masterdata.ledger.sharing.RecipientResolutionSource
+import com.budcom.android.feature.masterdata.ledger.sharing.resolveWhatsAppRecipient
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.masterdata.presentation.toMasterDataUiError
 
@@ -55,6 +57,7 @@ data class LedgerStatementContentUi(
     val rows: List<LedgerStatementRowUi>,
     val coverageMessage: String?,
     val lastSyncedAt: Long?,
+    val whatsAppToPartyAvailable: Boolean,
 )
 
 data class LedgerStatementRowUi(
@@ -115,6 +118,9 @@ internal fun LedgerStatement.toContentUi(lastSyncedAt: Long?): LedgerStatementCo
     rows = transactions.map { it.toRowUi() },
     coverageMessage = coverage.message,
     lastSyncedAt = lastSyncedAt,
+    // No explicit mobile/phone field exists locally today (reserved for MVP-1.1 Connect), so this
+    // only ever resolves via the Alias fallback or not at all — never a Connector/network call.
+    whatsAppToPartyAvailable = resolveWhatsAppRecipient(explicitMobile = null, alias = ledgerAlias).source != RecipientResolutionSource.None,
 )
 
 private fun LedgerStatementTransaction.toRowUi(): LedgerStatementRowUi = LedgerStatementRowUi(

@@ -80,6 +80,23 @@ class AndroidLedgerStatementShareCoordinator @Inject constructor(
         return LedgerStatementShareResult.Success(send)
     }
 
+    override fun createWhatsAppDirectIntent(pdf: PreparedLedgerStatementPdf, e164Number: String): LedgerStatementShareResult<Intent> {
+        // "jid" targets a specific WhatsApp chat directly (WhatsApp's own ACTION_SEND extra,
+        // digits-only, no leading '+') instead of showing its contact picker; the user still
+        // presses Send inside WhatsApp themselves.
+        val jid = "${e164Number.removePrefix("+")}@s.whatsapp.net"
+        val send = buildSendIntent(pdf).apply {
+            setPackage(WHATSAPP_PACKAGE)
+            putExtra("jid", jid)
+        }
+        if (send.resolveActivity(context.packageManager) == null) {
+            releasePdf(pdf)
+            return LedgerStatementShareResult.Failure("WhatsApp is not installed on this device.")
+        }
+        protectSharedFile(pdf)
+        return LedgerStatementShareResult.Success(send)
+    }
+
     override fun createPreviewIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> {
         val contentUri = Uri.parse(pdf.contentUri)
         val view = Intent(Intent.ACTION_VIEW).apply {

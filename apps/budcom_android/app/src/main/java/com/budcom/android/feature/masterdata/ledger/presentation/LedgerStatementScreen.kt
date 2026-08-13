@@ -261,12 +261,15 @@ private fun LedgerShareAdvancedOptions(
 
         Text("Share to", style = MaterialTheme.typography.labelLarge)
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val whatsAppToPartyAvailable = state.content?.whatsAppToPartyAvailable == true
             TextButton(
-                onClick = {},
-                enabled = false,
+                onClick = { onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.WhatsAppToParty)) },
+                enabled = whatsAppToPartyAvailable && !state.isShareBusy,
                 modifier = Modifier.fillMaxWidth().testTag("ledger_statement_destination_whatsapp_party"),
             ) {
-                Text("WhatsApp to Party — not available yet (no phone number linked)")
+                Text(
+                    if (whatsAppToPartyAvailable) "WhatsApp to Party" else "WhatsApp to Party — not available (no phone number linked)",
+                )
             }
             TextButton(
                 onClick = { onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.WhatsAppSelect)) },

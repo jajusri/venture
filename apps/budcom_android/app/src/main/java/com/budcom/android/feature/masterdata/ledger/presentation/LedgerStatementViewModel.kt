@@ -15,6 +15,8 @@ import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPrefere
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareCoordinator
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareResult
 import com.budcom.android.feature.masterdata.ledger.sharing.PreparedLedgerStatementPdf
+import com.budcom.android.feature.masterdata.ledger.sharing.RecipientResolution
+import com.budcom.android.feature.masterdata.ledger.sharing.resolveWhatsAppRecipient
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.masterdata.presentation.displayMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -240,9 +242,12 @@ class LedgerStatementViewModel @Inject constructor(
                 is AppResult.Failure -> showShareError(statementResult.error.toLedgerStatementUiError().displayMessage())
                 is AppResult.Success -> {
                     val companyName = companySession.observeSelectedCompany().first()?.name
+                    // No explicit mobile/phone field exists locally today (reserved for MVP-1.1
+                    // Connect) — this always resolves via the ledger Alias fallback or not at all.
+                    val recipient = resolveWhatsAppRecipient(explicitMobile = null, alias = statementResult.value.ledgerAlias)
                     when (val prepared = shareCoordinator.preparePdf(statementResult.value, companyName)) {
                         is LedgerStatementShareResult.Failure -> showShareError(prepared.message)
-                        is LedgerStatementShareResult.Success -> deliver(destination, prepared.value, operationId)
+                        is LedgerStatementShareResult.Success -> deliver(destination, prepared.value, operationId, recipient)
                     }
                 }
             }
@@ -250,13 +255,30 @@ class LedgerStatementViewModel @Inject constructor(
         }
     }
 
-    private suspend fun deliver(destination: LedgerShareDestination, pdf: PreparedLedgerStatementPdf, operationId: Long) {
+    private suspend fun deliver(
+        destination: LedgerShareDestination,
+        pdf: PreparedLedgerStatementPdf,
+        operationId: Long,
+        recipient: RecipientResolution,
+    ) {
         when (destination) {
             LedgerShareDestination.WhatsAppToParty -> {
-                // Never silently sends, never fabricates a recipient — BUDCOM does not yet
-                // resolve a party phone/WhatsApp number locally (reserved for MVP-1.1 Connect).
-                shareCoordinator.releasePdf(pdf)
-                showShareError("WhatsApp to Party isn't available yet — no phone number is linked for this party.")
+                val number = recipient.normalizedNumber
+                if (number == null) {
+                    // Never silently sends, never fabricates a recipient — no explicit mobile
+                    // field and no valid Alias fallback were available for this party.
+                    shareCoordinator.releasePdf(pdf)
+                    showShareError("WhatsApp to Party isn't available yet — no phone number is linked for this party.")
+                    return
+                }
+                when (val intentResult = shareCoordinator.createWhatsAppDirectIntent(pdf, number)) {
+                    is LedgerStatementShareResult.Success -> {
+                        pendingShareOperationId = operationId
+                        launchedShareOperations.addLast(operationId)
+                        _shareEffects.emit(LedgerStatementShareEffect.LaunchShare(operationId, intentResult.value))
+                    }
+                    is LedgerStatementShareResult.Failure -> showShareError(intentResult.message)
+                }
             }
             LedgerShareDestination.SavePdf -> {
                 pendingSavePdf?.let(shareCoordinator::releasePdf)
