@@ -280,12 +280,14 @@ private fun VoucherRowCard(
             },
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(14.dp)) {
-            // Primary line: LEFT voucher type/number, CENTER party name (flexible width, gets
-            // priority to ellipsize first), RIGHT date — date must never be pushed to a second
-            // line, so it keeps a fixed (non-weighted) width while only the party name shrinks.
+            // Primary line: LEFT voucher type/number, CENTER party name, RIGHT date. Left and
+            // right anchors are fixed-position and single-line; only the center party-name area
+            // may grow to a second line for a long name. Alignment.Top (not CenterVertically)
+            // keeps the left/right anchors pinned to the row's first line so a wrapped party name
+            // never pushes the date down or under the voucher number.
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
                 Text(
                     text = "${row.typeLabel} · ${row.primaryLabel}",
@@ -300,7 +302,7 @@ private fun VoucherRowCard(
                     text = row.partyName?.takeIf { it.isNotBlank() } ?: "—",
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 )
