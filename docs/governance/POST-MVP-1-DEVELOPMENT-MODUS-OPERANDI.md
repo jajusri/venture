@@ -135,8 +135,12 @@ failure.
 
 Avoid repeated repo rediscovery, vague exploratory coding, unnecessary
 micro-prompts, unlimited debugging loops, duplicate reviews without
-distinct purpose, unnecessary model escalation, and multiple agents
-editing the same uncommitted work.
+distinct purpose, unnecessary model escalation, multiple agents
+editing the same uncommitted work, and spending premium Claude capacity on
+open-ended visual/UI exploration. Resolve visual direction and screen
+iteration through ChatGPT and the external design archive first
+(`docs/design/BUDCOM-UI-DESIGN-DECISIONS.md`); Claude implements the
+accepted presentation layer, it does not generate/iterate the design.
 
 ## 9. Empirical measurement
 

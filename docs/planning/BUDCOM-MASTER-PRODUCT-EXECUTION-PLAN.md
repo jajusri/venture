@@ -23,6 +23,11 @@ micro-polish, screen/layout optimization, colors/visual consistency,
 button behavior, interaction clarity, and performance/regression fixes.
 No new feature/module expansion.
 
+Tracked in `BUDCOM-MVP-1-0-X-REFINEMENT-REGISTER.md`, which holds the
+improve-vs-increase classification rule, physical-device findings,
+connectivity/state-correctness hardening, UI-polish items, and freeze
+criteria for this boundary. This plan does not duplicate that content.
+
 ### Locked post-MVP sequence
 
 1.  **MVP-1.1 --- Connect with Universal Party Identity**
@@ -152,6 +157,11 @@ communication/catalogue exposure.
 Detailed scope comes from Brainstorm 1. Do not allow premature
 marketplace/social-network expansion.
 
+Locked visual/ownership shape: `docs/design/BUDCOM-UI-DESIGN-DECISIONS.md`
+§7 (Business Profile Ecosystem) — one business identity, one catalogue, one
+asset library, multiple permission-controlled views; Connect and Vartalap
+consume this data, they do not own it.
+
 ## 10. MVP-1.4 --- Catalogue
 
 Primary objective: robust catalogue on stable product identity.
@@ -165,6 +175,10 @@ Current direction:
 -   DB-stored linkage;
 -   branch/draft/review/publish workflow;
 -   approved image organization/brand-replacement workflow.
+
+Catalogue is part of the same Business Profile Ecosystem ownership boundary
+as MVP-1.3 — see `docs/design/BUDCOM-UI-DESIGN-DECISIONS.md` §7. It does not
+fork a second identity/asset model.
 
 After MVP-1.4: full integrated hardening → real-world usage pause →
 evidence review.
