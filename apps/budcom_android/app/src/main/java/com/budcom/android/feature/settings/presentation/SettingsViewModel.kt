@@ -3,6 +3,8 @@ package com.budcom.android.feature.settings.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferences
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferencesStore
 import com.budcom.android.feature.masterdata.presentation.toMasterDataUiError
 import com.budcom.android.feature.settings.domain.model.ThemePreference
 import com.budcom.android.feature.settings.domain.usecase.ObserveSettingsSnapshotUseCase
@@ -26,6 +28,7 @@ class SettingsViewModel @Inject constructor(
     private val setThemePreference: SetThemePreferenceUseCase,
     private val refreshConnectorFacts: RefreshSettingsConnectorFactsUseCase,
     private val resolveStartupRoutingState: ResolveStartupRoutingState,
+    private val ledgerSharingPreferencesStore: LedgerSharingPreferencesStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -53,6 +56,17 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch {
+            ledgerSharingPreferencesStore.observation.collect { prefs ->
+                _uiState.update {
+                    it.copy(
+                        ledgerSharingStatementMode = prefs.statementMode,
+                        ledgerSharingDefaultPeriod = prefs.defaultPeriod,
+                        ledgerSharingDefaultDestination = prefs.defaultDestination,
+                    )
+                }
+            }
+        }
         refreshFacts()
         refreshSecureConnectionState()
     }
@@ -76,6 +90,21 @@ class SettingsViewModel @Inject constructor(
                 viewModelScope.launch { _navigation.emit(SettingsNavigation.Diagnostics) }
             SettingsEvent.OpenSecurePairing ->
                 viewModelScope.launch { _navigation.emit(SettingsNavigation.SecurePairing) }
+            is SettingsEvent.SelectLedgerSharingStatementMode -> saveLedgerSharingPreferences { it.copy(statementMode = event.mode) }
+            is SettingsEvent.SelectLedgerSharingDefaultPeriod -> saveLedgerSharingPreferences { it.copy(defaultPeriod = event.period) }
+            is SettingsEvent.SelectLedgerSharingDefaultDestination ->
+                saveLedgerSharingPreferences { it.copy(defaultDestination = event.destination) }
+        }
+    }
+
+    private fun saveLedgerSharingPreferences(transform: (LedgerSharingPreferences) -> LedgerSharingPreferences) {
+        viewModelScope.launch {
+            val current = LedgerSharingPreferences(
+                statementMode = _uiState.value.ledgerSharingStatementMode,
+                defaultPeriod = _uiState.value.ledgerSharingDefaultPeriod,
+                defaultDestination = _uiState.value.ledgerSharingDefaultDestination,
+            )
+            ledgerSharingPreferencesStore.save(transform(current))
         }
     }
 

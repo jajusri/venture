@@ -19,6 +19,39 @@ data class LedgerStatementTransaction(
     val credit: String?,
     /** Null exactly when [LedgerStatementCoverage.balanceAvailable] is false. */
     val runningBalance: LedgerStatementAmount?,
+    /**
+     * Commercial item detail from the voucher's own inventory lines — present only in
+     * [LedgerStatementMode.Detailed] and only for a voucher that actually has inventory lines
+     * (never fabricated for a non-item voucher such as Receipt/Payment/Contra/Journal). This is
+     * presentation-only commercial detail: [LedgerStatementItemDetail.totalLabel] is a sum of the
+     * item lines shown purely for display inside Particulars — it never feeds back into or
+     * overrides [debit]/[credit]/[runningBalance], which remain the sole authoritative
+     * voucher-level accounting values from the existing ledger-line data.
+     */
+    val itemDetail: LedgerStatementItemDetail? = null,
+)
+
+/** Statement rendering mode — same underlying [LedgerStatement] data; Detailed only additionally
+ * requests each item-bearing transaction's [LedgerStatementItemDetail]. */
+enum class LedgerStatementMode {
+    Summary,
+    Detailed,
+}
+
+/** One inventory line from the voucher, formatted for display. [quantityLabel] is the Connector's
+ * own already-unit-inclusive quantity string (e.g. "20 Nos") — never split or re-parsed. */
+data class LedgerStatementItemLine(
+    val itemName: String,
+    val quantityLabel: String?,
+    val rateLabel: String?,
+    val amountLabel: String?,
+)
+
+/** [totalLabel] is the sum of [items]' amounts — commercial-detail display total, not an
+ * accounting value (see [LedgerStatementTransaction.itemDetail] doc comment). */
+data class LedgerStatementItemDetail(
+    val items: List<LedgerStatementItemLine>,
+    val totalLabel: String?,
 )
 
 /**

@@ -8,6 +8,11 @@ import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.company.domain.port.SessionValidity
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDefaultDestination
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingDefaultPeriod
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferences
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferencesStore
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
@@ -53,6 +58,7 @@ class SettingsViewModelTest {
     private lateinit var company: FakeCompany
     private lateinit var sync: FakeSync
     private lateinit var connectivity: FakeConnectivity
+    private lateinit var ledgerSharingPreferencesStore: FakeLedgerSharingPreferencesStore
 
     @Before
     fun setUp() {
@@ -62,6 +68,7 @@ class SettingsViewModelTest {
         company = FakeCompany()
         sync = FakeSync()
         connectivity = FakeConnectivity(true)
+        ledgerSharingPreferencesStore = FakeLedgerSharingPreferencesStore()
     }
 
     @After
@@ -101,6 +108,7 @@ class SettingsViewModelTest {
             resolveStartupRoutingState = object : ResolveStartupRoutingState {
                 override suspend fun invoke(): StartupRoutingState = secureConnectionState
             },
+            ledgerSharingPreferencesStore = ledgerSharingPreferencesStore,
         )
 
     @Test
@@ -183,6 +191,57 @@ class SettingsViewModelTest {
         advanceUntilIdle()
         assertEquals(StartupRoutingState.RePairRequired, vm.uiState.value.secureConnectionState)
     }
+
+    @Test
+    fun `the ledger sharing section reflects persisted preferences on load`() = runTest(dispatcher) {
+        ledgerSharingPreferencesStore = FakeLedgerSharingPreferencesStore(
+            LedgerSharingPreferences(
+                statementMode = LedgerStatementMode.Detailed,
+                defaultPeriod = LedgerSharingDefaultPeriod.ThisMonth,
+                defaultDestination = LedgerShareDefaultDestination.SavePdf,
+            ),
+        )
+        val vm = createVm()
+        advanceUntilIdle()
+        assertEquals(LedgerStatementMode.Detailed, vm.uiState.value.ledgerSharingStatementMode)
+        assertEquals(LedgerSharingDefaultPeriod.ThisMonth, vm.uiState.value.ledgerSharingDefaultPeriod)
+        assertEquals(LedgerShareDefaultDestination.SavePdf, vm.uiState.value.ledgerSharingDefaultDestination)
+    }
+
+    @Test
+    fun `selecting a default statement mode saves it without disturbing the other two preferences`() = runTest(dispatcher) {
+        ledgerSharingPreferencesStore = FakeLedgerSharingPreferencesStore(
+            LedgerSharingPreferences(defaultPeriod = LedgerSharingDefaultPeriod.LastMonth, defaultDestination = LedgerShareDefaultDestination.SavePdf),
+        )
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(SettingsEvent.SelectLedgerSharingStatementMode(LedgerStatementMode.Detailed))
+        advanceUntilIdle()
+        assertEquals(LedgerStatementMode.Detailed, vm.uiState.value.ledgerSharingStatementMode)
+        assertEquals(LedgerSharingDefaultPeriod.LastMonth, vm.uiState.value.ledgerSharingDefaultPeriod)
+        assertEquals(LedgerShareDefaultDestination.SavePdf, vm.uiState.value.ledgerSharingDefaultDestination)
+        assertEquals(1, ledgerSharingPreferencesStore.saveCalls)
+    }
+
+    @Test
+    fun `selecting a default period saves it and is reflected immediately`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(SettingsEvent.SelectLedgerSharingDefaultPeriod(LedgerSharingDefaultPeriod.Today))
+        advanceUntilIdle()
+        assertEquals(LedgerSharingDefaultPeriod.Today, vm.uiState.value.ledgerSharingDefaultPeriod)
+        assertEquals(1, ledgerSharingPreferencesStore.saveCalls)
+    }
+
+    @Test
+    fun `selecting a default destination saves it and is reflected immediately`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(SettingsEvent.SelectLedgerSharingDefaultDestination(LedgerShareDefaultDestination.WhatsAppSelect))
+        advanceUntilIdle()
+        assertEquals(LedgerShareDefaultDestination.WhatsAppSelect, vm.uiState.value.ledgerSharingDefaultDestination)
+        assertEquals(1, ledgerSharingPreferencesStore.saveCalls)
+    }
 }
 
 private class FakeThemeRepo : ThemePreferencesRepository {
@@ -262,4 +321,18 @@ private class FakeConnectivity(online: Boolean) : NetworkConnectivityObserver {
     private val flow = MutableStateFlow(online)
     override val isOnline: Flow<Boolean> = flow
     override fun current(): Boolean = flow.value
+}
+
+private class FakeLedgerSharingPreferencesStore(
+    initial: LedgerSharingPreferences = LedgerSharingPreferences(),
+) : LedgerSharingPreferencesStore {
+    private val flow = MutableStateFlow(initial)
+    override val observation: Flow<LedgerSharingPreferences> = flow
+    var saveCalls = 0
+        private set
+
+    override suspend fun save(preferences: LedgerSharingPreferences) {
+        saveCalls++
+        flow.value = preferences
+    }
 }

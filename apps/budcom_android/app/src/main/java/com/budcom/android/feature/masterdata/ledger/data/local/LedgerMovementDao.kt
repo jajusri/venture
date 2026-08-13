@@ -83,6 +83,20 @@ interface LedgerMovementDao {
     suspend fun narrations(companyId: String, voucherIds: List<String>): List<VoucherNarrationRow>
 
     /**
+     * Inventory (item) lines for a set of vouchers in one batched query — the Detailed-statement
+     * equivalent of [narrations]'s existing batching pattern, so rendering N transactions never
+     * costs N Room round trips. A voucher absent from the result has no inventory lines at all
+     * (a non-item voucher such as Receipt/Payment/Contra/Journal) — callers must not fabricate
+     * rows for it.
+     */
+    @Query(
+        "SELECT voucherId, lineNumber, itemName, quantity, rate, amountValue, amountSide " +
+            "FROM cached_voucher_inventory_lines WHERE companyId = :companyId AND voucherId IN (:voucherIds) " +
+            "ORDER BY voucherId, lineNumber",
+    )
+    suspend fun inventoryLinesForVouchers(companyId: String, voucherIds: List<String>): List<LedgerMovementInventoryRow>
+
+    /**
      * Earliest Voucher date currently cached for this company, across all ledgers — the coverage
      * floor used to decide whether a requested period's start predates anything we can prove was
      * synced. This is an approximation, not the Connector's authoritative per-snapshot
@@ -95,3 +109,13 @@ interface LedgerMovementDao {
 }
 
 data class VoucherNarrationRow(val voucherId: String, val narration: String?)
+
+data class LedgerMovementInventoryRow(
+    val voucherId: String,
+    val lineNumber: Int,
+    val itemName: String,
+    val quantity: String?,
+    val rate: String?,
+    val amountValue: String?,
+    val amountSide: String?,
+)

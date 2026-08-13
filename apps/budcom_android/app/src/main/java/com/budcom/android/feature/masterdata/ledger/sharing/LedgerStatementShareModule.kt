@@ -12,4 +12,9 @@ abstract class LedgerStatementShareModule {
     abstract fun bindLedgerStatementShareCoordinator(
         implementation: AndroidLedgerStatementShareCoordinator,
     ): LedgerStatementShareCoordinator
+
+    @Binds
+    abstract fun bindLedgerSharingPreferencesStore(
+        implementation: LedgerSharingPreferencesLocalDataSource,
+    ): LedgerSharingPreferencesStore
 }

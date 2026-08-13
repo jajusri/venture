@@ -1,5 +1,8 @@
 package com.budcom.android.feature.settings.presentation
 
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDefaultDestination
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingDefaultPeriod
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.settings.domain.model.ApplicationInformation
 import com.budcom.android.feature.settings.domain.model.ThemePreference
@@ -21,6 +24,9 @@ data class SettingsUiState(
     val application: ApplicationInformation? = null,
     /** Freshly re-resolved whenever Settings opens — never cached from app-startup routing. */
     val secureConnectionState: StartupRoutingState? = null,
+    val ledgerSharingStatementMode: LedgerStatementMode = LedgerStatementMode.Summary,
+    val ledgerSharingDefaultPeriod: LedgerSharingDefaultPeriod = LedgerSharingDefaultPeriod.Last7Sales,
+    val ledgerSharingDefaultDestination: LedgerShareDefaultDestination = LedgerShareDefaultDestination.AndroidShare,
 ) {
     val isBusy: Boolean
         get() = isInitialLoading || isRefreshing
@@ -35,6 +41,9 @@ sealed interface SettingsEvent {
     data object OpenSync : SettingsEvent
     data object OpenDiagnostics : SettingsEvent
     data object OpenSecurePairing : SettingsEvent
+    data class SelectLedgerSharingStatementMode(val mode: LedgerStatementMode) : SettingsEvent
+    data class SelectLedgerSharingDefaultPeriod(val period: LedgerSharingDefaultPeriod) : SettingsEvent
+    data class SelectLedgerSharingDefaultDestination(val destination: LedgerShareDefaultDestination) : SettingsEvent
 }
 
 enum class SettingsNavigation {

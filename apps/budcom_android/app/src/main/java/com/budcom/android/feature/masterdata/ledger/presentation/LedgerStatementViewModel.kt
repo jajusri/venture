@@ -7,9 +7,11 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
-import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.GetLocalLedgerStatementUseCase
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgerCoverageUseCase
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDestination
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferencesStore
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareCoordinator
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareResult
 import com.budcom.android.feature.masterdata.ledger.sharing.PreparedLedgerStatementPdf
@@ -38,6 +40,7 @@ class LedgerStatementViewModel @Inject constructor(
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
     private val shareCoordinator: LedgerStatementShareCoordinator,
+    private val sharingPreferencesStore: LedgerSharingPreferencesStore,
 ) : ViewModel() {
 
     private val ledgerId: String = savedStateHandle.get<String>(LEDGER_ID_ARG)
@@ -56,7 +59,6 @@ class LedgerStatementViewModel @Inject constructor(
 
     private var loadJob: Job? = null
     private var shareJob: Job? = null
-    private var loadedStatement: LedgerStatement? = null
     private var pendingSavePdf: PreparedLedgerStatementPdf? = null
     private var pendingSaveOperationId: Long? = null
     private var pendingShareOperationId: Long? = null
@@ -68,7 +70,17 @@ class LedgerStatementViewModel @Inject constructor(
         viewModelScope.launch {
             connectivityObserver.isOnline.collect { online -> _uiState.update { it.copy(isOnline = online) } }
         }
-        onEvent(LedgerStatementEvent.Load)
+        viewModelScope.launch {
+            sharingPreferencesStore.observation.collect { prefs -> _uiState.update { it.copy(sharingPreferences = prefs) } }
+        }
+        viewModelScope.launch {
+            // The very first load must already reflect the persisted default period — otherwise
+            // the fast Share Ledger path's "whatever's on screen" contract would start from the
+            // hardcoded Last7Sales fallback on every fresh screen open, not the user's own default.
+            val initialPeriod = sharingPreferencesStore.observation.first().defaultPeriod.toPeriodSelection()
+            _uiState.update { it.copy(periodSelection = initialPeriod) }
+            load(refreshing = false)
+        }
     }
 
     fun onEvent(event: LedgerStatementEvent) {
@@ -91,12 +103,42 @@ class LedgerStatementViewModel @Inject constructor(
                     viewModelScope.launch { _effects.emit(LedgerStatementEffect.OpenVoucherDetails(event.voucherId)) }
                 }
             }
-            LedgerStatementEvent.OpenShareOptions -> {
-                if (_uiState.value.hasContent) _uiState.update { it.copy(showShareOptions = true) }
+            LedgerStatementEvent.ShareLedgerFast -> {
+                val state = _uiState.value
+                shareStatement(
+                    period = state.periodSelection,
+                    mode = state.sharingPreferences.statementMode,
+                    destination = state.sharingPreferences.defaultDestination.toShareDestination(),
+                )
             }
-            LedgerStatementEvent.DismissShareOptions -> _uiState.update { it.copy(showShareOptions = false) }
-            LedgerStatementEvent.SharePdf -> preparePdf(save = false)
-            LedgerStatementEvent.SavePdf -> preparePdf(save = true)
+            LedgerStatementEvent.OpenShareOptions -> {
+                if (_uiState.value.hasContent) {
+                    _uiState.update {
+                        it.copy(
+                            showShareOptions = true,
+                            advancedPeriod = null,
+                            advancedStatementMode = null,
+                            advancedDestination = null,
+                        )
+                    }
+                }
+            }
+            LedgerStatementEvent.DismissShareOptions -> _uiState.update {
+                it.copy(showShareOptions = false, advancedPeriod = null, advancedStatementMode = null, advancedDestination = null)
+            }
+            is LedgerStatementEvent.AdvancedPeriodChanged -> _uiState.update { it.copy(advancedPeriod = event.period) }
+            is LedgerStatementEvent.AdvancedStatementModeChanged -> _uiState.update { it.copy(advancedStatementMode = event.mode) }
+            is LedgerStatementEvent.AdvancedShare -> {
+                val state = _uiState.value
+                _uiState.update {
+                    it.copy(showShareOptions = false, advancedPeriod = null, advancedStatementMode = null, advancedDestination = null)
+                }
+                shareStatement(
+                    period = state.advancedPeriod ?: state.periodSelection,
+                    mode = state.advancedStatementMode ?: state.sharingPreferences.statementMode,
+                    destination = event.destination,
+                )
+            }
             is LedgerStatementEvent.SaveDestinationSelected -> resolveSaveResult(event.uri)
             is LedgerStatementEvent.ShareActivityFinished -> finishShare(event)
         }
@@ -150,7 +192,6 @@ class LedgerStatementViewModel @Inject constructor(
             val result = getLocalStatement(companyId, ledgerId, _uiState.value.periodSelection)
             when (result) {
                 is AppResult.Success -> {
-                    loadedStatement = result.value
                     _uiState.update {
                         it.copy(
                             isInitialLoading = false,
@@ -178,35 +219,70 @@ class LedgerStatementViewModel @Inject constructor(
         }
     }
 
-    private fun preparePdf(save: Boolean) {
+    /**
+     * The single path both the fast Share Ledger tap and the advanced-options "Share" confirm
+     * button funnel through. Always re-reads the statement locally for [period]/[mode] rather
+     * than reusing [loadedStatement] — the currently displayed content is always Summary mode,
+     * so a Detailed share needs its own fetch regardless, and this keeps the two paths (fast vs.
+     * advanced-override) identically correct with one code path. Local-only: never a Connector
+     * call, matching the existing Summary-mode contract exactly.
+     */
+    private fun shareStatement(period: LedgerPeriodSelection, mode: LedgerStatementMode, destination: LedgerShareDestination) {
         if (shareJob?.isActive == true) return
-        val statement = loadedStatement ?: return showShareError("Ledger statement data is unavailable.")
         val operationId = ++nextOperationId
         shareJob = viewModelScope.launch {
-            _uiState.update { it.copy(isShareBusy = true, showShareOptions = false, shareError = null, shareMessage = null) }
-            val companyName = companySession.observeSelectedCompany().first()?.name
-            when (val result = shareCoordinator.preparePdf(statement, companyName)) {
-                is LedgerStatementShareResult.Failure -> showShareError(result.message)
-                is LedgerStatementShareResult.Success -> {
-                    if (save) {
-                        pendingSavePdf?.let(shareCoordinator::releasePdf)
-                        pendingSavePdf = result.value
-                        pendingSaveOperationId = operationId
-                        launchedSaveOperations.addLast(operationId)
-                        _shareEffects.emit(LedgerStatementShareEffect.CreatePdfDocument(operationId, result.value.suggestedFilename))
-                    } else {
-                        when (val intent = shareCoordinator.createPdfShareIntent(result.value)) {
-                            is LedgerStatementShareResult.Success -> {
-                                pendingShareOperationId = operationId
-                                launchedShareOperations.addLast(operationId)
-                                _shareEffects.emit(LedgerStatementShareEffect.LaunchShare(operationId, intent.value))
-                            }
-                            is LedgerStatementShareResult.Failure -> showShareError(intent.message)
-                        }
+            _uiState.update { it.copy(isShareBusy = true, shareError = null, shareMessage = null) }
+            val companyId = companySession.observeSelectedCompanyId().first()
+            if (companyId.isNullOrBlank()) {
+                return@launch showShareError("Select a company before sharing.")
+            }
+            when (val statementResult = getLocalStatement(companyId, ledgerId, period, mode)) {
+                is AppResult.Failure -> showShareError(statementResult.error.toLedgerStatementUiError().displayMessage())
+                is AppResult.Success -> {
+                    val companyName = companySession.observeSelectedCompany().first()?.name
+                    when (val prepared = shareCoordinator.preparePdf(statementResult.value, companyName)) {
+                        is LedgerStatementShareResult.Failure -> showShareError(prepared.message)
+                        is LedgerStatementShareResult.Success -> deliver(destination, prepared.value, operationId)
                     }
                 }
             }
             _uiState.update { it.copy(isShareBusy = false) }
+        }
+    }
+
+    private suspend fun deliver(destination: LedgerShareDestination, pdf: PreparedLedgerStatementPdf, operationId: Long) {
+        when (destination) {
+            LedgerShareDestination.WhatsAppToParty -> {
+                // Never silently sends, never fabricates a recipient — BUDCOM does not yet
+                // resolve a party phone/WhatsApp number locally (reserved for MVP-1.1 Connect).
+                shareCoordinator.releasePdf(pdf)
+                showShareError("WhatsApp to Party isn't available yet — no phone number is linked for this party.")
+            }
+            LedgerShareDestination.SavePdf -> {
+                pendingSavePdf?.let(shareCoordinator::releasePdf)
+                pendingSavePdf = pdf
+                pendingSaveOperationId = operationId
+                launchedSaveOperations.addLast(operationId)
+                _shareEffects.emit(LedgerStatementShareEffect.CreatePdfDocument(operationId, pdf.suggestedFilename))
+            }
+            LedgerShareDestination.WhatsAppSelect,
+            LedgerShareDestination.AndroidShare,
+            LedgerShareDestination.PreviewPdf,
+            -> {
+                val intentResult = when (destination) {
+                    LedgerShareDestination.WhatsAppSelect -> shareCoordinator.createWhatsAppShareIntent(pdf)
+                    LedgerShareDestination.PreviewPdf -> shareCoordinator.createPreviewIntent(pdf)
+                    else -> shareCoordinator.createPdfShareIntent(pdf)
+                }
+                when (intentResult) {
+                    is LedgerStatementShareResult.Success -> {
+                        pendingShareOperationId = operationId
+                        launchedShareOperations.addLast(operationId)
+                        _shareEffects.emit(LedgerStatementShareEffect.LaunchShare(operationId, intentResult.value))
+                    }
+                    is LedgerStatementShareResult.Failure -> showShareError(intentResult.message)
+                }
+            }
         }
     }
 

@@ -13,11 +13,18 @@ import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerEntity
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementDao
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementInventoryRow
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementRow
 import com.budcom.android.feature.masterdata.ledger.data.local.VoucherNarrationRow
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.GetLocalLedgerStatementUseCase
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgerCoverageUseCase
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDefaultDestination
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDestination
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingDefaultPeriod
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferences
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferencesStore
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareCoordinator
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerStatementShareResult
 import com.budcom.android.feature.masterdata.ledger.sharing.PreparedLedgerStatementPdf
@@ -41,6 +48,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -55,6 +63,7 @@ class LedgerStatementViewModelTest {
     private lateinit var companySession: FakeCompanySession
     private lateinit var connectivity: StatementFakeConnectivity
     private lateinit var shareCoordinator: FakeShareCoordinator
+    private lateinit var sharingPreferencesStore: FakeLedgerSharingPreferencesStore
 
     @Before
     fun setUp() {
@@ -65,6 +74,7 @@ class LedgerStatementViewModelTest {
         companySession = FakeCompanySession("estimation")
         connectivity = StatementFakeConnectivity(true)
         shareCoordinator = FakeShareCoordinator()
+        sharingPreferencesStore = FakeLedgerSharingPreferencesStore()
         // A ledger with no synced balance and no local movements is a benign default; individual
         // tests override via [ledgerDao.entity]/[movementDao] as needed.
         ledgerDao.entity = LedgerEntity(
@@ -89,6 +99,7 @@ class LedgerStatementViewModelTest {
         companySession = companySession,
         connectivityObserver = connectivity,
         shareCoordinator = shareCoordinator,
+        sharingPreferencesStore = sharingPreferencesStore,
     )
 
     @Test
@@ -181,7 +192,7 @@ class LedgerStatementViewModelTest {
         )
         shareCoordinator.shareIntentResult = LedgerStatementShareResult.Success(Intent())
         vm.shareEffects.test {
-            vm.onEvent(LedgerStatementEvent.SharePdf)
+            vm.onEvent(LedgerStatementEvent.ShareLedgerFast)
             advanceUntilIdle()
             val effect = awaitItem()
             assertTrue(effect is LedgerStatementShareEffect.LaunchShare)
@@ -206,7 +217,7 @@ class LedgerStatementViewModelTest {
             PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
         )
         shareCoordinator.shareIntentResult = LedgerStatementShareResult.Success(Intent())
-        vm.onEvent(LedgerStatementEvent.SharePdf)
+        vm.onEvent(LedgerStatementEvent.ShareLedgerFast)
         advanceUntilIdle()
 
         assertEquals("2025-04-01", shareCoordinator.lastPreparedStatement?.period?.from)
@@ -228,7 +239,7 @@ class LedgerStatementViewModelTest {
         shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
             PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
         )
-        vm.onEvent(LedgerStatementEvent.SharePdf)
+        vm.onEvent(LedgerStatementEvent.ShareLedgerFast)
         advanceUntilIdle()
 
         assertEquals("2026-04-01", shareCoordinator.lastPreparedStatement?.period?.from)
@@ -240,7 +251,7 @@ class LedgerStatementViewModelTest {
         val vm = createVm()
         advanceUntilIdle()
         shareCoordinator.prepareResult = LedgerStatementShareResult.Failure("boom")
-        vm.onEvent(LedgerStatementEvent.SharePdf)
+        vm.onEvent(LedgerStatementEvent.ShareLedgerFast)
         advanceUntilIdle()
         assertEquals("boom", vm.uiState.value.shareError)
     }
@@ -252,6 +263,142 @@ class LedgerStatementViewModelTest {
         advanceUntilIdle()
         assertTrue(vm.uiState.value.error != null)
         assertNull(vm.uiState.value.content)
+    }
+
+    @Test
+    fun `the initial period reflects the persisted default, not the hardcoded fallback`() = runTest(dispatcher) {
+        sharingPreferencesStore = FakeLedgerSharingPreferencesStore(
+            LedgerSharingPreferences(defaultPeriod = LedgerSharingDefaultPeriod.ThisMonth),
+        )
+        val vm = createVm()
+        advanceUntilIdle()
+        assertEquals(LedgerPeriodSelection.ThisMonth, vm.uiState.value.periodSelection)
+    }
+
+    @Test
+    fun `ShareLedgerFast routes to the persisted default destination with no options screen shown`() = runTest(dispatcher) {
+        sharingPreferencesStore = FakeLedgerSharingPreferencesStore(
+            LedgerSharingPreferences(defaultDestination = LedgerShareDefaultDestination.WhatsAppSelect),
+        )
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.whatsAppIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.ShareLedgerFast)
+            advanceUntilIdle()
+            assertTrue(awaitItem() is LedgerStatementShareEffect.LaunchShare)
+        }
+        assertFalse("fast share must never open the advanced options sheet", vm.uiState.value.showShareOptions)
+    }
+
+    @Test
+    fun `ShareLedgerFast uses the persisted Detailed statement mode`() = runTest(dispatcher) {
+        sharingPreferencesStore = FakeLedgerSharingPreferencesStore(
+            LedgerSharingPreferences(statementMode = LedgerStatementMode.Detailed),
+        )
+        val movement = LedgerMovementRow("v1", "2026-08-10", "Sales", "v-1", null, 1, "100", "dr")
+        movementDao.lastSales = listOf(movement)
+        movementDao.movements = listOf(movement)
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.shareIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.onEvent(LedgerStatementEvent.ShareLedgerFast)
+        advanceUntilIdle()
+        assertEquals("Detailed mode must batch-query inventory lines once", 1, movementDao.inventoryQueryCalls)
+    }
+
+    @Test
+    fun `AdvancedShare overrides period, mode, and destination for exactly one share without persisting a new default`() = runTest(dispatcher) {
+        movementDao.movements = listOf(LedgerMovementRow("v1", "2026-08-05", "Sales", "v-1", null, 1, "100", "dr"))
+        val vm = createVm()
+        advanceUntilIdle()
+        val originalPeriod = vm.uiState.value.periodSelection
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.previewIntentResult = LedgerStatementShareResult.Success(Intent())
+
+        vm.onEvent(LedgerStatementEvent.AdvancedPeriodChanged(LedgerPeriodSelection.ThisMonth))
+        vm.onEvent(LedgerStatementEvent.AdvancedStatementModeChanged(LedgerStatementMode.Detailed))
+        vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.PreviewPdf))
+        advanceUntilIdle()
+
+        assertEquals("2026-08-01", shareCoordinator.lastPreparedStatement?.period?.from)
+        assertEquals(1, movementDao.inventoryQueryCalls)
+        assertEquals("a one-time override must never be persisted as the new default", 0, sharingPreferencesStore.saveCalls)
+        assertFalse(vm.uiState.value.showShareOptions)
+
+        // The next fast share must fall back to the original default, not the one-time override.
+        shareCoordinator.shareIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.onEvent(LedgerStatementEvent.ShareLedgerFast)
+        advanceUntilIdle()
+        assertEquals(originalPeriod, vm.uiState.value.periodSelection)
+    }
+
+    @Test
+    fun `WhatsApp to Party always surfaces a disabled error and releases the PDF without ever launching a send`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.WhatsAppToParty))
+            advanceUntilIdle()
+            expectNoEvents()
+        }
+        assertEquals(1, shareCoordinator.releaseCalls)
+        assertTrue(vm.uiState.value.shareError.orEmpty().contains("no phone number is linked"))
+    }
+
+    @Test
+    fun `Save PDF via the advanced options path emits the SAF create-document effect`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.SavePdf))
+            advanceUntilIdle()
+            assertTrue(awaitItem() is LedgerStatementShareEffect.CreatePdfDocument)
+        }
+    }
+
+    @Test
+    fun `Preview PDF via the advanced options path launches a preview intent`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.previewIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.PreviewPdf))
+            advanceUntilIdle()
+            assertTrue(awaitItem() is LedgerStatementShareEffect.LaunchShare)
+        }
+    }
+
+    @Test
+    fun `sharing never triggers a Connector or Tally network call`() = runTest(dispatcher) {
+        // shareStatement never consults isOnline at all — sharing is unconditionally local-only,
+        // so PDF generation must work identically whether the device is online or offline.
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.shareIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.onEvent(LedgerStatementEvent.ShareLedgerFast)
+        advanceUntilIdle()
+        assertEquals(0, voucherRepository.refreshCalls)
     }
 }
 
@@ -273,6 +420,9 @@ private class FakeLedgerMovementDao : LedgerMovementDao {
     var lastSales: List<LedgerMovementRow> = emptyList()
     var movements: List<LedgerMovementRow> = emptyList()
     var earliestDate: String? = null
+    var inventoryLines: List<LedgerMovementInventoryRow> = emptyList()
+    var inventoryQueryCalls = 0
+        private set
 
     override suspend fun lastSalesMovements(companyId: String, ledgerName: String, limit: Int): List<LedgerMovementRow> =
         lastSales.take(limit)
@@ -280,6 +430,10 @@ private class FakeLedgerMovementDao : LedgerMovementDao {
         movements.filter { it.date in from..to }
     override suspend fun narrations(companyId: String, voucherIds: List<String>): List<VoucherNarrationRow> = emptyList()
     override suspend fun earliestSyncedDate(companyId: String): String? = earliestDate
+    override suspend fun inventoryLinesForVouchers(companyId: String, voucherIds: List<String>): List<LedgerMovementInventoryRow> {
+        inventoryQueryCalls++
+        return inventoryLines.filter { it.voucherId in voucherIds }
+    }
 }
 
 private class FakeVoucherRepository : VoucherRepository {
@@ -308,7 +462,11 @@ private class FakeVoucherRepository : VoucherRepository {
 private class FakeShareCoordinator : LedgerStatementShareCoordinator {
     var prepareResult: LedgerStatementShareResult<PreparedLedgerStatementPdf> = LedgerStatementShareResult.Failure("unused")
     var shareIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
+    var whatsAppIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
+    var previewIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
     var lastPreparedStatement: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement? = null
+        private set
+    var releaseCalls = 0
         private set
 
     override suspend fun preparePdf(
@@ -320,11 +478,15 @@ private class FakeShareCoordinator : LedgerStatementShareCoordinator {
     }
 
     override fun createPdfShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> = shareIntentResult
+    override fun createWhatsAppShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> = whatsAppIntentResult
+    override fun createPreviewIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> = previewIntentResult
 
     override suspend fun savePdf(pdf: PreparedLedgerStatementPdf, destination: Uri): LedgerStatementShareResult<Unit> =
         LedgerStatementShareResult.Success(Unit)
 
-    override fun releasePdf(pdf: PreparedLedgerStatementPdf) = Unit
+    override fun releasePdf(pdf: PreparedLedgerStatementPdf) {
+        releaseCalls++
+    }
 }
 
 private class FakeCompanySession(initial: String?) : CompanySessionPort {
@@ -340,4 +502,18 @@ private class StatementFakeConnectivity(online: Boolean) : NetworkConnectivityOb
     private val flow = MutableStateFlow(online)
     override val isOnline: Flow<Boolean> = flow
     override fun current(): Boolean = flow.value
+}
+
+private class FakeLedgerSharingPreferencesStore(
+    initial: LedgerSharingPreferences = LedgerSharingPreferences(),
+) : LedgerSharingPreferencesStore {
+    private val flow = MutableStateFlow(initial)
+    override val observation: Flow<LedgerSharingPreferences> = flow
+    var saveCalls = 0
+        private set
+
+    override suspend fun save(preferences: LedgerSharingPreferences) {
+        saveCalls++
+        flow.value = preferences
+    }
 }

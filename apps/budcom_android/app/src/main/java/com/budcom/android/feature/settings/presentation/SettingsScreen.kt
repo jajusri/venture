@@ -34,6 +34,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budcom.android.BuildConfig
 import com.budcom.android.R
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDefaultDestination
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingDefaultPeriod
 import com.budcom.android.feature.masterdata.presentation.MasterDataOfflineBanner
 import com.budcom.android.feature.masterdata.presentation.displayMessage
 import com.budcom.android.feature.settings.domain.model.ThemePreference
@@ -113,6 +116,7 @@ fun SettingsScreen(
             ConnectionCard(state = state, onEvent = onEvent)
             AppearanceCard(state = state, onEvent = onEvent)
             CompanyCard(state = state, onEvent = onEvent)
+            LedgerSharingCard(state = state, onEvent = onEvent)
             SyncCard(state = state, onEvent = onEvent)
             DiagnosticsCard(onEvent = onEvent)
             AboutCard(state = state, onEvent = onEvent)
@@ -301,6 +305,98 @@ private fun CompanyCard(
                 .testTag("settings_open_company"),
         ) {
             Text(stringResource(R.string.settings_change_company))
+        }
+    }
+}
+
+@Composable
+private fun LedgerSharingCard(
+    state: SettingsUiState,
+    onEvent: (SettingsEvent) -> Unit,
+) {
+    SettingsSection(
+        title = "Ledger Sharing",
+        testTag = "settings_ledger_sharing",
+    ) {
+        Text(
+            text = "Default statement",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+        LedgerStatementMode.entries.forEach { mode ->
+            val label = when (mode) {
+                LedgerStatementMode.Summary -> "Summary"
+                LedgerStatementMode.Detailed -> "Detailed"
+            }
+            val selected = state.ledgerSharingStatementMode == mode
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = selected,
+                        onClick = { onEvent(SettingsEvent.SelectLedgerSharingStatementMode(mode)) },
+                        role = Role.RadioButton,
+                    )
+                    .testTag("settings_ledger_sharing_mode_${mode.name.lowercase()}")
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = selected, onClick = { onEvent(SettingsEvent.SelectLedgerSharingStatementMode(mode)) })
+                Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+
+        Text(
+            text = "Default period",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        LedgerSharingDefaultPeriod.entries.forEach { period ->
+            val selected = state.ledgerSharingDefaultPeriod == period
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = selected,
+                        onClick = { onEvent(SettingsEvent.SelectLedgerSharingDefaultPeriod(period)) },
+                        role = Role.RadioButton,
+                    )
+                    .testTag("settings_ledger_sharing_period_${period.name.lowercase()}")
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = selected, onClick = { onEvent(SettingsEvent.SelectLedgerSharingDefaultPeriod(period)) })
+                Text(text = period.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
+
+        Text(
+            text = "Default destination",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        LedgerShareDefaultDestination.entries.forEach { destination ->
+            val label = when (destination) {
+                LedgerShareDefaultDestination.WhatsAppSelect -> "WhatsApp — choose recipient"
+                LedgerShareDefaultDestination.AndroidShare -> "Share via…"
+                LedgerShareDefaultDestination.SavePdf -> "Save PDF"
+            }
+            val selected = state.ledgerSharingDefaultDestination == destination
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = selected,
+                        onClick = { onEvent(SettingsEvent.SelectLedgerSharingDefaultDestination(destination)) },
+                        role = Role.RadioButton,
+                    )
+                    .testTag("settings_ledger_sharing_destination_${destination.name.lowercase()}")
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = selected, onClick = { onEvent(SettingsEvent.SelectLedgerSharingDefaultDestination(destination)) })
+                Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
+            }
         }
     }
 }

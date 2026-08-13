@@ -61,21 +61,53 @@ class AndroidLedgerStatementShareCoordinator @Inject constructor(
     }
 
     override fun createPdfShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> {
+        val send = buildSendIntent(pdf)
+        if (send.resolveActivity(context.packageManager) == null) {
+            releasePdf(pdf)
+            return LedgerStatementShareResult.Failure("No app is available to share PDF files.")
+        }
+        protectSharedFile(pdf)
+        return LedgerStatementShareResult.Success(Intent.createChooser(send, "Share ledger statement PDF"))
+    }
+
+    override fun createWhatsAppShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> {
+        val send = buildSendIntent(pdf).apply { setPackage(WHATSAPP_PACKAGE) }
+        if (send.resolveActivity(context.packageManager) == null) {
+            releasePdf(pdf)
+            return LedgerStatementShareResult.Failure("WhatsApp is not installed on this device.")
+        }
+        protectSharedFile(pdf)
+        return LedgerStatementShareResult.Success(send)
+    }
+
+    override fun createPreviewIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> {
         val contentUri = Uri.parse(pdf.contentUri)
-        val send = Intent(Intent.ACTION_SEND).apply {
+        val view = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(contentUri, PDF_MIME)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        if (view.resolveActivity(context.packageManager) == null) {
+            releasePdf(pdf)
+            return LedgerStatementShareResult.Failure("No app is available to preview PDF files.")
+        }
+        protectSharedFile(pdf)
+        return LedgerStatementShareResult.Success(view)
+    }
+
+    private fun buildSendIntent(pdf: PreparedLedgerStatementPdf): Intent {
+        val contentUri = Uri.parse(pdf.contentUri)
+        return Intent(Intent.ACTION_SEND).apply {
             type = PDF_MIME
             putExtra(Intent.EXTRA_STREAM, contentUri)
             clipData = ClipData.newUri(context.contentResolver, pdf.suggestedFilename, contentUri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        if (send.resolveActivity(context.packageManager) == null) {
-            releasePdf(pdf)
-            return LedgerStatementShareResult.Failure("No app is available to share PDF files.")
-        }
+    }
+
+    private fun protectSharedFile(pdf: PreparedLedgerStatementPdf) {
         val file = File(pdf.cacheFilePath)
         cachePolicy.protectShared(file, System.currentTimeMillis())
         cachePolicy.release(file)
-        return LedgerStatementShareResult.Success(Intent.createChooser(send, "Share ledger statement PDF"))
     }
 
     override suspend fun savePdf(
@@ -105,6 +137,7 @@ class AndroidLedgerStatementShareCoordinator @Inject constructor(
 
     private companion object {
         const val PDF_MIME = "application/pdf"
+        const val WHATSAPP_PACKAGE = "com.whatsapp"
     }
 }
 
@@ -123,9 +156,16 @@ internal object LedgerStatementPdfRenderer {
     private const val TABLE_BOTTOM = 770f
     private const val FOOTER_TOP = 792f
     private const val HEADER_ROW_HEIGHT = 20f
+    private const val HEADING_LINE_HEIGHT = 10.5f
+    private const val ITEM_LINE_HEIGHT = 9f
+    private const val TOTAL_LINE_HEIGHT = 10f
+    private const val NARRATION_LINE_HEIGHT = 9f
 
     // Date | Particulars | Debit | Credit | Balance
     private val columnEdges = floatArrayOf(MARGIN, 96f, 360f, 430f, 495f, CONTENT_RIGHT)
+
+    // Item Name | Qty | Rate | Amount — sub-columns inside the Particulars column only.
+    private val itemColumnEdges = floatArrayOf(96f, 210f, 250f, 300f, 360f)
 
     fun render(statement: LedgerStatement, companyName: String?, generatedAtEpochMillis: Long, output: File) {
         val document = PdfDocument()
@@ -138,13 +178,29 @@ internal object LedgerStatementPdfRenderer {
             color = android.graphics.Color.rgb(210, 210, 210)
             strokeWidth = 0.65f
         }
+        // Smaller than voucher-identity text, per the locked visual rule.
+        val item = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 6.5f; color = android.graphics.Color.rgb(60, 60, 60) }
+        val itemBold = Paint(item).apply { typeface = Typeface.DEFAULT_BOLD }
+        val itemTotal = Paint(itemBold).apply { textSize = 7.5f; textAlign = Paint.Align.RIGHT }
+        val narrationPaint = Paint(item).apply { textSize = 7f; color = android.graphics.Color.rgb(90, 90, 90) }
 
         val headerLines = buildHeaderLines(companyName, statement) { text -> wrapToWidth(text, CONTENT_RIGHT - MARGIN, subHeading) }
         val firstHeaderTop = 40f + headerLines.size * 14f + 10f
-        val rows = planStatementRows(statement.transactions, firstHeaderTop + HEADER_ROW_HEIGHT, MARGIN + HEADER_ROW_HEIGHT, TABLE_BOTTOM) { text ->
-            wrapToWidth(text, columnEdges[2] - columnEdges[1] - 10f, body)
-        }
-        val totalPages = rows.maxOfOrNull(StatementRowLayout::page) ?: 1
+        val positioned = planParticularsLines(
+            transactions = statement.transactions,
+            firstPageStartY = firstHeaderTop + HEADER_ROW_HEIGHT,
+            continuationStartY = MARGIN + HEADER_ROW_HEIGHT,
+            bottom = TABLE_BOTTOM,
+            headingWrap = { text -> wrapToWidth(text, columnEdges[2] - columnEdges[1] - 10f, bold) },
+            narrationWrap = { text -> wrapToWidth(text, columnEdges[2] - columnEdges[1] - 10f, narrationPaint) },
+            itemNameWrap = { text -> wrapToWidth(text, itemColumnEdges[1] - itemColumnEdges[0] - 6f, item) },
+        )
+        val totalPages = positioned.maxOfOrNull(PositionedLine::page) ?: 1
+        // (transaction, page) -> the vertical extent of that transaction's content on that page,
+        // for drawing the bounding column dividers and, on the transaction's very first segment
+        // only, the voucher-level Date/Debit/Credit/Balance values aligned with the whole block.
+        val segments = positioned.groupBy { it.transaction to it.page }
+            .mapValues { (_, lines) -> lines.minOf(PositionedLine::top) to lines.maxOf(PositionedLine::bottom) }
 
         try {
             (1..totalPages).forEach { pageNumber ->
@@ -160,10 +216,14 @@ internal object LedgerStatementPdfRenderer {
                 }
 
                 drawTableHeader(canvas, headerTop, bold, rule)
-                rows.filter { it.page == pageNumber }.forEach { row -> drawRow(canvas, row, body, rule) }
+                val onThisPage = positioned.filter { it.page == pageNumber }
+                onThisPage.groupBy { it.transaction }.forEach { (transaction, lines) ->
+                    val (segTop, segBottom) = segments.getValue(transaction to pageNumber)
+                    drawTransactionSegment(canvas, transaction, lines, segTop, segBottom, body, item, itemBold, itemTotal, narrationPaint, rule)
+                }
 
                 if (pageNumber == totalPages) {
-                    val lastBottom = rows.lastOrNull()?.bottom ?: (headerTop + HEADER_ROW_HEIGHT)
+                    val lastBottom = onThisPage.maxOfOrNull(PositionedLine::bottom) ?: (headerTop + HEADER_ROW_HEIGHT)
                     drawClosingSummary(canvas, lastBottom + 6f, statement, totalPaint, body, rule)
                 }
 
@@ -199,15 +259,72 @@ internal object LedgerStatementPdfRenderer {
         }
     }
 
-    private fun drawRow(canvas: android.graphics.Canvas, row: StatementRowLayout, body: Paint, rule: Paint) {
-        columnEdges.forEach { x -> canvas.drawLine(x, row.top, x, row.bottom, rule) }
-        canvas.drawLine(MARGIN, row.bottom, CONTENT_RIGHT, row.bottom, rule)
-        val baseline = row.top + 12f
-        drawCell(canvas, row.transaction.date, 0, baseline, body, Paint.Align.CENTER)
-        row.particularsLines.forEachIndexed { index, text -> drawCell(canvas, text, 1, baseline + index * 10.5f, body, Paint.Align.LEFT) }
-        drawCell(canvas, row.transaction.debit.orEmpty(), 2, baseline, body, Paint.Align.RIGHT)
-        drawCell(canvas, row.transaction.credit.orEmpty(), 3, baseline, body, Paint.Align.RIGHT)
-        drawCell(canvas, row.transaction.runningBalance.toLabel().orEmpty(), 4, baseline, body, Paint.Align.RIGHT)
+    /**
+     * Draws one transaction's content for its extent on one page: the outer column dividers and
+     * bottom rule bound the whole [segTop]..[segBottom] block, but Date/Debit/Credit/Balance are
+     * only ever drawn once per transaction — at [PositionedLine.isFirstOfTransaction] — so they
+     * stay aligned with the complete voucher block rather than repeating per Particulars line
+     * (never per item, per the locked rule).
+     */
+    private fun drawTransactionSegment(
+        canvas: android.graphics.Canvas,
+        transaction: LedgerStatementTransaction,
+        lines: List<PositionedLine>,
+        segTop: Float,
+        segBottom: Float,
+        body: Paint,
+        item: Paint,
+        itemBold: Paint,
+        itemTotal: Paint,
+        narrationPaint: Paint,
+        rule: Paint,
+    ) {
+        columnEdges.forEach { x -> canvas.drawLine(x, segTop, x, segBottom, rule) }
+        canvas.drawLine(MARGIN, segBottom, CONTENT_RIGHT, segBottom, rule)
+
+        val accountingBaseline = lines.firstOrNull { it.isFirstOfTransaction }?.let { it.top + 8f }
+        if (accountingBaseline != null) {
+            drawCell(canvas, transaction.date, 0, accountingBaseline, body, Paint.Align.CENTER)
+            drawCell(canvas, transaction.debit.orEmpty(), 2, accountingBaseline, body, Paint.Align.RIGHT)
+            drawCell(canvas, transaction.credit.orEmpty(), 3, accountingBaseline, body, Paint.Align.RIGHT)
+            drawCell(canvas, transaction.runningBalance.toLabel().orEmpty(), 4, accountingBaseline, body, Paint.Align.RIGHT)
+        }
+
+        lines.forEach { positioned -> drawParticularsLine(canvas, positioned, body, item, itemBold, itemTotal, narrationPaint) }
+    }
+
+    private fun drawParticularsLine(
+        canvas: android.graphics.Canvas,
+        positioned: PositionedLine,
+        body: Paint,
+        item: Paint,
+        itemBold: Paint,
+        itemTotal: Paint,
+        narrationPaint: Paint,
+    ) {
+        val baseline = positioned.top + positioned.line.height - 2f
+        when (val line = positioned.line) {
+            is HeadingLine -> canvas.drawText(line.text, columnEdges[1] + 4f, baseline, Paint(body).apply { typeface = Typeface.DEFAULT_BOLD })
+            is ItemHeaderLine -> line.labels.forEachIndexed { index, label -> drawItemCell(canvas, label, index, baseline, itemBold) }
+            is ItemRowLine -> {
+                drawItemCell(canvas, line.name, 0, baseline, item)
+                line.quantity?.let { drawItemCell(canvas, it, 1, baseline, item) }
+                line.rate?.let { drawItemCell(canvas, it, 2, baseline, item) }
+                line.amount?.let { drawItemCell(canvas, it, 3, baseline, item) }
+            }
+            is TotalTextLine -> canvas.drawText(line.text, columnEdges[2] - 4f, baseline, itemTotal)
+            is NarrationTextLine -> canvas.drawText(line.text, columnEdges[1] + 4f, baseline, narrationPaint)
+        }
+    }
+
+    private fun drawItemCell(canvas: android.graphics.Canvas, text: String, subColumn: Int, baseline: Float, paint: Paint) {
+        if (text.isBlank()) return
+        val left = itemColumnEdges[subColumn]
+        val right = itemColumnEdges[subColumn + 1]
+        val align = if (subColumn == 0) Paint.Align.LEFT else Paint.Align.RIGHT
+        val copy = Paint(paint).apply { textAlign = align }
+        val x = if (align == Paint.Align.LEFT) left + 2f else right - 2f
+        canvas.drawText(text, x, baseline, copy)
     }
 
     private fun drawCell(canvas: android.graphics.Canvas, text: String, column: Int, baseline: Float, paint: Paint, align: Paint.Align) {
@@ -300,38 +417,102 @@ internal object LedgerStatementPdfRenderer {
         return lines
     }
 
-    private data class StatementRowLayout(
+    // internal (not private): lets a JVM unit test exercise the pagination algorithm directly
+    // with fake wrap functions — these types/functions never touch Paint/Canvas/PdfDocument
+    // themselves, only the wrap lambdas render() supplies, so nothing here requires an Android
+    // graphics runtime to test.
+    internal sealed interface PlannedLine { val height: Float }
+    internal data class HeadingLine(val text: String) : PlannedLine { override val height = HEADING_LINE_HEIGHT }
+    internal data class ItemHeaderLine(val labels: List<String>) : PlannedLine { override val height = ITEM_LINE_HEIGHT }
+    internal data class ItemRowLine(val name: String, val quantity: String?, val rate: String?, val amount: String?) :
+        PlannedLine { override val height = ITEM_LINE_HEIGHT }
+    internal data class TotalTextLine(val text: String) : PlannedLine { override val height = TOTAL_LINE_HEIGHT }
+    internal data class NarrationTextLine(val text: String) : PlannedLine { override val height = NARRATION_LINE_HEIGHT }
+
+    internal data class PositionedLine(
         val page: Int,
         val top: Float,
         val bottom: Float,
-        val particularsLines: List<String>,
+        val line: PlannedLine,
         val transaction: LedgerStatementTransaction,
+        val isFirstOfTransaction: Boolean,
     )
 
-    private fun planStatementRows(
+    /** Wraps [block]'s content into concrete, still-unpositioned [PlannedLine]s. Item rows whose
+     * name wraps to multiple lines only carry qty/rate/amount on the first of those lines. */
+    internal fun planLinesForBlock(
+        block: ParticularsBlock,
+        headingWrap: (String) -> List<String>,
+        narrationWrap: (String) -> List<String>,
+        itemNameWrap: (String) -> List<String>,
+    ): List<PlannedLine> = buildList {
+        headingWrap(block.headingText).forEach { add(HeadingLine(it)) }
+        block.itemHeaderLabels?.let { add(ItemHeaderLine(it)) }
+        block.itemRows.forEach { row ->
+            val nameLines = itemNameWrap(row.name).ifEmpty { listOf("") }
+            nameLines.forEachIndexed { index, nameLine ->
+                add(
+                    ItemRowLine(
+                        name = nameLine,
+                        quantity = if (index == 0) row.quantity else null,
+                        rate = if (index == 0) row.rate else null,
+                        amount = if (index == 0) row.amount else null,
+                    ),
+                )
+            }
+        }
+        block.totalText?.let { add(TotalTextLine(it)) }
+        block.narrationText?.let { text -> narrationWrap(text).forEach { add(NarrationTextLine(it)) } }
+    }
+
+    /**
+     * Places every transaction's [ParticularsBlock] lines on the page grid. A whole block is kept
+     * together whenever it fits either where the cursor already is or on a fresh page — this is
+     * what "avoid splitting an individual item row awkwardly" means in practice, and it is the
+     * only path taken for any statement this task's tests exercise. Only a single voucher block
+     * too tall to fit even one entire fresh page (an extreme case — dozens of item lines) ever
+     * falls into line-by-line placement, which never splits inside a single line and reprints the
+     * voucher identity as "(contd.)" at the top of each continuation page so context is never
+     * lost — see "allow a large voucher to continue across pages if unavoidable."
+     */
+    internal fun planParticularsLines(
         transactions: List<LedgerStatementTransaction>,
         firstPageStartY: Float,
         continuationStartY: Float,
         bottom: Float,
-        particularsWrapper: (String) -> List<String>,
-    ): List<StatementRowLayout> {
+        headingWrap: (String) -> List<String>,
+        narrationWrap: (String) -> List<String>,
+        itemNameWrap: (String) -> List<String>,
+    ): List<PositionedLine> {
         var page = 1
         var y = firstPageStartY
-        return transactions.map { transaction ->
-            val particulars = particularsWrapper(transaction.toParticulars())
-            val height = maxOf(20f, particulars.size * 10.5f + 6f)
-            if (y + height > bottom) {
+        val positioned = mutableListOf<PositionedLine>()
+
+        for (transaction in transactions) {
+            val block = buildParticularsBlock(transaction)
+            val lines = planLinesForBlock(block, headingWrap, narrationWrap, itemNameWrap)
+            val blockHeight = lines.sumOf { it.height.toDouble() }.toFloat()
+            val freshPageCapacity = bottom - continuationStartY
+            if (y + blockHeight > bottom && blockHeight <= freshPageCapacity) {
                 page++
                 y = continuationStartY
             }
-            StatementRowLayout(page, y, y + height, particulars, transaction).also { y += height }
-        }
-    }
 
-    private fun LedgerStatementTransaction.toParticulars(): String {
-        val head = listOfNotNull(voucherType, voucherNumber?.takeIf(String::isNotBlank)?.let { "No. $it" }).joinToString(" · ")
-        val ref = referenceNumber?.takeIf(String::isNotBlank)?.let { "Ref: $it" }
-        val note = narration?.takeIf(String::isNotBlank)
-        return listOfNotNull(head.takeIf(String::isNotBlank), ref, note).joinToString(" — ")
+            var isFirstLineOfTransaction = true
+            for (line in lines) {
+                if (y + line.height > bottom) {
+                    page++
+                    y = continuationStartY
+                    // Mid-block page break (the extreme-case path): reprint voucher identity so
+                    // the continuation is never orphaned from its context.
+                    positioned += PositionedLine(page, y, y + HEADING_LINE_HEIGHT, HeadingLine("${block.headingText} (contd.)"), transaction, isFirstOfTransaction = false)
+                    y += HEADING_LINE_HEIGHT
+                }
+                positioned += PositionedLine(page, y, y + line.height, line, transaction, isFirstOfTransaction = isFirstLineOfTransaction)
+                y += line.height
+                isFirstLineOfTransaction = false
+            }
+        }
+        return positioned
     }
 }

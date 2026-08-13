@@ -4,10 +4,12 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerEntity
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementDao
+import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementInventoryRow
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementRow
 import com.budcom.android.feature.masterdata.ledger.data.local.VoucherNarrationRow
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -249,6 +251,128 @@ class GetLocalLedgerStatementUseCaseTest {
         assertEquals("estimation" to "ledger-1", ledgerDao.lastLookup)
         assertEquals("estimation" to ledger.name, movementDao.lastRangeScope)
     }
+
+    // --- Detailed mode (Ledger Sharing item-detail feature) ---
+
+    @Test
+    fun `Summary mode never queries inventory lines`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "200", "dr"))
+        useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Summary)
+        assertEquals(0, movementDao.inventoryQueryCalls)
+    }
+
+    @Test
+    fun `Detailed mode queries inventory lines exactly once regardless of transaction count`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(
+            row("v1", "2026-08-01", "Sales", "200", "dr"),
+            row("v2", "2026-08-02", "Sales", "300", "dr"),
+            row("v3", "2026-08-03", "Receipt", "50", "cr"),
+        )
+        useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-03"), LedgerStatementMode.Detailed)
+        assertEquals("one batched query must serve every displayed transaction, never N+1", 1, movementDao.inventoryQueryCalls)
+        assertEquals(setOf("v1", "v2", "v3"), movementDao.lastInventoryVoucherIds?.toSet())
+    }
+
+    @Test
+    fun `Detailed mode attaches correct item rows including quantity rate and amount`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "9450", "dr"))
+        movementDao.inventoryLines = listOf(
+            LedgerMovementInventoryRow("v1", 1, "Angle Cock - Flora", "20 Nos", "450.00", "9000.00", "dr"),
+            LedgerMovementInventoryRow("v1", 2, "Wall Mixer", "5 Nos", "90.00", "450.00", "dr"),
+        )
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
+        val statement = (result as AppResult.Success).value
+        val detail = statement.transactions.single().itemDetail
+
+        assertEquals(2, detail?.items?.size)
+        assertEquals("Angle Cock - Flora", detail?.items?.get(0)?.itemName)
+        assertEquals("20 Nos", detail?.items?.get(0)?.quantityLabel)
+        assertEquals("₹450.00", detail?.items?.get(0)?.rateLabel)
+        assertEquals("₹9,000.00", detail?.items?.get(0)?.amountLabel)
+    }
+
+    @Test
+    fun `Detailed mode item Total is the sum of the item amounts, independent of the ledger debit`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        // The ledger-line accounting amount (200) deliberately differs from the item lines' sum
+        // (9450) — a plausible real scenario (partial ledger allocation, rounding, tax lines not
+        // modeled as inventory) — proving the item Total is never derived from or compared against
+        // the authoritative accounting amount.
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "200", "dr"))
+        movementDao.inventoryLines = listOf(
+            LedgerMovementInventoryRow("v1", 1, "Angle Cock - Flora", "20 Nos", "450.00", "9000.00", "dr"),
+            LedgerMovementInventoryRow("v1", 2, "Wall Mixer", "5 Nos", "90.00", "450.00", "dr"),
+        )
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
+        val statement = (result as AppResult.Success).value
+        val transaction = statement.transactions.single()
+
+        assertEquals("₹9,450.00", transaction.itemDetail?.totalLabel)
+        assertEquals("the ledger debit must remain the untouched authoritative value", "200", transaction.debit)
+    }
+
+    @Test
+    fun `a non-item voucher never receives a fabricated item table in Detailed mode`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Receipt", "500", "cr"))
+        movementDao.inventoryLines = emptyList()
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
+        val statement = (result as AppResult.Success).value
+        assertNull(statement.transactions.single().itemDetail)
+    }
+
+    @Test
+    fun `Detailed mode never changes debit, credit, or running balance versus Summary mode`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "200", "dr"))
+        movementDao.lastSales = movementDao.movements
+        movementDao.inventoryLines = listOf(LedgerMovementInventoryRow("v1", 1, "Item", "1 Nos", "200.00", "200.00", "dr"))
+
+        val summary = (useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Summary) as AppResult.Success).value
+        val detailed = (useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed) as AppResult.Success).value
+
+        assertEquals(summary.openingBalance, detailed.openingBalance)
+        assertEquals(summary.closingBalance, detailed.closingBalance)
+        assertEquals(summary.transactions.single().debit, detailed.transactions.single().debit)
+        assertEquals(summary.transactions.single().credit, detailed.transactions.single().credit)
+        assertEquals(summary.transactions.single().runningBalance, detailed.transactions.single().runningBalance)
+    }
+
+    @Test
+    fun `all item lines are included with no truncation`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "1000", "dr"))
+        movementDao.inventoryLines = (1..12).map { n ->
+            LedgerMovementInventoryRow("v1", n, "Item $n", "$n Nos", "10.00", "${n * 10}.00", "dr")
+        }
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
+        val statement = (result as AppResult.Success).value
+        assertEquals(12, statement.transactions.single().itemDetail?.items?.size)
+    }
+
+    @Test
+    fun `item detail is attached to only the first ledger-line row for a voucher, never duplicated`() = runBlockingTest {
+        // A voucher with two ledger lines against the same ledger (a split entry) must still show
+        // the item block exactly once, not once per line.
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(
+            LedgerMovementRow("v1", "2026-08-01", "Sales", "v-1", null, 1, "100", "dr"),
+            LedgerMovementRow("v1", "2026-08-01", "Sales", "v-1", null, 2, "100", "dr"),
+        )
+        movementDao.inventoryLines = listOf(LedgerMovementInventoryRow("v1", 1, "Item", "1 Nos", "200.00", "200.00", "dr"))
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
+        val statement = (result as AppResult.Success).value
+        assertEquals(2, statement.transactions.size)
+        assertEquals(1, statement.transactions.count { it.itemDetail != null })
+    }
 }
 
 private class FakeLedgerDao : LedgerDao {
@@ -273,6 +397,10 @@ private class FakeLedgerMovementDao : LedgerMovementDao {
     var movements: List<LedgerMovementRow> = emptyList()
     var earliestDate: String? = "2000-01-01"
     var lastRangeScope: Pair<String, String>? = null
+    var inventoryLines: List<LedgerMovementInventoryRow> = emptyList()
+    var inventoryQueryCalls = 0
+        private set
+    var lastInventoryVoucherIds: List<String>? = null
 
     override suspend fun lastSalesMovements(companyId: String, ledgerName: String, limit: Int): List<LedgerMovementRow> =
         lastSales.take(limit)
@@ -282,6 +410,11 @@ private class FakeLedgerMovementDao : LedgerMovementDao {
     }
     override suspend fun narrations(companyId: String, voucherIds: List<String>): List<VoucherNarrationRow> = emptyList()
     override suspend fun earliestSyncedDate(companyId: String): String? = earliestDate
+    override suspend fun inventoryLinesForVouchers(companyId: String, voucherIds: List<String>): List<LedgerMovementInventoryRow> {
+        inventoryQueryCalls++
+        lastInventoryVoucherIds = voucherIds
+        return inventoryLines.filter { it.voucherId in voucherIds }
+    }
 }
 
 /** No coroutine test dispatcher is needed: every DAO call here is a synchronous fake, so a plain

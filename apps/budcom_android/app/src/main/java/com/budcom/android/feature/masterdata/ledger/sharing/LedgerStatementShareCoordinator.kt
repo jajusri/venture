@@ -7,6 +7,14 @@ import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
 interface LedgerStatementShareCoordinator {
     suspend fun preparePdf(statement: LedgerStatement, companyName: String?): LedgerStatementShareResult<PreparedLedgerStatementPdf>
     fun createPdfShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent>
+
+    /** Same generic PDF share intent, constrained to WhatsApp ("open WhatsApp and let the user
+     * choose recipient" — never a specific contact). Fails distinctly, without releasing [pdf]'s
+     * caller-visible state prematurely, when WhatsApp is not installed. */
+    fun createWhatsAppShareIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent>
+
+    /** A view-only intent for the optional Preview PDF action — never a send action. */
+    fun createPreviewIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent>
     suspend fun savePdf(pdf: PreparedLedgerStatementPdf, destination: Uri): LedgerStatementShareResult<Unit>
     fun releasePdf(pdf: PreparedLedgerStatementPdf)
 }

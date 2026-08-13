@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,10 +15,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDestination
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
@@ -32,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,6 +54,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -87,7 +95,7 @@ fun LedgerStatementRoute(
     LedgerStatementScreen(state = state, onEvent = viewModel::onEvent, onBack = onBack)
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LedgerStatementScreen(
     state: LedgerStatementUiState,
@@ -112,12 +120,24 @@ fun LedgerStatementScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = { onEvent(LedgerStatementEvent.OpenShareOptions) },
-                        enabled = state.hasContent,
-                        modifier = Modifier.testTag("ledger_statement_share_button"),
+                    // Tap: immediately shares using the remembered default (Settings -> Ledger
+                    // Sharing) with no options screen — the locked ~3-tap fast path. Long-press:
+                    // opens advanced/change options for a one-time override, reusing this same
+                    // icon rather than adding new UI chrome (no separate overflow pattern existed
+                    // on this screen to reuse instead).
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .combinedClickable(
+                                enabled = state.hasContent && !state.isShareBusy,
+                                onClick = { onEvent(LedgerStatementEvent.ShareLedgerFast) },
+                                onLongClick = { onEvent(LedgerStatementEvent.OpenShareOptions) },
+                            )
+                            .testTag("ledger_statement_share_button")
+                            .semantics { contentDescription = "Share ledger statement. Long-press for more options." },
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Filled.Share, contentDescription = "Share ledger statement")
+                        Icon(Icons.Filled.Share, contentDescription = null)
                     }
                 },
             )
@@ -169,25 +189,156 @@ fun LedgerStatementScreen(
 
     if (state.showShareOptions) {
         ModalBottomSheet(onDismissRequest = { onEvent(LedgerStatementEvent.DismissShareOptions) }) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    onClick = { onEvent(LedgerStatementEvent.SharePdf) },
-                    enabled = !state.isShareBusy,
-                    modifier = Modifier.fillMaxWidth().testTag("ledger_statement_share_pdf"),
-                ) { Text("Share Ledger PDF") }
-                TextButton(
-                    onClick = { onEvent(LedgerStatementEvent.SavePdf) },
-                    enabled = !state.isShareBusy,
-                    modifier = Modifier.fillMaxWidth().testTag("ledger_statement_save_pdf"),
-                ) { Text("Save Ledger PDF") }
-                state.shareError?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("ledger_statement_share_error"))
-                }
-                state.shareMessage?.let {
-                    Text(it, modifier = Modifier.testTag("ledger_statement_share_message"))
-                }
-            }
+            LedgerShareAdvancedOptions(state = state, onEvent = onEvent)
         }
+    }
+}
+
+private val ADVANCED_PERIOD_CHOICES: List<Pair<String, LedgerPeriodSelection>> = listOf(
+    "Current FY" to LedgerPeriodSelection.CurrentFinancialYear,
+    "Today" to LedgerPeriodSelection.Today,
+    "This Month" to LedgerPeriodSelection.ThisMonth,
+    "Last Month" to LedgerPeriodSelection.LastMonth,
+)
+
+/**
+ * The one advanced/change-options surface, reached only by long-pressing Share Ledger. Every
+ * choice here applies to exactly one share — see [LedgerStatementEvent.AdvancedShare]'s doc
+ * comment — never the persisted default (Settings -> Ledger Sharing is the only place that
+ * changes).
+ */
+@Composable
+private fun LedgerShareAdvancedOptions(
+    state: LedgerStatementUiState,
+    onEvent: (LedgerStatementEvent) -> Unit,
+) {
+    var showCustomPeriodDialog by remember { mutableStateOf(false) }
+    val effectivePeriod = state.advancedPeriod ?: state.periodSelection
+    val effectiveMode = state.advancedStatementMode ?: state.sharingPreferences.statementMode
+
+    Column(
+        modifier = Modifier
+            .padding(16.dp)
+            .testTag("ledger_statement_advanced_options"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Period", style = MaterialTheme.typography.labelLarge)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ADVANCED_PERIOD_CHOICES.forEach { (label, period) ->
+                AdvancedOptionChip(
+                    label = label,
+                    selected = effectivePeriod == period,
+                    onClick = { onEvent(LedgerStatementEvent.AdvancedPeriodChanged(period)) },
+                    testTag = "ledger_statement_advanced_period_${period::class.simpleName}",
+                )
+            }
+            AdvancedOptionChip(
+                label = "Custom…",
+                selected = effectivePeriod is LedgerPeriodSelection.Custom,
+                onClick = { showCustomPeriodDialog = true },
+                testTag = "ledger_statement_advanced_period_custom",
+            )
+        }
+
+        Text("Statement", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            StatementModeOption(
+                label = "Summary",
+                selected = effectiveMode == LedgerStatementMode.Summary,
+                onClick = { onEvent(LedgerStatementEvent.AdvancedStatementModeChanged(LedgerStatementMode.Summary)) },
+                testTag = "ledger_statement_advanced_mode_summary",
+            )
+            StatementModeOption(
+                label = "Detailed",
+                selected = effectiveMode == LedgerStatementMode.Detailed,
+                onClick = { onEvent(LedgerStatementEvent.AdvancedStatementModeChanged(LedgerStatementMode.Detailed)) },
+                testTag = "ledger_statement_advanced_mode_detailed",
+            )
+        }
+
+        Text("Share to", style = MaterialTheme.typography.labelLarge)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.fillMaxWidth().testTag("ledger_statement_destination_whatsapp_party"),
+            ) {
+                Text("WhatsApp to Party — not available yet (no phone number linked)")
+            }
+            TextButton(
+                onClick = { onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.WhatsAppSelect)) },
+                enabled = !state.isShareBusy,
+                modifier = Modifier.fillMaxWidth().testTag("ledger_statement_destination_whatsapp_select"),
+            ) { Text("WhatsApp — choose recipient") }
+            TextButton(
+                onClick = { onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.AndroidShare)) },
+                enabled = !state.isShareBusy,
+                modifier = Modifier.fillMaxWidth().testTag("ledger_statement_destination_android_share"),
+            ) { Text("Share via…") }
+            TextButton(
+                onClick = { onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.SavePdf)) },
+                enabled = !state.isShareBusy,
+                modifier = Modifier.fillMaxWidth().testTag("ledger_statement_destination_save_pdf"),
+            ) { Text("Save PDF") }
+            TextButton(
+                onClick = { onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.PreviewPdf)) },
+                enabled = !state.isShareBusy,
+                modifier = Modifier.fillMaxWidth().testTag("ledger_statement_destination_preview_pdf"),
+            ) { Text("Preview PDF") }
+        }
+
+        state.shareError?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("ledger_statement_share_error"))
+        }
+        state.shareMessage?.let {
+            Text(it, modifier = Modifier.testTag("ledger_statement_share_message"))
+        }
+    }
+
+    if (showCustomPeriodDialog) {
+        LedgerStatementPeriodDialog(
+            fromDate = state.fromDate,
+            toDate = state.toDate,
+            onConfirm = { from, to ->
+                showCustomPeriodDialog = false
+                onEvent(LedgerStatementEvent.AdvancedPeriodChanged(LedgerPeriodSelection.Custom(from, to)))
+            },
+            onDismiss = { showCustomPeriodDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun AdvancedOptionChip(label: String, selected: Boolean, onClick: () -> Unit, testTag: String) {
+    val colors = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Box(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .background(colors.first, shape = MaterialTheme.shapes.small)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .testTag(testTag),
+    ) {
+        Text(label, color = colors.second, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@Composable
+private fun StatementModeOption(label: String, selected: Boolean, onClick: () -> Unit, testTag: String) {
+    Row(
+        modifier = Modifier
+            .selectable(selected = selected, onClick = onClick)
+            .testTag(testTag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(label)
     }
 }
 

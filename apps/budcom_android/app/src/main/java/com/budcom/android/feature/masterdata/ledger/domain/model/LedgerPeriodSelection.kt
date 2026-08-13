@@ -13,7 +13,9 @@ sealed interface LedgerPeriodSelection {
     /** Last 7 regular Sales vouchers for the ledger, plus every accounting movement from the
      * earliest of those 7 through today. See [LedgerPeriodDefaults.DEFAULT_LAST_SALES_COUNT]. */
     data object Last7Sales : LedgerPeriodSelection
+    data object Today : LedgerPeriodSelection
     data object ThisMonth : LedgerPeriodSelection
+    data object LastMonth : LedgerPeriodSelection
     data object CurrentFinancialYear : LedgerPeriodSelection
     data object PreviousFinancialYear : LedgerPeriodSelection
     data object Last30Days : LedgerPeriodSelection
@@ -33,6 +35,11 @@ object LedgerPeriodDefaults {
     private val BUSINESS_ZONE: ZoneId = ZoneId.of("Asia/Kolkata")
 
     fun today(clock: Clock = Clock.system(BUSINESS_ZONE)): LocalDate = LocalDate.now(clock.withZone(BUSINESS_ZONE))
+
+    fun todayRange(clock: Clock = Clock.system(BUSINESS_ZONE)): LedgerStatementDateRange {
+        val today = today(clock).toString()
+        return LedgerStatementDateRange(from = today, to = today)
+    }
 
     /** 1 April -> [today], inclusive. A 1 Jan-31 Mar "today" belongs to the FY that started the
      * previous calendar year (e.g. 2026-02-01 is inside FY 2025-26, not FY 2026-27). */
@@ -58,6 +65,13 @@ object LedgerPeriodDefaults {
     fun thisMonth(clock: Clock = Clock.system(BUSINESS_ZONE)): LedgerStatementDateRange {
         val today = today(clock)
         return LedgerStatementDateRange(from = today.withDayOfMonth(1).toString(), to = today.toString())
+    }
+
+    /** The full 1st-to-last-day calendar month immediately before the current one. */
+    fun lastMonth(clock: Clock = Clock.system(BUSINESS_ZONE)): LedgerStatementDateRange {
+        val firstOfThisMonth = today(clock).withDayOfMonth(1)
+        val lastMonthEnd = firstOfThisMonth.minusDays(1)
+        return LedgerStatementDateRange(from = lastMonthEnd.withDayOfMonth(1).toString(), to = lastMonthEnd.toString())
     }
 
     fun last30Days(clock: Clock = Clock.system(BUSINESS_ZONE)): LedgerStatementDateRange {

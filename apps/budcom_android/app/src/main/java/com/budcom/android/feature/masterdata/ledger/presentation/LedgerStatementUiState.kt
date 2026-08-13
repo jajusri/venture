@@ -4,7 +4,10 @@ import com.budcom.android.core.common.AppError
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPeriodSelection
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementAmount
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementTransaction
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferences
+import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDestination
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.masterdata.presentation.toMasterDataUiError
 
@@ -23,7 +26,18 @@ data class LedgerStatementUiState(
     val error: MasterDataUiError? = null,
     /** Set only when a manual refresh fails while cached content remains visible. */
     val refreshError: String? = null,
+    /** Remembered Ledger Sharing defaults (Settings -> Ledger Sharing). The normal Share Ledger
+     * tap uses these immediately; see [LedgerStatementEvent.ShareLedgerFast]. */
+    val sharingPreferences: LedgerSharingPreferences = LedgerSharingPreferences(),
+    /** True while the advanced/change-options sheet (long-press on Share Ledger) is open. */
     val showShareOptions: Boolean = false,
+    /** One-time overrides live only while the advanced sheet is open — `null` means "use the
+     * current on-screen period" (for period) or "use the remembered default" (mode/destination).
+     * Confirming a share from the advanced sheet never writes these back as the new persisted
+     * default — only Settings -> Ledger Sharing changes the default. */
+    val advancedPeriod: LedgerPeriodSelection? = null,
+    val advancedStatementMode: LedgerStatementMode? = null,
+    val advancedDestination: LedgerShareDestination? = null,
     val isShareBusy: Boolean = false,
     val shareMessage: String? = null,
     val shareError: String? = null,
@@ -63,10 +77,19 @@ sealed interface LedgerStatementEvent {
     /** Ignored for a blank id — a transaction row always carries the real Voucher identity, so a
      * blank id here means the row itself is malformed, never a legitimate deep link to reject. */
     data class TransactionTapped(val voucherId: String) : LedgerStatementEvent
+    /** Normal Share Ledger tap — uses [LedgerStatementUiState.sharingPreferences] and the
+     * currently displayed period immediately, with no options screen. */
+    data object ShareLedgerFast : LedgerStatementEvent
+    /** Long-press on Share Ledger — opens the advanced/change-options sheet for a one-time
+     * override; see [LedgerStatementUiState.advancedPeriod] and siblings. */
     data object OpenShareOptions : LedgerStatementEvent
     data object DismissShareOptions : LedgerStatementEvent
-    data object SharePdf : LedgerStatementEvent
-    data object SavePdf : LedgerStatementEvent
+    data class AdvancedPeriodChanged(val period: LedgerPeriodSelection) : LedgerStatementEvent
+    data class AdvancedStatementModeChanged(val mode: LedgerStatementMode) : LedgerStatementEvent
+    /** Confirms the advanced sheet for exactly one share to [destination] — never persisted as
+     * the new default. Also the sole path for Save PDF and Preview PDF, which are destinations
+     * rather than separate top-level actions. */
+    data class AdvancedShare(val destination: LedgerShareDestination) : LedgerStatementEvent
     data class SaveDestinationSelected(val uri: android.net.Uri?) : LedgerStatementEvent
     data class ShareActivityFinished(val cancelled: Boolean) : LedgerStatementEvent
 }

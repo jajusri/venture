@@ -14,6 +14,13 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- Package-visibility (Android 11+): resolveActivity(WHATSAPP_PACKAGE) for the ledger
+         statement's "WhatsApp Select" share destination would otherwise always report WhatsApp
+         as not installed, even when it is. -->
+    <queries>
+        <package android:name="com.whatsapp" />
+    </queries>
+
     <application
         android:name=".app.BudcomApplication"
         android:allowBackup="false"
