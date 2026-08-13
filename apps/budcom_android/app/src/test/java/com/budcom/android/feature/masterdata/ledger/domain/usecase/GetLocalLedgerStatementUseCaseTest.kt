@@ -280,8 +280,11 @@ class GetLocalLedgerStatementUseCaseTest {
         ledgerDao.entity = ledger
         movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "9450", "dr"))
         movementDao.inventoryLines = listOf(
-            LedgerMovementInventoryRow("v1", 1, "Angle Cock - Flora", "20 Nos", "450.00", "9000.00", "dr"),
-            LedgerMovementInventoryRow("v1", 2, "Wall Mixer", "5 Nos", "90.00", "450.00", "dr"),
+            // "450.00/Nos" mirrors Tally's actual stored rate format (compound, not a plain
+            // decimal) — see `rate preserves the exact stored Tally text, including compound
+            // unit-rate strings` below for the dedicated regression coverage.
+            LedgerMovementInventoryRow("v1", 1, "Angle Cock - Flora", "20 Nos", "450.00/Nos", "9000.00", "dr"),
+            LedgerMovementInventoryRow("v1", 2, "Wall Mixer", "5 Nos", "90.00/Nos", "450.00", "dr"),
         )
 
         val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
@@ -291,8 +294,76 @@ class GetLocalLedgerStatementUseCaseTest {
         assertEquals(2, detail?.items?.size)
         assertEquals("Angle Cock - Flora", detail?.items?.get(0)?.itemName)
         assertEquals("20 Nos", detail?.items?.get(0)?.quantityLabel)
-        assertEquals("₹450.00", detail?.items?.get(0)?.rateLabel)
+        assertEquals("450.00/Nos", detail?.items?.get(0)?.rateLabel)
         assertEquals("₹9,000.00", detail?.items?.get(0)?.amountLabel)
+    }
+
+    @Test
+    fun `rate preserves the exact stored Tally text, including compound unit-rate strings`() = runBlockingTest {
+        // Reproduces the physical continuity.12 acceptance failure: Tally's stored rate for an
+        // inventory line is a compound display string like "26.00/Nos", not a plain decimal.
+        // Against the previous mapping (`line.rate?.toBigDecimalOrNull()?.let(::formatInr)`),
+        // "26.00/Nos".toBigDecimalOrNull() is null, so rateLabel silently became null and every
+        // Rate cell rendered blank in the shared PDF. The corrected mapping must preserve the
+        // stored text verbatim — never parse, reformat, or derive it.
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "1300", "dr"))
+        movementDao.inventoryLines = listOf(
+            LedgerMovementInventoryRow("v1", 1, "Turkey Tap", "50 Nos", "26.00/Nos", "1300", "dr"),
+        )
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
+        val item = (result as AppResult.Success).value.transactions.single().itemDetail?.items?.single()
+
+        assertEquals("26.00/Nos", item?.rateLabel)
+        // Quantity/unit and amount are independent fields and must be unaffected by the rate fix.
+        assertEquals("50 Nos", item?.quantityLabel)
+        assertEquals("₹1,300.00", item?.amountLabel)
+    }
+
+    @Test
+    fun `a blank or null rate remains safely blank, never a fabricated value`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "100", "dr"))
+        movementDao.inventoryLines = listOf(
+            LedgerMovementInventoryRow("v1", 1, "Item A", "1 Nos", null, "50", "dr"),
+            LedgerMovementInventoryRow("v1", 2, "Item B", "1 Nos", "", "50", "dr"),
+        )
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
+        val items = (result as AppResult.Success).value.transactions.single().itemDetail?.items
+
+        assertNull(items?.get(0)?.rateLabel)
+        assertNull(items?.get(1)?.rateLabel)
+    }
+
+    @Test
+    fun `a plain decimal rate string is preserved as-is, not reformatted with a currency symbol`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "100", "dr"))
+        movementDao.inventoryLines = listOf(
+            LedgerMovementInventoryRow("v1", 1, "Item A", "1 Nos", "100.00", "100", "dr"),
+        )
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
+        val item = (result as AppResult.Success).value.transactions.single().itemDetail?.items?.single()
+
+        assertEquals("100.00", item?.rateLabel)
+    }
+
+    @Test
+    fun `the rate fix does not alter ledger accounting values`() = runBlockingTest {
+        ledgerDao.entity = ledger
+        movementDao.movements = listOf(row("v1", "2026-08-01", "Sales", "1300", "dr"))
+        movementDao.inventoryLines = listOf(
+            LedgerMovementInventoryRow("v1", 1, "Turkey Tap", "50 Nos", "26.00/Nos", "1300", "dr"),
+        )
+
+        val result = useCase("estimation", "ledger-1", LedgerPeriodSelection.Custom("2026-08-01", "2026-08-01"), LedgerStatementMode.Detailed)
+        val transaction = (result as AppResult.Success).value.transactions.single()
+
+        assertEquals("1300", transaction.debit)
+        assertEquals(null, transaction.credit)
     }
 
     @Test

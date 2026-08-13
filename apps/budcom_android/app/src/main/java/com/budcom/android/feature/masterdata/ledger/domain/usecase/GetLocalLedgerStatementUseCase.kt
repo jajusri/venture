@@ -222,7 +222,10 @@ class GetLocalLedgerStatementUseCase @Inject constructor(
             LedgerStatementItemLine(
                 itemName = line.itemName,
                 quantityLabel = line.quantity?.takeIf(String::isNotBlank),
-                rateLabel = line.rate?.toBigDecimalOrNull()?.let(::formatInr),
+                // Tally's stored rate is a compound display string (e.g. "26.00/Nos"), not a
+                // plain decimal — must be preserved verbatim, never parsed/reformatted. Matches
+                // the existing precedent in VoucherDetailsUiState's own rate mapping.
+                rateLabel = line.rate?.takeIf(String::isNotBlank),
                 amountLabel = line.amountValue?.toBigDecimalOrNull()?.let(::formatInr),
             )
         }
