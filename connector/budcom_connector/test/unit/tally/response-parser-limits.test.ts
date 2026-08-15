@@ -77,22 +77,75 @@ describe('TallyXmlResponseParser bounded limits', () => {
     ).maxBytes).toBe(VOUCHER_COLLECTION_MAX_RESPONSE_BYTES);
   });
 
-  it.each([
-    ['literal control', '<ENVELOPE>\u0004</ENVELOPE>', 'literal'],
-    ['numeric control reference', '<ENVELOPE>&#4;</ENVELOPE>', 'numeric-reference'],
-  ])('rejects an XML 1.0-invalid %s with a privacy-safe location', (_, xml, representation) => {
-    try {
-      parser.parse(xml);
-      throw new Error('Expected parser rejection.');
-    } catch (error) {
-      const parseError = error as XmlParseError;
-      expect(parseError.reason).toBe('xml_illegal_character');
-      expect(parseError.details).toMatchObject({
-        representation,
-        line: 1,
-      });
-      expect(parseError.details?.byteOffset).toBeGreaterThan(0);
-    }
+  // TD-001 fix (2026-08-16, approved architectural decision): the shared parser used to
+  // hard-reject any XML-1.0-illegal C0 control character with `xml_illegal_character`.
+  // Tally is known to emit these (documented artifact: `&#4;`, TD-001) in ordinary
+  // free-text fields, which broke the entire response rather than just the one field.
+  // The parser now sanitizes (removes) illegal characters -- both literal bytes and
+  // numeric character references -- before structural parsing, which itself remains
+  // fully strict. These tests cover the sanitizer's exact contract.
+  describe('XML 1.0-illegal character sanitization', () => {
+    it('removes an illegal literal control character (0x04) and reports the count', () => {
+      const xml = '<ENVELOPE><A>x' + String.fromCharCode(4) + 'y</A></ENVELOPE>';
+      const document = parser.parse(xml);
+      expect(document.illegalCharactersSanitized).toBe(1);
+      expect(parser.findFirst(document, 'A')?.text).toBe('xy');
+    });
+
+    it('removes an illegal decimal numeric reference (&#4;) and reports the count', () => {
+      const document = parser.parse('<ENVELOPE><A>x&#4;y</A></ENVELOPE>');
+      expect(document.illegalCharactersSanitized).toBe(1);
+      expect(parser.findFirst(document, 'A')?.text).toBe('xy');
+    });
+
+    it('removes an illegal hexadecimal numeric reference (&#x4;) and reports the count', () => {
+      const document = parser.parse('<ENVELOPE><A>x&#x4;y</A></ENVELOPE>');
+      expect(document.illegalCharactersSanitized).toBe(1);
+      expect(parser.findFirst(document, 'A')?.text).toBe('xy');
+    });
+
+    it('is class-based, not hard-coded to 0x04 -- also sanitizes an unrelated illegal C0 value', () => {
+      // 0x1F (Unit Separator) -- a different illegal C0 control character than the
+      // TD-001 example, proving the sanitizer targets the whole illegal-character class.
+      const document = parser.parse('<ENVELOPE><A>x&#31;y</A></ENVELOPE>');
+      expect(document.illegalCharactersSanitized).toBe(1);
+      expect(parser.findFirst(document, 'A')?.text).toBe('xy');
+    });
+
+    it('sanitizes a lone UTF-16 surrogate numeric reference (also illegal under XML 1.0)', () => {
+      const document = parser.parse('<ENVELOPE><A>x&#xD800;y</A></ENVELOPE>');
+      expect(document.illegalCharactersSanitized).toBe(1);
+      expect(parser.findFirst(document, 'A')?.text).toBe('xy');
+    });
+
+    it('preserves legal XML whitespace -- literal and numeric-reference forms -- untouched', () => {
+      const literal = parser.parse('<ENVELOPE><A>tab\tlf\nspace</A></ENVELOPE>');
+      expect(literal.illegalCharactersSanitized).toBe(0);
+      expect(parser.findFirst(literal, 'A')?.text).toBe('tab\tlf\nspace');
+
+      const numericReferences = parser.parse('<ENVELOPE><A>x&#9;&#10;&#13;y</A></ENVELOPE>');
+      expect(numericReferences.illegalCharactersSanitized).toBe(0);
+    });
+
+    it('leaves ordinary Unicode and business text completely unchanged', () => {
+      const xml = '<ENVELOPE><A>Ramesh &amp; Sons — ₹12,345.67 — नमस्ते</A></ENVELOPE>';
+      const document = parser.parse(xml);
+      expect(document.illegalCharactersSanitized).toBe(0);
+      expect(parser.findFirst(document, 'A')?.text).toBe(
+        'Ramesh & Sons — ₹12,345.67 — नमस्ते',
+      );
+    });
+
+    it('sanitizes an illegal character but still rejects the document if it is structurally malformed', () => {
+      // Illegal character sanitation must not paper over a genuinely broken document --
+      // this tag is never closed, independent of the illegal character inside it.
+      expect(() => parser.parse('<ENVELOPE><A>x&#4;y</ENVELOPE>')).toThrow(XmlParseError);
+    });
+
+    it('does not affect an already-legal document (zero sanitized, identical structure)', () => {
+      const document = parser.parse(SAMPLE_LEDGERS_RESPONSE);
+      expect(document.illegalCharactersSanitized).toBe(0);
+    });
   });
 
   it('rejects valid root with trailing text', () => {

@@ -26,6 +26,11 @@ class VoucherSyncFailure extends Error {
   constructor(
     readonly reason: string,
     readonly repositoryCode: string | null = null,
+    /** Granular, privacy-safe diagnostic subtype (a fixed reasonCode string, never raw
+     * error text or business content) -- preserved alongside the coarse `reason` bucket
+     * so operators/support tooling can distinguish e.g. malformed-xml from
+     * missing-envelope without the external classification losing its stability. */
+    readonly detail: string | null = null,
   ) {
     super(reason);
     this.name = 'VoucherSyncFailure';
@@ -181,7 +186,11 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
         if (error instanceof AppError && error.code === ErrorCodes.SYNC_CANCELLED) {
           throw new VoucherSyncCancelled();
         }
-        throw new VoucherSyncFailure(classifyExtractionFailure(error));
+        throw new VoucherSyncFailure(
+          classifyExtractionFailure(error),
+          null,
+          extractFailureDetail(error),
+        );
       }
       checkCancellation(cancellation);
 
@@ -257,6 +266,7 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
         startedAt,
         startedMs,
         persistedVoucherCount,
+        illegalCharactersSanitized: extractionResult.illegalCharactersSanitized,
       });
     } catch (error) {
       const cancelled = error instanceof VoucherSyncCancelled;
@@ -264,6 +274,7 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
         ? error.code
         : error instanceof VoucherSyncFailure ? error.repositoryCode : null;
       const failureReason = cancelled ? 'cancelled' : classifyFailure(error);
+      const failureDetail = !cancelled && error instanceof VoucherSyncFailure ? error.detail : null;
       let rollbackStatus: VoucherSyncRollbackStatus = 'not_required';
       if (snapshotStarted && !promotionOccurred && snapshotId) {
         try {
@@ -289,11 +300,13 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
         previousActiveSnapshotPreserved: !promotionOccurred,
         promotionOccurred,
         failureReason,
+        failureDetail,
         notificationFailureCount,
         rollbackStatus,
         startedAt,
         startedMs,
         persistedVoucherCount,
+        illegalCharactersSanitized: extractionResult?.illegalCharactersSanitized ?? 0,
       });
     } finally {
       if (reservationAcquired) {
@@ -416,6 +429,22 @@ function classifyExtractionFailure(error: unknown): string {
   return 'extraction_failure';
 }
 
+/**
+ * Granular, privacy-safe diagnostic subtype for an extraction failure -- a fixed
+ * reasonCode string (e.g. 'malformed-xml', 'missing-envelope', 'voucher-ledger-validation'),
+ * never raw error text or business content. `classifyExtractionFailure` above collapses
+ * these into a small stable external bucket ('parser_failure' etc.); this preserves the
+ * finer distinction the external bucket alone loses, without changing that external
+ * contract.
+ */
+function extractFailureDetail(error: unknown): string | null {
+  if (error instanceof AppError) {
+    const reasonCode = error.details?.reasonCode;
+    if (typeof reasonCode === 'string' && reasonCode) return reasonCode;
+  }
+  return null;
+}
+
 function result(input: {
   logger?: Logger;
   company: string;
@@ -430,11 +459,13 @@ function result(input: {
   previousActiveSnapshotPreserved?: boolean;
   promotionOccurred?: boolean;
   failureReason?: string | null;
+  failureDetail?: string | null;
   notificationFailureCount?: number;
   rollbackStatus?: VoucherSyncRollbackStatus;
   startedAt: string;
   startedMs: number;
   persistedVoucherCount?: number;
+  illegalCharactersSanitized?: number;
 }): VoucherSynchronizationResult {
   const metrics = input.metrics ?? createMetrics();
   const finishedMs = Date.now();
@@ -452,7 +483,9 @@ function result(input: {
     previousActiveSnapshotPreserved: input.previousActiveSnapshotPreserved ?? false,
     promotionOccurred: input.promotionOccurred ?? false,
     failureReason: input.failureReason ?? null,
+    failureDetail: input.failureDetail ?? null,
     notificationFailureCount: input.notificationFailureCount ?? 0,
+    illegalCharactersSanitized: input.illegalCharactersSanitized ?? 0,
     startedAt: input.startedAt,
     finishedAt: new Date(finishedMs).toISOString(),
     durationMs: Math.max(0, finishedMs - input.startedMs),
@@ -476,6 +509,10 @@ function result(input: {
       droppedVouchers: summary.droppedVouchers,
       rollbackStatus: summary.rollbackStatus,
       promoted: summary.promoted,
+      // Fixed reasonCode strings only -- never raw error text or business content.
+      failureReason: summary.failureReason,
+      failureDetail: summary.failureDetail,
+      illegalCharactersSanitized: summary.illegalCharactersSanitized,
     });
   } catch {
     // Logging is observational and must never affect synchronization.

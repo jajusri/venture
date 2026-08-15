@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   TallyXmlResponseParser,
-  XmlParseError,
   type ParsedXmlNode,
 } from '../../../src/tally/xml/response-parser.js';
 
@@ -144,8 +143,14 @@ describe('two-phase Voucher and ledger extraction design', () => {
     expect(() => extractTwoPhase(DISCOVERY_XML, ledgerXml)).toThrow(expected);
   });
 
-  it('rejects the illegal XML emitted by a broad direct compound fetch', () => {
-    const malformedBroadExpansion = envelope(`<VOUCHER>
+  // TD-001 fix (2026-08-16): the shared parser now sanitizes XML-1.0-illegal characters
+  // (e.g. this fixture's &#4;, the exact Tally artifact TD-001 documented) instead of
+  // rejecting the whole response. This fixture's compound ALLLEDGERENTRIES.LIST shape is
+  // rejected separately, downstream, by the real TallyVoucherExtractor's
+  // enforceTwoPhase guard (voucher-extractor.ts) -- not by this framework-level parser,
+  // and not exercised by this design-reference test file's local reimplementation.
+  it('sanitizes the illegal character in a broad direct compound fetch rather than rejecting the whole response', () => {
+    const broadExpansionWithIllegalCharacter = envelope(`<VOUCHER>
       <DATE>20260724</DATE>
       <ALLLEDGERENTRIES.LIST>
         <LEDGERNAME>Fixture Ledger</LEDGERNAME>
@@ -153,13 +158,11 @@ describe('two-phase Voucher and ledger extraction design', () => {
       </ALLLEDGERENTRIES.LIST>
     </VOUCHER>`);
 
-    try {
-      new TallyXmlResponseParser().parse(malformedBroadExpansion);
-      expect.fail('broad compound expansion XML unexpectedly parsed');
-    } catch (error) {
-      expect(error).toBeInstanceOf(XmlParseError);
-      expect((error as XmlParseError).reason).toBe('xml_illegal_character');
-    }
+    const parser = new TallyXmlResponseParser();
+    const document = parser.parse(broadExpansionWithIllegalCharacter);
+    expect(document.illegalCharactersSanitized).toBe(1);
+    expect(parser.findFirst(document, 'GSTCLASS')?.text).toBeUndefined();
+    expect(parser.findAll(document, 'ALLLEDGERENTRIES.LIST')).toHaveLength(1);
   });
 });
 

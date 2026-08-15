@@ -88,6 +88,7 @@ export function createVouchersRouter(
             itemsSkipped: result.rejectedVoucherCount,
             itemsFailed: result.outcome === 'failed' ? 1 : 0,
             lastError: result.failureReason,
+            lastErrorDetail: result.failureDetail,
             cancelRequested: false,
           },
         });

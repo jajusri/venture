@@ -73,6 +73,7 @@ function extractionResult(
     responseStatus: items.length ? 'records' : 'empty',
     durationMs: 1,
     rawByteLength: 1,
+    illegalCharactersSanitized: 0,
     ...overrides,
   };
 }
@@ -194,6 +195,65 @@ describe('VoucherSnapshotSyncServiceImpl', () => {
       promotionOccurred: false,
     });
     expect(extract).toHaveBeenCalledTimes(1);
+  });
+
+  // Diagnostic hardening (2026-08-16, TD-001 follow-up): classifyExtractionFailure()
+  // collapses seven distinct parser causes into the single external 'parser_failure'
+  // bucket for compatibility -- this proves the granular, privacy-safe reasonCode
+  // (failureDetail) survives alongside it instead of being discarded, and that it is
+  // exactly the fixed enum string from AppError.details.reasonCode, never raw error
+  // text or business content.
+  it.each([
+    ['malformed-xml', 'Voucher response is not well-formed XML.'],
+    ['missing-envelope', 'Voucher response root must be ENVELOPE.'],
+    ['missing-header', 'Voucher response is missing HEADER.'],
+    ['missing-body', 'Voucher response is missing BODY.'],
+    ['missing-data', 'Voucher response is missing BODY/DATA.'],
+    ['missing-collection', 'Voucher response is missing BODY/DATA/COLLECTION.'],
+    ['voucher-discovery-expansion', 'Voucher discovery response contains forbidden monetary or compound fields.'],
+    ['voucher-ledger-validation', 'Voucher ledger response failed closed validation.'],
+    ['voucher-inventory-validation', 'Voucher inventory response failed closed validation.'],
+  ])('preserves the granular reasonCode %s as failureDetail without leaking the raw message', async (reasonCode, message) => {
+    const repo = repository();
+    const extract = vi.fn<VoucherReadPort['readVouchers']>().mockRejectedValue(
+      new AppError(ErrorCodes.VALIDATION_ERROR, message, 422, { reasonCode }),
+    );
+    const result = await service(repo, extract)
+      .synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    expect(result).toMatchObject({
+      outcome: 'failed',
+      failureReason: 'parser_failure',
+      failureDetail: reasonCode,
+    });
+    expect(JSON.stringify(result)).not.toContain(message);
+  });
+
+  it('preserves failureDetail as tally_source_error-adjacent null shape when the reasonCode indicates a Tally source error', async () => {
+    const repo = repository();
+    const extract = vi.fn<VoucherReadPort['readVouchers']>().mockRejectedValue(
+      new AppError(ErrorCodes.VALIDATION_ERROR, 'Tally returned a source error for the Voucher export.', 422, {
+        reasonCode: 'tally-source-error',
+      }),
+    );
+    const result = await service(repo, extract)
+      .synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    expect(result).toMatchObject({
+      outcome: 'failed',
+      failureReason: 'tally_source_error',
+      failureDetail: 'tally-source-error',
+    });
+  });
+
+  it('reports illegalCharactersSanitized on a successful sync that required sanitization', async () => {
+    const repo = repository();
+    const result = await service(
+      repo,
+      async () => extractionResult([vouchers[0]!], { illegalCharactersSanitized: 2 }),
+    ).synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    expect(result).toMatchObject({ outcome: 'completed', illegalCharactersSanitized: 2 });
   });
 
   it.each(['writeVoucherBatch', 'finalizeSnapshot', 'promoteSnapshot'] as const)(

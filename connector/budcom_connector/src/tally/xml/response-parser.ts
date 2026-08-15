@@ -23,6 +23,13 @@ export interface ParsedXmlNode {
 export interface ParsedXmlDocument {
   readonly root: ParsedXmlNode;
   readonly rawXml: string;
+  /**
+   * Count of XML-1.0-illegal C0 control characters (literal bytes or numeric character
+   * references, e.g. Tally's known `&#4;` export artifact) removed before parsing. A
+   * count only — never the removed characters' surrounding content — so this is safe to
+   * log as telemetry without exposing business data. Zero when nothing was removed.
+   */
+  readonly illegalCharactersSanitized: number;
 }
 
 export type XmlNodeHandler = (node: ParsedXmlNode, document: ParsedXmlDocument) => void;
@@ -61,13 +68,17 @@ export class TallyXmlResponseParser {
         maxBytes: limits.maxBytes,
       });
     }
-    assertXml10Characters(rawXml);
+    // Known Tally export artifact (TD-001): illegal XML 1.0 C0 control characters, most
+    // commonly the numeric reference `&#4;`, occasionally reaching the parser in free-text
+    // fields (Voucher narration/party name, Group parent, etc). These are removed here,
+    // narrowly, before structural parsing -- structural validity (below) remains strict.
+    const { sanitized, illegalCharactersSanitized } = sanitizeXml10IllegalCharacters(rawXml);
     const ctx: ParseContext = {
       nodeCount: 0,
       maxDepth: limits.maxDepth,
       maxNodeCount: limits.maxNodeCount,
     };
-    const trimmed = rawXml.trim();
+    const trimmed = sanitized.trim();
     if (!trimmed.startsWith('<')) {
       throw new XmlParseError('xml_malformed', 'Invalid XML: document does not start with a tag');
     }
@@ -84,7 +95,11 @@ export class TallyXmlResponseParser {
       });
     }
 
-    const document: ParsedXmlDocument = { root: result.node, rawXml };
+    const document: ParsedXmlDocument = {
+      root: result.node,
+      rawXml,
+      illegalCharactersSanitized,
+    };
     this.walk(result.node, document);
     return document;
   }
@@ -136,23 +151,44 @@ export class TallyXmlResponseParser {
   }
 }
 
-function assertXml10Characters(rawXml: string): void {
-  for (let index = 0; index < rawXml.length; index += 1) {
-    const codePoint = rawXml.codePointAt(index);
-    if (codePoint === undefined) break;
-    if (!isXml10Character(codePoint)) {
-      throw illegalCharacterError(rawXml, index, 'literal');
+/**
+ * Removes XML-1.0-illegal C0 control characters -- both literal bytes and numeric
+ * character references (e.g. Tally's documented `&#4;` export artifact, TD-001) --
+ * before structural parsing. Legal XML whitespace (#x9 TAB, #xA LF, #xD CR) is always
+ * preserved, in either representation. Every other character class (ordinary Unicode,
+ * business text) is left untouched. This is deliberately narrow: it does not repair
+ * structural XML errors, invalid nesting, undeclared entities, or any other malformed
+ * markup -- structural parsing after this step remains fully strict.
+ */
+function sanitizeXml10IllegalCharacters(rawXml: string): {
+  sanitized: string;
+  illegalCharactersSanitized: number;
+} {
+  let illegalCharactersSanitized = 0;
+
+  const withoutIllegalReferences = rawXml.replace(
+    /&#(?:x([0-9a-fA-F]+)|(\d+));/g,
+    (match, hex: string | undefined, dec: string | undefined) => {
+      const value = Number.parseInt(hex ?? dec ?? '', hex ? 16 : 10);
+      if (Number.isNaN(value) || isXml10Character(value)) {
+        return match;
+      }
+      illegalCharactersSanitized += 1;
+      return '';
+    },
+  );
+
+  let sanitized = '';
+  for (const char of withoutIllegalReferences) {
+    const codePoint = char.codePointAt(0);
+    if (codePoint !== undefined && !isXml10Character(codePoint)) {
+      illegalCharactersSanitized += 1;
+      continue;
     }
-    if (codePoint > 0xffff) index += 1;
+    sanitized += char;
   }
 
-  const numericReference = /&#(?:x([0-9a-fA-F]+)|(\d+));/g;
-  for (const match of rawXml.matchAll(numericReference)) {
-    const value = Number.parseInt(match[1] ?? match[2] ?? '', match[1] ? 16 : 10);
-    if (!isXml10Character(value)) {
-      throw illegalCharacterError(rawXml, match.index, 'numeric-reference');
-    }
-  }
+  return { sanitized, illegalCharactersSanitized };
 }
 
 function isXml10Character(value: number): boolean {
@@ -162,27 +198,6 @@ function isXml10Character(value: number): boolean {
     (value >= 0x20 && value <= 0xd7ff) ||
     (value >= 0xe000 && value <= 0xfffd) ||
     (value >= 0x10000 && value <= 0x10ffff);
-}
-
-function illegalCharacterError(
-  rawXml: string,
-  characterOffset: number,
-  representation: 'literal' | 'numeric-reference',
-): XmlParseError {
-  const prefix = rawXml.slice(0, characterOffset);
-  const line = prefix.split('\n').length;
-  const lastNewline = prefix.lastIndexOf('\n');
-  const column = characterOffset - (lastNewline + 1);
-  return new XmlParseError(
-    'xml_illegal_character',
-    'Invalid XML: document contains a character forbidden by XML 1.0.',
-    {
-      representation,
-      line,
-      column,
-      byteOffset: Buffer.byteLength(prefix, 'utf8'),
-    },
-  );
 }
 
 function parseElement(

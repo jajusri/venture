@@ -51,6 +51,7 @@ export class TallyVoucherExtractor implements VoucherReadPort {
         { reasonCode: parsed.code },
       );
     }
+    const illegalCharactersSanitized = parsed.document.illegalCharactersSanitized;
     if (this.enforceTwoPhase && parsed.records.some((node) =>
       ['AMOUNT', 'ALLLEDGERENTRIES.LIST', 'LEDGERENTRIES.LIST', 'ALLINVENTORYENTRIES.LIST']
         .some((name) => this.parser.directChildren(node, name).length > 0))) {
@@ -138,6 +139,7 @@ export class TallyVoucherExtractor implements VoucherReadPort {
           : parsed.status,
       durationMs,
       rawByteLength,
+      illegalCharactersSanitized,
     };
   }
 }

@@ -58,7 +58,16 @@ export interface VoucherSynchronizationResult {
   readonly previousActiveSnapshotPreserved: boolean;
   readonly promotionOccurred: boolean;
   readonly failureReason: string | null;
+  /** Granular, privacy-safe diagnostic subtype (a fixed reasonCode string, e.g.
+   * 'malformed-xml', 'missing-envelope') distinguishing what `failureReason`'s coarse
+   * external bucket (e.g. 'parser_failure') alone collapses away. Never raw error text
+   * or business content. Null when not applicable or not available. */
+  readonly failureDetail: string | null;
   readonly notificationFailureCount: number;
+  /** Count of XML-1.0-illegal characters sanitized out of the raw Tally response before
+   * parsing (e.g. the TD-001 `&#4;` export artifact) -- telemetry only, never the
+   * removed characters' surrounding content. Zero when nothing was sanitized. */
+  readonly illegalCharactersSanitized: number;
   readonly startedAt: string;
   readonly finishedAt: string;
   readonly durationMs: number;

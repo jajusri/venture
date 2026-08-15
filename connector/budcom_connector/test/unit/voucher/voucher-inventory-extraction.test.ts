@@ -16,7 +16,7 @@ import {
   PRODUCTION_VOUCHER_INVENTORY_FETCH_METHODS,
 } from '../../../src/tally/voucher/voucher-request.js';
 import { TallyXmlRequestBuilder } from '../../../src/tally/xml/request-builder.js';
-import { TallyXmlResponseParser, XmlParseError } from '../../../src/tally/xml/response-parser.js';
+import { TallyXmlResponseParser } from '../../../src/tally/xml/response-parser.js';
 
 const PERIOD = {
   companyName: 'Budcom-Test-01',
@@ -118,12 +118,16 @@ describe('safe Voucher inventory extraction', () => {
     )).toThrow(/invalid signed Amount/i);
   });
 
-  it('rejects XML 1.0-invalid inventory responses without sanitizing', () => {
-    const malformed = CLEAN_INVENTORY_XML.replace(
+  // TD-001 fix (2026-08-16): XML-1.0-illegal characters like &#4; are now sanitized
+  // out before structural parsing (shared TallyXmlResponseParser), not rejected.
+  it('sanitizes XML 1.0-invalid characters in inventory responses rather than rejecting them', () => {
+    const sanitized = CLEAN_INVENTORY_XML.replace(
       '<STOCKITEMNAME>Fixture Item</STOCKITEMNAME>',
       '<STOCKITEMNAME>Fixture&#4;Item</STOCKITEMNAME>',
     );
-    expect(() => parser().parse(malformed)).toThrow(XmlParseError);
+    const entries = parser().parse(sanitized);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.stockItemName).toBe('FixtureItem');
   });
 
   it('fails the production extraction closed when the inventory phase is invalid', async () => {
