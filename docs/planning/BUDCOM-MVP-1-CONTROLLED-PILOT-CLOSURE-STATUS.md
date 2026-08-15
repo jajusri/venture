@@ -611,3 +611,214 @@ candidate exists" to "a candidate exists, untested." The path forward is §11's 
 sequence, run against these exact two artifacts. This document will be updated to
 either a READY verdict or a narrower, exact blocker list once that physical evidence
 exists — not before.
+
+---
+
+## 13. Session 2 physical failure — Voucher `parser_failure` investigation (2026-08-16)
+
+**Physical evidence reported.** Android in-place upgrade to `continuity.15` (Session 2,
+step B) **PASSED**: app opened normally, existing company/pairing/identity/accounting
+data all preserved, no crash. The first fresh Sync/Refresh (step G) then **FAILED** for
+Vouchers specifically:
+
+- Company: ESTIMATION
+- Ledgers: Completed. Stock items: Completed. **Vouchers: Failed** — Processed 0, Added
+  0, Updated 0, Skipped 0, Failed 1
+- Error shown: `parser_failure`
+- Screen text: "Finished available syncs. 3 target(s) attempted. Some targets failed —
+  results are not an all-or-nothing transaction."
+
+Steps A, C, D, E (Session 1, Desktop install/startup/Tally/company selection) were
+reported separately and have their own PASS/FAIL record once supplied — this section
+covers the Session 2 defect specifically.
+
+### 13.1 Where `parser_failure` comes from (traced in full)
+
+`parser_failure` is a Connector-side classification, not an Android-side one — Android
+only displays whatever bucket the Connector's `POST /sync/vouchers` response returns in
+its `progress.lastError` field. Traced exactly:
+
+1. `TallyVoucherExtractor.readVouchers()` (`connector/budcom_connector/src/tally/voucher/voucher-extractor.ts`)
+   parses the raw Tally response via `VoucherCollectionParser.parse()`. On failure it
+   throws `AppError(VALIDATION_ERROR, parsed.message, 422, { reasonCode: parsed.code })`
+   — `parsed.code` is one of `malformed-xml` / `missing-envelope` / `missing-header` /
+   `missing-body` / `missing-data` / `missing-collection` / `tally-source-error`.
+2. The same file's two-phase ledger/inventory-join guard (active in production —
+   `enforceTwoPhase = options.config.env !== 'test'` in `tally-module.ts`) can also throw
+   `voucher-discovery-expansion`, `voucher-ledger-validation`, or
+   `voucher-inventory-validation` for a shape mismatch between the lightweight discovery
+   phase and the full ledger/inventory fetch.
+3. `VoucherSynchronizationService.synchronize()`'s catch block
+   (`connector/budcom_connector/src/services/voucher/voucher-snapshot-sync.service.ts`)
+   calls `classifyExtractionFailure(error)`, which collapses **all seven** of the codes
+   above (everything except `tally-source-error`, which maps separately to
+   `tally_source_error`) into the single bucket string `'parser_failure'`.
+4. **The original `AppError` — including its full diagnostic `message` (e.g. "Voucher
+   response is not well-formed XML." vs "Voucher response is missing BODY/DATA/COLLECTION.")
+   — is discarded at this point.** It is never logged (the completion log at the bottom
+   of `synchronize()` only records `outcome`/`durationMs`/counts, not `failureReason` or
+   the original error), never persisted (the voucher sync path calls `rollbackSnapshot()`,
+   which takes no reason parameter, unlike the separate `discardSnapshot`/
+   `failStaleSnapshots` calls elsewhere that do), and never returned over the API (the
+   HTTP response only ever contains the bucket string). This is a deliberate,
+   privacy-conscious design choice throughout this codebase (no raw Tally content is
+   ever persisted or exposed) — but it means **no artifact anywhere in the running
+   system, on either device, contains more detail than `parser_failure` for this
+   specific event.** Confirmed by also checking: the Tally Request Auditor
+   (`{databasePath}/diagnostics/tally-request-audit.jsonl`) records only a SHA-256 hash
+   of the outbound *request* and a coarse transport-level reason, never the response
+   body, and the exchange in question completed at the transport level (this is a
+   post-parse failure) so it wouldn't show an error there either; the packaged
+   Connector's stdout is discarded entirely (`stdio: ['ignore','ignore','pipe']`) and
+   stderr is bounded to the first 8KB for the process's whole lifetime with no reset —
+   almost certainly already exhausted by the time a fresh Voucher sync runs, after
+   startup/health/Ledger/Stock-item activity; Desktop's Export Diagnostics bundle does
+   not include raw logs or a last-error field either.
+
+### 13.2 Leading root-cause hypothesis (code-confirmed mechanism; not yet confirmed as *the* actual trigger)
+
+**`TD-001`'s already-documented Tally export artifact.** `docs/technical-debt/registry.md`
+TD-001 has documented, since 2026-07-22, that Tally emits the literal string `"&#4; Primary"`
+in a Group's parent field **on this exact same company, ESTIMATION** ("15 false
+positives observed on ESTIMATION (28 groups)"). `&#4;` is a numeric XML character
+reference whose decoded value (0x04, EOT) is illegal under XML 1.0. The connector's
+shared `TallyXmlResponseParser.assertXml10Characters()`
+(`connector/budcom_connector/src/tally/xml/response-parser.ts`) explicitly detects and
+rejects this — as a literal control byte *or* as the numeric reference itself — with
+`XmlParseError('xml_illegal_character', ...)`, regardless of which collection the text
+appears in.
+
+**Proven by regression test** (`test/unit/voucher/voucher-parser.test.ts`, new test
+added this session, passing): feeding a Voucher record whose `PARTYLEDGERNAME` contains
+`&#4; Primary` through the real, production `VoucherCollectionParser.parse()` reliably
+reproduces `{status: 'failure', code: 'malformed-xml'}` — the exact mechanism that
+propagates to `parser_failure` on Android. This does **not** prove Tally actually
+emitted `&#4;` in this specific failure (no raw response was ever captured, per §13.1),
+but it proves the mechanism is real and ties it to the one artifact already known, on
+the record, to exist in this exact company's live Tally data — the strongest available
+evidence without a raw capture.
+
+**Why Ledgers/Stock items succeeded in the same run:** Vouchers carry rich free-text
+fields (`NARRATION`, `PARTYLEDGERNAME`, `REFERENCE`) far more likely to carry this kind
+of Tally export artifact than Ledger/Stock-item exports' shorter, more structured
+fields — consistent with TD-001 having only ever been observed against Groups (which
+also carries a free-text-ish parent-name field) and never against Ledgers/Stock items.
+
+**Other candidate causes, ranked below this one:** a shape mismatch in the two-phase
+discovery/ledger/inventory join (`voucher-discovery-expansion` etc.) for a specific
+voucher type in ESTIMATION's data; a bare `<` or tag-like substring inside a free-text
+field defeating this parser's literal-string closing-tag search (a distinct, unrelated
+parser fragility this investigation also surfaced but found no supporting evidence for
+yet). Both remain open until either raw evidence or user-supplied data hints narrow
+them out.
+
+### 13.3 Local data safety — CONFIRMED SAFE (from code, high confidence)
+
+Voucher reads are always served from the **promoted, active** snapshot
+(`voucher_active_snapshots` table). `VoucherSynchronizationService`'s failure path calls
+`repository.rollbackSnapshot(company, snapshotId)`, which:
+- only accepts a snapshot in `PENDING`/`WRITING`/`VALIDATED` state (i.e. the failed
+  run's own **staging** snapshot, which never reached promotion), and
+- only deletes that one snapshot's own rows.
+
+There is no code path by which this failure could touch the previously-promoted,
+already-synced Voucher data. **Cheap physical confirmation (not required, just a sanity
+check):** open the Voucher list on the phone and confirm it still shows the same data
+it did before this sync attempt — it should look completely unchanged.
+
+### 13.4 Severity classification
+
+**PILOT BLOCKER** (per instruction #7's own default) — fresh Voucher sync, a core MVP-1
+workflow, currently fails completely (0 vouchers processed) against a real pilot
+company's live data. Not classified as a data-integrity emergency (§13.3), not a
+regression from a previously-working state on this exact scenario (this is the *first*
+physical fresh-sync test of Vouchers against real, non-fixture Tally data in this
+project's history — TD-020's physical confirmation was already "ambiguous, leaning not
+confirmed" per §3), but it does block the pilot's core Voucher workflow outright.
+
+### 13.5 Why this is NOT fixed this session — architectural decision needed
+
+Per instruction #9: the real, correctly-scoped fix belongs in the **shared**
+`TallyXmlResponseParser` (`assertXml10Characters`/`decodeXmlEntities`), since the same
+Tally artifact can appear in any collection's free-text fields, not just Vouchers or
+Groups — a narrow, Voucher-only or Group-only patch would repeat the exact "fix landed
+at one call site instead of the shared layer" pattern this project has already flagged
+twice before (TD-013, TD-017). That means this fix is not a "smallest robust
+correction" confined to one file's already-approved behavior — it changes how the
+connector's fail-closed XML validation treats a known-illegal-per-spec character across
+**every** Tally collection, and requires deciding:
+
+1. Should `&#4;`-class illegal numeric character references be silently tolerated
+   (normalized to something, e.g. stripped or replaced) instead of causing a hard parse
+   failure — for every collection, or only specific ones?
+2. If tolerated, what should the normalized value be — dropped entirely, replaced with a
+   visible placeholder, or something else? (TD-001's own original open question for
+   Groups, now with materially higher stakes since it also breaks Vouchers.)
+3. Does relaxing this validation at the shared parser layer weaken the "fail closed on
+   anything unexpected from Tally" posture this project has built throughout, or is a
+   narrowly-scoped exception (specifically for XML-1.0-illegal numeric character
+   references only, nothing else) an acceptable, bounded carve-out?
+
+TD-001 has sat open for this exact reason since 2026-07-22 (documented but not decided);
+this investigation has now shown the stakes are higher than originally scoped (P0 core
+workflow breakage, not P2 cosmetic display), which is exactly the kind of new evidence
+that should go back to the product/architecture owner rather than be decided
+unilaterally here. **Registry updated:** TD-001 escalated to P0, description/evidence/
+likely-fix-location all corrected; see `docs/technical-debt/registry.md`.
+
+### 13.6 What was done this session (investigation only, no production fix)
+
+1. Traced the complete failure-classification chain from raw Tally response through to
+   the Android-visible `parser_failure` string (§13.1).
+2. Established, with a passing regression test against the real production parser, the
+   exact mechanism that would produce this symptom, and tied it to the one Tally
+   artifact already documented on this exact company (§13.2).
+3. Confirmed from code (not assumption) that existing local Voucher data cannot have
+   been affected (§13.3).
+4. Escalated and corrected TD-001 in the registry to reflect the true scope and
+   priority.
+5. Did **not** modify any production code path — per instruction #6/#9, root cause is
+   substantiated but not proven beyond reasonable doubt without a raw capture, and the
+   fix shape requires an architectural decision outside this session's authority.
+6. Ran the full connector suite after adding the regression test: **157 files / 1359
+   tests passing** (1358 baseline + 1 new), no regressions.
+7. **Did not produce a new Desktop or Android candidate** — none is needed yet; nothing
+   about the current `0.4.8`/`continuity.15` candidates changes as a result of this
+   investigation, since no fix was made.
+
+### 13.7 Next physical retest required
+
+**None right now.** Per instruction: "DO NOT tell me to repeatedly Retry until it
+happens to pass." Retesting Voucher sync against ESTIMATION without a decision on §13.5
+would either reproduce the same failure (if `&#4;` is genuinely present in the affected
+date window) or pass by chance if the specific offending record falls outside the
+default 30-day sync window on a later attempt — neither outcome would be informative.
+**If you're willing to supply one additional piece of information, it could confirm or
+rule out the leading hypothesis without any new build:** do you know of anything unusual
+in vouchers entered/modified in ESTIMATION in the last ~30 days — a party ledger name,
+narration, or reference field with special/unusual characters, or a ledger/party name
+you know is affected by the existing TD-001 Group quirk that might also be used as a
+Voucher party? If so, tell me what it is (or even just "yes, X ledger is affected") and
+I can likely confirm the mechanism without needing raw Tally access at all.
+
+Once §13.5's architectural decision is made (by ChatGPT) and a fix (if approved) is
+implemented and regression-tested, a new Android candidate (and Desktop only if the fix
+also touches shared Ledger/Stock-item paths) will be needed before retesting Voucher
+sync specifically. Sessions 1, 3, 4, and 5 of §11 remain independently runnable now —
+this defect only blocks Session 2 steps G onward (H through P depend on a successful
+sync) for **Vouchers** specifically; Ledgers and Stock items already synced successfully
+in the same run and are not blocked.
+
+---
+
+## 14. Final verdict (updated 2026-08-16)
+
+**NOT READY.**
+
+Unchanged from §12 in substance, with one new fact: physical testing has now begun and
+found a real PILOT BLOCKER (§13) — fresh Voucher sync fails against live data for at
+least one real company. This is in addition to, not instead of, §12's original
+reasoning (no other physical evidence yet exists for the remaining TD-013–TD-020 gaps
+or Sessions 1/3/4/5). The path forward is unchanged mechanically (continue §11's
+sequence for the sessions this defect doesn't block) but now also requires a product/
+architecture decision on §13.5 before Voucher sync specifically can be retested.

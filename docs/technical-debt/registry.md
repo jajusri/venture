@@ -5,21 +5,19 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
-## TD-001 — Parent encoding normalization
+## TD-001 — Parent encoding normalization / Tally `&#4;` illegal-character export artifact
 
 | Field | Value |
 |-------|-------|
 | **ID** | TD-001 |
-| **Description** | Tally returns group parent as `"&#4; Primary"` (XML character entity + "Primary"). Hierarchy validator recognizes only normalized `"Primary"` as virtual root. Built-in root groups flag `MISSING_PARENT`; extraction status is `INCOMPLETE`. |
-| **Impact** | Medium — hierarchy not fully trusted; 15 false positives observed on ESTIMATION (28 groups) |
-| **Priority** | P2 |
-| **Estimated fix** | 2 hours |
-| **Target milestone** | 5A |
-| **Status** | Open |
-| **Introduced** | Milestone 3C live validation (2026-07-22) |
-| **Evidence** | `docs/testing/milestone-3c-groups-manual-validation.md`; bug ID M3C-001 in `docs/stage-updates/milestone-3c-stage-update.md` |
-| **Likely fix location** | `connector/budcom_connector/src/tally/groups/hierarchy-validator.ts`, normalization layer |
-| **Workaround** | Consumers must treat `INCOMPLETE` + `MISSING_PARENT` for `"&#4; Primary"` as known quirk until fixed |
+| **Description** | Tally returns group parent as `"&#4; Primary"` (XML character entity + "Primary"). Hierarchy validator recognizes only normalized `"Primary"` as virtual root. Built-in root groups flag `MISSING_PARENT`; extraction status is `INCOMPLETE`. **2026-08-16 escalation:** this is not a Groups-only cosmetic issue. `&#4;` is a numeric XML character reference whose decoded value (0x04, EOT) is illegal under XML 1.0. The shared `TallyXmlResponseParser`'s `assertXml10Characters()` (`connector/budcom_connector/src/tally/xml/response-parser.ts`) correctly rejects any occurrence of this artifact — as a literal control byte *or* as the numeric reference itself — with `XmlParseError('xml_illegal_character', ...)`, regardless of which collection (Groups, Vouchers, Ledgers, Stock items) it appears in. Groups happened to tolerate it (or predate this validation being added) and only showed a display/normalization defect; a controlled-pilot physical test (Session 2, 2026-08-16, company ESTIMATION — the exact same company TD-001 was originally observed on) hit a **full Voucher sync failure** (`parser_failure`, 0 vouchers processed) consistent with this same artifact now appearing in Voucher-relevant free-text fields. Reproduced mechanically: `test/unit/voucher/voucher-parser.test.ts` proves `&#4;` in a Voucher's `PARTYLEDGERNAME` reliably produces the exact `malformed-xml` → `VALIDATION_ERROR` → `parser_failure` chain observed on the physical device. Not yet proven that Tally actually sent `&#4;` in this exact failure (no raw response is ever captured or persisted, by deliberate privacy design), but this is now the leading, code-confirmed hypothesis, not speculation. |
+| **Impact** | **Escalated from Medium to Critical for release.** Previously: hierarchy display trust only, 15 false positives on ESTIMATION (28 groups). Now: if confirmed, this is a single shared-layer defect capable of silently failing *any* Tally collection's sync — currently demonstrated against Vouchers, a core MVP-1 workflow, not just Groups' hierarchy display. |
+| **Priority** | **P0** (escalated from P2) |
+| **Target milestone** | Pre-MVP-1 release hardening (escalated from 5A) |
+| **Status** | **Open — root cause substantially understood, fix NOT implemented.** This is a shared-layer XML-handling change (affects every Tally collection parser, not one call site) with a real data-fidelity/fail-closed-philosophy tradeoff (how permissive should illegal-character handling be, and what should a tolerated illegal character normalize to). Per this project's own operating rule, an architectural/security decision of this shape is being escalated to ChatGPT rather than decided unilaterally — see `docs/planning/BUDCOM-MVP-1-CONTROLLED-PILOT-CLOSURE-STATUS.md` §13 for the specific question needing an answer. |
+| **Evidence** | `docs/testing/milestone-3c-groups-manual-validation.md`; bug ID M3C-001 in `docs/stage-updates/milestone-3c-stage-update.md`; controlled-pilot Session 2 physical failure (2026-08-16, ESTIMATION, Android Sync screen: `Vouchers - Failed, Processed 0, Error: parser_failure`, Ledgers/Stock items both Completed in the same run); `test/unit/voucher/voucher-parser.test.ts` regression test proving the mechanism |
+| **Likely fix location** | Previously scoped narrowly to `connector/budcom_connector/src/tally/groups/hierarchy-validator.ts`. **Corrected scope:** the real fix, if approved, belongs in the shared `connector/budcom_connector/src/tally/xml/response-parser.ts` (`assertXml10Characters`/`decodeXmlEntities`), since the same Tally export artifact can appear in any collection's free-text fields, not just Groups' parent field — a per-domain workaround here would repeat the exact "fix landed at one call site instead of the shared layer" pattern already flagged in TD-013/TD-017. |
+| **Workaround** | None currently available for Vouchers (the sync fails closed with zero data written — safe, but blocks the workflow entirely). Groups' existing workaround (treat `INCOMPLETE` + `MISSING_PARENT` for `"&#4; Primary"` as a known quirk) remains in place for that narrower case. |
 
 ---
 
@@ -459,7 +457,7 @@ Engineering-tracked compromises, defects, and deferred work.
 | TD-020 | Android Voucher sync action was silently discarded | P0 | **Implemented — automated validation in progress; physical confirmation pending** | Pre-MVP-1 release hardening |
 | TD-018 | Packaged transport identity and mutable Connector paths lived under install resources | P0 | **Windows physical lifecycle accepted; Android confirmation pending** | Pre-MVP-1 release hardening |
 | TD-019 | Android release exposes stale legacy endpoint and lacks safe active-trust replacement | P0 | **Implemented — automated validation passed; physical release-APK confirmation pending** | Pre-MVP-1 release hardening |
-| TD-001 | Parent encoding normalization (`&#4; Primary`) | P2 | Open | 5A |
+| TD-001 | Tally `&#4;` illegal-character export artifact — escalated from Groups-only to a confirmed Voucher-sync failure mechanism | **P0** | **Open — root cause substantially understood; fix requires architectural decision, escalated to ChatGPT** | Pre-MVP-1 release hardening |
 | TD-002 | Desktop company selection UI | P2 | **Resolved** | 4B |
 | TD-003 | Connector process supervision | P2 | **Resolved** | 4C |
 | TD-004 | Tally host/port not forwarded to connector spawn | P3 | Open | 5A |
