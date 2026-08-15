@@ -366,10 +366,60 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-021 — Authenticated SESSION_EXPIRED renewal is scoped to one call site, not the transport layer (PROPOSAL — not implemented)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-021 |
+| **Description** | The Android authenticated client added a typed `SESSION_EXPIRED` (HTTP 410) result (`AuthenticatedConnectorResult.SessionExpired`, `AUTHENTICATED_SESSION_EXPIRED_CODE`). Automatic renew-and-retry for it is implemented in exactly one place — `CompanyRepositoryImpl.validateSessionRemote()`'s `isRecoverableSessionRejection()` branch, which re-runs `selectCompany()`. Every other authenticated call path (`ConnectorOperationalStatusPortImpl.resolveAuthenticated()`'s dashboard/connection-status probe, and all of `AuthenticatedSyncRemoteDataSource` — Ledger/Stock-item/Voucher start, status, statistics, runs) has no equivalent handling: a `SessionExpired` result there falls into the generic `AuthenticatedUnavailable("The Connector returned an unexpected response.")` bucket with no renewal attempt. This is the same shape of gap as TD-013 (company selection lost after reconnect) and TD-017 (pairing-time endpoint pinned) — a fix landing at one call site instead of the shared transport layer, which is why this category of bug keeps resurfacing at new call sites rather than being closed permanently. |
+| **Priority** | P1 (proposal — no severity confirmed in the field; found via source audit, not a reproduced incident) |
+| **Target milestone** | Proposed — pending architectural scoping by ChatGPT (architectural authority per current project scope) |
+| **Status** | **Proposed — not implemented. Out of scope for the Android Voucher-sync task that identified it; Connector/Desktop and cross-cutting Android transport changes require separate authorization.** |
+| **Proposed permanent fix** | Move renew-and-retry-once-on-`SESSION_EXPIRED` out of `CompanyRepositoryImpl` and into the shared authenticated-transport layer (e.g. a decorator/interceptor around every `AuthenticatedConnectorApiPort.execute()` call), so every current and future authenticated operation gets the same self-healing behavior by construction instead of by each call site remembering to add it. |
+| **Explicitly not part of this proposal** | Investigation during this audit also found a live Desktop "Not connected / no company selected" state. Log evidence (`budcom-desktop.log`, event `connector_stopped` at 2026-08-10T06:20:24Z, traced to the `desktop:stop-connector` IPC handler) shows this was an **explicit stop with no subsequent restart, not a crash or supervisor failure** — TD-003's process supervision handled a genuine transient flap earlier the same day correctly. No process-supervision change is proposed here. |
+| **Verification needed before implementation** | Confirm whether `SESSION_EXPIRED` was actually the cause of the individual-Voucher-sync UI showing no visible reaction during physical continuity testing (unconfirmed — no device logcat was available; the ViewModel's `AppResult.Failure` path would normally surface a banner error, which was not observed, so this remains an open question rather than a confirmed reproduction). |
+
+---
+
+## TD-022 — Android accumulates one complete authoritative window in memory before atomic Room commit
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-022 |
+| **Description** | `VoucherRepositoryImpl.fetchCompleteWindow` (and, after f78cd01, its parallel detail accumulation) fetches every bounded page of a company+date window and holds the full `List<VoucherSummary>` plus, when requested, the full `List<VoucherDetails>` (ledger/inventory lines included) in memory before a single Room transaction persists the window. This was already true for summaries alone before f78cd01; the offline-complete-sync fix adds the (larger) detail payload to the same accumulate-then-commit shape rather than introducing it. |
+| **Impact** | Low today — recent/typical windows for an SME company are realistically hundreds to low thousands of vouchers. Grows with window size; a very large historical window (e.g. a company with a `booksFrom` several years back reconciled in one background pass) could hold a materially larger in-memory set before its single commit. No physical/build evidence yet shows this is actually blocking. |
+| **Priority** | P3 (performance hardening, not correctness) |
+| **Target milestone** | Post-MVP-1 |
+| **Status** | Open — recorded, not implemented |
+| **Introduced** | Present since the original windowed-refresh design (cb5fb91); extended, not created, by f78cd01 |
+| **Likely fix direction** | Stream/batch the Room write per fetched page instead of accumulating the whole window, if a future large-window scenario proves this necessary — would need to preserve the existing pagination-completeness proof (whole-window fail-closed) and the single-transaction atomicity guarantee, so isn't a small change. |
+| **Do not action without** | Build or physical evidence (OOM, GC pressure, observed latency) on a real large-window company. |
+
+---
+
+## TD-023 — Connector `querySnapshot()` loads the full company snapshot on every paged `GET /api/v1/vouchers` request
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-023 |
+| **Description** | `SqliteVoucherRepository.querySnapshot(companyId)` has no SQL-level date/page filtering — it reads and `JSON.parse`s every voucher row in the company's active snapshot on every call, then `VoucherApplicationServiceImpl.list()` filters/sorts/paginates the result in JS. This is unrelated to `includeDetails` specifically: it was already true for summary-only list calls before 79690d0, which only changes whether the per-item response payload is trimmed after this same full load. |
+| **Impact** | Low today for typical company sizes; scales linearly with total company voucher count per request, so a paginated Android window fetch against a very large company snapshot re-does this full load once per page (e.g. ~100 requests for a 10,000-voucher window), not once for the whole fetch. No physical/build evidence yet shows this is actually blocking. |
+| **Priority** | P3 (performance hardening, not correctness) |
+| **Target milestone** | Post-MVP-1 |
+| **Status** | Open — recorded, not implemented |
+| **Introduced** | Present since the original snapshot-query design; not touched by 79690d0/f78cd01 |
+| **Likely fix direction** | Push `dateFrom`/`dateTo` (and ideally pagination) filtering into the SQL query against `voucher_headers` instead of loading the full snapshot into JS and filtering there. |
+| **Do not action without** | Build or physical evidence (measured request latency, CPU) on a real large-snapshot company. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-023 | Connector `querySnapshot()` loads the full company snapshot on every paged request | P3 | Open — recorded, not implemented | Post-MVP-1 |
+| TD-022 | Android accumulates one complete authoritative window in memory before atomic Room commit | P3 | Open — recorded, not implemented | Post-MVP-1 |
+| TD-021 | Authenticated SESSION_EXPIRED renewal is scoped to one call site, not the transport layer | P1 | **Proposed — not implemented** | Pending architectural scoping |
 | TD-020 | Android Voucher sync action was silently discarded | P0 | **Implemented — automated validation in progress; physical confirmation pending** | Pre-MVP-1 release hardening |
 | TD-018 | Packaged transport identity and mutable Connector paths lived under install resources | P0 | **Windows physical lifecycle accepted; Android confirmation pending** | Pre-MVP-1 release hardening |
 | TD-019 | Android release exposes stale legacy endpoint and lacks safe active-trust replacement | P0 | **Implemented — automated validation passed; physical release-APK confirmation pending** | Pre-MVP-1 release hardening |
