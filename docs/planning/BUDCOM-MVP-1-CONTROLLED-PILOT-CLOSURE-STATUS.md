@@ -822,3 +822,83 @@ Version bumps and the new Desktop candidate's production/hashes are recorded in 
 Historical: at the point physical Session 2 testing found the Voucher `parser_failure`
 defect (before the fix in §13 was approved and implemented), the verdict was NOT READY
 with that defect as an open PILOT BLOCKER. See §16 for the current verdict.
+
+---
+
+## 15. TD-001 fix candidate production (2026-08-16, third pass)
+
+### 15.1 Version identity
+
+| Component | Version | Producing commit | Why bumped |
+|---|---|---|---|
+| Connector | `0.4.0` → `0.4.1` | `0467abc` | Real behavior change (XML sanitizer + diagnostic hardening), not a documentation-only bump |
+| Desktop | `0.4.8` → `0.4.9` | `0467abc` | Bundles the Connector — the 0.4.8 candidate no longer reflects current code |
+| Android | `0.1.1-continuity.15` (unchanged) | `8808e76` | No Android source changed; no rebuild required or produced (§13.7) |
+
+### 15.2 A packaging-caught oversight, fixed before the candidate was accepted
+
+First packaging attempt (of this fix) correctly **failed** its own post-build
+provenance check: `apps/budcom_desktop/build/VERSION.txt` — a git-tracked file Desktop
+reads for packaged-connector version/integrity checks — still held the old connector
+version (`0.4.0`) because bumping `CONNECTOR_VERSION` in `defaults.ts` doesn't
+automatically update it; the packaging step regenerates it to match, which the pipeline
+correctly flagged as an unexpected change rather than silently shipping a
+version-mismatched candidate. Fixed and committed (`53a1f98`) before re-running —
+exactly the kind of process safeguard this pipeline exists for.
+
+### 15.3 Desktop controlled-pilot build — RESULT: PASS
+
+Full pipeline (connector lint/build/test/architecture/audit, desktop build/lint/test/
+audit, contract tests, NSIS packaging, package-boundary, packaged-runtime-contract,
+packaged-connector-dependencies, manifest, verify-manifest, release-acceptance) — all
+PASS on the corrected candidate.
+
+**Artifact:** `release/controlled-pilot/0.4.9/artifacts/BudcomDesktop-0.4.9-x64-setup.exe`
+**Size:** 106,066,651 bytes (~101.2 MB)
+**SHA-256:** `424418ab5e37cb88422363b0d8dba857c556974405f47a100931cab026122580`
+**Producing commit:** `53a1f985773fd4c7639eb93f8f211684467046b4` (`sourceTreeCleanAtStart: true`, `dirtyTree: false`)
+**Bundled Connector version:** `0.4.1` · **Storage schema version:** `12` (unchanged)
+**Signing:** unsigned (accepted controlled-pilot limitation, as before)
+**Full report:** `release/controlled-pilot/0.4.9/reports/release-report.json`
+
+### 15.4 Pre-packaging git hygiene
+
+Same disposition as §9.2: the three pre-existing untracked post-MVP-1 paths were
+temporarily set aside with `git stash push -u` for the packaging run only and restored
+immediately after with `git stash pop` — confirmed present, untracked, unmodified
+again via `git status --short`.
+
+---
+
+## 16. Final verdict (current, 2026-08-16, third pass)
+
+**NOT READY** — but the one confirmed PILOT BLOCKER found by physical testing (§13) now
+has an implemented, tested, packaged fix awaiting physical confirmation.
+
+**What changed this pass:**
+- TD-001 fixed (shared XML sanitizer + diagnostic hardening), automated-validated:
+  157 files / 1377 tests, clean lint/build/architecture.
+- A fresh Desktop candidate exists bundling the fix: `0.4.9`,
+  SHA-256 `424418ab5e37cb88422363b0d8dba857c556974405f47a100931cab026122580`.
+- Android candidate is unchanged (`continuity.15`, `8808e76`) — no rebuild was needed.
+
+**What has NOT changed:**
+- Zero physical evidence exists yet that the fix actually resolves the real-world
+  failure — packaging and automated tests are not physical proof (instruction #6,
+  restated). The **exact required physical retest** is: install `0.4.9` over the
+  current Desktop, run a fresh Voucher sync against ESTIMATION from the already-paired
+  `continuity.15` Android app (no reinstall needed there), and confirm Vouchers
+  completes instead of failing with `parser_failure`.
+- All of §3's TD-013–TD-020 physical-confirmation gaps remain exactly as open as
+  before — unrelated to this fix.
+- Session 1, 3, 4, 5 of §11 remain to be run; Session 2 steps H onward (which depend on
+  a successful Voucher sync) remain blocked pending this one retest.
+
+**Per the architectural decision's explicit instruction: do not proceed with the rest
+of Session 2 until this physical Voucher sync retest passes.** Report back with
+PASS/FAIL and what you observed (Voucher counts, any error), and this document will be
+updated accordingly — either continuing Session 2, or with a new, narrower root-cause
+investigation if the sanitizer does not resolve the real failure (which would mean the
+leading hypothesis, though mechanically proven, was not what actually happened on the
+device — a real possibility this session was explicit about never having fully
+confirmed).
