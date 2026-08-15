@@ -132,6 +132,21 @@ export async function resolvePrivateVault(
   return { status: 'missing' };
 }
 
+/**
+ * True when [driveLetter] matches one of [volumes] exactly (case-insensitive). Used to
+ * re-validate a client-supplied drive letter on the main-process side before creating or adopting
+ * a private vault on it — the renderer's picker only happening to list removable drives is a UI
+ * convenience, not a security boundary, and nothing else in the choose-storage-mode path
+ * otherwise stops a caller from pointing a "private removable storage" vault at a fixed disk.
+ */
+export function isEnumeratedRemovableDrive(
+  driveLetter: string,
+  volumes: readonly { readonly driveLetter: string }[],
+): boolean {
+  const normalized = driveLetter.toUpperCase();
+  return volumes.some((volume) => volume.driveLetter.toUpperCase() === normalized);
+}
+
 /** Cheap re-check for the hot-removal poll — does the already-resolved drive+vault still match? */
 export function isPrivateVaultStillPresent(
   driveLetter: string,

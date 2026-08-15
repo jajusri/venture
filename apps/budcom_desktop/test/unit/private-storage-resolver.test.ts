@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createPrivateVault,
   hasExistingStandardModeDatabase,
+  isEnumeratedRemovableDrive,
   isPrivateVaultStillPresent,
   privateConnectorDataDir,
   resolvePrivateVault,
@@ -125,6 +126,26 @@ describe('isPrivateVaultStillPresent', () => {
   it('is false when the drive/marker has disappeared — the hot-removal case', () => {
     const fs = fakeFs();
     expect(isPrivateVaultStillPresent('E:\\', 'vault-1', fs)).toBe(false);
+  });
+});
+
+describe('isEnumeratedRemovableDrive', () => {
+  // TD-024 regression: desktop:choose-storage-mode must not accept a drive letter the enumerator
+  // doesn't currently report as removable — a caller could otherwise point "Private Storage" at a
+  // fixed disk such as C:\, defeating the "never a fixed disk" guarantee end-to-end.
+  it('is true only for a drive letter present in the enumerated volumes list', () => {
+    const volumes = [{ driveLetter: 'E:\\', label: 'BUDCOM-USB', fileSystem: 'NTFS', sizeBytes: 1000, freeBytes: 500 }];
+    expect(isEnumeratedRemovableDrive('E:\\', volumes)).toBe(true);
+    expect(isEnumeratedRemovableDrive('C:\\', volumes)).toBe(false);
+  });
+
+  it('rejects a fixed disk when no removable volumes are currently enumerated at all', () => {
+    expect(isEnumeratedRemovableDrive('C:\\', [])).toBe(false);
+  });
+
+  it('compares drive letters case-insensitively', () => {
+    const volumes = [{ driveLetter: 'e:\\', label: null, fileSystem: null, sizeBytes: null, freeBytes: null }];
+    expect(isEnumeratedRemovableDrive('E:\\', volumes)).toBe(true);
   });
 });
 

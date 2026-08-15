@@ -413,10 +413,46 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-024 — `desktop:choose-storage-mode` did not re-validate the drive is actually removable
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-024 |
+| **Description** | The private-removable-storage IPC handler (`apps/budcom_desktop/src/main/main.ts`, `desktop:choose-storage-mode`) called `readExistingVaultOnDrive(choice.driveLetter)` / `createPrivateVault(choice.driveLetter)` directly on whatever `driveLetter` string the renderer sent, without first checking it against `removableVolumeEnumerator.listRemovableVolumes()`. The enumerator was only consulted afterward, purely to look up a display label. IPC input validation (`validateChooseStorageModeInput`) only bounded the syntactic shape (`^[A-Za-z]:\\?$`), not which drive letter. The renderer's picker only happening to list removable drives is a UI convenience, not a security boundary — this codebase's own established convention elsewhere is to re-validate on the main-process side. Once a bad selection was persisted as `lastKnownDriveLetter`, every later `resolvePrivateVault()` fast-path check re-attached to it directly via the marker file, without ever re-consulting the enumerator, so the "only removable drives" invariant was not enforced end-to-end after the first (unvalidated) selection. |
+| **Impact** | High for a feature whose entire premise is "never a fixed disk" — nothing in the traced code path stopped a caller from selecting `C:\` as "Private Removable Storage"; `createPrivateVault('C:\\')` would have written `C:\BudcomPrivate\vault.json` and pointed the Connector at `C:\BudcomPrivate\<vaultId>\connector-data`. Undermines the SEC-004 threat-model mitigation (`docs/governance/BUDCOM-THREAT-MODEL-AND-SECURITY-REGISTER.md`, "wrong USB / lookalike media"), which was only actually proven for the rediscovery path, not initial selection. |
+| **Priority** | P1 |
+| **Target milestone** | Pre-MVP-1 release hardening |
+| **Status** | **Fixed (automated validation)** — found and corrected during the 2026-08-15 MVP-1 hardening/controlled-pilot closure pass; no physical USB test performed |
+| **Introduced** | Private-removable-storage feature (`9d3b587` "feat(desktop): add private-storage runtime/config architecture", 2026-08-11/12) |
+| **Evidence** | Found by source review during controlled-pilot closure research, 2026-08-15 — no live incident, no physical device involved |
+| **Resolution** | `desktop:choose-storage-mode` now fetches `removableVolumeEnumerator.listRemovableVolumes()` and rejects the request (`{ ok: false, message: 'Selected drive is not currently detected as removable storage...' }`) before ever calling `readExistingVaultOnDrive`/`createPrivateVault`, via a new pure helper `isEnumeratedRemovableDrive(driveLetter, volumes)` in `private-storage-resolver.ts` (same file, same style as the existing pure resolver functions — mirrors the "only ever inspect drives the enumerator reports as removable" invariant `resolvePrivateVault()`'s rediscovery path already enforced). The existing rediscovery/reconnection path was not touched — it already enforced this correctly. |
+| **Regression tests** | `apps/budcom_desktop/test/unit/private-storage-resolver.test.ts` — `isEnumeratedRemovableDrive` proven true only for an enumerated drive letter, false for a fixed disk when nothing is enumerated, and case-insensitive. Full desktop suite re-run clean: 677/677 (674 baseline + 3 new), `tsc -p tsconfig.main.json --noEmit` clean. |
+| **Not addressed by this fix — see TD-025** | The mid-session storage-loss UX gap and the plain-Restart-button re-resolution gap found in the same review are separate, tracked there. |
+
+---
+
+## TD-025 — Private-storage loss mid-session degrades to a generic "Disconnected" state, not the purpose-built recovery screen
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-025 |
+| **Description** | `startPrivateStorageWatchdog()` (`main.ts`, 10s poll) correctly detects storage loss and stops the Connector, but its `notifyRenderer()` call only sends a bare `desktop:status-updated` signal with no payload. The renderer's `onStatusUpdated` handler re-runs the ordinary `refreshUi()`/`loadCompanies()` dashboard refresh — it never re-invokes `renderStorageGate()`/`getStorageStatus()`, which only runs once, at `startDesktopShell()` entry. A mid-session storage loss therefore degrades the dashboard to a generic "Disconnected" state (no storage-specific `userMessage`) rather than the purpose-built "Private BUDCOM storage is not connected" screen with Retry/Locate/Exit — that screen is only reachable via a full app restart/reload. This also means `docs/governance/BUDCOM-OPERATIONAL-OBSERVABILITY-SPEC.md`'s requirement that "Private Storage connected/missing/wrong-media state" remain an always-visible Desktop signal is not met post-startup. Separately, the ordinary dashboard "Restart Connector" button (`desktop:restart-connector`) does not call `resolveStorageGate()` either — it reuses the already-constructed `lifecycleService`'s last-resolved config, so if the drive reconnects on a *different* drive letter, an ordinary Restart click keeps failing the Connector-side guard with a generic lifecycle error (fails closed, but unhelpfully) until a full app relaunch. |
+| **Impact** | Medium — fails closed and safely in all cases (no data corruption path, no wrong-drive attach), but a normal operator whose USB drive is bumped or sleeps mid-session sees a misleading generic "Disconnected" state instead of an actionable storage-specific one, and cannot self-recover via the dashboard's own Restart control if the drive letter also changed. |
+| **Priority** | P2 |
+| **Target milestone** | Post-MVP-1 (UX hardening) unless a controlled-pilot operator hits this in practice, in which case re-prioritize |
+| **Status** | Open — recorded, not implemented |
+| **Introduced** | Private-removable-storage feature (2026-08-11/12), present since the watchdog was added |
+| **Likely fix direction** | Have `notifyRenderer()` include (or trigger a companion IPC push of) current storage-gate state so the renderer can re-run `renderStorageGate()` on any state change, not only at startup; have `desktop:restart-connector` call `resolveStorageGate()` first instead of reusing stale resolved config. |
+| **Do not action without** | Product-owner confirmation this is worth prioritizing ahead of other MVP-1.0.x items — it is a real gap but not a data-safety one. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-025 | Private-storage loss mid-session degrades to generic "Disconnected" rather than the storage recovery screen | P2 | Open — recorded, not implemented | Post-MVP-1 (or sooner if hit in pilot) |
+| TD-024 | `desktop:choose-storage-mode` did not re-validate the drive is actually removable | P1 | **Fixed (automated validation)** | Pre-MVP-1 release hardening |
 | TD-023 | Connector `querySnapshot()` loads the full company snapshot on every paged request | P3 | Open — recorded, not implemented | Post-MVP-1 |
 | TD-022 | Android accumulates one complete authoritative window in memory before atomic Room commit | P3 | Open — recorded, not implemented | Post-MVP-1 |
 | TD-021 | Authenticated SESSION_EXPIRED renewal is scoped to one call site, not the transport layer | P1 | **Proposed — not implemented** | Pending architectural scoping |

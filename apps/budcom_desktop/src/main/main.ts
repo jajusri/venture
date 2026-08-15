@@ -60,6 +60,7 @@ import { PowerShellRemovableVolumeEnumerator } from '../application/private-stor
 import {
   createPrivateVault,
   hasExistingStandardModeDatabase,
+  isEnumeratedRemovableDrive,
   isPrivateVaultStillPresent,
   privateConnectorDataDir,
   privateStorageMarkerPath,
@@ -1112,6 +1113,12 @@ function registerIpcHandlers(): void {
       return { ok: true, state: storageGateState };
     }
 
+    const volumes = await removableVolumeEnumerator.listRemovableVolumes();
+    if (!isEnumeratedRemovableDrive(choice.driveLetter, volumes)) {
+      return { ok: false, message: 'Selected drive is not currently detected as removable storage. Reconnect it and try again.' };
+    }
+    const volumeLabel = volumes.find((volume) => volume.driveLetter.toUpperCase() === choice.driveLetter.toUpperCase())?.label ?? null;
+
     let vaultId: string;
     try {
       const existing = readExistingVaultOnDrive(choice.driveLetter);
@@ -1119,9 +1126,6 @@ function registerIpcHandlers(): void {
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
-
-    const volumes = await removableVolumeEnumerator.listRemovableVolumes();
-    const volumeLabel = volumes.find((volume) => volume.driveLetter.toUpperCase() === choice.driveLetter.toUpperCase())?.label ?? null;
 
     const saveResult = privateStorageLocatorStore.save({
       schemaVersion: 1,
