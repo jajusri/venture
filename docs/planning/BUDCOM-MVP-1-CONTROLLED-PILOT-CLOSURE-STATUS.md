@@ -195,104 +195,377 @@ watchdog) and Connector (independent fail-closed marker-vaultId guard) participa
 
 ---
 
-## 9. HUMAN CHECK list — exact tests required, and exactly what to report back
+## 9. Controlled-pilot candidate production (second pass, 2026-08-15)
 
-Nothing below can be closed by further code inspection. No physical evidence is invented
-here; do these in order.
+Following architectural approval, produced the current-HEAD candidate artifacts this
+document's §4 found missing. See placeholder markers `[[FILLED BELOW]]` — populated
+once both builds complete; this section is the authoritative record once done.
 
-### 9.1 Produce a current-version controlled-pilot candidate (prerequisite for everything else)
+### 9.1 Version identity
 
-No installer/APK newer than Desktop 0.4.3 exists anywhere (repo, archives, or
-temp-build directories). Every item below needs a build made from **current HEAD**
-(`e2d3eac` or later, on a clean tree) — not an old candidate. I can attempt to run
-`scripts/release/controlled-pilot-release.mjs` (Desktop+Connector) and an Android
-`assembleRelease` myself as a next automated step, but electron-builder packaging and
-Android release signing may hit missing certificates/keystores in this environment —
-if so, that becomes its own BLOCKED item requiring you to supply signing
-material or run the packaging step on a machine that has it. Tell me if you want me to
-attempt this next.
+| Component | Version at this pass | Producing commit | Why bumped |
+|---|---|---|---|
+| Desktop | `0.4.8` | `33f6edd` | `0.4.7` predated this session's TD-024 fix landing in `apps/budcom_desktop/src` — packaging under the stale label would misrepresent the candidate's contents |
+| Connector | `0.4.0` (unchanged) | — | No connector source changed since `0.4.0` was tagged; bundled into the Desktop candidate as-is |
+| Android | `versionCode 16` / `0.1.1-continuity.15` | `8808e76` | `continuity.14`'s label was assigned before two more commits (`c2be1fc`, `e2d3eac`) landed on top of it with zero physical evidence either way; bumping guarantees a strictly-higher `versionCode` than whatever is on the physical test device for a clean in-place upgrade |
 
-### 9.2 Windows Desktop/Connector physical session
+### 9.2 Pre-packaging git hygiene
 
-Install the fresh candidate on a real Windows machine, then:
-1. **Restart Connector** (Settings → Restart, or kill+relaunch) with a company already
-   selected and confirm the dashboard/company selection survive without manual
-   re-selection (TD-013), and the dashboard/company list recover on their own within
-   ~70s without a manual Refresh if the very first request after restart times out
-   (TD-014).
-2. **Change the machine's active network** (switch Wi-Fi networks, or reboot the
-   router so the machine gets a new DHCP address) and confirm Desktop's dashboard,
-   company list, ledgers, and stock items all keep working without manually typing an
-   IP anywhere (TD-015).
-3. **Full install → uninstall → reinstall** and a **same-version reinstall over an
-   existing install**, confirming the Connector's TLS transport identity survives
-   (Android does not need to re-pair) and no data is lost (TD-018 Windows half).
-4. **Report back:** for each of the 3 steps, PASS/FAIL and what you actually observed
-   (screenshots of the dashboard state are ideal).
+The three pre-existing untracked post-MVP-1 paths
+(`docs/planning/BUDCOM-CONNECT-CONTACTS-UNIVERSAL-PARTY-REFERRAL-TREE-SPEC.md`,
+`docs/product/`, `docs/product-design/`) remain **untracked, unmodified, not deleted,
+not gitignored** — confirmed present again via `git status --short` immediately before
+this pass. They were temporarily set aside with `git stash push -u` (approved by the
+user explicitly, since the release pipeline's `assertReleaseStartClean()` treats any
+untracked file as a dirty-tree rejection) for the duration of the packaging run only,
+and restored immediately after with `git stash pop`. Repository classification for this
+run: **"MVP-1 working set clean; pre-existing post-MVP untracked artifacts remain
+outside current mandate."**
 
-### 9.3 Android physical session (a real phone, not the emulator)
+### 9.3 Desktop controlled-pilot build
 
-Install the fresh candidate APK **in place** (no data clear) over the current
-`continuity.13`/`.14` app, then:
-1. Run an individual **Voucher sync** specifically (not just Ledger/Stock) and confirm
-   a fresh Voucher snapshot actually appears (open Voucher list, confirm dates/counts
-   look current) — TD-020's own stated acceptance bar.
-2. With the app paired and working, **change the Connector's network address** — move
-   the Windows machine to a different Wi-Fi network or restart its router — and confirm
-   the Android app reconnects automatically without re-pairing, a new QR, or manual IP
-   entry (TD-017 — this is the one scenario continuity.13's Wi-Fi-toggle test did
-   *not* actually exercise).
-3. Open **Settings → Diagnostics** and confirm "Configured URL" never shows
-   `10.0.2.2` or any raw IP for a securely paired device (TD-016).
-4. Open **Settings → pairing management** on an already-`ACTIVE` paired device and
-   confirm the **Replace / Re-pair Connector** button is reachable (not auto-navigated
-   away) (TD-019's follow-up correction).
-5. Test the new **WhatsApp-recipient-from-ledger-alias** feature (`e2d3eac`, current
-   HEAD) — this has had zero device testing of any kind.
-6. **Report back:** PASS/FAIL for each of the 5 steps with what you actually observed.
+First attempt (invoked through the Bash/Git-Bash tool) failed at the Node-runtime
+staging step with `tar: Cannot connect to D: resolve failed` — a Windows/Git-Bash
+environment quirk, not a code defect: Git for Windows' bundled MSYS `tar` (resolved
+first in that shell's `PATH`) misparses a `D:\...` destination as a remote-host
+`tar` target, unlike the native `C:\WINDOWS\system32\tar.exe`. Re-invoked the identical
+pipeline through PowerShell (whose `PATH` resolves the native `tar.exe` first) and it
+completed.
 
-### 9.4 Private removable storage physical session
+`[[FILLED BELOW — pipeline result]]`
 
-1. Normal boot with the USB drive attached — confirm Desktop starts normally.
-2. Pull the USB drive while Desktop is idle (not syncing) — confirm the dashboard
-   shows a storage-specific message, not a generic "Disconnected" (this will currently
-   **FAIL** per TD-025 — expected, not a surprise).
-3. Reinsert the drive and click the storage-gate Retry button — confirm recovery.
-4. Reinsert the drive on a **different** drive letter (e.g. unplug/replug into a
-   different USB port on some machines) and click the ordinary dashboard "Restart
-   Connector" button (not Retry on the storage screen) — this will currently **FAIL**
-   per TD-025's second gap (expected).
-5. **Report back:** PASS/FAIL for each step.
+### 9.4 Android debug candidate build
 
-### 9.5 Quality Scorecard
+Built `assembleDebug` (installable, signed with the standard Android debug keystore) —
+per `D:\Projects\budcom_archives\temporary-builds\20260808_phase3u6\BudcomAndroid-d76b3d0-debug.apk`,
+every physical-device candidate in this project's history has been a **debug**-signed
+build, not release-signed; this candidate follows that same, already-proven-working
+identity so it can upgrade-install over whatever is currently on the test phone without
+requiring an uninstall.
 
-`docs/governance/BUDCOM-QUALITY-SCORECARD.md` must be filled in by whoever has the
-product/business authority to score UX clarity, security/trust, and the other
-subjective dimensions — I can prefill the objective/evidence-backed rows
-(automated test evidence, functional correctness) but the mandatory-gate dimensions
-need a human judgment call.
+**Signing-identity gap found (report, not silently resolved):** no release keystore,
+`signingConfig`, or any signing material exists anywhere in this repository or
+environment (`apps/budcom_android/app/build.gradle.kts`'s `release {}` block has no
+`signingConfig` at all). `assembleRelease` will therefore produce an **unsigned**,
+**not installable** artifact — useful only for the automated minify/shrink/lint
+validation that already existed for TD-019, never for physical installation. This is a
+genuine environment gap (item 5's "signing state" instruction), not something to
+resolve unilaterally: minting a brand-new release keystore now would not match
+whatever (if anything) signed the currently-installed app on the physical device, and
+generating one is a real, hard-to-reverse identity decision. **Recommendation:**
+continue using debug-signed candidates for physical pilot testing (matches all prior
+history) until/unless a customer-facing signed release is explicitly scoped as its own
+piece of work.
+
+`[[FILLED BELOW — build result, APK path, hash, size]]`
+
+### 9.5 Quality Scorecard status after packaging
+
+Per instruction #7: **Upgrade/release readiness** may improve only to the extent
+objectively supported by successful packaging — i.e. from 1/5 ("no artifact exists at
+all") to a higher-but-still-capped score reflecting "a current artifact now exists, but
+it has not been physically installed/tested and no signed release path exists for
+Android." **Physical validation** remains unchanged at 1/5 — packaging success proves
+nothing physically. **UX clarity** remains human-reviewed, untouched.
+
+`[[FILLED BELOW — updated Quality Scorecard rows once artifacts are confirmed]]`
 
 ---
 
-## 10. Final verdict
+## 10. USB / private-storage hot-removal test — safety analysis
 
-**NOT READY.**
+Per instruction #9, before asking for any USB-removal-during-write test:
 
-Not because of demonstrated defects in the shipped code — automated evidence across
-all three components is strong (2,712 tests passing, clean lint/typecheck/build) — but
-because:
+**The operation is genuinely suitable for hot-removal testing, with one important
+framing point that changes the real risk level:** BUDCOM's Connector is architecturally
+**read-only against Tally** (`connector/budcom_connector/src/tally/security/capabilities.ts`
+enforces an `EXPORT`-only allowlist; `IMPORT`/`EXECUTE`/`CREATE`/`ALTER` are rejected —
+see ADR-003 "Read-Only Production Connector"). The private-storage SQLite database is a
+**synced local cache of Tally data, not the source of truth**. Tally itself — the
+business's real, authoritative accounting records — is never written to by BUDCOM and
+is completely unaffected by anything that happens to the private-storage vault. **The
+worst realistic outcome of this test is needing to delete the corrupted local vault and
+re-sync from Tally, not loss of real business data.** This materially lowers the actual
+stakes versus a naive reading of "testing data corruption."
 
-1. No current-version distributable candidate exists to physically test in the first
-   place (§4, §9.1).
-2. The physical-confirmation evidence trail for essentially every P0 hardening item
-   (TD-013 through TD-020) is either missing or doesn't actually cover the failure
-   mode it claims to close (§3).
-3. The mandatory Quality Scorecard freeze gate has never been filled in (§4).
-4. One real defect (TD-024, now fixed) and one real UX gap (TD-025, open) were found
-   in a barely-four-day-old feature with no prior hardening pass at all.
+That said, the known limitation is real and worth respecting: "hot-removal mid-write
+atomicity is not fully guaranteed" (`docs/governance/BUDCOM-BACKUP-RECOVERY-AND-DISASTER-RECOVERY.md`
+§5; `main.ts`'s watchdog doc comment). A genuine backup/recovery mechanism exists
+(`POST /storage/ledgers/backup` → timestamped copy under `{databasePath}/backups/`;
+`POST /storage/ledgers/integrity-check` → `PRAGMA integrity_check`;
+`docs/operations/ledger-database-backup-recovery.md`), but that backup by default lives
+**on the same drive being tested** — useless if the whole drive becomes unreadable, so
+it is not sufficient on its own for this specific test.
 
-None of this blocks continuing hardening work. It does block calling this
-**CONTROLLED PILOT READY** today. The path forward is mechanical, not exploratory:
-produce a current candidate (§9.1), run the five human-check sessions (§9.2–9.5), and
-this document can be updated to a READY verdict once that evidence exists — or to a
-narrower list of exact blockers if any physical test fails.
+**Bounded procedure (recommended, in this order):**
+
+1. **Preferred: use a spare/scratch USB drive with non-critical test-company data for
+   this specific step**, if one is available, rather than risking the drive you intend
+   to use for ongoing pilot operation. If not available, continue below.
+2. **Before pulling the drive**, copy the entire `<driveLetter>\BudcomPrivate\` folder
+   to a location on the Windows machine's own local disk (plain Explorer/PowerShell
+   copy — no connector interaction needed, and it captures everything, not just the
+   ledger DB). This is a convenience/speed measure for faster recovery, not a
+   correctness requirement, given the point above.
+3. Trigger the **smallest available write operation** — an individual **Ledger** sync
+   (not "Sync All") — to minimize how long a write window is actually open, and pull
+   the drive once the sync's in-progress indicator appears. Exact byte-level timing is
+   not humanly controllable and is not the goal; "during," not "at the precise worst
+   instant," is sufficient evidence.
+4. Reconnect the drive, run **Diagnostics → Storage integrity check** (or
+   `POST /storage/ledgers/integrity-check` directly) before doing anything else.
+5. **STOP condition:** if the integrity check fails, or Ledger/Voucher data looks
+   visibly wrong or missing, **do not continue further tests against that vault** —
+   copy the local backup from step 2 back onto the drive (replacing the corrupted
+   `BudcomPrivate` folder), re-run the integrity check to confirm recovery, and report
+   back what happened before proceeding to any other step. Do not attempt to
+   troubleshoot the corrupted state live against real pilot data.
+6. If the drive/vault does not recover even after restoring the step-2 backup, that is
+   itself a finding to report, not something to keep retrying — stop and tell me
+   exactly what you observed.
+
+This is not "yank the drive blindly" — it is bounded by a cheap backup, a
+minimal-duration trigger, a real recovery mechanism, an explicit stop condition, and the
+architectural fact that Tally itself is never at risk.
+
+---
+
+## 11. HUMAN CHECK — ordered execution sequence
+
+Ordered to install each candidate exactly **once** and group restarts together, so nothing
+needs to be reinstalled mid-sequence. For every step: exact action, expected result, what
+to report, PASS/FAIL criteria, and a STOP condition where relevant. Do not skip ahead if a
+step fails in a way its STOP condition flags — report back first.
+
+### Session 1 — Desktop/Connector install (candidate 0.4.8)
+
+**A. Desktop candidate install/upgrade identity continuity**
+- Action: Install the 0.4.8 candidate over the currently-running Desktop install (no
+  uninstall first).
+- Expected: Install completes; existing paired devices, selected company, and local data
+  remain intact — no forced re-pair.
+- Report: PASS/FAIL; if FAIL, exact error text/screenshot.
+- STOP if: install reports data loss or forces a re-pair — do not proceed to Session 2
+  until this is understood, since it changes what "upgrade continuity" means for every
+  later step.
+
+**C. Desktop/Connector startup**
+- Action: Launch Desktop normally.
+- Expected: Connector auto-starts, reaches `connected`/healthy within the normal ~30–90s
+  window.
+- Report: PASS/FAIL, time observed.
+
+**D. Tally/XML current source availability**
+- Action: Confirm Tally (or the configured XML source) is reachable from this machine
+  as it normally is for pilot use.
+- Expected: Desktop's health/readiness shows Tally reachable.
+- Report: PASS/FAIL.
+- STOP if: Tally is not reachable at all — nothing downstream can be meaningfully
+  tested; fix connectivity first.
+
+**E. Company discovery/selection**
+- Action: Confirm the company list loads and the intended pilot company is selected (or
+  select it if not already).
+- Expected: Company list populates; selection succeeds and persists.
+- Report: PASS/FAIL, company name shown.
+
+### Session 2 — Android APK install + core workflows (candidate continuity.15)
+
+**B. Android APK upgrade identity/data continuity**
+- Action: Install the continuity.15 debug APK **in place** (no uninstall, no data clear)
+  over the currently-installed app.
+- Expected: Install completes as an upgrade; existing pairing, selected company, and
+  local Ledger/Voucher data all survive untouched.
+- Report: PASS/FAIL; screenshot of Dashboard immediately after first launch.
+- STOP if: Android forces an uninstall or reports a signature mismatch — this would mean
+  the currently-installed app was NOT debug-signed, contradicting this candidate's
+  premise; stop and report the exact error before doing anything else (do not
+  uninstall to force it through).
+
+**F. Android connection/pairing**
+- Action: Confirm the app reaches the paired Connector without any manual action.
+- Expected: Dashboard shows "Fully operational" / connected without needing a fresh QR
+  scan.
+- Report: PASS/FAIL.
+
+**G. First sync**
+- Action: Run "Sync all" (Ledgers + Stock items + Vouchers) once.
+- Expected: Completes without error; realistic counts for the pilot company.
+- Report: PASS/FAIL, counts observed per resource type.
+
+**H. Repeated/manual refresh**
+- Action: Run manual refresh 2–3 more times in a row.
+- Expected: Consistent, stable results each time; no regression to a stale/error state.
+- Report: PASS/FAIL.
+
+**I. Stale-first-refresh defect check**
+- Action: On the very first refresh after this session's app launch (should already be
+  covered by step G, but note explicitly), confirm the data shown is NOT left over from
+  before the app was updated.
+- Expected: Data reflects the current sync, not stale pre-upgrade data.
+- Report: PASS/FAIL.
+
+**J. Ledgers**
+- Action: Open Ledger Browser, open one ledger's statement.
+- Expected: Loads correctly; Date/Particulars/Dr/Cr/Balance intact.
+- Report: PASS/FAIL.
+
+**K. Vouchers**
+- Action: Open Voucher Browser/list.
+- Expected: Loads; LEFT/CENTER/RIGHT row layout intact (type/number, party, date).
+- Report: PASS/FAIL — this exercises the just-modified `c2be1fc`/`e2d3eac` code with
+  zero prior physical confirmation, so look carefully at row alignment and party-name
+  display specifically.
+
+**L. Voucher details**
+- Action: Open one voucher's detail screen.
+- Expected: Header/metadata/narration/ledger+inventory lines all display correctly.
+- Report: PASS/FAIL.
+
+**M. Supported voucher types / estimate framing**
+- Action: Confirm the voucher types you'd expect (Sales, Purchase, Payment, Receipt,
+  Contra, Credit Note, etc.) all appear in the list as expected.
+- Expected: Types match what's in Tally for the test period.
+- Report: PASS/FAIL, list of types observed.
+- **Also flag for product-owner decision** (not a pass/fail item): the connector
+  currently syncs every voucher in the date range regardless of Tally's "Optional" flag
+  or voucher type — if Tally has any Optional-marked or Estimate/Quotation-type
+  vouchers in the test period, check whether they appear in the list. If your intent
+  was for those to be excluded from sync entirely (not just labeled "ESTIMATE" on the
+  generated PDF), that's a scope decision to make explicitly, not something to assume.
+
+**N. Voucher PDF**
+- Action: Generate a PDF from a voucher's detail screen.
+- Expected: PDF generates, clearly labeled "ESTIMATE" with the "for review and
+  reference only" footer — never presented as an official invoice.
+- Report: PASS/FAIL.
+
+**O. Ledger PDF**
+- Action: Generate a Ledger statement PDF (both Summary and Detailed modes if time
+  allows).
+- Expected: Matches the already-physically-confirmed continuity.13 behavior.
+- Report: PASS/FAIL.
+
+**P. Android share/save**
+- Action: Share the voucher PDF via WhatsApp (test the new ledger-alias recipient
+  resolution specifically, `e2d3eac`) and Save both PDFs to device storage.
+- Expected: WhatsApp opens with a resolved recipient where a ledger alias maps to a
+  contact; Save completes to a normal accessible location.
+- Report: PASS/FAIL for share and for save, separately. This WhatsApp-alias behavior
+  has had zero device testing before this — look closely at whether the resolved
+  recipient is actually correct, not just that WhatsApp opened.
+
+### Session 3 — Connectivity resilience (no restart needed yet)
+
+**Q. Temporary Wi-Fi interruption/reconnect**
+- Action: Turn the phone's Wi-Fi off, wait ~15s, turn it back on (same network).
+- Expected: Dashboard automatically shows Offline then automatically recovers, no
+  manual refresh needed (already physically confirmed once in continuity.13 — this
+  re-confirms it still holds on this candidate).
+- Report: PASS/FAIL.
+
+**R. REAL Connector address-change recovery (TD-017 — do not substitute Q for this)**
+- Action: With the app connected and working, actually change the Connector's network
+  address — e.g. move the Windows machine to a **different Wi-Fi network**, or restart
+  the router so it gets a new DHCP lease. This must be a genuine address change, not a
+  same-network toggle.
+- Expected: The Android app reconnects to the Connector at its new address
+  automatically, without re-pairing, a new QR code, or manual IP entry.
+- Report: PASS/FAIL — **this is the single most important untested scenario in this
+  entire sequence**; no prior physical test has ever exercised this specific path.
+- STOP if: reconnection requires re-pairing — this is a real TD-017 regression/failure;
+  stop and report the exact behavior observed (what error, if any, and how long you
+  waited) before continuing.
+
+### Session 4 — Restart resilience (batched together)
+
+**S. Connector/Desktop restart**
+- Action: Restart the Connector from Desktop's Settings (or fully close and relaunch
+  Desktop) with a company already selected.
+- Expected: Company selection and dashboard/company list recover automatically within
+  ~70s without manual Refresh, even if the very first post-restart request times out.
+- Report: PASS/FAIL, time observed.
+
+**T. Android restart**
+- Action: Fully restart the phone (not just the app).
+- Expected: App reopens, reconnects to the Connector, and shows correct state without
+  manual intervention.
+- Report: PASS/FAIL.
+
+**U. Windows restart (where required)**
+- Action: Restart the Windows machine, let Desktop auto-start (or start it manually if
+  it's not configured to auto-start) and confirm Connector comes back up.
+- Expected: Same as C — Desktop/Connector re-reach healthy state; paired Android device
+  reconnects (re-test F briefly) without re-pairing.
+- Report: PASS/FAIL.
+
+### Session 5 — Private/removable storage (do last — see §10 for the safety plan on step Y)
+
+**V. USB attached at startup**
+- Action: With the private-storage USB drive attached, restart Desktop.
+- Expected: Normal startup, storage resolves automatically.
+- Report: PASS/FAIL.
+
+**W. USB unavailable at startup**
+- Action: Remove the USB drive, then start Desktop.
+- Expected: Desktop shows the storage-setup/unavailable screen (Retry/Locate/Exit) —
+  not a silent fallback to a different location, not a crash.
+- Report: PASS/FAIL.
+
+**X. Controlled USB removal while idle**
+- Action: With Desktop running normally (not syncing), pull the USB drive.
+- Expected: Desktop detects loss within ~10s (the watchdog interval) and stops the
+  Connector. **Known limitation (TD-025):** the dashboard will currently show a
+  generic "Disconnected" state rather than a storage-specific message — this is an
+  **expected FAIL of TD-025 specifically**, not a surprise; still report it as
+  observed, since confirming it happens as documented (rather than something worse)
+  is itself the useful evidence here.
+- Report: PASS/FAIL for "Connector stopped," separately note what the dashboard
+  actually displayed.
+
+**Y. Controlled USB loss during read/write/sync**
+- Follow the bounded procedure in §10 exactly — spare drive if available, local backup
+  first, smallest-write trigger, integrity check on reconnect, explicit STOP condition.
+- Report: PASS/FAIL, and explicitly confirm whether you used a spare drive or the
+  pilot drive with a pre-test backup.
+
+**Z. Reconnect same USB, verify canonical DB identity/data**
+- Action: Reinsert the same drive, click Retry on the storage screen.
+- Expected: Reconnects to the *same* vault (same data, not a fresh empty one); Ledger/
+  Voucher data matches what was there before removal (plus whatever synced during Y, if
+  Y succeeded without corruption).
+- Report: PASS/FAIL.
+
+**AA. Verify no competing fallback DB silently became authoritative**
+- Action: While the USB was disconnected (steps W/X/Y), confirm no new database was
+  created at the Standard/AppData default location.
+- Expected: No `connector-data\budcom-ledger.db` appears under Desktop's AppData path if
+  the install is configured for Private storage — check the folder directly if unsure
+  where AppData is (`%APPDATA%\budcom-desktop\connector-data` or similar).
+- Report: PASS/FAIL — this one specifically validates a guarantee the automated tests
+  already prove in isolation; physically confirming it holds end-to-end matters because
+  a silent second database would be a genuine data-integrity problem.
+
+**AB. Android sync after USB recovery**
+- Action: With storage reconnected and Connector healthy again, run an Android sync.
+- Expected: Completes normally against the recovered vault.
+- Report: PASS/FAIL.
+
+---
+
+## 12. Final verdict
+
+**NOT READY** — unchanged from §10's original assessment in substance, now with a
+current candidate available to actually run the tests above against.
+
+What changed this pass: a current-HEAD, current-version candidate now exists for both
+Desktop (`0.4.8`) and Android (`continuity.15`) — closing the "nothing exists to test"
+gap. What has **not** changed: zero physical evidence exists for this candidate yet
+(packaging success is not physical proof — see §9.5/instruction #6), the Quality
+Scorecard's Physical validation dimension remains 1/5, and TD-013 through TD-020's
+physical-confirmation gaps from §3 are exactly as open as before.
+
+**Do not treat anything in §9 as evidence that CONTROLLED PILOT READY is close** — it
+converts "no candidate exists" to "a candidate exists, untested." The path forward is
+§11's ordered sequence. This document will be updated to either a READY verdict or a
+narrower, exact blocker list once that physical evidence exists — not before.
