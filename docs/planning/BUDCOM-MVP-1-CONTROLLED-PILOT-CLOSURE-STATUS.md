@@ -222,19 +222,45 @@ and restored immediately after with `git stash pop`. Repository classification f
 run: **"MVP-1 working set clean; pre-existing post-MVP untracked artifacts remain
 outside current mandate."**
 
-### 9.3 Desktop controlled-pilot build
+### 9.3 Desktop controlled-pilot build — RESULT: PASS
 
 First attempt (invoked through the Bash/Git-Bash tool) failed at the Node-runtime
 staging step with `tar: Cannot connect to D: resolve failed` — a Windows/Git-Bash
 environment quirk, not a code defect: Git for Windows' bundled MSYS `tar` (resolved
 first in that shell's `PATH`) misparses a `D:\...` destination as a remote-host
 `tar` target, unlike the native `C:\WINDOWS\system32\tar.exe`. Re-invoked the identical
-pipeline through PowerShell (whose `PATH` resolves the native `tar.exe` first) and it
-completed.
+pipeline through PowerShell (whose `PATH` resolves the native `tar.exe` first).
 
-`[[FILLED BELOW — pipeline result]]`
+Second attempt completed every build/test step successfully but was then correctly
+**rejected by the pipeline's own post-build provenance check** — I had edited this
+closure document (a git-tracked file) while the pipeline was still running, and its
+`validatePostBuildProvenance()` step (by design) treats any non-allowlisted change
+detected after the build as untrusted and refuses to certify the release. The installer
+`.exe` was physically produced on disk at that point but never went through manifest/
+checksum/package-boundary validation, so it was correctly not treated as the final
+candidate. Committed the closure-doc edit to get a clean tree again, then re-ran a
+third time touching nothing else — **full PASS** end to end:
 
-### 9.4 Android debug candidate build
+| Step | Result |
+|---|---|
+| connector-lint / build / test / architecture / audit | PASS (157 files / 1358 tests, 0 vulnerabilities) |
+| desktop-build / lint / test / audit | PASS (66 files / 677 tests) |
+| contract-test | PASS (5 tests) |
+| nsis-installer (electron-builder) | PASS |
+| package-boundary / packaged-runtime-contract / packaged-connector-dependencies | PASS |
+| manifest / verify-manifest / release-acceptance | PASS |
+
+**Artifact:** `release/controlled-pilot/0.4.8/artifacts/BudcomDesktop-0.4.8-x64-setup.exe`
+**Size:** 106,065,028 bytes (~101.2 MB)
+**SHA-256:** `61efcd64bface65fa860933ff0aa76abd6f58fc50cbfdfa043df89f39d4af043`
+**Producing commit:** `b2023df2f10926e37508ab8d60ec28d7288fd63e` (`sourceTreeCleanAtStart: true`, `dirtyTree: false`)
+**Bundled Connector version:** `0.4.0` · **Storage schema version:** `12`
+**Packaged Node runtime:** `22.16.0` win-x64, SHA-256 `c5ff4c736112dd483c750fd4149d30c8a116db1a49b8b3ec88be4b65e6c86c19`
+**Signing:** unsigned (accepted controlled-pilot limitation — matches every prior
+candidate; SmartScreen warning expected on install, per the runbook)
+**Full report:** `release/controlled-pilot/0.4.8/reports/release-report.json`
+
+### 9.4 Android debug candidate build — RESULT: PASS
 
 Built `assembleDebug` (installable, signed with the standard Android debug keystore) —
 per `D:\Projects\budcom_archives\temporary-builds\20260808_phase3u6\BudcomAndroid-d76b3d0-debug.apk`,
@@ -243,32 +269,42 @@ build, not release-signed; this candidate follows that same, already-proven-work
 identity so it can upgrade-install over whatever is currently on the test phone without
 requiring an uninstall.
 
+`clean testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest` — **all PASS**,
+**1002/1002 JVM tests, 0 failures**, at post-version-bump commit `8808e76`.
+
+**Artifact:** `release/controlled-pilot/android/0.1.1-continuity.15-8808e76/BudcomAndroid-8808e76-debug.apk`
+**Size:** 13,928,060 bytes (~13.3 MB)
+**SHA-256:** `7a67db16cf588c57b2b193353e063fe5b98965f65e63e8cbf277b53f1f45ac08`
+**Producing commit:** `8808e76`
+**versionCode / versionName:** `16` / `0.1.1-continuity.15`
+
 **Signing-identity gap found (report, not silently resolved):** no release keystore,
 `signingConfig`, or any signing material exists anywhere in this repository or
 environment (`apps/budcom_android/app/build.gradle.kts`'s `release {}` block has no
-`signingConfig` at all). `assembleRelease` will therefore produce an **unsigned**,
+`signingConfig` at all). `assembleRelease` would therefore produce an **unsigned**,
 **not installable** artifact — useful only for the automated minify/shrink/lint
-validation that already existed for TD-019, never for physical installation. This is a
-genuine environment gap (item 5's "signing state" instruction), not something to
-resolve unilaterally: minting a brand-new release keystore now would not match
-whatever (if anything) signed the currently-installed app on the physical device, and
-generating one is a real, hard-to-reverse identity decision. **Recommendation:**
-continue using debug-signed candidates for physical pilot testing (matches all prior
-history) until/unless a customer-facing signed release is explicitly scoped as its own
-piece of work.
-
-`[[FILLED BELOW — build result, APK path, hash, size]]`
+validation that already existed for TD-019, never for physical installation. Did not
+attempt `assembleRelease` this pass since it cannot serve the physical-install goal and
+would only duplicate TD-019's already-existing automated evidence. This is a genuine
+environment gap (item 5's "signing state" instruction), not something to resolve
+unilaterally: minting a brand-new release keystore now would not match whatever (if
+anything) signed the currently-installed app on the physical device, and generating one
+is a real, hard-to-reverse identity decision. **Recommendation:** continue using
+debug-signed candidates for physical pilot testing (matches all prior history)
+until/unless a customer-facing signed release is explicitly scoped as its own piece of
+work.
 
 ### 9.5 Quality Scorecard status after packaging
 
-Per instruction #7: **Upgrade/release readiness** may improve only to the extent
-objectively supported by successful packaging — i.e. from 1/5 ("no artifact exists at
-all") to a higher-but-still-capped score reflecting "a current artifact now exists, but
-it has not been physically installed/tested and no signed release path exists for
-Android." **Physical validation** remains unchanged at 1/5 — packaging success proves
-nothing physically. **UX clarity** remains human-reviewed, untouched.
-
-`[[FILLED BELOW — updated Quality Scorecard rows once artifacts are confirmed]]`
+Updated `docs/governance/BUDCOM-QUALITY-SCORECARD.md`:
+- **Upgrade/release readiness: 1 → 2/5** — a current, fully-validated candidate now
+  exists for both components with recorded hashes/manifest, but it has not been
+  installed on real hardware, and Android has no signed-release path at all. Still
+  capped well below "acceptable" until §11's install/upgrade steps (A, B) pass
+  physically.
+- **Physical validation: unchanged at 1/5** — packaging success is not physical proof
+  (instruction #6). Only real device/machine testing moves this number.
+- **UX clarity:** unchanged, still marked **(judgment)** — untouched by this pass.
 
 ---
 
@@ -555,17 +591,23 @@ step fails in a way its STOP condition flags — report back first.
 
 ## 12. Final verdict
 
-**NOT READY** — unchanged from §10's original assessment in substance, now with a
-current candidate available to actually run the tests above against.
+**NOT READY.**
 
-What changed this pass: a current-HEAD, current-version candidate now exists for both
-Desktop (`0.4.8`) and Android (`continuity.15`) — closing the "nothing exists to test"
-gap. What has **not** changed: zero physical evidence exists for this candidate yet
-(packaging success is not physical proof — see §9.5/instruction #6), the Quality
-Scorecard's Physical validation dimension remains 1/5, and TD-013 through TD-020's
-physical-confirmation gaps from §3 are exactly as open as before.
+What changed this pass: current-HEAD, fully validated candidates now exist for both
+components — closing the "nothing exists to test" gap that was the single largest
+blocker in the original assessment:
 
-**Do not treat anything in §9 as evidence that CONTROLLED PILOT READY is close** — it
-converts "no candidate exists" to "a candidate exists, untested." The path forward is
-§11's ordered sequence. This document will be updated to either a READY verdict or a
-narrower, exact blocker list once that physical evidence exists — not before.
+- Desktop `0.4.8` — `release/controlled-pilot/0.4.8/artifacts/BudcomDesktop-0.4.8-x64-setup.exe`, SHA-256 `61efcd64bface65fa860933ff0aa76abd6f58fc50cbfdfa043df89f39d4af043`, commit `b2023df`
+- Android `0.1.1-continuity.15` (versionCode 16) — `release/controlled-pilot/android/0.1.1-continuity.15-8808e76/BudcomAndroid-8808e76-debug.apk`, SHA-256 `7a67db16cf588c57b2b193353e063fe5b98965f65e63e8cbf277b53f1f45ac08`, commit `8808e76`
+
+What has **not** changed: zero physical evidence exists for either candidate yet
+(packaging success is not physical proof — instruction #6). The Quality Scorecard's
+Physical validation dimension remains 1/5 (Upgrade/release readiness moved 1→2). All of
+TD-013 through TD-020's physical-confirmation gaps from §3 are exactly as open as
+before — nothing about producing these artifacts touches that evidence trail.
+
+**Do not treat §9 as evidence that CONTROLLED PILOT READY is close** — it converts "no
+candidate exists" to "a candidate exists, untested." The path forward is §11's ordered
+sequence, run against these exact two artifacts. This document will be updated to
+either a READY verdict or a narrower, exact blocker list once that physical evidence
+exists — not before.
