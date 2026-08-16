@@ -24,9 +24,7 @@ class DashboardScreenTest {
                 DashboardScreen(state = operationalState(), onEvent = {})
             }
         }
-        composeRule.onNodeWithTag("dashboard_banner_operational").assertIsDisplayed()
-        composeRule.onNodeWithTag("dashboard_connector_card").assertIsDisplayed()
-        composeRule.onNodeWithTag("dashboard_company_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("dashboard_secondary_actions").assertIsDisplayed()
         composeRule.onNodeWithTag("dashboard_content").assertIsDisplayed()
     }
 
@@ -93,23 +91,20 @@ class DashboardScreenTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("dashboard_open_server_config").performClick()
         composeRule.onNodeWithTag("dashboard_open_company").performClick()
         composeRule.onNodeWithTag("dashboard_open_master_data").performClick()
-        composeRule.onNodeWithTag("dashboard_open_vouchers").performClick()
-        composeRule.onNodeWithTag("dashboard_open_search").performClick()
+        composeRule.onNodeWithTag("dashboard_primary_vouchers").performClick()
+        composeRule.onNodeWithTag("dashboard_search_entry").performClick()
         composeRule.onNodeWithTag("dashboard_open_sync").performClick()
         composeRule.onNodeWithTag("dashboard_open_diagnostics").performClick()
-        composeRule.onNodeWithTag("dashboard_open_settings").performClick()
-        composeRule.onNodeWithTag("dashboard_change_company").performClick()
-        assertTrue(events.contains(DashboardEvent.OpenServerConfig))
+        composeRule.onNodeWithTag("dashboard_topbar_settings").performClick()
         assertTrue(events.contains(DashboardEvent.OpenMasterData))
         assertTrue(events.contains(DashboardEvent.OpenVouchers))
         assertTrue(events.contains(DashboardEvent.OpenSearch))
         assertTrue(events.contains(DashboardEvent.OpenSync))
         assertTrue(events.contains(DashboardEvent.OpenDiagnostics))
         assertTrue(events.contains(DashboardEvent.OpenSettings))
-        assertTrue(events.count { it == DashboardEvent.OpenCompanySelection } >= 2)
+        assertTrue(events.contains(DashboardEvent.OpenCompanySelection))
     }
 
     @Test
@@ -146,7 +141,10 @@ class DashboardScreenTest {
         composeRule.setContent {
             BudcomTheme {
                 DashboardScreen(
-                    state = operationalState(),
+                    state = operationalState().copy(
+                        readinessLabel = ReadinessLabel.NotReady,
+                        operationalMode = DashboardOperationalMode.NotReady,
+                    ),
                     onEvent = { events.add(it) },
                 )
             }
@@ -169,7 +167,7 @@ class DashboardScreenTest {
         }
         composeRule.onNodeWithTag("dashboard_content").assertIsDisplayed()
         composeRule.onNodeWithTag("dashboard_busy_hint").assertIsDisplayed()
-        composeRule.onNodeWithTag("dashboard_connector_card").assertIsDisplayed()
+        composeRule.onNodeWithTag("dashboard_secondary_actions").assertIsDisplayed()
     }
 
     @Test

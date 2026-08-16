@@ -224,28 +224,28 @@ fun DashboardScreen(
                             .testTag("dashboard_content"),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        // A/c Data Home layout (BUDCOM-UI-DESIGN-DECISIONS §3 / approved Stitch
-                        // master BUDCOM-AC-DATA-HOME-MASTER.png): permanent search below the
-                        // header, a compact freshness/Tally-connection summary, then Vouchers and
-                        // Ledgers as the primary entries — all reusing existing navigation events
-                        // and state, nothing new fetched or computed. The detailed cards below are
-                        // unchanged so no existing capability (test connection, validate session,
-                        // quick actions) is lost, only supplemented.
                         HomeSearchEntry(onEvent = onEvent)
                         HomeCompactStatusRow(state = state, onEvent = onEvent)
                         HomePrimaryEntries(onEvent = onEvent)
-                        HorizontalDivider()
-
-                        OperationalBanner(state = state)
 
                         if (state.isRefreshing || state.isTestingConnection || state.isValidatingSession) {
                             LinearBusyHint(state = state)
                         }
 
-                        ConnectorStatusCard(state = state, onEvent = onEvent)
-                        CompanySessionCard(state = state, onEvent = onEvent)
-                        SyncStatusCard(state = state, onEvent = onEvent)
-                        QuickActionsCard(onEvent = onEvent)
+                        // The approved Home is a compact accounting launcher, not the former
+                        // diagnostics dashboard. Keep technical recovery detail available only
+                        // when it is actionable; healthy operation gets a quiet secondary-tools
+                        // row so all existing destinations survive without dominating the screen.
+                        if (state.operationalMode == DashboardOperationalMode.FullyOperational) {
+                            HomeSecondaryActions(onEvent)
+                        } else {
+                            HorizontalDivider()
+                            OperationalBanner(state = state)
+                            ConnectorStatusCard(state = state, onEvent = onEvent)
+                            CompanySessionCard(state = state, onEvent = onEvent)
+                            SyncStatusCard(state = state, onEvent = onEvent)
+                            QuickActionsCard(onEvent = onEvent)
+                        }
 
                         Spacer(modifier = Modifier.height(24.dp))
                     }
@@ -377,6 +377,37 @@ private fun HomePrimaryEntries(onEvent: (DashboardEvent) -> Unit) {
             testTag = "dashboard_primary_ledgers",
             onClick = { onEvent(DashboardEvent.OpenLedgers) },
         )
+    }
+}
+
+@Composable
+private fun HomeSecondaryActions(onEvent: (DashboardEvent) -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().testTag("dashboard_secondary_actions"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        HorizontalDivider(modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+        Text(
+            text = "More",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { onEvent(DashboardEvent.OpenMasterData) }, modifier = Modifier.weight(1f).testTag("dashboard_open_master_data")) {
+                Text("Stock items")
+            }
+            TextButton(onClick = { onEvent(DashboardEvent.OpenCompanySelection) }, modifier = Modifier.weight(1f).testTag("dashboard_open_company")) {
+                Text("Company")
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { onEvent(DashboardEvent.OpenSync) }, modifier = Modifier.weight(1f).testTag("dashboard_open_sync")) {
+                Text("Sync")
+            }
+            TextButton(onClick = { onEvent(DashboardEvent.OpenDiagnostics) }, modifier = Modifier.weight(1f).testTag("dashboard_open_diagnostics")) {
+                Text("Diagnostics")
+            }
+        }
     }
 }
 

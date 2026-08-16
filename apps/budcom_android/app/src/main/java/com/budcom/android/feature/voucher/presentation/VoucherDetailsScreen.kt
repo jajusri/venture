@@ -19,6 +19,7 @@ import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -117,7 +118,7 @@ fun VoucherDetailsScreen(
         modifier = modifier.fillMaxSize().testTag("voucher_details_screen"),
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.voucher_details_title)) },
+                title = { Text(state.details?.numberLabel ?: stringResource(R.string.voucher_details_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("voucher_details_back")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -181,10 +182,11 @@ fun VoucherDetailsScreen(
                 state.details != null -> {
                     val details = state.details
                     LazyColumn(
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 96.dp),
+                        verticalArrangement = Arrangement.spacedBy(0.dp),
                         modifier = Modifier
                             .fillMaxSize()
+                            .padding(horizontal = 16.dp)
                             .testTag("voucher_details_content"),
                     ) {
                         item {
@@ -262,17 +264,9 @@ fun VoucherDetailsScreen(
                                 }
                             }
                         }
-                        item {
-                            PartyCard(details = details)
-                        }
                         if (details.inventoryLines.isNotEmpty()) {
                             item {
                                 InvoiceItemsCard(details.inventoryLines)
-                            }
-                        }
-                        details.amountLabel?.let { amount ->
-                            item {
-                                TotalCard(amount)
                             }
                         }
                         if (!details.narration.isNullOrBlank()) {
@@ -396,31 +390,33 @@ private fun HeaderCard(details: VoucherDetailsContentUi) {
             .semantics {
                 contentDescription = "${details.typeLabel} ${details.numberLabel}"
             },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(details.typeLabel.uppercase(), style = MaterialTheme.typography.labelLarge)
+                Text(details.dateLabel, style = MaterialTheme.typography.bodyMedium)
+            }
             Text(
-                text = details.documentTitle,
-                style = MaterialTheme.typography.headlineSmall,
+                text = details.partyLabel ?: details.documentTitle,
+                style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
             )
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = stringResource(R.string.voucher_details_number, details.numberLabel),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                Text(
-                    text = details.dateLabel,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.End,
-                )
-            }
             details.referenceLabel?.let {
                 Text(
                     text = stringResource(R.string.voucher_details_reference_value, it),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+            details.amountLabel?.let { amount ->
+                Row(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Total Amount", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(amount, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.End)
+                }
             }
         }
     }
@@ -546,9 +542,14 @@ private fun SectionCard(
     testTag: String,
     content: @Composable () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth().testTag(testTag)) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(text = title, style = MaterialTheme.typography.titleMedium)
+    Card(
+        modifier = Modifier.fillMaxWidth().testTag(testTag),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+    ) {
+        Column(modifier = Modifier.padding(vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            HorizontalDivider()
+            Text(text = title.uppercase(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             content()
         }
     }

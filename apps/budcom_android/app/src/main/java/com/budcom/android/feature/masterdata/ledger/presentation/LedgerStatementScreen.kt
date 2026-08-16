@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -54,6 +55,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -390,14 +393,21 @@ private fun LedgerPeriodSelectorRow(selected: LedgerPeriodSelection, onSelect: (
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
+            .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.medium)
+            .padding(4.dp)
             .testTag("ledger_statement_period_selector"),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         for ((label, period) in PERIOD_QUICK_CHOICES) {
             val isSelected = period::class == selected::class
             TextButton(
                 onClick = { onSelect(period) },
-                modifier = Modifier.testTag("ledger_statement_period_choice_$label"),
+                modifier = Modifier
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.surface else androidx.compose.ui.graphics.Color.Transparent,
+                        MaterialTheme.shapes.small,
+                    )
+                    .testTag("ledger_statement_period_choice_$label"),
             ) {
                 Text(
                     label,
@@ -421,30 +431,35 @@ private fun LedgerStatementContent(
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("ledger_statement_list"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         item {
-            Column {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 if (!isOnline) MasterDataOfflineBanner(modifier = Modifier.padding(bottom = 8.dp))
                 refreshError?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp).testTag("ledger_statement_refresh_error"))
                 }
-                Text(content.ledgerName, style = MaterialTheme.typography.titleLarge)
-                content.parentGroup?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                Text("CLOSING BALANCE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    content.closingLabel,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.testTag("ledger_statement_closing"),
+                )
+                Text(
+                    "Opening balance ${content.openingLabel}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp).testTag("ledger_statement_opening"),
+                )
                 LedgerPeriodSelectorRow(selected = periodSelection, onSelect = onSelectPeriod)
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp).clickable(onClick = onChangePeriod),
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp).clickable(onClick = onChangePeriod),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text("Period: ${content.periodLabel}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("ledger_statement_period"))
-                    Text("Change", style = MaterialTheme.typography.labelMedium)
+                    Text("Custom", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
-                Text(
-                    "Opening balance: ${content.openingLabel}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 8.dp).testTag("ledger_statement_opening"),
-                )
                 content.coverageMessage?.let {
                     Text(
                         it,
@@ -453,54 +468,70 @@ private fun LedgerStatementContent(
                         modifier = Modifier.padding(top = 4.dp).testTag("ledger_statement_coverage_message"),
                     )
                 }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             }
         }
 
+        item { LedgerStatementTableHeader() }
+
         if (content.rows.isEmpty()) {
-            item { MasterDataEmptyMessage("No transactions for this ledger in the selected period.") }
+            item {
+                Box(modifier = Modifier.padding(16.dp)) {
+                    MasterDataEmptyMessage("No transactions for this ledger in the selected period.")
+                }
+            }
         } else {
             items(content.rows, key = { "${it.voucherId}-${it.dateLabel}-${it.voucherNumberLabel}" }) { row ->
                 LedgerStatementRow(row = row, onClick = { onTransactionTapped(row.voucherId) })
             }
         }
 
-        item {
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            Text(
-                "Closing balance: ${content.closingLabel}",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.testTag("ledger_statement_closing"),
-            )
-        }
+    }
+}
+
+@Composable
+private fun LedgerStatementTableHeader() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("DATE", modifier = Modifier.width(72.dp), style = MaterialTheme.typography.labelMedium)
+        Text("REF / PARTICULARS", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+        Text("DEBIT / CREDIT", modifier = Modifier.width(104.dp), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.End)
     }
 }
 
 @Composable
 private fun LedgerStatementRow(row: LedgerStatementRowUi, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth().testTag("ledger_statement_row_${row.voucherId}"),
-        colors = CardDefaults.cardColors(),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .testTag("ledger_statement_row_${row.voucherId}")
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(row.dateLabel, style = MaterialTheme.typography.bodyMedium)
-                Text("${row.voucherTypeLabel} · ${row.voucherNumberLabel}", style = MaterialTheme.typography.bodyMedium)
-            }
+        Text(row.dateLabel, modifier = Modifier.width(72.dp), style = MaterialTheme.typography.bodyMedium)
+        Column(modifier = Modifier.weight(1f)) {
+            Text(row.voucherTypeLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(row.voucherNumberLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             row.particularsLabel?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text("Dr: ${row.debitLabel ?: "—"}", style = MaterialTheme.typography.bodySmall)
-                Text("Cr: ${row.creditLabel ?: "—"}", style = MaterialTheme.typography.bodySmall)
-                Text(row.runningBalanceLabel ?: "—", style = MaterialTheme.typography.bodySmall)
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        Column(modifier = Modifier.width(104.dp), horizontalAlignment = Alignment.End) {
+            Text(row.debitLabel ?: row.creditLabel ?: "—", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                if (row.debitLabel != null) "Dr" else if (row.creditLabel != null) "Cr" else "",
+                style = MaterialTheme.typography.labelMedium,
+                color = if (row.creditLabel != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface,
+            )
+            Text(row.runningBalanceLabel ?: "—", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
+    HorizontalDivider()
 }
 
 @Composable
