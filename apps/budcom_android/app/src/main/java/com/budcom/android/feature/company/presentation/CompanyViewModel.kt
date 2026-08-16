@@ -177,7 +177,7 @@ internal fun CompanyUiState.applyFilter(): CompanyUiState {
 }
 
 private fun AppError.toUiError(): CompanyUiError = when (this) {
-    is AppError.Offline -> CompanyUiError.Offline("No network connection.")
+    is AppError.Offline -> CompanyUiError.Offline("Device is offline.")
     is AppError.Timeout -> CompanyUiError.Timeout("The request timed out.")
     is AppError.Remote -> CompanyUiError.Http(
         buildString {
@@ -192,7 +192,7 @@ private fun AppError.toUiError(): CompanyUiError = when (this) {
 }
 
 private fun AppError.toMessage(): String = when (this) {
-    is AppError.Offline -> "No network connection."
+    is AppError.Offline -> "Device is offline."
     is AppError.Timeout -> "The request timed out."
     is AppError.Remote -> message
     is AppError.Serialization -> message

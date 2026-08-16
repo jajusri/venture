@@ -37,6 +37,18 @@ enum class SyncPhase {
     Conflict,
 }
 
+internal fun SyncPhase.toLabel(): String = when (this) {
+    SyncPhase.Idle -> "Idle"
+    SyncPhase.Starting -> "Starting"
+    SyncPhase.Running -> "Running"
+    SyncPhase.Observing -> "Observing"
+    SyncPhase.Success -> "Completed"
+    SyncPhase.PartialSuccess -> "Partially completed"
+    SyncPhase.Failed -> "Failed"
+    SyncPhase.Cancelled -> "Cancelled"
+    SyncPhase.Conflict -> "Conflict"
+}
+
 data class SyncProgressUi(
     val statusLabel: String,
     val processedLabel: String?,

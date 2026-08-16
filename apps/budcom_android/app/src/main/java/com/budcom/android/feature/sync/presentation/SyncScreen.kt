@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -132,10 +134,20 @@ fun SyncScreen(
 
             OutlinedButton(
                 onClick = { onEvent(SyncEvent.RefreshOverview) },
+                enabled = !state.isRefreshingOverview,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("sync_refresh"),
             ) {
+                if (state.isRefreshingOverview) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .testTag("sync_refresh_spinner"),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Text(stringResource(R.string.sync_refresh))
             }
         }
@@ -166,7 +178,7 @@ private fun SummaryCard(state: SyncUiState, onEvent: (SyncEvent) -> Unit) {
                 modifier = Modifier.testTag("sync_company"),
             )
             Text(
-                text = stringResource(R.string.sync_phase_label, state.phase.name),
+                text = stringResource(R.string.sync_phase_label, state.phase.toLabel()),
                 modifier = Modifier.testTag("sync_phase"),
             )
             if (!state.hasCompany) {
@@ -259,7 +271,7 @@ private fun TargetCard(card: SyncTargetCardUi, onEvent: (SyncEvent) -> Unit) {
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(text = card.title, style = MaterialTheme.typography.titleSmall)
             Text(text = card.statusLine, style = MaterialTheme.typography.bodyMedium)

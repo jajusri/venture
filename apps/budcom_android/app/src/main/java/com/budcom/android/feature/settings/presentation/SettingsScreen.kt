@@ -352,6 +352,15 @@ private fun LedgerSharingCard(
             modifier = Modifier.padding(top = 8.dp),
         )
         LedgerSharingDefaultPeriod.entries.forEach { period ->
+            // Same copy as the period-picker chips on LedgerStatementScreen — one name per period
+            // across the app, not a second vocabulary invented here.
+            val label = when (period) {
+                LedgerSharingDefaultPeriod.Last7Sales -> "Last 7 Sales"
+                LedgerSharingDefaultPeriod.Today -> "Today"
+                LedgerSharingDefaultPeriod.ThisMonth -> "This Month"
+                LedgerSharingDefaultPeriod.LastMonth -> "Last Month"
+                LedgerSharingDefaultPeriod.CurrentFinancialYear -> "Current FY"
+            }
             val selected = state.ledgerSharingDefaultPeriod == period
             Row(
                 modifier = Modifier
@@ -366,7 +375,7 @@ private fun LedgerSharingCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 RadioButton(selected = selected, onClick = { onEvent(SettingsEvent.SelectLedgerSharingDefaultPeriod(period)) })
-                Text(text = period.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
+                Text(text = label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
             }
         }
 

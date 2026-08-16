@@ -266,7 +266,7 @@ private fun ConnectorCard(connector: ConnectorSectionUi) {
                     StatusRow("Circuit", it, "diagnostics_connection_circuit")
                 }
                 connector.connectionSafeMode?.let {
-                    StatusRow("Safe mode", it.toString(), "diagnostics_connection_safe_mode")
+                    StatusRow("Safe mode", it.toYesNo(), "diagnostics_connection_safe_mode")
                 }
                 connector.connectionLatency?.let {
                     StatusRow("Avg latency", it, "diagnostics_connection_latency")
@@ -293,15 +293,15 @@ private fun HealthBlock(health: ConnectorHealth?, error: String?) {
         health != null -> {
             StatusRow("Status", health.status, "diagnostics_health_status")
             StatusRow("Connector version", health.connectorVersion, "diagnostics_health_version")
-            StatusRow("Tally reachable", health.tallyReachable.toString(), "diagnostics_health_tally")
+            StatusRow("Tally reachable", health.tallyReachable.toYesNo(), "diagnostics_health_tally")
             StatusRow(
                 "Repository",
-                health.repositoryAvailable.toString(),
+                health.repositoryAvailable.toYesNo(),
                 "diagnostics_health_repository",
             )
             StatusRow(
                 "Database",
-                health.databaseAccessible.toString(),
+                health.databaseAccessible.toYesNo(),
                 "diagnostics_health_database",
             )
         }
@@ -330,12 +330,12 @@ private fun ReadinessBlock(readiness: ConnectorReadiness?, error: String?) {
             StatusRow("HTTP", readiness.httpStatus.toString(), "diagnostics_ready_http")
             StatusRow(
                 "Repository",
-                readiness.repositoryAvailable.toString(),
+                readiness.repositoryAvailable.toYesNo(),
                 "diagnostics_ready_repository",
             )
             StatusRow(
                 "Database",
-                readiness.databaseAccessible.toString(),
+                readiness.databaseAccessible.toYesNo(),
                 "diagnostics_ready_database",
             )
         }
@@ -449,6 +449,8 @@ private fun NoteCard(
         }
     }
 }
+
+private fun Boolean.toYesNo(): String = if (this) "Yes" else "No"
 
 @Composable
 private fun StatusRow(
