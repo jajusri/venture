@@ -870,7 +870,7 @@ again via `git status --short`.
 
 ---
 
-## 16. Final verdict (current, 2026-08-16, third pass)
+## 16. Final verdict (superseded by §19 — see below)
 
 **NOT READY** — but the one confirmed PILOT BLOCKER found by physical testing (§13) now
 has an implemented, tested, packaged fix awaiting physical confirmation.
@@ -902,3 +902,228 @@ investigation if the sanitizer does not resolve the real failure (which would me
 leading hypothesis, though mechanically proven, was not what actually happened on the
 device — a real possibility this session was explicit about never having fully
 confirmed).
+
+---
+
+## 17. Physical retest of 0.4.9 — RESULT: FAIL (2026-08-16)
+
+Desktop `0.4.9` installed successfully. A fresh Voucher sync against ESTIMATION was run
+from the already-paired Android app. **Result: still FAILED** — same `parser_failure`,
+0 vouchers processed, Ledgers/Stock items unaffected in the same run (matching the
+Session 2 pattern exactly).
+
+**Conclusion, stated plainly per instruction: the illegal-character sanitizer, while a
+real, independently-proven fix for the `&#4;`-in-text-field case, is confirmed NOT to be
+the (or not the only) cause of the actual production failure.** The leading hypothesis
+was mechanically sound but not what actually happened on the device. No further
+speculative XML fixes were attempted, per the explicit instruction not to keep guessing.
+
+### 17.1 Why the existing 0.4.9 diagnostics could not answer "what actually failed"
+
+Before building anything new, this was checked and confirmed via code (not assumed):
+
+- The first diagnostic-hardening round (`failureDetail`/`illegalCharactersSanitized`)
+  was implemented behind `logger.info()`/`logger.debug()` calls, which route to
+  `console.log` → stdout. The packaged Connector child process is spawned with
+  `stdio: ['ignore', 'ignore', 'pipe']` (`node-process-spawner.ts`) — **stdout is
+  discarded entirely**, so this diagnostic detail never reached anywhere retrievable.
+- `warn`/`error` (stderr) are piped but bounded to a fixed shared byte budget (8,192
+  bytes default) for the **entire process lifetime**, never reset — not a reliable
+  channel for a single failure's detail either, and the diagnostic hardening didn't log
+  at that level in the first place.
+- Android's `AuthenticatedConnectorApiClient` deliberately never attaches
+  `NetworkDiagnosticsInterceptor`/`HttpLoggingInterceptor` to the authenticated
+  transport (those belong only to a separate legacy `OkHttpClient`), so even a debug
+  build with network logging enabled never logs the authenticated sync's raw HTTP
+  traffic to Logcat.
+
+**Answer to "was 0.4.9's failureDetail already available": no** — confirmed by code,
+not by assumption. No further-guessing candidate was produced without first confirming
+this.
+
+---
+
+## 18. Diagnostic-hardening round 2 (2026-08-16)
+
+### 18.1 File-based failure auditor (bypasses both stdio constraints)
+
+New `VoucherSyncFailureAuditor`
+(`connector/budcom_connector/src/services/voucher/voucher-sync-failure-audit.ts`)
+writes structural-only JSON-lines failure records directly to its own rotated file —
+mirroring the existing, already-proven `TallyRequestAuditor` pattern exactly (same
+`AuditFileRotator` infrastructure, same lazy-`fs`-injection shape). Each record
+contains only fixed enum/structural facts: `failureReason` (coarse bucket),
+`repositoryFailureCode`, and a `details` bag (granular `reasonCode`, which Tally
+operation, response byte length, a correlation-only response hash, illegal-character-
+sanitization count, and — new this round — `reconciliationReason` when applicable).
+**Never** raw XML, narration, party names, amounts, phone numbers, addresses, document
+bodies, or credentials — by construction, since `details` is exactly the pre-existing
+`AppError.details` bag already threaded through `voucher-extractor.ts`.
+
+Wired into the real production dependency graph in
+`connector/budcom_connector/src/bootstrap/register-services.ts`'s
+`ServiceTokens.VoucherSynchronization` factory (previously only referenced as an
+optional constructor parameter, never actually constructed). Desktop-side plumbing
+(`app-data-layout.ts`, `connector-lifecycle-config.ts`, `desktop-config-resolver.ts`,
+`connector-packaged-paths.ts`, `main.ts`) gives it a real, reinstall-surviving writable
+path — `{userDataRoot}/connector-diagnostics/voucher-sync-failure-audit.jsonl` — passed
+to the spawned Connector child via `BUDCOM_VOUCHER_SYNC_FAILURE_AUDIT_PATH`, added to
+`CONNECTOR_CHILD_ENV_ALLOWLIST`.
+
+### 18.2 New hypothesis investigated: voucher deletion between two-phase requests
+
+Mid-investigation, new physical context was reported: a few vouchers that existed
+earlier in ESTIMATION have since been deleted in Tally. This was treated as a
+potentially material clue and investigated before writing any new code:
+
+- The Voucher extraction architecture is two-phase in production
+  (`enforceTwoPhase = options.config.env !== 'test'`): a lightweight discovery request
+  (GUIDs + metadata), then two further **separate, sequential** Tally requests
+  (`VoucherLedgerEntries`, `VoucherInventoryEntries`), joined client-side by GUID.
+- A voucher present in the discovery phase but absent from a later phase is already
+  tolerated gracefully (no throw) — not the failure mechanism.
+- A **ledger or inventory entry present in a later phase but referencing a GUID absent
+  from the discovery phase** — which deleting a voucher from Tally between the
+  discovery request and the later-phase requests would plausibly produce — was
+  confirmed to throw. Previously this threw a plain, untyped `Error`, giving no
+  distinguishable signal. Converted to a typed `VoucherReconciliationError`
+  (`connector/budcom_connector/src/tally/voucher/voucher-reconciliation-error.ts`) with
+  reasons `orphan-ledger-entry` / `orphan-inventory-entry` / `duplicate-voucher-guid` /
+  `voucher-missing-guid` / `ledger-entries-unbalanced`, now threaded through as
+  `reconciliationReason` in the failure detail.
+- Proved the mechanism with a new regression test in
+  `test/unit/voucher/voucher-inventory-extraction.test.ts` ("fails closed with a
+  distinguishable reconciliationReason when an inventory entry references a Voucher
+  deleted between phases") — asserts the exact
+  `{ reasonCode: 'voucher-inventory-validation', reconciliationReason:
+  'orphan-inventory-entry' }` shape. This is now the **leading alternative hypothesis**
+  alongside the original illegal-character theory, distinguishably diagnosable from it
+  via the new fields.
+- Deletion-reconciliation semantics themselves required **no new architectural
+  decision**: the atomic whole-window-replace-on-success /
+  never-touch-existing-data-on-failure design is already correctly implemented and
+  documented (`docs/specifications/business-os-voucher-contract-v1.1.md` §6.2,
+  "Atomic promotion and deletion reconciliation") — a failed/partial/cancelled sync
+  never clears or mutates the previously-promoted active snapshot. Confirmed from code,
+  not assumed. The user's existing local Voucher data was not touched or experimented
+  on at any point in this investigation.
+
+### 18.2a Request/response shape investigation (Vouchers vs Ledgers/Stock items)
+
+Per instruction, a third angle was checked: whether Vouchers' Tally request shape
+differs structurally from Ledgers/Stock items in a way that could explain a
+Voucher-specific failure independent of both hypotheses above.
+
+**Finding:** Ledgers and Stock items (`operation-registry.ts` §§223–274,
+`MasterDataTemplates.ledgers`/`.stockItems`) are each a single flat TDL `FETCH`
+collection query — one live request, one response, no cross-request join. Vouchers is
+structurally unique among all approved collections: it is the only one built from
+**three separate live Tally queries**, and — critically — phases 2 and 3
+(`buildVoucherLedgerCollectionRequestSpec` / `buildVoucherInventoryCollectionRequestSpec`,
+`connector/budcom_connector/src/tally/voucher/voucher-request.ts:74-140`) do not reuse
+phase 1's GUID list. Each embeds its own `supportingCollections` sub-query
+(`objectType: 'Voucher', fetch: ['GUID'], filters: [dateRange]`) that **independently
+re-queries live Tally at that phase's own later point in time**, then joins to it via a
+TDL `WALK` (`AllLedgerEntries`/`AllInventoryEntries`) with a computed
+`ParentGUID: '$$Owner:$GUID'` field. This WALK/owner-reference join has no equivalent
+in the Ledgers/Stock items requests at all.
+
+**Refinement to §18.2's hypothesis:** because phase 2/3 re-query Tally fresh rather
+than reusing phase 1's result, a voucher **deleted** between phases would simply vanish
+from that later phase's own re-query — producing the already-tolerated "present in
+phase 1, absent from a later phase" case (fewer entries, no throw), not an orphan. The
+`orphan-ledger-entry`/`orphan-inventory-entry` throw path instead requires a GUID to
+appear in a **later** phase that phase 1 (queried earlier) did not see — which the
+three-request choreography makes possible from **any** concurrent Tally-side edit
+during the sync window that changes which vouchers fall in the query's date range
+between requests (a new voucher entered, an existing voucher's date changed, or a
+voucher deleted-and-recreated under a new GUID) — not pure deletion alone. This
+doesn't rule out deletion as a contributing factor (the user may have been actively
+editing, not only deleting, vouchers around the same time), but it means the audit's
+`reconciliationReason` field, once retrieved from a real failure, will show
+definitively whether this multi-request race is what happened — orphan-* reasons
+confirm it; their absence rules it out in favor of the illegal-character hypothesis or
+something not yet considered. No code change follows from this alone — it sharpens the
+diagnostic reading, it is not a new fix.
+
+### 18.3 Verification the fix reaches the packaged runtime (not just unit tests)
+
+Per explicit instruction, this was checked directly rather than assumed. A clean build
+(`rm -rf dist && tsc -p tsconfig.build.json`, exit 0) confirmed all of the following are
+present in the compiled `connector/budcom_connector/dist/` output — the exact artifact
+tree the Desktop packaging pipeline bundles into `resources/connector/dist/` (`dist/`
+is gitignored; this was a local verification build only, no repository changes):
+
+- `sanitizeXml10IllegalCharacters` and `illegalCharactersSanitized` present in
+  `dist/tally/xml/response-parser.js`.
+- `VoucherSyncFailureAuditor` class compiled to
+  `dist/services/voucher/voucher-sync-failure-audit.js`.
+- `dist/bootstrap/register-services.js` constructs and wires the auditor into the
+  `VoucherSynchronization` factory using `config.voucherSyncFailureAuditPath` /
+  `config.voucherSyncFailureAuditEnabled`.
+- `orphan-ledger-entry` / `orphan-inventory-entry` typed throws present in
+  `dist/tally/voucher/voucher-ledger-reconciler.js` and
+  `dist/tally/voucher/voucher-inventory-joiner.js`.
+
+### 18.4 Test results
+
+New tests added: `test/unit/voucher/voucher-sync-failure-audit.test.ts` (auditor writes
+structural-only records; withholds writes when disabled), a new integration test in
+`test/unit/voucher/voucher-snapshot-sync.test.ts` ("records a structural-only entry via
+the file-based failureAuditor when extraction fails" — proves the auditor is actually
+invoked end-to-end on a real `synchronize()` failure, not just unit-constructible), and
+the deletion-hypothesis regression test in
+`test/unit/voucher/voucher-inventory-extraction.test.ts` (§18.2).
+
+Full connector suite: **158 files / 1383 tests passing**, `eslint` clean, `tsc -p
+tsconfig.json --noEmit` clean. Desktop suite unaffected (no Desktop source behavior
+changed beyond config/env-var plumbing already covered by
+`test/unit/connector-lifecycle-config.test.ts` and `test/unit/release-engineering.test.ts`,
+both passing, 39/39).
+
+### 18.5 Candidate impact
+
+Connector version bump required (real behavior/diagnostic change). Desktop bundles the
+Connector, so it also requires a version bump. **Android is unchanged** — no Android
+source was touched this round, matching the minimum-necessary-candidate instruction.
+
+---
+
+## 19. Final verdict (current, 2026-08-16, fourth pass)
+
+**NOT READY.** TD-001's root cause remains **unconfirmed** — the sanitizer fix from the
+third pass did not resolve the real physical failure. This pass does not claim a fix;
+it claims only that the next physical retest will, for the first time, be able to
+**read the actual failure classification** instead of guessing again.
+
+**What changed this pass:**
+- 0.4.9 physical retest recorded as FAIL (§17) — the sanitizer mechanism alone is
+  insufficient.
+- A file-based `VoucherSyncFailureAuditor` now captures and persists the real failure
+  classification to a retrievable file, bypassing the stdio constraints that made the
+  first diagnostic round unretrievable (§18.1, §17.1).
+- A second, independently-motivated hypothesis (voucher deletion between two-phase
+  requests) was investigated and made distinguishably diagnosable via a new typed
+  `reconciliationReason` (§18.2), with regression-test proof of the mechanism.
+- Confirmed all of the above reaches the packaged build artifact, not just unit tests
+  (§18.3).
+
+**What has NOT changed / is NOT yet known:**
+- The actual root cause of the real physical failure is still **unknown**. Two
+  plausible, distinguishable, now-diagnosable hypotheses exist (illegal-character
+  content still present somehow after sanitization; two-phase deletion race) — neither
+  is confirmed nor ruled out yet.
+- No new code fix has been applied beyond diagnostic capture and reconciliation-error
+  typing, per instruction: fix only once the exact cause is known from real evidence,
+  not from another guess.
+- All of §3's TD-013–TD-020 physical-confirmation gaps remain open, unrelated to this
+  investigation. Session 1, 3, 4, 5 of §11 remain to be run; Session 2 steps H onward
+  remain blocked.
+
+**Required next physical action (exactly one):** install the next Desktop candidate
+(bundling the file-based failure auditor; Android unchanged) and run exactly one fresh
+Voucher sync against ESTIMATION. Regardless of pass/fail, retrieve
+`{userDataRoot}/connector-diagnostics/voucher-sync-failure-audit.jsonl` afterward and
+report its last entry — this is the first time the actual failure classification will
+be recoverable. **Do not attempt a third speculative code fix before reading that
+file.**
