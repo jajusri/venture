@@ -462,10 +462,28 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-027 — Tally Voucher Export collection can temporarily exclude vouchers that Tally's own UI/reports already show (export-visibility timing)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-027 |
+| **Description** | Investigated 2026-08-16 as a direct follow-on to TD-026's investigation, during Session 2 item G ("Sync All"). The user observed Tally showing 97 vouchers against BUDCOM's 94 immediately after a successful Sync All. Read-only reconciliation (live Tally XML queried directly, GUID-for-GUID diffed against the active Connector snapshot, no BUDCOM sync triggered, no Tally writes) isolated the entire gap to exactly 3 Optional Sales vouchers dated `2026-08-15`, physically confirmed present in Tally's own "Optional Vouchers" and "Statistics" UI reports, but **entirely absent (0 records, any type) from Tally's live `Voucher` Export-collection XML for that exact date**, despite the date falling inside the requested query window. A controlled test changing only ESTIMATION's Tally working/current date from `14-Aug-2026` to `16-Aug-2026` (no data touched) produced **no change** in the XML export — ruled out as the sole cause, reported plainly rather than assumed to confirm the hypothesis. A further test — creating one new ordinary Sales voucher — was followed by the Export collection advancing from 94 to **98** (not 97): all 4 newly-visible records were dated `2026-08-15` (not `3 on 15-Aug + 1 on 16-Aug` as expected), sharing one voucher number across 4 distinct GUIDs. GUID-for-GUID diff of the new 98-record XML against the newly-promoted BUDCOM snapshot: 98 present-both, 0 Tally-only, 0 BUDCOM-only, 0 duplicates — BUDCOM exactly mirrors whatever Tally's Export interface exposes at each point in time. **Demonstrated fact, not a claimed mechanism:** Optional vouchers can exist and be visible in Tally's own reports while temporarily absent from the `Voucher` Export-collection XML; subsequent ordinary voucher-entry activity in Tally can cause previously-invisible records to become export-visible together with the new entry. The precise internal Tally trigger (working-date state, an internal re-index, Optional-voucher commit semantics, or something else) was not isolated by a clean single-variable experiment and is **not claimed**. |
+| **Impact** | None observed on BUDCOM's own correctness — BUDCOM never lost, dropped, or silently excluded a voucher Tally's Export interface actually exposed to it (confirmed via two independent GUID-for-GUID diffs, §30 and this entry). The practical impact is entirely on **user-facing count expectations**: a controlled-pilot operator comparing BUDCOM's count against a Tally UI/report count taken at a different moment (or against a different report) can see a real, transient mismatch that is not fixable from BUDCOM's side alone, since BUDCOM can only sync what Tally's Export interface currently exposes. |
+| **Priority** | P2 — observational, not a defect |
+| **Target milestone** | Post-MVP-1 — record for future Connector resilience design; no action during this controlled-pilot closure |
+| **Status** | Open — recorded as an observation. Explicitly not a code defect. No workaround implemented, per explicit instruction not to add speculative production workarounds during MVP-1 closure. |
+| **Introduced** | Not a regression — pre-existing Tally export behavior, first observed during this session's investigation. |
+| **Evidence** | `docs/planning/BUDCOM-MVP-1-CONTROLLED-PILOT-CLOSURE-STATUS.md` §32 — full investigation trail including the working-date test result (no change) and the voucher-creation test result (94→98, GUID-for-GUID confirmed against the promoted BUDCOM snapshot). |
+| **Relationship to TD-026** | **Distinct and not to be conflated.** TD-026 is about BUDCOM's own carry-forward mechanism not re-verifying out-of-window records against Tally. TD-027 is about Tally's own Export interface temporarily not exposing records that its UI/reports already show, independent of anything BUDCOM's carry-forward logic does — confirmed here because 0 of the newly-visible records were carry-forwarded; they were freshly (and correctly) extracted the moment Tally's Export interface started returning them. |
+| **Do not action without** | Further physical evidence of a reproducible, isolatable trigger, or a specific pilot-operator complaint about count mismatches in practice. No speculative production workaround during MVP-1 closure. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-027 | Tally Voucher Export collection can temporarily exclude vouchers its own UI/reports already show (export-visibility timing, not a BUDCOM defect) | P2 | Open — recorded as observation | Post-MVP-1 |
 | TD-026 | Out-of-window carried-forward Vouchers are not re-verified against Tally (no deletion/edit tombstone) | P2 | Open — recorded, not implemented; explicitly deferred | Post-MVP-1 |
 | TD-025 | Private-storage loss mid-session degrades to generic "Disconnected" rather than the storage recovery screen | P2 | Open — recorded, not implemented | Post-MVP-1 (or sooner if hit in pilot) |
 | TD-024 | `desktop:choose-storage-mode` did not re-validate the drive is actually removable | P1 | **Fixed (automated validation)** | Pre-MVP-1 release hardening |

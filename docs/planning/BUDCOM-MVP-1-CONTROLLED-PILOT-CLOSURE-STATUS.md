@@ -1758,7 +1758,7 @@ flagged as a correctness issue absent further evidence.
 
 ---
 
-## 31. Architectural decision recorded + final verdict (current, 2026-08-16, eighth pass)
+## 31. Architectural decision recorded (superseded by §33 for final verdict — see below)
 
 **Architectural decision (2026-08-16):** the 94-vs-62 investigation result is
 accepted. Current controlled-pilot Voucher state is correct for the actual
@@ -1790,3 +1790,102 @@ snapshot promotions are recorded as an observation only.
 **Per explicit instruction: Session 3 still not started.** Resuming Session 2's
 remaining HUMAN CHECK items now, one at a time, in the requested order: G, H, J, M,
 N, O, P.
+
+---
+
+## 32. Follow-on investigation — 97-vs-94, then 98-vs-98 (2026-08-16, item G)
+
+Immediately after Session 2 item G ("Sync All") reported PASS, the user observed
+Tally showing 97 vouchers against BUDCOM's 94 — a second, related count question
+surfaced mid-item-G, investigated with the same read-only discipline as §30 (no code
+changes, no BUDCOM sync triggered by me, no Tally writes).
+
+### 32.1 Isolating the gap to Sales, then to one date
+
+The user supplied a physically-confirmed Tally "Optional Vouchers" report (10
+Optional Sales: 31-Jul ×2, 6-Aug ×3, 13-Aug ×2, 15-Aug ×3) and a Tally "Statistics"
+report (87 ordinary, Sales 47, other 40) for the matching period, together implying
+97 total. A fresh, read-only live Tally XML query (same TDL request BUDCOM's
+discovery phase builds, sent directly to Tally's export port, no snapshot touched)
+showed **94 total, Sales 54, other-types 40** — the 40 "other" matching Tally exactly,
+isolating the entire gap to Sales. A targeted date-histogram check found **zero
+records dated `2026-08-15` anywhere in the live XML export**, despite that date
+falling inside the requested window — while the physically-confirmed Optional report
+showed exactly 3 Optional Sales on that date. This pinned the gap to one specific
+date, not a general Sales-type exclusion (the other 3 Optional dates were fully
+represented in the XML).
+
+### 32.2 Working-date hypothesis — tested, not confirmed alone
+
+The user reported ESTIMATION's Tally working/current date was `14-Aug-2026` and
+changed it to `16-Aug-2026`, with no voucher data created/edited/deleted. A repeat
+read-only query immediately after showed **no change** — byte-identical response
+(135,640 bytes) to before the date change, still 0 records on `2026-08-15`. **The
+working-date change alone did not make the 3 records export-visible.** This was
+reported plainly rather than assumed away.
+
+### 32.3 What actually flipped the export-visible count
+
+The user then created exactly one new ordinary Sales voucher (intended date
+16-Aug-2026). A repeat read-only query immediately after showed **98 total, Sales 58**
+— a jump of +4, not +1. Full detail: **4 records now dated `2026-08-15`** (voucher
+number `48`, appearing 4 times across 4 distinct GUIDs/MasterIDs — not `3 on 15-Aug +
+1 on 16-Aug` as initially expected), and **zero records dated `2026-08-16`**. This is
+a real, precise refinement of the initial expectation, reported exactly as observed
+rather than rounded to match the prediction. GUID-for-GUID diff of the new 98-record
+live XML against the newly-promoted BUDCOM snapshot (`66e7a81b...`, promoted
+`2026-08-16T02:48:02Z`): **98 present in both, 0 Tally-only, 0 BUDCOM-only, 0
+duplicate GUIDs**, identical type breakdown. BUDCOM's snapshot exactly mirrors
+whatever Tally's Export interface currently exposes.
+
+### 32.4 Conclusion — demonstrated fact vs. unproven mechanism
+
+**Demonstrated, evidence-backed fact:** Optional vouchers can exist and be visible in
+Tally's own UI/reports while temporarily absent from the `Voucher` Export-collection
+XML that BUDCOM's Connector reads; subsequent ordinary voucher-entry activity in
+Tally can cause previously-invisible records to become export-visible together with
+the new entry. **Not proven, and not claimed:** the exact internal Tally mechanism.
+The working-date change alone did not cause the transition (§32.2); only after an
+additional ordinary voucher was created did the export-visible set advance, and it
+brought forward 4 records together, not a clean 3+1 split by date. No single-variable
+experiment isolated the precise trigger, and none is claimed.
+
+This is closed as **NOT a BUDCOM data-loss or filtering defect** — BUDCOM correctly,
+consistently, and losslessly reflects whatever Tally's Export interface exposes at
+each point in time, confirmed twice via independent GUID-for-GUID diffs (94-vs-94 in
+§30, 98-vs-98 here). It is recorded as a **Tally integration/export-behavior
+observation** for future Connector resilience design — see TD-026 addendum in the
+registry — explicitly not conflated with the separate, pre-existing out-of-window
+carry-forward gap (also TD-026, §30.2), and no speculative production workaround is
+being added during this controlled-pilot closure.
+
+Session 2 item **G (Sync All) is recorded PASS** — the final synchronized state is
+98/98, fully reconciled, no errors occurred during the sync itself; the count
+question that arose immediately afterward was a separate Tally-export-timing
+observation, not a sync failure.
+
+---
+
+## 33. Final verdict (current, 2026-08-16, ninth pass)
+
+**97-vs-94/98-vs-98 closed as NOT A BUDCOM DEFECT.** Confirmed twice, independently,
+with GUID-for-GUID diffs against live Tally: BUDCOM never lost, dropped, or withheld
+a voucher Tally's own Export interface exposed to it. Both count discrepancies this
+session (§30's 94-vs-62, §32's 97-vs-94/98-vs-98) trace to Tally-side scope/timing
+behavior, not BUDCOM extraction, snapshot, or API logic.
+
+**What changed this pass:**
+- Session 2 item G (Sync All) confirmed PASS: final synchronized state 98/98, fully
+  reconciled (§32.3, §32.4).
+- Tally export-visibility timing behavior observed and documented as a real,
+  evidence-backed fact, explicitly without overclaiming the internal mechanism
+  (§32.4) — kept separate from TD-026's out-of-window carry-forward gap.
+- No code changed, no speculative workaround added, no data touched throughout.
+
+**What has NOT changed / remains open:**
+- All of §3's TD-013–TD-020 physical-confirmation gaps remain open.
+- Session 2 items H, J, M, N, O, P remain unconfirmed. Sessions 1, 3, 4, 5 have not
+  started.
+
+**Per explicit instruction: Session 3 still not started.** Resuming Session 2 item H
+(repeated refresh / freshness consistency) next.
