@@ -1481,6 +1481,28 @@ proving the count surfaces through the full synchronize() result on a completed 
 159/1412), desktop 66 files / 677 tests (unaffected, no desktop source changed),
 contract 1 file / 5 tests, `eslint`/`tsc --noEmit` clean.
 
+### 26.1 Candidate production
+
+| Component | Version | Why bumped |
+|---|---|---|
+| Connector | `0.4.3` → `0.4.4` | Real behavior change (the semantic fix itself) |
+| Desktop | `0.4.11` → `0.4.12` | Bundles the Connector |
+| Android | `0.1.1-continuity.15` (unchanged) | No Android source touched |
+
+Full pipeline PASS: connector (159 files / 1414 tests), desktop (66 files / 677
+tests), contract tests (5 tests), NSIS packaging, and all provenance/manifest checks.
+`sourceTreeCleanAtStart: true`, `dirtyTree: false`.
+
+**Artifact:** `release/controlled-pilot/0.4.12/artifacts/BudcomDesktop-0.4.12-x64-setup.exe`
+**Size:** 106,070,561 bytes (~101.2 MB)
+**SHA-256:** `f646aa5bf28065bb7937ba09f8130e9f6d1683019665ce2af8f7deaa0d7b45ec`
+**Producing commit:** `99da6abe051afc43a159dfad997e6812e25c4644`
+**Bundled Connector version:** `0.4.4` · **Storage schema version:** `12` (unchanged)
+
+Pre-packaging git hygiene: same disposition as all prior passes — pre-existing
+unrelated untracked paths temporarily set aside with `git stash push -u` for the
+packaging run only, restored immediately after.
+
 ---
 
 ## 27. Final verdict (current, 2026-08-16, sixth pass)
@@ -1502,6 +1524,8 @@ The fix tolerates and counts it instead. Pending exactly one physical confirmati
 - `VoucherInventoryEntryParser` reviewed for parity — genuinely nothing analogous
   exists there, so nothing was changed (§26).
 - Full suite green: connector 159/1414, desktop 66/677, contract 1/5.
+- A fresh Desktop candidate exists bundling this: `0.4.12`, SHA-256
+  `f646aa5bf28065bb7937ba09f8130e9f6d1683019665ce2af8f7deaa0d7b45ec` (§26.1).
 
 **What has NOT changed / is NOT yet known:**
 - No physical confirmation yet that the fix resolves the real-world failure —
@@ -1510,11 +1534,11 @@ The fix tolerates and counts it instead. Pending exactly one physical confirmati
   investigation. Session 1, 3, 4, 5 of §11 remain to be run; Session 2 steps H onward
   remain blocked pending this one retest.
 
-**Required next physical action (exactly one):** install the next Desktop candidate
-(`0.4.12`; Android `continuity.15` unchanged) and run exactly one fresh Voucher sync
-against ESTIMATION. Report: voucher counts, the number of `amountSignConflict`
-diagnostics observed (via the audit file, if anything is recorded on a successful
-run, or via a future surfaced metric), whether existing voucher data/totals remain
-correct, and whether any new, different failure reason appears. **Do not proceed to
-USB/mobile debugging unless this candidate still fails after this exact semantic
-fix.**
+**Required next physical action (exactly one):** install Desktop `0.4.12` (SHA-256
+`f646aa5bf28065bb7937ba09f8130e9f6d1683019665ce2af8f7deaa0d7b45ec`; Android
+`continuity.15` unchanged) and run exactly one fresh Voucher sync against ESTIMATION.
+Report: voucher counts, the number of `amountSignConflict` diagnostics observed (via
+the audit file, if anything is recorded on a successful run, or via a future surfaced
+metric), whether existing voucher data/totals remain correct, and whether any new,
+different failure reason appears. **Do not proceed to USB/mobile debugging unless this
+candidate still fails after this exact semantic fix.**
