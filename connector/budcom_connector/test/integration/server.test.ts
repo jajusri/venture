@@ -14,7 +14,7 @@ describe('GET /health', () => {
       status: 'unavailable',
       schemaVersion: '1.0.0',
       readOnly: true,
-      connectorVersion: '0.4.5',
+      connectorVersion: '0.4.6',
       bindHost: '127.0.0.1',
       networkExposure: 'loopback',
       networkPolicySatisfied: true,
