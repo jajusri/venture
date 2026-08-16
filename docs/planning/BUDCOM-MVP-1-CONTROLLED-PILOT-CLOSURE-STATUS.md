@@ -1866,7 +1866,7 @@ observation, not a sync failure.
 
 ---
 
-## 33. Final verdict (current, 2026-08-16, ninth pass)
+## 33. Final verdict (superseded by §34 — see below)
 
 **97-vs-94/98-vs-98 closed as NOT A BUDCOM DEFECT.** Confirmed twice, independently,
 with GUID-for-GUID diffs against live Tally: BUDCOM never lost, dropped, or withheld
@@ -1889,3 +1889,65 @@ behavior, not BUDCOM extraction, snapshot, or API logic.
 
 **Per explicit instruction: Session 3 still not started.** Resuming Session 2 item H
 (repeated refresh / freshness consistency) next.
+
+---
+
+## 34. Session 2 — COMPLETE (2026-08-16)
+
+All Session 2 items (§11) are now confirmed. Combined report:
+
+| Item | Result | Notes |
+|---|---|---|
+| B — APK upgrade identity/continuity | PASS | Satisfied by earlier continuity.15 in-place install history |
+| F — Connection/pairing | PASS | Android reached the Connector without manual reconnect throughout |
+| G — Sync All | **PASS** | Final synchronized state 98/98, fully GUID-reconciled against live Tally (§32) |
+| H — Repeated/manual refresh | **PASS** | Confirmed stable across repeats, no reversion to stale data |
+| I — Stale-first-refresh check | PASS | Data reflected each fresh sync, not stale pre-upgrade state |
+| J — Ledgers | **PASS** | Ledger opens, statement/entries sensible, Dr/Cr presentation correct |
+| K — Vouchers (list) | PASS | Row layout/party-name display confirmed correct |
+| L — Voucher details | PASS | Header/metadata/narration/ledger+inventory lines confirmed correct |
+| M — Voucher type coverage | **PASS** | Automated: all 8 required types present in the 98-voucher snapshot, all `data_quality: complete`, all `active` (§34.1). Visual: representative types opened correctly. Optional/Estimate framing confirmed unconditional and non-authoritative (§34.1) — unchanged, no semantic issue |
+| N — Voucher PDF | **PASS** | Opens; party/date/voucher number/amount correct; layout usable |
+| O — Ledger PDF | **PASS** | Opens; ledger identity/period/balance/entries sensible |
+| P — Android share/save | **PASS**, with one recorded limitation | Share sheet/WhatsApp opens correctly, correct PDF attached, no crash. **Limitation found and recorded as TD-028** (§34.2) — not a pilot blocker |
+
+### 34.1 Automated verification for M (before asking for visual confirmation)
+
+Queried the active snapshot's `voucher_headers` directly (read-only), grouped by
+type/status/quality:
+
+```
+Contra: 1, Credit Note: 1, Debit Note: 1, Journal: 1, Payment: 1,
+Purchase: 1, Receipt: 34, Sales: 58   (total 98)
+```
+
+All rows `voucher_status: active`, all `data_quality: complete` — none incomplete,
+none cancelled. All 8 required types (Sales, Receipt, Payment, Contra, Purchase,
+Credit Note, Debit Note, Journal) present and non-zero.
+
+Verified from Android source (`AndroidInvoiceShareCoordinator.kt`) that every
+generated voucher PDF is unconditionally headed `"ESTIMATE"` with the review-only
+footer, regardless of voucher type or Optional status — matching the
+already-approved design (§11 item P, first confirmed 2026-08-15) exactly. No
+semantic change was needed or made.
+
+### 34.2 TD-028 — PDF preview-before-share gap (found and deferred)
+
+Physically found during item P: generating a Voucher/Ledger PDF and invoking
+WhatsApp/share attaches the PDF directly without an in-app preview step first. PDF
+content itself was independently confirmed correct via items N/O — this is a pure UX
+gap, not a data or correctness issue. **Explicit user decision (2026-08-16): defer to
+post-MVP-1 controlled pilot, do not implement now.** Recorded as TD-028 (P3) in the
+registry.
+
+### 34.3 Session 2 verdict
+
+**Session 2 is COMPLETE.** All items B through P are confirmed PASS. Two real,
+evidence-backed findings surfaced during Session 2 and are fully recorded, neither a
+pilot blocker: TD-026/TD-027 (Tally-side Voucher count/export-timing observations,
+§30/§32, both explicitly deferred) and TD-028 (PDF preview-before-share UX gap, this
+section, explicitly deferred). TD-001 (the original Session 2 blocker) remains
+CLOSED — physically confirmed fixed (§28).
+
+**Session 3 (Connectivity resilience, §11) may now begin.** Sessions 1, 4, 5 remain
+outstanding and unscheduled.

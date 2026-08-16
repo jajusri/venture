@@ -479,10 +479,28 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-028 — Voucher/Ledger PDF cannot be previewed before the WhatsApp/share action
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-028 |
+| **Description** | Physically confirmed during Session 2 item P (2026-08-16): generating a Voucher or Ledger statement PDF and invoking WhatsApp/share attaches the PDF directly to the share sheet without an in-app preview step first. The user must share (or save) blind, without viewing the rendered PDF beforehand to confirm its content/layout looks correct. Save-then-open-separately is possible as a workaround, but there is no direct "view before you share" step in the share flow itself. |
+| **Impact** | Low — no data-safety or correctness issue; PDF content itself was independently confirmed correct (Session 2 items N/O both PASS). Pure UX gap: a user sharing a voucher/ledger PDF cannot double-check what they're sending before it goes into WhatsApp's own attach flow. |
+| **Priority** | P3 |
+| **Target milestone** | Post-MVP-1 controlled pilot — explicit user decision (2026-08-16) to defer, not a pilot blocker |
+| **Status** | Open — recorded, not implemented. Explicitly deferred by user decision. |
+| **Introduced** | Not a regression — present since the PDF share feature was built; first identified during this session's physical Session 2 testing. |
+| **Evidence** | Session 2 item P physical test (2026-08-16): PASS overall (share sheet opens correctly, correct PDF attached, no crash), with this one UX gap noted directly by the user. |
+| **Likely fix direction (not scoped for this pilot)** | Add an in-app PDF preview (e.g. Android's built-in PDF renderer in a dialog/activity) between "Generate" and "Share/Save", so the user can view before committing to either action. |
+| **Do not action without** | Product-owner prioritization post-MVP-1 — explicitly not to be implemented during this controlled-pilot closure. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-028 | Voucher/Ledger PDF cannot be previewed before the WhatsApp/share action | P3 | Open — recorded, not implemented; explicitly deferred | Post-MVP-1 controlled pilot |
 | TD-027 | Tally Voucher Export collection can temporarily exclude vouchers its own UI/reports already show (export-visibility timing, not a BUDCOM defect) | P2 | Open — recorded as observation | Post-MVP-1 |
 | TD-026 | Out-of-window carried-forward Vouchers are not re-verified against Tally (no deletion/edit tombstone) | P2 | Open — recorded, not implemented; explicitly deferred | Post-MVP-1 |
 | TD-025 | Private-storage loss mid-session degrades to generic "Disconnected" rather than the storage recovery screen | P2 | Open — recorded, not implemented | Post-MVP-1 (or sooner if hit in pilot) |
