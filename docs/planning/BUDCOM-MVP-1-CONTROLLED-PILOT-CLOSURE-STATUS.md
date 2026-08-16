@@ -2507,3 +2507,156 @@ found no issues requiring a fix beyond the one limitation recorded in §39.2.
 confirmation pending**, reserved for the final human validation session,
 last, exactly as requested. Not marked CLOSED — only your own visual
 approval of representative generated PDFs can close it.
+
+---
+
+## 40. Session 3 item R — round 3: Android-path investigation, TD-031 found and fixed (2026-08-16)
+
+### 40.1 Windows Public→Private retest: recovery confirmed working, Android still failed
+
+A live retest against Desktop 0.4.14 + Connector 0.4.5 + Android continuity.16
+(versionCode 17) on the same mobile hotspot found the Windows network profile
+was categorized Public, which by existing, already-approved design
+(`evaluateTrustedLanEligibility()`) blocks trusted-LAN exposure entirely — an
+environment condition, not a BUDCOM defect. Switching the profile to Private
+was the correct recommended action.
+
+After the switch, fresh evidence (not reused from the Public-state
+investigation) confirmed the TD-029+TD-030 automatic-recovery fix worked
+completely: the Connector process restarted itself, reached healthy state,
+correctly bound to the current hotspot IP, Tally was reachable, and company
+selection was preserved — four independent successful discovery calls
+observed in the log. **This definitively ruled out TD-029 and TD-030 as
+causes of the continuing Android failure.** One narrow, separate ambiguity
+was noted and explicitly not chased further at the time: a single late
+"Company discovery failed" log entry appeared after the successful recovery
+sequence, and whether the Desktop dashboard UI was showing a stale vs.
+currently-accurate state as a result was left unresolved — see §40.5.
+
+### 40.2 Android-path investigation — root cause (TD-031)
+
+With Windows/Connector/network infrastructure proven fully healthy — and a
+raw TCP/HTTP request from the Android device to the Connector's plain HTTP
+port independently succeeding — the investigation moved to the Android
+application path specifically, via ADB, tracing NSD discovery, the
+production authenticated-endpoint path, and TD-017's rediscovery mechanism
+end-to-end.
+
+Live, decisive evidence: `curl -sk https://<hotspot-ip>:8080/health` (the
+mDNS-advertised port) returned HTTP 000 with `ssl:0.000000s` — the TLS
+handshake never even started, because nothing HTTPS-capable listens on that
+port — while `curl -sk https://<hotspot-ip>:8443/health` (the Connector's
+real, separate HTTPS/authenticated port) returned a healthy 200 in ~13ms.
+
+Root cause, proven by source trace against that evidence: the Connector's
+mDNS advertisement had **never once** published the HTTPS/authenticated port
+in its TXT record — only the plain HTTP port, via the SRV record — and
+Android's `AuthenticatedConnectorEndpointResolver.kt` (TD-017's rediscovery
+mechanism) used that same discovered HTTP port *as* the `securePort` for its
+mandatory pinned-TLS verification handshake. Every verification attempt, on
+every network change, on every installation, since TD-017's fix first landed
+(`cb504e4`), therefore tried to speak TLS to a plain HTTP server — which
+fails unconditionally. TD-017's own rediscovery logic (bounded discovery,
+fingerprint verification, candidate replacement) was never the problem; it
+was simply never handed a usable secure endpoint to try. Recorded as
+**TD-031** (P0) in the registry — full detail, evidence, and the exact
+distinction from TD-017/TD-029/TD-030 is in TD-031's own entry.
+
+This retroactively and precisely explains why TD-017's registry status
+persistently read "automated validation passed; physical confirmation
+pending" through the entire engagement: every physical retest attempt was
+structurally doomed to fail for this reason, while the automated
+`MockWebServer`-based tests could never expose it, because their fixtures
+used one TLS-capable mock server's single port as both the "discovered port"
+and (implicitly) the "secure port" — an artifact with no equivalent in real
+production topology, where the Connector always exposes two distinct ports.
+
+### 40.3 Fix (2026-08-16)
+
+Additive-only, per the same "never advertise what you don't listen on"
+invariant established for TD-030:
+
+- `connector/budcom_connector/src/services/discovery/mdns-advertiser.ts`:
+  publishes a new, separate `securePort` TXT field, omitted entirely (never
+  a placeholder) when secure transport is not running.
+- `connector/budcom_connector/src/bootstrap/register-services.ts`: wires the
+  real `secureTransportPort`/`secureTransportEnabled` config into the
+  advertiser.
+- `apps/budcom_android/.../core/discovery/ConnectorDiscoveryPort.kt`: adds an
+  additive, nullable `securePort` field to `DiscoveredConnector`.
+- `apps/budcom_android/.../core/discovery/NsdConnectorDiscoveryService.kt`:
+  parses the new TXT field.
+- `apps/budcom_android/.../core/connectorauth/domain/AuthenticatedConnectorEndpointResolver.kt`:
+  filters out any candidate with no advertised secure port, and verifies TLS
+  against `candidate.securePort`, never `candidate.port`.
+- Legacy, unauthenticated consumers (`ConnectorConnectionResolver`,
+  `ConnectorEnrolmentService`) were deliberately left untouched — they
+  correctly continue to use the primary HTTP port.
+- Fixed 5 existing Android test fixtures that had given the "discovered
+  port" and "secure port" the same mock-server-port value — the exact
+  artifact that structurally hid this bug — to deliberately distinct dummy
+  values, so a regression to the wrong field now fails loudly. Added one new
+  explicit regression test asserting a candidate with no advertised secure
+  port is never dialed.
+
+Committed at `7f40a92` (connector fix), `b19499e` (android fix), `f4eefe8`
+(connector hardcoded-version test fixtures), `b0ecb11` (version bumps),
+`fcb936c` (bundled `VERSION.txt` resync) — tree clean at each build start;
+the three pre-existing, unrelated untracked files under `docs/planning/` and
+`docs/product*` were stashed for the build and restored immediately after,
+untouched.
+
+### 40.4 Automated validation and candidates produced
+
+Connector: `mdns-advertiser.test.ts` +3 tests. Full connector suite: 159
+files / 1,419 tests passing (2 unrelated files' timeouts on the first
+concurrent run were confirmed transient CPU-contention flakes — both pass
+cleanly in isolation, re-run with no concurrent load, no regression).
+Android: 1 new explicit regression test. Full Android regression
+(`testDebugUnitTest`, `testReleaseUnitTest`, `lintDebug`, `lintRelease`,
+`assembleDebug`, `assembleDebugAndroidTest`): 1,017/1,017 debug unit tests,
+1,017/1,017 release unit tests, 0 lint issues, clean assemble — all passing.
+
+| Field | Value |
+|---|---|
+| Desktop version | `0.4.15` (bumped from `0.4.14`) |
+| Connector version | `0.4.6` (bumped from `0.4.5`) |
+| Desktop installer | `BudcomDesktop-0.4.15-x64-setup.exe` |
+| Desktop SHA-256 | `321c0946ff2fc263a5558bf55cc34886f7358bbf5a7eb98da674d5a6144899b5` |
+| Desktop size | 106,072,498 bytes |
+| Android version | `versionCode 18` / `versionName 0.1.1-continuity.17` (bumped from `17`/`continuity.16`) |
+| Android artifact | `BudcomAndroid-fcb936c-debug.apk` |
+| Android SHA-256 | `28845dedd2d1bfd6023ad811326707a646c66c041e3c2007b37344f24b42b3db` |
+| Android size | 13,960,832 bytes |
+| Commit | `fcb936c320205fc87e83fecae1e4a313da2873d8` |
+| Output path | `release/controlled-pilot/0.4.15/artifacts/`, `release/controlled-pilot/android/0.1.1-continuity.17-fcb936c/` |
+
+### 40.5 Recorded, not chased further: Desktop dashboard-UI staleness ambiguity
+
+During §40.1's Public→Private retest, one late "Company discovery failed"
+log entry appeared after an already-successful recovery sequence, raised by
+`CompanyService.discoverCompanies()`'s per-failure error log
+(`company-service.ts`). TD-014's bounded dashboard-recovery mechanism
+(`app.ts`: `reconcileBoundedRecovery()`, `runDashboardRecoveryCycle()`,
+`companyLoadGeneration` staleness token) is designed to make exactly this
+kind of stale/superseded late failure a no-op against an already-healthy UI
+state, and is invoked from every `onStatusUpdated` push. Whether the
+dashboard was actually left showing accurate state after this specific
+sequence, or a genuinely stale one, was **not resolved** — it was explicitly
+deferred when the investigation was redirected to the higher-priority
+Android-side failure (§40.2), which is unrelated to and does not conflate
+with this mechanism. **Recorded as an open item, not a proven defect**:
+worth a dedicated, isolated observation pass in a future session, separate
+from TD-031's own physical confirmation.
+
+### 40.6 Next required step
+
+Physical retest, per the acceptance standard specified for this defect: the
+Desktop+Connector 0.4.15 and Android continuity.17 candidates above must be
+installed and the full A→B→A network-transition cycle (e.g., home network →
+hotspot → home network) repeated on both devices, confirming Android
+reconnects automatically in **both** directions with **no** app restart, no
+Desktop restart, no QR/re-pair, and no manual IP entry at any point. A
+manual Android app restart during the retest does not constitute a PASS for
+this defect — the code fix is not considered physically confirmed until that
+full cycle succeeds unattended.
