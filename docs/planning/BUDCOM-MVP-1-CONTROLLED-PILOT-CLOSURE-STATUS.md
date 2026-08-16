@@ -1347,7 +1347,7 @@ immediately after with `git stash pop`.
 
 ---
 
-## 24. Final verdict (current, 2026-08-16, fifth pass)
+## 24. Final verdict (superseded by §27 — see below)
 
 **NOT READY.** The real root cause is narrowed to one of `VoucherLedgerEntryParser`'s
 13 typed branches, most plausibly `amount-sign-conflict` given it is the only true
@@ -1383,3 +1383,138 @@ Desktop (Android unchanged) and run exactly one fresh Voucher sync against ESTIM
 Read `{userDataRoot}/connector-diagnostics/voucher-sync-failure-audit.jsonl`'s last
 entry and report the exact `parseReason` value. **Do not implement a semantic fix
 before that evidence is reported and reviewed.**
+
+---
+
+## 25. Physical retest of 0.4.11 — root cause CONFIRMED (2026-08-16)
+
+Fresh Voucher sync against ESTIMATION on `0.4.11` still failed identically in the
+Android UI (generic `parser_failure`). Per instruction, no retry was attempted; the
+audit file was read directly. Its last entry:
+
+```
+parseReason: amount-sign-conflict
+reasonCode: voucher-ledger-validation
+operation: VoucherLedgerEntries
+responseByteLength: 64941
+responseHash: 7c7184b056f30ecad6db44d2f2a370b9ac6b058bf8f971c103a435a18ecaa1e6
+```
+
+Byte-identical `responseByteLength`/`responseHash` to every prior attempt across
+0.4.9/0.4.10/0.4.11 — confirms, again, that Tally's data for this window has not
+changed at all across the entire investigation; this is a deterministic parsing
+decision, not a data or timing issue.
+
+**Correlated against the round-3 regression analysis (§22.2):** the codebase's own
+established convention for interpreting a signed Tally amount —
+`extraction/normalization/amounts.ts::inferSideFromSign()`, used by the legacy
+voucher-mapper path — derives Dr/Cr purely from the amount's sign, with **no
+reference to `ISDEEMEDPOSITIVE` at all**. `ISDEEMEDPOSITIVE` reflects a ledger's
+*nature* (debit- or credit-positive by group classification); the signed `AMOUNT`
+independently reflects *this specific transaction's* actual direction. They coincide
+for straightforward cases but legitimately diverge for others (e.g. a debit that
+reduces a normally credit-positive liability ledger). The multi-phase rewrite's
+`isDeemedPositive !== signedAmount.startsWith('-')` assertion, introduced in `aa96637`
+or with no prior successful physical run, conflated these two fields as an
+architectural modeling error — not a data-integrity problem worth failing the entire
+Voucher sync window over.
+
+**Answers to the four required questions:**
+1. Exact `parseReason`: `amount-sign-conflict`, confirmed directly.
+2. Did this validation exist in 0.4.3: no — 0.4.3 predates the entire multi-phase
+   architecture (§22.2).
+3. Is this a regression: not in the classic sense (no prior version of this exact code
+   ever worked and broke) — a new assertion, introduced in a rewrite, that had never
+   had a successful physical run, and that conflates two fields the rest of the
+   codebase already treats as independent.
+4. Smallest safe behavior change: presented as three ranked options (A: downgrade to a
+   data-quality flag; B: remove the cross-field assertion entirely; C: keep it strict
+   but non-fatal, with an explicit countable diagnostic) for review before
+   implementation.
+
+---
+
+## 26. Semantic fix implemented — Option C (2026-08-16)
+
+Approved architectural decision: tolerate the `IsDeemedPositive`/signed-`Amount`
+disagreement rather than aborting the sync, per the explicit principles in the
+approval message (semantically distinct fields; mismatch not fatal; signed Amount
+remains the Dr/Cr source; `IsDeemedPositive` preserved as reported; a specific
+non-fatal diagnostic recorded; the voucher continues parsing/syncing; neither field
+silently rewritten; structural validation for genuinely-unsafe records remains fatal;
+a single tolerated mismatch must not abort the whole sync window).
+
+**Implementation** (smallest change at the parser/model boundary):
+- `VoucherLedgerExtractionEntry` (`erp/voucher/voucher-ledger-domain.ts`) gained
+  `amountSignConflict: boolean`.
+- `VoucherLedgerEntryParser.mapEntry()` computes this flag instead of throwing.
+- `joinAndReconcileVoucherLedgers()` now returns `VoucherLedgerJoinResult { vouchers,
+  amountSignConflictCount }` — counts flagged entries, no other behavior change. Its
+  one production caller (`voucher-extractor.ts`) was updated accordingly; it had no
+  other callers.
+- `toVoucherLedgerEntry()` (unchanged) already derived Dr/Cr side purely from the
+  signed Amount's sign and passed `isDeemedPositive` through independently — so
+  requirements #3 and #4 of the approval were already satisfied by the existing code
+  once the throw was removed; nothing there needed to change.
+- `amountSignConflictCount` threaded end-to-end through `VoucherExtractionResult` →
+  `VoucherSynchronizationResult` → the completion log, exactly mirroring the existing
+  `illegalCharactersSanitized` telemetry pattern (a count only, never which
+  voucher/ledger).
+- Structural validation is byte-for-byte unchanged: malformed XML, missing envelope
+  structure, missing required fields, and malformed amounts all remain fatal.
+- Reviewed `VoucherInventoryEntryParser` for an equivalent cross-field assertion —
+  none exists (inventory entries have no `IsDeemedPositive` field at all, never
+  fetched, never checked). Nothing was changed there, per the explicit
+  do-not-broaden-blindly instruction.
+
+**Tests:** `voucher-entry-parsers.test.ts`'s two former fatal-throw tests for this
+branch were rewritten to prove the conflict now parses successfully with
+`amountSignConflict: true`; all other (still-fatal) branches are unchanged and still
+pass. `voucher-extractor.test.ts` gained an end-to-end test proving a two-entry,
+balanced voucher with one conflicting entry completes with correct ledger totals and
+Dr/Cr sides, and `amountSignConflictCount: 1`; its existing fatal-`parseReason` test
+was retargeted to a different, still-fatal branch (`missing-ledger-name`) since
+`amount-sign-conflict` is no longer one. `voucher-snapshot-sync.test.ts` gained a test
+proving the count surfaces through the full synchronize() result on a completed sync.
+
+**Test results:** full connector suite 159 files / 1414 tests passing (up from
+159/1412), desktop 66 files / 677 tests (unaffected, no desktop source changed),
+contract 1 file / 5 tests, `eslint`/`tsc --noEmit` clean.
+
+---
+
+## 27. Final verdict (current, 2026-08-16, sixth pass)
+
+**Root cause confirmed and fixed.** TD-001's Voucher `parser_failure` is understood
+end-to-end: `IsDeemedPositive`/signed-`Amount` disagreement is a real, valid Tally
+business case the multi-phase rewrite's new assertion incorrectly treated as fatal.
+The fix tolerates and counts it instead. Pending exactly one physical confirmation.
+
+**What changed this pass:**
+- 0.4.11 physical retest confirmed `parseReason: amount-sign-conflict` directly from
+  the audit file (§25).
+- Correlated against the round-3 regression timeline: the assertion conflates two
+  Tally fields the codebase's own established sign-inference convention already
+  treats as independent (§25).
+- Option C implemented: disagreement tolerated, counted via
+  `amountSignConflictCount`, never silently rewritten; structural validation
+  unchanged (§26).
+- `VoucherInventoryEntryParser` reviewed for parity — genuinely nothing analogous
+  exists there, so nothing was changed (§26).
+- Full suite green: connector 159/1414, desktop 66/677, contract 1/5.
+
+**What has NOT changed / is NOT yet known:**
+- No physical confirmation yet that the fix resolves the real-world failure —
+  automated tests are not physical proof (restated per standing instruction).
+- All of §3's TD-013–TD-020 physical-confirmation gaps remain open, unrelated to this
+  investigation. Session 1, 3, 4, 5 of §11 remain to be run; Session 2 steps H onward
+  remain blocked pending this one retest.
+
+**Required next physical action (exactly one):** install the next Desktop candidate
+(`0.4.12`; Android `continuity.15` unchanged) and run exactly one fresh Voucher sync
+against ESTIMATION. Report: voucher counts, the number of `amountSignConflict`
+diagnostics observed (via the audit file, if anything is recorded on a successful
+run, or via a future surfaced metric), whether existing voucher data/totals remain
+correct, and whether any new, different failure reason appears. **Do not proceed to
+USB/mobile debugging unless this candidate still fails after this exact semantic
+fix.**
