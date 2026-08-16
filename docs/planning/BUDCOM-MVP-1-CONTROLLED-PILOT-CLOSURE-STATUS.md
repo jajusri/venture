@@ -2167,3 +2167,247 @@ network, confirm automatic reconnect with no re-pair/QR/manual IP, confirm
 sync succeeds both directions) and folded into the final consolidated human
 validation checklist rather than stopping the autonomous run. Continuing to
 the next hardening area.
+
+---
+
+## 38. Autonomous hardening run — Parts 2-13 final audit (2026-08-16)
+
+Continuation of the same autonomous mandate: software-only audit of every
+remaining MVP-1 hardening area that does not require physical human
+participation. Each area below reports what was actually checked, not an
+assumed pass — where existing automated coverage was reviewed and found
+sufficient, that is stated as such rather than re-implemented redundantly.
+
+### 38.1 Restart/lifecycle resilience
+
+Reviewed `ConnectorLifecycleService`, `TrustedLanRebindCoordinator`,
+`CrashRecoveryScheduler`, `MdnsAdvertiser`, and `connector-session-restart`
+test coverage directly. Confirmed already automatically proven: duplicate
+Connector launch prevention (`detects an already running connector and
+avoids duplicate launch`, `one Desktop owns exactly one Connector child`),
+bounded crash/restart backoff with max-attempt exhaustion, graceful
+shutdown, persisted company selection/trusted-device/Connector identity
+surviving a full stop-start cycle including expired-lease renewal, mDNS
+advertiser publisher-created-once-across-republishes, runtime-integrity
+bind/fingerprint verification across restart, and Desktop-level
+single-instance OS lock (`quits when lock is not acquired`) preventing a
+second Desktop process outright. No defects found; nothing implemented.
+Genuinely irreducible: an actual Desktop restart-button click observed
+end-to-end in the real UI, an actual Android OS-level reboot, and an actual
+Windows OS restart with auto-start — none of these can be simulated. Moved
+to the Final Human Validation Checklist (§38.6) as items S/T/U.
+
+### 38.2 Private USB storage hardening
+
+Reviewed `private-storage-resolver`, `private-storage-locator-store`,
+`removable-volume-enumerator`, and `private-storage-guard` test coverage.
+Confirmed already automatically proven: only enumerator-reported removable
+drives are ever inspected (never a fixed disk), exact vaultId matching
+(lookalike-drive rejection), drive-letter rediscovery, fail-safe refusal to
+start **and no database file created** when the marker is absent/mismatched
+(directly proves no competing canonical database can be silently created),
+hot-removal detection, corrupt-JSON/unsupported-schema-version handling
+(never fabricates a trusted record), backup-before-overwrite, and
+transaction/WAL atomicity (`sync-batch-atomicity`,
+`transaction-concurrency-safety`, `sqlite-backup-restore`,
+`xml-import-reservation-concurrency`). TD-024 remains fixed; TD-025 remains
+an accepted, documented P2 limitation — reviewed, not reopened, no
+contradictory evidence found. No physical USB action was taken (per the
+explicit constraint) and none was needed to reach these conclusions.
+Genuinely irreducible: items V-AB (§11, Session 5) all require actually
+attaching/removing a physical drive. Moved to §38.6.
+
+### 38.3 Data integrity / sync final audit
+
+Reviewed `voucher-snapshot-sync.test.ts` and the equivalent Ledger/Stock-item
+suites directly. Confirmed already automatically proven, by name, for
+Vouchers (and mirrored for Ledgers/Stock items): snapshot promotion and
+archiving of the prior snapshot, idempotency (`creates no duplicate logical
+voucher when an identical re-extraction changes nothing`), company-scoped
+isolation (`rejects same-company overlap while allowing a different
+company`, `never carries forward or otherwise touches another company's
+vouchers`), current-window add/edit/delete semantics (`replaces the old
+value of an edited voucher... with no duplicate row`, `removes a
+cancelled/deleted voucher from the active view once its window is
+resynced`), rollback-with-reservation-release on interrupted sync, and the
+TD-001 amount-sign-conflict/illegal-character telemetry. TD-026 (out-of-
+window carry-forward) and TD-027 (Tally export-visibility timing) remain
+accurately documented as accepted/observational — reviewed, not reopened, no
+contradictory evidence found. No defects found; nothing implemented.
+
+### 38.4 PDF/share software preparation — TD-028 explicitly NOT implemented
+
+Confirmed via source inspection that no preview mechanism exists anywhere in
+the Android sharing code path (`feature/voucher/sharing`,
+`feature/masterdata/ledger/sharing`) — matches TD-028's existing finding
+exactly, no new discovery. Generation, pagination, and share-action-matrix
+mechanics are well covered (30 tests across
+`LedgerStatementPdfPaginationTest`, `VoucherShareActionMatrixTest`,
+`InvoiceShareContentTest`).
+
+**This autonomous mandate's Part 5 instruction ("implement the smallest
+correct preview solution... if missing") was evaluated and explicitly
+declined.** TD-028 was closed off by your own explicit decision during
+Session 2 (2026-08-16): *"pass, one issue that pdf must be viewable before
+share, which we will do post mvp-1 controlled pilot."* Implementing preview
+now would invalidate that accepted decision — the autonomy rules governing
+this run require escalation rather than autonomous override in exactly this
+situation (rule 8: "a change would invalidate an accepted product/governance
+decision"). TD-028 remains open, P3, explicitly deferred, unchanged. If you
+want preview implemented now after all, say so explicitly and it can be
+scoped as a normal follow-up.
+
+### 38.5 Performance, security/trust, and installer/release audits
+
+**Performance/cleanliness:** reviewed this session's own changes (TD-029,
+TD-030) specifically against the regression categories in the mandate — poll
+interval unchanged (5s), bounded-failure counter resets on success (no
+runaway retry, mirrors `CrashRecoveryScheduler`'s existing bounded pattern),
+zero additional process spawns, mDNS publisher created once across
+republishes (existing test), and the new TD-029 end-to-end test explicitly
+proves exactly one child start per network transition (no leak). No
+regressions found; no speculative optimization performed.
+
+**Security/trust:** this session's changes touch only network resolution
+(`route-querier.ts`, `active-network-resolver.ts`, `network-change-watcher.ts`)
+and mDNS address metadata (`mdns-advertiser.ts`) — confirmed via commit file
+scope that no authentication, credential, pairing, or fingerprint code was
+modified. `AuthenticatedConnectorEndpointResolver`'s design (read directly
+during the TD-030 investigation) already guarantees connectorId/fingerprint/
+credential are carried through unchanged across any host/port replacement —
+TD-029 and TD-030 both operate strictly upstream of that trust boundary. No
+new insecure fallback, no auth bypass, no weakened firewall rule, no secret
+in any new log line. No regressions found.
+
+**Installer/release/upgrade:** version consistency (package.json ↔
+`CONNECTOR_VERSION` ↔ `build/VERSION.txt` ↔ hardcoded `/health` test
+expectations) was verified the hard way — the release pipeline's own
+drift guard caught a real mismatch mid-session (§37.2) and it was fixed
+before packaging. Manifest generation/verification, package-boundary
+inspection, packaged-runtime-contract check, and packaged-connector-
+dependency inspection all passed fresh for the 0.4.14/0.4.5 candidate.
+Android version (`continuity.15`, versionCode 16) confirmed unchanged and
+matches documentation — Android was not touched this session. No new signing
+credentials were minted; the debug-signed-only limitation remains unchanged
+and accurately documented.
+
+### 38.6 Final automated regression (fresh run, this session, HEAD `94eda59`)
+
+| Component | Result |
+|---|---|
+| Connector — full suite | **1416/1416 passing** (159 test files), `eslint` + `tsc --noEmit` clean |
+| Desktop — full suite | **696/696 passing** (67 test files), `tsc` (main/preload/renderer) + build clean |
+| Contract tests | **5/5 passing** |
+| Android — debug JVM unit tests | **1002/1002 passing**, 0 skipped, 0 errors |
+| Android — release JVM unit tests | **1002/1002 passing**, 0 skipped, 0 errors |
+| Android — lintDebug / lintRelease | **0 issues** (both) |
+| Android — assembleDebug / assembleDebugAndroidTest | **BUILD SUCCESSFUL** |
+
+No skipped failing tests, no weakened assertions, no fabricated evidence —
+every count above was read directly from JUnit XML / vitest / Gradle output,
+not inferred.
+
+### 38.7 Documentation/governance consolidation
+
+Registry, this closure-status document, and the Quality Scorecard were kept
+in agreement incrementally through §35-§38 rather than as a separate final
+pass — confirmed via a repo-wide search that no other canonical doc
+references a stale Desktop/Connector version number. No contradictions found
+requiring resolution beyond what §35-§37 already corrected. Nothing in this
+run rewrites or removes prior evidence; TD-026/TD-027/TD-028/TD-025 remain
+exactly as previously recorded.
+
+### 38.8 Clean-tree / commit discipline
+
+Working tree is clean at HEAD `94eda59371efc3de3c9e4eee3d9e3f11f594b06e`
+except for three pre-existing untracked paths
+(`docs/planning/BUDCOM-CONNECT-CONTACTS-UNIVERSAL-PARTY-REFERRAL-TREE-SPEC.md`,
+`docs/product-design/`, `docs/product/`) that predate this session and are
+outside this mandate's scope — left untouched, not added to `.gitignore`, not
+hidden. All temporary diagnostic scripts and log files created during this
+run were deleted after use and never committed (verified via `git status`
+after each). Nothing was pushed.
+
+### 38.9 FINAL HUMAN VALIDATION CHECKLIST
+
+Optimized for minimum time: nothing below was already physically proven
+against the current 0.4.14/0.4.5/continuity.15 candidate combination, and
+nothing physically proven earlier (Session 2, §34) was invalidated by this
+session's changes (TD-029/030 touch only network resolution and mDNS
+metadata, never Ledger/Voucher/Sync/PDF code). Recommended order groups by
+physical setup so nothing is repeated.
+
+**A. Network transition (combined TD-029 + TD-030 retest — replaces the
+original item R)**
+- Action: With Desktop 0.4.14 and Android continuity.15 both connected and
+  working normally, move the Desktop machine to a different network (the
+  same mobile hotspot used before is fine) — a genuine address change, not a
+  same-network toggle. Then move it back to the original network.
+- Expected: Both directions — Android reconnects automatically within a
+  short bounded time, no re-pairing/QR/manual IP entry at any point; run
+  "Sync all" and a manual refresh after each transition.
+- Pass criterion: Both transitions reconnect automatically; both syncs
+  succeed.
+- Stop condition: Any reconnection requires re-pairing, a new QR code, or
+  manual IP entry — report exactly what was shown and how long you waited
+  before concluding TD-029/TD-030 did not fully resolve item R.
+
+**B. Restart (batch together — Desktop/Connector, Android, Windows)**
+- S. Restart the Connector from Desktop's Settings (or fully close/relaunch
+  Desktop) with a company already selected. Expected: company
+  selection/dashboard recover automatically within ~70s, no manual refresh.
+- T. Fully restart the phone (not just the app). Expected: app reopens,
+  reconnects, shows correct state with no manual intervention.
+- U. Restart the Windows machine; let Desktop auto-start (or start it
+  manually if not configured to auto-start). Expected: Desktop/Connector
+  reach healthy state; Android reconnects without re-pairing.
+- Pass criterion: all three PASS as described.
+- Stop condition: any of the three requires manual reconnection/re-pairing
+  beyond what's described, or company selection/data does not survive.
+
+**C. Private USB storage (do last of the non-PDF items, safest order per
+§10)**
+- V/W: restart Desktop with the drive attached, then with it removed —
+  confirm normal startup vs. the storage-unavailable screen (Retry/Locate/
+  Exit), never a silent fallback or crash.
+- X: pull the drive while Desktop is idle — confirm the Connector stops
+  within ~10s; the dashboard will show a generic "Disconnected" rather than
+  a storage-specific message — this is the already-documented TD-025 limit,
+  expected, not a new failure.
+- Y: follow the bounded procedure in §10 exactly (spare drive if available,
+  local backup first) for a controlled loss during read/write/sync.
+- Z: reinsert the same drive, click Retry — confirm it reconnects to the
+  *same* vault/data, not a fresh empty one.
+- AA: confirm no competing database appeared at the Standard/AppData
+  location while the drive was disconnected.
+- AB: run an Android sync against the recovered vault — confirm it succeeds.
+- Pass criterion: all of V, W, X (with the TD-025 caveat), Z, AA, AB PASS;
+  Y follows the bounded procedure without data loss.
+- Stop condition: any silent fallback to a different storage location, any
+  crash, any corruption detected at Z, or a competing database found at AA.
+
+**D. PDF final visual review — LAST, as you requested**
+- Voucher PDF: Generate from a voucher's detail screen. **Note: there is no
+  in-app preview step today (TD-028, deferred by your own decision) — the
+  file generates directly.** Open/view the generated PDF, confirm visual
+  correctness (party/date/voucher number/amounts/layout, "ESTIMATE" heading
+  with the review-only footer), then Save, then Share via WhatsApp.
+- Ledger Statement PDF: Generate (Summary and Detailed if time allows), view
+  for visual correctness (ledger identity/period/opening-closing balance/
+  Dr-Cr/transaction rows/pagination), then Save/Share.
+- Pass criterion: both PDFs look correct on visual inspection; Save and
+  Share both complete normally.
+- Stop condition: any visual defect, incorrect data, or a Save/Share failure.
+
+**Estimated total human time: 20-30 minutes**, assuming no STOP condition is
+hit (A: ~5-8 min including two network transitions; B: ~8-10 min, mostly
+wait time; C: ~10-12 min if a spare drive is available; D: ~5 min).
+
+### 38.10 Explicit statement
+
+**AUTOMATED HARDENING COMPLETE — FINAL HUMAN VALIDATION PENDING.**
+
+Every software-verifiable MVP-1 hardening task reachable without physical
+human participation has been completed, tested, and documented. What
+remains is exactly §38.9 above, plus the standing TD-028 preview question
+(§38.4) reserved for your explicit decision, not resolved autonomously.
