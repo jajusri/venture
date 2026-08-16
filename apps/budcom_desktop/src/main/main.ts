@@ -183,6 +183,7 @@ startupDiagnostics.record('app_data_ready', {
   connectorDataDir: appDataLayout.connectorDataDir,
   connectorDiagnosticsDir: appDataLayout.connectorDiagnosticsDir,
   connectorTallyAuditPath: appDataLayout.connectorTallyAuditPath,
+  connectorVoucherSyncFailureAuditPath: appDataLayout.connectorVoucherSyncFailureAuditPath,
   connectorTransportIdentityDir: appDataLayout.connectorTransportIdentityDir,
 });
 
@@ -246,6 +247,7 @@ const settingsService = new SettingsService({
     resourcesPath: process.resourcesPath,
     connectorDatabaseDir: appDataLayout.connectorDatabaseDir,
     connectorTallyAuditPath: appDataLayout.connectorTallyAuditPath,
+    connectorVoucherSyncFailureAuditPath: appDataLayout.connectorVoucherSyncFailureAuditPath,
     connectorTransportIdentityDir: appDataLayout.connectorTransportIdentityDir,
     connectorId: connectorIdentity.connectorId,
   },

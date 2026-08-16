@@ -49,6 +49,11 @@ import type { VoucherSnapshotSyncService } from '../services/voucher/voucher-app
 import { VoucherApplicationServiceImpl } from '../services/voucher/voucher-application.service.js';
 import type { VoucherApplicationService } from '../services/voucher/voucher-application.interface.js';
 import { TallyVoucherExtractor } from '../tally/voucher/voucher-extractor.js';
+import { VoucherSyncFailureAuditor } from '../services/voucher/voucher-sync-failure-audit.js';
+import {
+  TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT,
+  TALLY_REQUEST_AUDIT_MAX_FILES_DEFAULT,
+} from '../config/defaults.js';
 import { validateStartupConfiguration } from './startup-validation.js';
 
 export interface ApplicationContext {
@@ -135,6 +140,13 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
   container.registerFactory(ServiceTokens.VoucherSynchronization, () => {
     const storage = container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase);
     const companyResolver = container.resolve<CompanyResolver>(ServiceTokens.CompanyResolver);
+    const failureAuditor = new VoucherSyncFailureAuditor({
+      auditPath: config.voucherSyncFailureAuditPath,
+      enabled: config.voucherSyncFailureAuditEnabled,
+      maxBytes: TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT,
+      maxFiles: TALLY_REQUEST_AUDIT_MAX_FILES_DEFAULT,
+      logger: logger.child({ service: 'VoucherSyncFailureAudit' }),
+    });
     return new VoucherSynchronizationService(
       container.resolve<VoucherExtractionService>(ServiceTokens.VoucherExtraction),
       storage.getBundle().voucherRepository,
@@ -142,6 +154,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
       logger.child({ service: 'VoucherSync' }),
       undefined,
       (companyId) => companyResolver.resolveName(companyId),
+      failureAuditor,
     );
   });
   container.registerFactory(

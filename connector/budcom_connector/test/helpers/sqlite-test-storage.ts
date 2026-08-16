@@ -38,6 +38,8 @@ export function createTestConnectorConfig(basePath: string): ConnectorConfig {
     tallyRequestAuditPath: './audit.jsonl',
     tallyRequestAuditMaxBytes: 10 * 1024 * 1024,
     tallyRequestAuditMaxFiles: 5,
+    voucherSyncFailureAuditEnabled: false,
+    voucherSyncFailureAuditPath: path.join(basePath, 'voucher-sync-failure-audit.jsonl'),
     databasePath: basePath,
     gracefulShutdownMs: 1000,
     connectorVersion: '0.3.1',

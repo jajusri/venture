@@ -173,6 +173,64 @@ describe('safe Voucher inventory extraction', () => {
       }),
     );
   });
+
+  // Controlled-pilot Session 2 physical retest FAIL follow-up (2026-08-16): the user
+  // reported vouchers recently deleted from ESTIMATION in Tally. The discovery phase and
+  // the ledger/inventory-entries phases are three SEPARATE, sequential Tally requests
+  // (see voucher-extractor.ts) -- if Tally's discovery report and its ledger/inventory
+  // report engines disagree about a Voucher's existence at query time (most plausibly
+  // because it was deleted between requests), the ledger/inventory response can contain
+  // an entry for a Voucher GUID the discovery phase never listed. This proves that exact
+  // "orphan entry" shape reproduces the two-phase-join-mismatch failure independent of
+  // any XML-illegal-character concern, and that the diagnostic now distinguishes it via
+  // `reconciliationReason` instead of collapsing to an undifferentiated message.
+  it('fails closed with a distinguishable reconciliationReason when an inventory entry references a Voucher deleted between phases', async () => {
+    const discovery = envelope(`<VOUCHER>
+      <DATE>20260724</DATE><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+      <VOUCHERNUMBER>16</VOUCHERNUMBER><GUID>voucher-still-present</GUID>
+    </VOUCHER>`);
+    const ledger = envelope(`<LEDGERENTRY>
+      <LEDGERNAME>Customer</LEDGERNAME><ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+      <AMOUNT>-100.00</AMOUNT><PARENTGUID>voucher-still-present</PARENTGUID>
+    </LEDGERENTRY><LEDGERENTRY>
+      <LEDGERNAME>Sales</LEDGERNAME><ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+      <AMOUNT>100.00</AMOUNT><PARENTGUID>voucher-still-present</PARENTGUID>
+    </LEDGERENTRY>`);
+    // References a GUID absent from the discovery-phase response entirely -- simulating
+    // a Voucher deleted from Tally's master list between the discovery request and this
+    // (later) inventory-entries request, while its inventory posting was still returned.
+    const inventoryWithOrphanEntry = CLEAN_INVENTORY_XML.replace(
+      'VOUCHER-GUID',
+      'voucher-deleted-between-phases',
+    );
+    const executeApprovedRead = vi.fn()
+      .mockResolvedValueOnce(exchange(ApprovedOperationId.Vouchers, discovery))
+      .mockResolvedValueOnce(exchange(ApprovedOperationId.VoucherLedgerEntries, ledger))
+      .mockResolvedValueOnce(
+        exchange(ApprovedOperationId.VoucherInventoryEntries, inventoryWithOrphanEntry),
+      );
+    const gateway = { executeApprovedRead } as unknown as TallyReadGateway;
+    const voucherParser = new VoucherCollectionParser(new TallyXmlResponseParser());
+    const extractor = new TallyVoucherExtractor(
+      gateway,
+      voucherParser,
+      new VoucherXmlMapper(voucherParser),
+      undefined,
+      true,
+    );
+
+    await expect(extractor.readVouchers('Budcom-Test-01', {
+      dateFrom: '2026-07-24',
+      dateTo: '2026-07-24',
+    })).rejects.toMatchObject({
+      statusCode: 422,
+      details: {
+        reasonCode: 'voucher-inventory-validation',
+        reconciliationReason: 'orphan-inventory-entry',
+        operation: 'VoucherInventoryEntries',
+      },
+    });
+  });
 });
 
 function parser(): VoucherInventoryEntryParser {

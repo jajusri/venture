@@ -1,6 +1,6 @@
 import type { ConnectorNetworkExposure } from './network-binding.js';
 
-export const CONNECTOR_VERSION = '0.4.1';
+export const CONNECTOR_VERSION = '0.4.2';
 export const SCHEMA_VERSION = '1.0.0';
 
 export interface ConnectorConfig {
@@ -34,6 +34,20 @@ export interface ConnectorConfig {
   readonly tallyRequestAuditPath: string;
   readonly tallyRequestAuditMaxBytes: number;
   readonly tallyRequestAuditMaxFiles: number;
+  /**
+   * Structural-only, privacy-safe audit of Voucher parser/extraction failures --
+   * failure bucket, granular reasonCode, XML parse classification (line/column/
+   * byteOffset-style facts, never surrounding text), which Tally operation, response
+   * byte length, a correlation-only response hash, and sanitization telemetry. Never
+   * raw XML, narration, party names, amounts, or any other business content. Exists
+   * because the connector's own info/debug logs are discarded entirely in the packaged
+   * Desktop runtime (child process spawned with stdout ignored) and error/warn logs are
+   * bounded to a small shared byte budget for the process's whole lifetime -- this
+   * writes directly to its own file instead, following the same pattern as
+   * tallyRequestAudit*, so it survives regardless of either constraint.
+   */
+  readonly voucherSyncFailureAuditEnabled: boolean;
+  readonly voucherSyncFailureAuditPath: string;
   readonly databasePath: string;
   readonly gracefulShutdownMs: number;
   readonly connectorVersion: string;
@@ -156,6 +170,8 @@ export const defaultConfig: ConnectorConfig = {
   tallyRequestAuditPath: './diagnostics/tally-request-audit.jsonl',
   tallyRequestAuditMaxBytes: TALLY_REQUEST_AUDIT_MAX_BYTES_DEFAULT,
   tallyRequestAuditMaxFiles: TALLY_REQUEST_AUDIT_MAX_FILES_DEFAULT,
+  voucherSyncFailureAuditEnabled: true,
+  voucherSyncFailureAuditPath: './diagnostics/voucher-sync-failure-audit.jsonl',
   databasePath: './data/budcom-connector.db',
   gracefulShutdownMs: 10_000,
   connectorVersion: CONNECTOR_VERSION,

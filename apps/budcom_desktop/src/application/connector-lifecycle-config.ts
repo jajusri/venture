@@ -40,6 +40,7 @@ export interface ConnectorLifecycleResolutionContext {
   readonly resourcesPath?: string;
   readonly connectorDatabaseDir?: string;
   readonly connectorTallyAuditPath?: string;
+  readonly connectorVoucherSyncFailureAuditPath?: string;
   /**
    * Persistent home for the Connector's transport identity (private key + certificate), passed
    * to the spawned Connector as BUDCOM_TRANSPORT_IDENTITY_DIR so it never falls back to its own
@@ -145,6 +146,9 @@ export function resolveConnectorLifecycleConfig(
   }
   if (context.connectorTallyAuditPath) {
     childEnvOverrides.BUDCOM_TALLY_REQUEST_AUDIT_PATH = context.connectorTallyAuditPath;
+  }
+  if (context.connectorVoucherSyncFailureAuditPath) {
+    childEnvOverrides.BUDCOM_VOUCHER_SYNC_FAILURE_AUDIT_PATH = context.connectorVoucherSyncFailureAuditPath;
   }
   if (context.connectorTransportIdentityDir) {
     childEnvOverrides.BUDCOM_TRANSPORT_IDENTITY_DIR = context.connectorTransportIdentityDir;

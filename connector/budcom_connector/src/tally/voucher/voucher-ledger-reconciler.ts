@@ -5,6 +5,7 @@ import type {
 } from '../../erp/voucher/voucher-domain.js';
 import { normalizeGuid } from './voucher-ledger-parser.js';
 import { formatDecimal, parseDecimal, rescale } from '../../erp/shared/decimal-money.js';
+import { VoucherReconciliationError } from './voucher-reconciliation-error.js';
 
 export function joinAndReconcileVoucherLedgers(
   vouchers: readonly VoucherDetails[],
@@ -14,14 +15,23 @@ export function joinAndReconcileVoucherLedgers(
   for (const voucher of vouchers) {
     if (!voucher.guid) continue;
     const guid = normalizeGuid(voucher.guid);
-    if (vouchersByGuid.has(guid)) throw new Error(`Duplicate Voucher GUID: ${guid}.`);
+    if (vouchersByGuid.has(guid)) {
+      throw new VoucherReconciliationError('duplicate-voucher-guid', `Duplicate Voucher GUID: ${guid}.`);
+    }
     vouchersByGuid.set(guid, voucher);
   }
 
   const grouped = new Map<string, VoucherLedgerExtractionEntry[]>();
   for (const entry of extractedEntries) {
     if (!vouchersByGuid.has(entry.parentGuid)) {
-      throw new Error(`Voucher ledger entry references unknown parent GUID: ${entry.parentGuid}.`);
+      // Ledger walk returned an entry for a Voucher the discovery phase never listed --
+      // e.g. deleted in Tally between the two phase-separated requests, or a cross-report
+      // consistency gap on Tally's side. This is the specific "two-phase join mismatch"
+      // shape distinct from a Voucher simply having zero ledger entries (tolerated below).
+      throw new VoucherReconciliationError(
+        'orphan-ledger-entry',
+        `Voucher ledger entry references unknown parent GUID: ${entry.parentGuid}.`,
+      );
     }
     const entries = grouped.get(entry.parentGuid) ?? [];
     entries.push(entry);
@@ -31,7 +41,10 @@ export function joinAndReconcileVoucherLedgers(
   return vouchers.map((voucher) => {
     if (!voucher.guid) {
       if (extractedEntries.length > 0) {
-        throw new Error(`Voucher ${voucher.voucherId} cannot join ledger entries without GUID.`);
+        throw new VoucherReconciliationError(
+          'voucher-missing-guid',
+          `Voucher ${voucher.voucherId} cannot join ledger entries without GUID.`,
+        );
       }
       return voucher;
     }
@@ -44,7 +57,10 @@ export function joinAndReconcileVoucherLedgers(
       0n,
     );
     if (signedBalance !== 0n) {
-      throw new Error(`Voucher ${voucher.voucherId} ledger entries do not balance.`);
+      throw new VoucherReconciliationError(
+        'ledger-entries-unbalanced',
+        `Voucher ${voucher.voucherId} ledger entries do not balance.`,
+      );
     }
     const positiveTotal = decimals.reduce((sum, amount) => {
       const value = rescale(amount, scale);

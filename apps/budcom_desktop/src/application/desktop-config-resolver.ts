@@ -176,6 +176,7 @@ export interface ResolveDesktopConfigOptions {
   readonly resourcesPath?: string;
   readonly connectorDatabaseDir?: string;
   readonly connectorTallyAuditPath?: string;
+  readonly connectorVoucherSyncFailureAuditPath?: string;
   readonly connectorTransportIdentityDir?: string;
   readonly connectorId?: string;
   /** Private Removable Storage mode only — see connector-lifecycle-config.ts. */
@@ -213,6 +214,7 @@ export function resolveDesktopConfig(
     resourcesPath: options.resourcesPath,
     connectorDatabaseDir: options.connectorDatabaseDir,
     connectorTallyAuditPath: options.connectorTallyAuditPath,
+    connectorVoucherSyncFailureAuditPath: options.connectorVoucherSyncFailureAuditPath,
     connectorTransportIdentityDir: options.connectorTransportIdentityDir,
     connectorId: options.connectorId,
     privateStorageExpectedVaultId: options.privateStorageExpectedVaultId,

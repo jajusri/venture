@@ -10,6 +10,7 @@ import type {
 } from './voucher-application.interface.js';
 import { VoucherExtractionService } from './voucher-extraction.service.js';
 import type { VoucherRepositoryPort, VoucherSnapshotMetrics } from './voucher-repository.interface.js';
+import type { VoucherSyncFailureAuditor } from './voucher-sync-failure-audit.js';
 import type {
   VoucherSyncCancellation,
   VoucherSyncProgress,
@@ -31,6 +32,11 @@ class VoucherSyncFailure extends Error {
      * so operators/support tooling can distinguish e.g. malformed-xml from
      * missing-envelope without the external classification losing its stability. */
     readonly detail: string | null = null,
+    /** Full underlying AppError.details bag (reasonCode, operation, responseByteLength,
+     * responseHash, XML parse / reconciliation classification) for the file-based audit
+     * writer only -- never exposed via the public result/API, which stays limited to
+     * `detail` above for a stable external contract. */
+    readonly diagnosticContext: Readonly<Record<string, unknown>> | null = null,
   ) {
     super(reason);
     this.name = 'VoucherSyncFailure';
@@ -58,6 +64,10 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
      * Storage and progress remain keyed by companyId.
      */
     private readonly resolveCompanyName?: ResolveVoucherCompanyName,
+    /** File-based, privacy-safe audit of extraction-classified sync failures -- see
+     * voucher-sync-failure-audit.ts. Optional so every existing caller/test is
+     * unaffected; when absent, this service's behavior is byte-for-byte unchanged. */
+    private readonly failureAuditor?: VoucherSyncFailureAuditor,
   ) {}
 
   async synchronize(
@@ -190,6 +200,7 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
           classifyExtractionFailure(error),
           null,
           extractFailureDetail(error),
+          error instanceof AppError ? (error.details ?? null) : null,
         );
       }
       checkCancellation(cancellation);
@@ -275,6 +286,21 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
         : error instanceof VoucherSyncFailure ? error.repositoryCode : null;
       const failureReason = cancelled ? 'cancelled' : classifyFailure(error);
       const failureDetail = !cancelled && error instanceof VoucherSyncFailure ? error.detail : null;
+      if (!cancelled && this.failureAuditor) {
+        try {
+          await this.failureAuditor.record({
+            timestamp: new Date().toISOString(),
+            runId: snapshotId ?? randomUUID(),
+            companyId: company,
+            phase,
+            failureReason,
+            repositoryFailureCode: repositoryCode,
+            details: error instanceof VoucherSyncFailure ? error.diagnosticContext : null,
+          });
+        } catch {
+          // Diagnostics are observational and must never affect synchronization.
+        }
+      }
       let rollbackStatus: VoucherSyncRollbackStatus = 'not_required';
       if (snapshotStarted && !promotionOccurred && snapshotId) {
         try {

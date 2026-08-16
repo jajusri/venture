@@ -18,6 +18,7 @@ export interface AppDataLayout {
   readonly connectorDatabaseDir: string;
   readonly connectorDiagnosticsDir: string;
   readonly connectorTallyAuditPath: string;
+  readonly connectorVoucherSyncFailureAuditPath: string;
   /**
    * Persistent home for the Connector's transport identity (private key + self-signed
    * certificate used for pinned-HTTPS secure pairing). Deliberately a sibling of
@@ -54,6 +55,7 @@ export function resolveAppDataLayout(input: ResolveAppDataLayoutInput): AppDataL
     connectorDatabaseDir: connectorDataDir,
     connectorDiagnosticsDir,
     connectorTallyAuditPath: path.join(connectorDiagnosticsDir, 'tally-request-audit.jsonl'),
+    connectorVoucherSyncFailureAuditPath: path.join(connectorDiagnosticsDir, 'voucher-sync-failure-audit.jsonl'),
     connectorTransportIdentityDir: path.join(userDataRoot, 'connector-transport-identity'),
     importStagingDir: path.join(userDataRoot, 'imports', 'staging'),
     tempDir: path.join(userDataRoot, 'temp'),
@@ -90,6 +92,7 @@ export function assertPackagedMutablePathsOutsideInstallRoot(layout: AppDataLayo
     layout.connectorDatabaseDir,
     layout.connectorDiagnosticsDir,
     layout.connectorTallyAuditPath,
+    layout.connectorVoucherSyncFailureAuditPath,
     layout.connectorTransportIdentityDir,
     layout.importStagingDir,
     layout.tempDir,

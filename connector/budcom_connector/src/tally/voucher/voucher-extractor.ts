@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type {
   VoucherExtractionResult,
   VoucherReadPort,
@@ -7,13 +9,23 @@ import { AppError, ErrorCodes } from '../../infrastructure/errors/app-error.js';
 import type { TallyReadGateway } from '../gateway/tally-read-gateway.js';
 import { ApprovedOperationId } from '../registry/operation-registry.js';
 import { resolveXmlParserOptionsForOperation } from '../xml/response-parser-limits.js';
-import { TallyXmlResponseParser } from '../xml/response-parser.js';
+import {
+  TallyXmlResponseParser,
+  toPrivacySafeXmlParseDetails,
+  XmlParseError,
+} from '../xml/response-parser.js';
 import { VoucherLedgerEntryParser } from './voucher-ledger-parser.js';
 import { joinAndReconcileVoucherLedgers } from './voucher-ledger-reconciler.js';
 import { VoucherInventoryEntryParser } from './voucher-inventory-parser.js';
 import { joinVoucherInventories } from './voucher-inventory-joiner.js';
 import type { VoucherXmlMapper } from './voucher-mapper.js';
 import type { VoucherCollectionParser } from './voucher-parser.js';
+import { VoucherReconciliationError } from './voucher-reconciliation-error.js';
+
+/** Correlation-only fingerprint of a raw Tally response -- never the content itself. */
+function responseHash(rawXml: string): string {
+  return createHash('sha256').update(rawXml, 'utf8').digest('hex');
+}
 
 export class TallyVoucherExtractor implements VoucherReadPort {
   constructor(
@@ -48,7 +60,13 @@ export class TallyVoucherExtractor implements VoucherReadPort {
         ErrorCodes.VALIDATION_ERROR,
         parsed.message,
         422,
-        { reasonCode: parsed.code },
+        {
+          reasonCode: parsed.code,
+          operation: 'Vouchers',
+          responseByteLength: exchange.byteLength,
+          responseHash: responseHash(exchange.rawXml),
+          ...(parsed.xmlParseDetail ?? {}),
+        },
       );
     }
     const illegalCharactersSanitized = parsed.document.illegalCharactersSanitized;
@@ -59,7 +77,13 @@ export class TallyVoucherExtractor implements VoucherReadPort {
         ErrorCodes.VALIDATION_ERROR,
         'Voucher discovery response contains forbidden monetary or compound fields.',
         422,
-        { reasonCode: 'voucher-discovery-expansion' },
+        {
+          reasonCode: 'voucher-discovery-expansion',
+          operation: 'Vouchers',
+          responseByteLength: exchange.byteLength,
+          responseHash: responseHash(exchange.rawXml),
+          illegalCharactersSanitized,
+        },
       );
     }
     const mapped = parsed.records.map((node) => this.mapper.map(node));
@@ -94,7 +118,13 @@ export class TallyVoucherExtractor implements VoucherReadPort {
           422,
           {
             reasonCode: 'voucher-ledger-validation',
-            cause: error instanceof Error ? error.message : String(error),
+            operation: 'VoucherLedgerEntries',
+            responseByteLength: ledgerExchange.byteLength,
+            responseHash: responseHash(ledgerExchange.rawXml),
+            ...(error instanceof XmlParseError ? toPrivacySafeXmlParseDetails(error) : {}),
+            ...(error instanceof VoucherReconciliationError
+              ? { reconciliationReason: error.reason }
+              : {}),
           },
         );
       }
@@ -121,7 +151,13 @@ export class TallyVoucherExtractor implements VoucherReadPort {
           422,
           {
             reasonCode: 'voucher-inventory-validation',
-            cause: error instanceof Error ? error.message : String(error),
+            operation: 'VoucherInventoryEntries',
+            responseByteLength: inventoryExchange.byteLength,
+            responseHash: responseHash(inventoryExchange.rawXml),
+            ...(error instanceof XmlParseError ? toPrivacySafeXmlParseDetails(error) : {}),
+            ...(error instanceof VoucherReconciliationError
+              ? { reconciliationReason: error.reason }
+              : {}),
           },
         );
       }

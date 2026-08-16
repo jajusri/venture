@@ -182,6 +182,12 @@ export function loadConfig(overrides: Partial<ConnectorConfig> = {}): ConnectorC
       TALLY_REQUEST_AUDIT_MAX_FILES_LIMIT,
       'tally request audit max files',
     ),
+    voucherSyncFailureAuditEnabled: parseBoolean(
+      process.env.BUDCOM_VOUCHER_SYNC_FAILURE_AUDIT,
+      defaultConfig.voucherSyncFailureAuditEnabled,
+    ),
+    voucherSyncFailureAuditPath:
+      process.env.BUDCOM_VOUCHER_SYNC_FAILURE_AUDIT_PATH ?? defaultConfig.voucherSyncFailureAuditPath,
     databasePath: process.env.BUDCOM_DATABASE_PATH ?? defaultConfig.databasePath,
     gracefulShutdownMs: parsePositiveInt(
       process.env.BUDCOM_SHUTDOWN_MS,

@@ -25,6 +25,8 @@ import {
 import { TallyXmlResponseParser } from '../../../src/tally/xml/response-parser.js';
 import { VoucherXmlMapper } from '../../../src/tally/voucher/voucher-mapper.js';
 import { VoucherCollectionParser } from '../../../src/tally/voucher/voucher-parser.js';
+import type { VoucherSyncFailureAuditor } from '../../../src/services/voucher/voucher-sync-failure-audit.js';
+import { createTestVoucherSyncFailureAuditor } from '../../helpers/voucher-sync-failure-audit-test-helpers.js';
 import { APPROVED_VOUCHER_FIXTURE_XML } from '../../fixtures/vouchers/approved-voucher-fixture.js';
 
 const PERIOD = { dateFrom: '2026-07-27', dateTo: '2026-07-27' };
@@ -83,6 +85,7 @@ function service(
   extract: VoucherReadPort['readVouchers'],
   batchSize?: number,
   resolveCompanyName?: (companyId: string) => Promise<string>,
+  failureAuditor?: VoucherSyncFailureAuditor,
 ): VoucherSnapshotSyncServiceImpl {
   return new VoucherSnapshotSyncServiceImpl(
     new VoucherExtractionService({ readVouchers: extract }),
@@ -91,6 +94,7 @@ function service(
     undefined,
     undefined,
     resolveCompanyName,
+    failureAuditor,
   );
 }
 
@@ -244,6 +248,38 @@ describe('VoucherSnapshotSyncServiceImpl', () => {
       failureReason: 'tally_source_error',
       failureDetail: 'tally-source-error',
     });
+  });
+
+  it('records a structural-only entry via the file-based failureAuditor when extraction fails', async () => {
+    const repo = repository();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-voucher-failure-audit-'));
+    tempDirs.push(dir);
+    const auditPath = path.join(dir, 'audit.jsonl');
+    const auditor = createTestVoucherSyncFailureAuditor(auditPath);
+    const extract = vi.fn<VoucherReadPort['readVouchers']>().mockRejectedValue(
+      new AppError(ErrorCodes.VALIDATION_ERROR, 'Voucher inventory response failed closed validation.', 422, {
+        reasonCode: 'voucher-inventory-validation',
+        reconciliationReason: 'orphan-inventory-entry',
+        operation: 'VoucherInventoryEntries',
+      }),
+    );
+
+    const result = await service(repo, extract, undefined, undefined, auditor)
+      .synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    expect(result).toMatchObject({ outcome: 'failed', failureReason: 'parser_failure' });
+    const contents = fs.readFileSync(auditPath, 'utf8');
+    const entry = JSON.parse(contents.trim()) as Record<string, unknown>;
+    expect(entry).toMatchObject({
+      companyId: 'company-a',
+      failureReason: 'parser_failure',
+      details: {
+        reasonCode: 'voucher-inventory-validation',
+        reconciliationReason: 'orphan-inventory-entry',
+        operation: 'VoucherInventoryEntries',
+      },
+    });
+    expect(contents).not.toContain('failed closed validation');
   });
 
   it('reports illegalCharactersSanitized on a successful sync that required sanitization', async () => {

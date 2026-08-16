@@ -5,6 +5,7 @@ import type {
   VoucherMoney,
 } from '../../erp/voucher/voucher-domain.js';
 import { normalizeGuid } from './voucher-ledger-parser.js';
+import { VoucherReconciliationError } from './voucher-reconciliation-error.js';
 
 export function joinVoucherInventories(
   vouchers: readonly VoucherDetails[],
@@ -14,14 +15,21 @@ export function joinVoucherInventories(
   for (const voucher of vouchers) {
     if (!voucher.guid) continue;
     const guid = normalizeGuid(voucher.guid);
-    if (vouchersByGuid.has(guid)) throw new Error(`Duplicate Voucher GUID: ${guid}.`);
+    if (vouchersByGuid.has(guid)) {
+      throw new VoucherReconciliationError('duplicate-voucher-guid', `Duplicate Voucher GUID: ${guid}.`);
+    }
     vouchersByGuid.set(guid, voucher);
   }
 
   const grouped = new Map<string, VoucherInventoryExtractionEntry[]>();
   for (const entry of extractedEntries) {
     if (!vouchersByGuid.has(entry.parentGuid)) {
-      throw new Error(`Voucher inventory entry references unknown parent GUID: ${entry.parentGuid}.`);
+      // See voucher-ledger-reconciler.ts's identical case for why this is the specific
+      // "two-phase join mismatch" shape (e.g. deletion between phase-separated requests).
+      throw new VoucherReconciliationError(
+        'orphan-inventory-entry',
+        `Voucher inventory entry references unknown parent GUID: ${entry.parentGuid}.`,
+      );
     }
     const entries = grouped.get(entry.parentGuid) ?? [];
     entries.push(entry);
@@ -31,7 +39,10 @@ export function joinVoucherInventories(
   return vouchers.map((voucher) => {
     if (!voucher.guid) {
       if (extractedEntries.length > 0) {
-        throw new Error(`Voucher ${voucher.voucherId} cannot join inventory entries without GUID.`);
+        throw new VoucherReconciliationError(
+          'voucher-missing-guid',
+          `Voucher ${voucher.voucherId} cannot join inventory entries without GUID.`,
+        );
       }
       return voucher;
     }
