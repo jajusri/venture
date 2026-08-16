@@ -1,7 +1,9 @@
-import type {
-  ParsedXmlDocument,
-  ParsedXmlNode,
-  TallyXmlResponseParser,
+import {
+  toPrivacySafeXmlParseDetails,
+  XmlParseError,
+  type ParsedXmlDocument,
+  type ParsedXmlNode,
+  type TallyXmlResponseParser,
 } from '../xml/response-parser.js';
 import type { XmlParserOptions } from '../xml/response-parser-limits.js';
 
@@ -18,6 +20,12 @@ export interface VoucherParserFailure {
   readonly status: 'failure';
   readonly code: VoucherParserFailureCode;
   readonly message: string;
+  /** Privacy-safe underlying XmlParseError classification (reason + structural details
+   * such as line/column/byteOffset/illegalCharactersSanitized -- never surrounding
+   * business text) when `code` is 'malformed-xml' and the parser threw a typed error.
+   * Null for structural-envelope failures detected after a successful parse, and for
+   * non-XmlParseError throws. */
+  readonly xmlParseDetail: Readonly<Record<string, number | boolean | string>> | null;
 }
 
 export interface VoucherParserSuccess {
@@ -37,8 +45,11 @@ export class VoucherCollectionParser {
     let document: ParsedXmlDocument;
     try {
       document = this.parser.parse(rawXml, options);
-    } catch {
-      return failure('malformed-xml', 'Voucher response is not well-formed XML.');
+    } catch (error) {
+      const xmlParseDetail = error instanceof XmlParseError
+        ? toPrivacySafeXmlParseDetails(error)
+        : null;
+      return failure('malformed-xml', 'Voucher response is not well-formed XML.', xmlParseDetail);
     }
 
     if (document.root.name !== 'ENVELOPE') {
@@ -118,8 +129,9 @@ export class VoucherCollectionParser {
 function failure(
   code: VoucherParserFailureCode,
   message: string,
+  xmlParseDetail: Readonly<Record<string, number | boolean | string>> | null = null,
 ): VoucherParserFailure {
-  return { status: 'failure', code, message };
+  return { status: 'failure', code, message, xmlParseDetail };
 }
 
 function firstDirectChild(

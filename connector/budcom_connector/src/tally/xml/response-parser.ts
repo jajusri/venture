@@ -78,21 +78,38 @@ export class TallyXmlResponseParser {
       maxDepth: limits.maxDepth,
       maxNodeCount: limits.maxNodeCount,
     };
-    const trimmed = sanitized.trim();
-    if (!trimmed.startsWith('<')) {
-      throw new XmlParseError('xml_malformed', 'Invalid XML: document does not start with a tag');
-    }
 
-    const result = parseElement(trimmed, 0, ctx, 0);
-    if (!result.node) {
-      throw new XmlParseError('xml_malformed', 'Invalid XML: unable to parse root element');
-    }
+    let result: { node?: ParsedXmlNode; nextIndex: number };
+    let trimmed: string;
+    try {
+      trimmed = sanitized.trim();
+      if (!trimmed.startsWith('<')) {
+        throw new XmlParseError('xml_malformed', 'Invalid XML: document does not start with a tag');
+      }
 
-    const trailing = trimmed.slice(result.nextIndex);
-    if (trailing.trim().length > 0) {
-      throw new XmlParseError('xml_trailing_content', 'Invalid XML: trailing content after root element', {
-        trailingLength: trailing.trim().length,
-      });
+      result = parseElement(trimmed, 0, ctx, 0);
+      if (!result.node) {
+        throw new XmlParseError('xml_malformed', 'Invalid XML: unable to parse root element');
+      }
+
+      const trailing = trimmed.slice(result.nextIndex);
+      if (trailing.trim().length > 0) {
+        throw new XmlParseError('xml_trailing_content', 'Invalid XML: trailing content after root element', {
+          trailingLength: trailing.trim().length,
+        });
+      }
+    } catch (error) {
+      // Sanitization telemetry must survive even when the document is still structurally
+      // invalid after sanitization -- distinguishing "sanitized but still broken elsewhere"
+      // from "nothing to sanitize, broken for an unrelated reason" is exactly the diagnostic
+      // this exists to preserve.
+      if (error instanceof XmlParseError) {
+        throw new XmlParseError(error.reason, error.message, {
+          ...(error.details ?? {}),
+          illegalCharactersSanitized,
+        });
+      }
+      throw error;
     }
 
     const document: ParsedXmlDocument = {
