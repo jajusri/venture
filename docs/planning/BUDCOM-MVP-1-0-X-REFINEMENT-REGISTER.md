@@ -124,6 +124,47 @@ existed. Physically re-confirmed visually during `continuity.14` acceptance.
 
 **Touches:** `apps/budcom_android/app/src/main/java/com/budcom/android/feature/voucher/` list row rendering (Compose UI).
 
+### UIP-002 — Voucher-list horizontal type-filter strip
+
+**Description:** The compact horizontal All/Sales/Purchase/Receipt/Payment/… type filter strip
+called for in `BUDCOM-UI-DESIGN-DECISIONS.md` §5 was found missing during the MVP-1 UI/UX polish
+pass, despite UIP-001 (row layout) being marked closed — only the LEFT/CENTER/RIGHT row layout had
+actually shipped, not the filter strip itself.
+
+**Why 1.0.x:** Presentation-only addition to an existing, already-approved screen; no new
+capability — filters narrow what the existing unified collection displays, never what is fetched.
+
+**Identified:** 2026-08-16, during the automated MVP-1 UI/UX polish pass.
+
+**Status: IMPLEMENTED / CLOSED.** `VoucherTypeFilterStrip` added directly under the Vouchers
+header — "All" first and default-selected, remaining chips derived from the voucher types
+actually present in the loaded rows (never a fixed taxonomy, so a company never sees a filter for
+a type it has no vouchers of). Covered by 4 new `VoucherBrowserUiStateTest` cases and 2 new
+`VoucherBrowserViewModelTest` cases. See `docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §3 for
+full detail and the wider polish pass this landed alongside.
+
+**Touches:** `apps/budcom_android/app/src/main/java/com/budcom/android/feature/voucher/presentation/`.
+
+### UIP-003 — MVP-1 UI/UX polish pass (bounded, post-Controlled-Pilot)
+
+**Description:** A bounded pass across Android and Desktop covering: Sync refresh visual feedback,
+raw-enum/raw-boolean copy leaks (Settings, Diagnostics, Sync, Desktop Connection Details), offline/
+error-copy consistency, TD-028 Preview-entry-point parity for Voucher Details (was Ledger-only),
+Voucher Details back navigation, shared `FullScreenLoading` component consolidation, a Desktop CSS
+fix for an invisible "connecting" status dot, and a Desktop fix for the Dashboard Refresh button
+silently discarding the state it fetched. Full item-by-item detail, plus P2/DEFER items recorded
+but not implemented, lives in the dedicated status document rather than duplicated here.
+
+**Why 1.0.x:** Every item is a correctness/consistency fix or presentation polish to something that
+already exists; no product-scope increase.
+
+**Identified / Status:** 2026-08-16, IMPLEMENTED / CLOSED for the items listed in
+`docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §3–4; that document's §6–7 record the P2/DEFER
+items explicitly left for a future pass or product decision.
+
+**Touches:** see the status document's full file list — spans `apps/budcom_android` presentation
+layer and `apps/budcom_desktop` renderer.
+
 ### New item template
 
 ```
