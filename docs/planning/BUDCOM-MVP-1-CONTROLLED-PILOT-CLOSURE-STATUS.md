@@ -1125,7 +1125,7 @@ pop` — confirmed present, untracked, unmodified again via `git status --short`
 
 ---
 
-## 20. Final verdict (current, 2026-08-16, fourth pass)
+## 20. Final verdict (superseded by §24 — see below)
 
 **NOT READY.** TD-001's root cause remains **unconfirmed** — the sanitizer fix from the
 third pass did not resolve the real physical failure. This pass does not claim a fix;
@@ -1170,3 +1170,211 @@ ESTIMATION. Regardless of pass/fail, retrieve
 report its last entry — this is the first time the actual failure classification will
 be recoverable. **Do not attempt a third speculative code fix before reading that
 file.**
+
+---
+
+## 21. Physical retest of 0.4.10 — RESULT: FAIL, audit evidence retrieved (2026-08-16)
+
+Desktop `0.4.10` installed and synced. **Still failed**, same shape (`parser_failure`,
+0 vouchers), user additionally observed the failure occurs before any voucher
+successfully processes. Per instruction, the audit file was read directly from the real
+userData root
+(`C:\Users\Vidhi\AppData\Roaming\@budcom\desktop\connector-diagnostics\voucher-sync-failure-audit.jsonl`)
+rather than guessing again.
+
+**All 5 entries** (5 retries across ~72 seconds) were structurally identical except
+timestamp/runId:
+
+```
+failureReason: parser_failure
+reasonCode: voucher-ledger-validation
+operation: VoucherLedgerEntries
+responseByteLength: 64941
+responseHash: 7c7184b056f30ecad6db44d2f2a370b9ac6b058bf8f971c103a435a18ecaa1e6
+```
+
+No `reconciliationReason`, no `illegalCharactersSanitized`, no XML-parse-detail fields
+present in any entry.
+
+**This is decisive, not just suggestive.** `voucher-extractor.ts`'s catch block only
+adds `toPrivacySafeXmlParseDetails()` when `error instanceof XmlParseError` and
+`reconciliationReason` when `error instanceof VoucherReconciliationError`. Neither
+fired, which rules out (not just deprioritizes) both prior hypotheses for this specific
+failure:
+
+- **Not the illegal-character hypothesis** — no `XmlParseError`; the response parsed as
+  structurally-valid XML.
+- **Not the two-phase-deletion/orphan hypothesis** — no `VoucherReconciliationError`;
+  `joinAndReconcileVoucherLedgers` never got a chance to run.
+- **Not a live-data race** — the response hash was byte-identical across all 5 retries
+  spanning over a minute. A concurrent Tally-side edit during the sync window would be
+  expected to produce at least some variation; it didn't.
+
+The only remaining code in the `VoucherLedgerEntries` try block that isn't one of those
+two typed errors is `VoucherLedgerEntryParser` itself
+(`connector/budcom_connector/src/tally/voucher/voucher-ledger-parser.ts`) — which, at
+the time of this retest, threw only plain, untyped `Error` objects for every one of its
+8 failure branches, none of which were captured by the catch block's conditional
+enrichment. That is why the audit collapsed to the same four fields on every attempt:
+the real cause was there the whole time, just invisible to this diagnostic generation.
+The user's observation ("fails on the very first voucher") is fully explained by this:
+`VoucherLedgerEntries` is one bulk request across the whole date range, not per-voucher
+— when it throws, the entire extraction fails atomically before any voucher is staged.
+
+---
+
+## 22. Diagnostic-hardening round 3 — Parts A–C (2026-08-16)
+
+### 22.1 Part A: typed parser failures
+
+`VoucherLedgerEntryParser` and `VoucherInventoryEntryParser` previously threw only
+plain, untyped `Error` for all structural and field-level checks — the exact gap §21
+identified. Added `VoucherEntryParseError`
+(`connector/budcom_connector/src/tally/voucher/voucher-entry-parse-error.ts`) with one
+reason per actual code branch: `invalid-root`, `missing-header`, `missing-body`,
+`missing-data`, `missing-collection`, `tally-line-error`, `missing-parent-guid`,
+`missing-ledger-name` (ledger only), `missing-stock-item-name` (inventory only),
+`missing-or-malformed-amount`, `missing-or-invalid-is-deemed-positive` (ledger only),
+`amount-sign-conflict` (ledger only), `invalid-parent-guid-node-count` (inventory
+only). The five structural checks common to both parsers (ENVELOPE root, HEADER/BODY/
+DATA/COLLECTION presence, Tally `LINEERROR`) were extracted into a shared
+`assertVoucherEntryEnvelope()` so both parsers report the same reasons for the same
+conditions. Threaded through `voucher-extractor.ts`'s existing catch blocks as a new
+`parseReason` field, alongside the existing `xmlParseDetail`/`reconciliationReason` —
+purely additive, no behavior change, no acceptance-semantics change.
+
+### 22.2 Part B: regression analysis against last known good
+
+**0.4.3's actual embedded commit and architecture.** The historical
+`release/controlled-pilot/0.4.3/STALE-DO-NOT-DISTRIBUTE.md` quarantine note (already on
+disk from an earlier session) records that 0.4.3 embedded Connector `0.3.1` at commit
+`10a3e280439d27632d529eea6f3f0d8cf0d1ba60` (2026-07-26) and — per its own package
+inspection — **does not contain** `voucher-ledger-parser`, `voucher-ledger-reconciler`,
+`voucher-inventory-parser`, or `voucher-inventory-joiner` at all. It used "the legacy
+compound Voucher extraction shape, including root Voucher Amount and compound ledger/
+inventory methods" — i.e. ledger/inventory rows embedded directly in the discovery
+response, no separate `VoucherLedgerEntries` request, no `ISDEEMEDPOSITIVE`-vs-signed-
+`AMOUNT` consistency check of any kind.
+
+**When the current architecture was introduced.** `git log --follow` shows
+`voucher-ledger-parser.ts` has exactly one commit in its entire history:
+`aa96637 feat(connector): finalize safe voucher extraction` (2026-07-30) — confirmed a
+descendant of 0.4.3's commit (`git merge-base --is-ancestor` returns true). The
+`isDeemedPositive !== signedAmount.startsWith('-')` sign-conflict assertion has never
+been modified since — it is exactly as introduced. `voucher-request.ts` (the
+`VoucherLedgerEntries` TDL request definition) was also rewritten in the same commit
+from an earlier single-phase embedded-fetch shape (added in `5a631fe`, 2026-07-29) into
+today's three-request choreography, and has not changed since.
+
+**Timeline:**
+```
+2026-07-26 (10a3e280, → Desktop 0.4.3): legacy compound extraction, no separate
+  ledger-entries request, no sign-consistency check. User reports this synced
+  ESTIMATION successfully.
+2026-07-30 (aa96637): multi-phase architecture introduced wholesale — separate
+  VoucherLedgerEntries/VoucherInventoryEntries requests, strict field validation
+  including the sign-conflict assertion. Never modified since.
+2026-08-01 to 2026-08-15 (Desktop 0.4.4 → 0.4.9): all bundle the multi-phase
+  architecture. No documented physical Voucher-sync test against ESTIMATION exists in
+  this closure doc or the registry for any of these candidates — Session 2 (§13) is the
+  first recorded physical exercise of this code path.
+2026-08-16 (0.4.9, 0.4.10): first two physical exercises of the multi-phase path
+  against real ESTIMATION data. Both fail identically at VoucherLedgerEntries parsing.
+```
+
+**Conservative conclusion, not an assumption:** the multi-phase `VoucherLedgerEntries`
+path — including the sign-consistency assertion — has no known prior successful
+physical run against ESTIMATION's real data. This is consistent with either (a) a
+genuine logic defect in that assertion, or (b) the assertion being correct in general
+but encountering a real Tally sign/deemed-positive combination for this company's data
+that its current form doesn't anticipate (e.g. a voucher type where the polarity
+convention differs). **Per instruction, this is not assumed to be the cause merely
+because it looks likely** — Part A's typed `parseReason` will confirm or refute
+`amount-sign-conflict` specifically (as opposed to any of the other 7 branches) on the
+next physical retest, which is the evidence still required before any semantic fix.
+
+### 22.3 Part C: tests
+
+New `test/unit/voucher/voucher-entry-parsers.test.ts` (28 tests): every one of the 13
+reasons above is proven individually distinguishable for both parsers via direct
+`VoucherEntryParseError.reason` assertions, plus a control case proving well-formed
+entries still parse identically to before, plus a privacy test proving the reason is
+always a fixed enum string never containing business content. Extended
+`voucher-inventory-extraction.test.ts`'s existing "fails the production extraction
+closed when the inventory phase is invalid" test to also assert `parseReason`. Added a
+new integration test to `voucher-extractor.test.ts` reproducing the real failure's
+exact shape end-to-end through the full extractor (`reasonCode:
+'voucher-ledger-validation'`, `operation: 'VoucherLedgerEntries'`) and asserting
+`parseReason: 'amount-sign-conflict'` is now attached.
+
+**Test results:** full connector suite 159 files / 1412 tests passing (up from 158/
+1383), `eslint`/`tsc --noEmit` clean. Desktop suite unaffected (no Desktop source
+touched this round): 66 files / 677 tests.
+
+---
+
+## 23. Diagnostic-candidate production (2026-08-16, fifth pass)
+
+### 23.1 Version identity
+
+| Component | Version | Why bumped |
+|---|---|---|
+| Connector | `0.4.2` → `0.4.3` | Real diagnostic behavior change (typed parser errors) |
+| Desktop | `0.4.10` → `0.4.11` | Bundles the Connector |
+| Android | `0.1.1-continuity.15` (unchanged) | No Android source touched this round |
+
+### 23.2 Desktop controlled-pilot build
+
+Full pipeline (connector lint/build/test/architecture/audit, desktop build/lint/test/
+audit, contract tests, NSIS packaging, package-boundary, packaged-runtime-contract,
+packaged-connector-dependencies, manifest, verify-manifest, release-acceptance).
+
+**Artifact:** `release/controlled-pilot/0.4.11/artifacts/BudcomDesktop-0.4.11-x64-setup.exe`
+**Full report:** `release/controlled-pilot/0.4.11/reports/release-report.json`
+
+(Artifact identity — SHA-256, size, producing commit — filled in below once the
+pipeline completes; see §23.3.)
+
+### 23.3 Pre-packaging git hygiene
+
+Same disposition as prior passes: the same pre-existing untracked post-MVP-1 paths were
+temporarily set aside with `git stash push -u` for the packaging run only and restored
+immediately after with `git stash pop`.
+
+---
+
+## 24. Final verdict (current, 2026-08-16, fifth pass)
+
+**NOT READY.** The real root cause is narrowed to one of `VoucherLedgerEntryParser`'s
+13 typed branches, most plausibly `amount-sign-conflict` given it is the only true
+cross-field business-logic assertion in the list (the rest are presence/format checks)
+— but per instruction this is not assumed, only flagged as the leading candidate. **No
+semantic fix has been applied.** This pass adds only typed diagnostics and a
+regression-history writeup.
+
+**What changed this pass:**
+- 0.4.10 physical retest recorded as FAIL (§21); its audit evidence proved the failure
+  is inside `VoucherLedgerEntryParser` itself, not XML illegality and not two-phase
+  reconciliation.
+- `VoucherLedgerEntryParser`/`VoucherInventoryEntryParser` failures are now typed with
+  13 distinguishable reasons (§22.1).
+- Regression history established: the multi-phase architecture (including the
+  sign-conflict assertion) postdates 0.4.3 by 4 days, has never been modified since
+  introduction, and has no documented prior successful physical run against ESTIMATION
+  (§22.2).
+- A fresh Desktop candidate exists bundling this: `0.4.11` (§23).
+
+**What has NOT changed / is NOT yet known:**
+- The exact failing branch is still unconfirmed — that is what the next retest's audit
+  entry will show.
+- Whether this is a genuine code defect versus a real Tally sign-convention case the
+  assertion doesn't yet handle is unknown until the branch is identified and the actual
+  Tally semantics behind it are understood.
+- No semantic/behavioral fix has been made. Per instruction, none will be made until
+  ChatGPT reviews the next retest's evidence.
+
+**Required next physical action (exactly one):** install `0.4.11` over the current
+Desktop (Android unchanged) and run exactly one fresh Voucher sync against ESTIMATION.
+Read `{userDataRoot}/connector-diagnostics/voucher-sync-failure-audit.jsonl`'s last
+entry and report the exact `parseReason` value. **Do not implement a semantic fix
+before that evidence is reported and reviewed.**
