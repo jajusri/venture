@@ -3144,3 +3144,55 @@ the closing documentation commit lands (see §46.6).
 Install the two approved candidates (§46.2) on the pilot machine(s) under
 the constraints in §46.3, and begin the controlled pilot. No further
 hardening, testing, or investigation is required to start.
+
+---
+
+## 47. TD-028 correction — Ledger PDF Preview was undiscoverable in the physical build (2026-08-16)
+
+§44.2's "PDF Preview (in-app, both Voucher and Ledger) — PASS" verdict, which
+this document's §46.4 relied on to count TD-028 as CLOSED, did not hold up
+under a subsequent narrow physical-parity check: **Voucher's in-app Preview
+was confirmed working correctly; Ledger's was not usable in the actual
+physical build.**
+
+**Root cause (confirmed by source inspection, not assumed):** the Ledger side
+of TD-028's original implementation (§39, `feea4ae`) was itself correct and
+unchanged since — `LedgerShareDestination.PreviewPdf` genuinely opens the
+same shared `PdfPreviewScreen` Voucher uses, acting on the same generated
+file, with working Save/Share. But its *only* entry point was a long-press
+gesture on the icon-only Share button in the Ledger Statement top bar, landing
+on the 5th of 5 destinations in a scrollable Advanced Options sheet — with no
+visible label indicating Preview was reachable at all. This was flagged, not
+overlooked, in the original TD-028 entry ("if you want every Ledger share
+path to require Preview first too, that's a small follow-up, not something
+this pass assumed") but never acted on. Voucher, by contrast, exposes Preview
+as a direct, visibly-labeled, two-tap path ("Share invoice" → "View invoice
+PDF"). §44.2's PASS for Ledger appears to have been recorded via the
+long-press path the earlier validation script explicitly called out (§38.9
+item D), not through ordinary discovery — which is exactly why a later
+practical-use pass found nothing usable.
+
+**Fix (narrow, additive only):** added a direct, always-visible, one-tap
+"Preview" action to the Ledger Statement top bar, wired to the identical
+`shareStatement(..., destination = PreviewPdf)` pipeline the long-press path
+already used. The existing fast-tap Share Ledger path and the Advanced
+Options sheet (Preview PDF included) are unchanged. No Voucher code was
+touched. Full detail, root-cause analysis, and automated/connected-device
+evidence: `docs/technical-debt/registry.md`, TD-028 entry, "Ledger
+discoverability correction" row. Commits `3eabf46` (the fix) and `1c35ed7`
+(an unrelated pre-existing `PdfPageRendererTest.kt` signature bug fixed to
+unblock connected-device validation).
+
+**Candidate:** Android bumped `continuity.19` → **`continuity.20`**
+(versionCode 21), built at commit `3eabf46`:
+`release/controlled-pilot/android/0.1.1-continuity.20-3eabf46/BudcomAndroid-3eabf46-debug.apk`,
+SHA-256 `6c44152f41d569ee1c7d2ca63a2b411fcfe5a365203fa84186794566e6337969`.
+
+**Status:** TD-028 is reopened (not CLOSED) pending renewed physical
+confirmation of Ledger Preview specifically — install `continuity.20`, open a
+Ledger, tap the new "Preview" action (no long-press), confirm the PDF opens
+in-app and Save/Share both work from within Preview. Voucher Preview does not
+need re-confirmation; it was unaffected by this defect. §46.4's "TD-028 ...
+CLOSED" and the summary line "Everything else ... (TD-028 through TD-032) is
+CLOSED" are superseded by this section for TD-028 specifically; all other
+entries in that list are unaffected.
