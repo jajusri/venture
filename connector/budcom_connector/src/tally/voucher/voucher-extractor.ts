@@ -21,6 +21,7 @@ import { joinVoucherInventories } from './voucher-inventory-joiner.js';
 import type { VoucherXmlMapper } from './voucher-mapper.js';
 import type { VoucherCollectionParser } from './voucher-parser.js';
 import { VoucherReconciliationError } from './voucher-reconciliation-error.js';
+import { VoucherEntryParseError } from './voucher-entry-parse-error.js';
 
 /** Correlation-only fingerprint of a raw Tally response -- never the content itself. */
 function responseHash(rawXml: string): string {
@@ -125,6 +126,9 @@ export class TallyVoucherExtractor implements VoucherReadPort {
             ...(error instanceof VoucherReconciliationError
               ? { reconciliationReason: error.reason }
               : {}),
+            ...(error instanceof VoucherEntryParseError
+              ? { parseReason: error.reason }
+              : {}),
           },
         );
       }
@@ -157,6 +161,9 @@ export class TallyVoucherExtractor implements VoucherReadPort {
             ...(error instanceof XmlParseError ? toPrivacySafeXmlParseDetails(error) : {}),
             ...(error instanceof VoucherReconciliationError
               ? { reconciliationReason: error.reason }
+              : {}),
+            ...(error instanceof VoucherEntryParseError
+              ? { parseReason: error.reason }
               : {}),
           },
         );

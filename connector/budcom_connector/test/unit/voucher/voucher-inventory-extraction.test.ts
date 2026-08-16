@@ -164,7 +164,10 @@ describe('safe Voucher inventory extraction', () => {
       dateTo: '2026-07-24',
     })).rejects.toMatchObject({
       statusCode: 422,
-      details: { reasonCode: 'voucher-inventory-validation' },
+      details: {
+        reasonCode: 'voucher-inventory-validation',
+        parseReason: 'missing-or-malformed-amount',
+      },
     });
     expect(executeApprovedRead).toHaveBeenNthCalledWith(
       3,

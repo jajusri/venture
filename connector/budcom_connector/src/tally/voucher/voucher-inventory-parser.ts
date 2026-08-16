@@ -1,26 +1,15 @@
 import type { VoucherInventoryExtractionEntry } from '../../erp/voucher/voucher-inventory-domain.js';
 import type { ParsedXmlNode, TallyXmlResponseParser } from '../xml/response-parser.js';
 import type { XmlParserOptions } from '../xml/response-parser-limits.js';
-import { normalizeGuid } from './voucher-ledger-parser.js';
+import { assertVoucherEntryEnvelope, normalizeGuid } from './voucher-ledger-parser.js';
+import { VoucherEntryParseError } from './voucher-entry-parse-error.js';
 
 export class VoucherInventoryEntryParser {
   constructor(private readonly parser: TallyXmlResponseParser) {}
 
   parse(rawXml: string, options?: XmlParserOptions): readonly VoucherInventoryExtractionEntry[] {
     const document = this.parser.parse(rawXml, options);
-    if (document.root.name !== 'ENVELOPE') {
-      throw new Error('Voucher inventory response root must be ENVELOPE.');
-    }
-    const header = directChild(document.root, 'HEADER');
-    const body = directChild(document.root, 'BODY');
-    const data = directChild(body, 'DATA');
-    const collection = directChild(data, 'COLLECTION');
-    if (!header || !body || !data || !collection) {
-      throw new Error('Voucher inventory response is missing required envelope structure.');
-    }
-    if (this.parser.findFirst(document, 'LINEERROR')) {
-      throw new Error('Tally returned a source error for the Voucher inventory export.');
-    }
+    const collection = assertVoucherEntryEnvelope(document, this.parser, 'inventory');
 
     return collection.children
       .filter((node) => node.name === 'INVENTORYENTRY')
@@ -30,10 +19,13 @@ export class VoucherInventoryEntryParser {
   private mapEntry(node: ParsedXmlNode): VoucherInventoryExtractionEntry {
     const parentNodes = node.children.filter((child) => child.name === 'PARENTGUID');
     if (parentNodes.length !== 1) {
-      throw new Error('Voucher inventory entry must contain exactly one ParentGUID.');
+      throw new VoucherEntryParseError(
+        'invalid-parent-guid-node-count',
+        'Voucher inventory entry must contain exactly one ParentGUID.',
+      );
     }
-    const parentGuid = normalizeGuid(requiredText(node, 'PARENTGUID'));
-    const stockItemName = requiredText(node, 'STOCKITEMNAME');
+    const parentGuid = normalizeGuid(requiredParentGuidText(node));
+    const stockItemName = requiredStockItemName(node);
     const signedAmount = requiredSignedAmount(node);
     const actualQuantity = optionalText(node, 'ACTUALQTY');
     const billedQuantity = optionalText(node, 'BILLEDQTY');
@@ -49,18 +41,43 @@ export class VoucherInventoryEntryParser {
   }
 }
 
-function requiredSignedAmount(node: ParsedXmlNode): string {
-  const value = requiredText(node, 'AMOUNT');
-  const comparable = value.replaceAll(',', '');
-  if (!/^-?\d+(?:\.\d+)?$/.test(comparable)) {
-    throw new Error('Voucher inventory entry contains an invalid signed Amount.');
+function requiredParentGuidText(node: ParsedXmlNode): string {
+  const value = optionalText(node, 'PARENTGUID');
+  if (!value) {
+    throw new VoucherEntryParseError(
+      'missing-parent-guid',
+      'Voucher inventory entry is missing PARENTGUID.',
+    );
   }
   return value;
 }
 
-function requiredText(node: ParsedXmlNode, name: string): string {
-  const value = optionalText(node, name);
-  if (!value) throw new Error(`Voucher inventory entry is missing ${name}.`);
+function requiredStockItemName(node: ParsedXmlNode): string {
+  const value = optionalText(node, 'STOCKITEMNAME');
+  if (!value) {
+    throw new VoucherEntryParseError(
+      'missing-stock-item-name',
+      'Voucher inventory entry is missing STOCKITEMNAME.',
+    );
+  }
+  return value;
+}
+
+function requiredSignedAmount(node: ParsedXmlNode): string {
+  const value = optionalText(node, 'AMOUNT');
+  if (!value) {
+    throw new VoucherEntryParseError(
+      'missing-or-malformed-amount',
+      'Voucher inventory entry is missing AMOUNT.',
+    );
+  }
+  const comparable = value.replaceAll(',', '');
+  if (!/^-?\d+(?:\.\d+)?$/.test(comparable)) {
+    throw new VoucherEntryParseError(
+      'missing-or-malformed-amount',
+      'Voucher inventory entry contains an invalid signed Amount.',
+    );
+  }
   return value;
 }
 

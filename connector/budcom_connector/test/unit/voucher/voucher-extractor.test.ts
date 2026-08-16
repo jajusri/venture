@@ -117,4 +117,58 @@ describe('TallyVoucherExtractor', () => {
       }),
     ]);
   });
+
+  // Controlled-pilot Session 2 retest FAIL follow-up (2026-08-16): the physical 0.4.10
+  // audit entry showed reasonCode 'voucher-ledger-validation' with no XmlParseError and
+  // no VoucherReconciliationError attached -- i.e. the failure was inside
+  // VoucherLedgerEntryParser itself, previously untyped. This proves a ledger-phase
+  // parser failure now surfaces a distinguishable `parseReason` through the full
+  // production extraction path, reproducing the real failure's shape (same reasonCode,
+  // same operation) with the new diagnostic detail attached.
+  it('fails the production extraction closed with a distinguishable parseReason when the ledger phase is invalid', async () => {
+    const discovery = `<ENVELOPE><HEADER><STATUS>1</STATUS></HEADER><BODY><DATA><COLLECTION>
+      <VOUCHER>
+        <DATE>20260724</DATE><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+        <VOUCHERNUMBER>16</VOUCHERNUMBER><GUID>voucher-guid</GUID>
+      </VOUCHER>
+    </COLLECTION></DATA></BODY></ENVELOPE>`;
+    const invalidLedger = `<ENVELOPE><HEADER><STATUS>1</STATUS></HEADER><BODY><DATA><COLLECTION>
+      <LEDGERENTRY>
+        <LEDGERNAME>Customer</LEDGERNAME><ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+        <AMOUNT>100.00</AMOUNT><PARENTGUID>voucher-guid</PARENTGUID>
+      </LEDGERENTRY>
+    </COLLECTION></DATA></BODY></ENVELOPE>`;
+    const gateway = {
+      executeApprovedRead: vi.fn()
+        .mockResolvedValueOnce({
+          operationId: ApprovedOperationId.Vouchers,
+          rawXml: discovery,
+          byteLength: Buffer.byteLength(discovery),
+          durationMs: 1,
+        })
+        .mockResolvedValueOnce({
+          operationId: ApprovedOperationId.VoucherLedgerEntries,
+          rawXml: invalidLedger,
+          byteLength: Buffer.byteLength(invalidLedger),
+          durationMs: 1,
+        }),
+    } as unknown as TallyReadGateway;
+    const voucherParser = new VoucherCollectionParser(new TallyXmlResponseParser());
+    const extractor = new TallyVoucherExtractor(
+      gateway,
+      voucherParser,
+      new VoucherXmlMapper(voucherParser),
+      undefined,
+      true,
+    );
+
+    await expect(extractor.readVouchers('ESTIMATION', PERIOD)).rejects.toMatchObject({
+      statusCode: 422,
+      details: {
+        reasonCode: 'voucher-ledger-validation',
+        operation: 'VoucherLedgerEntries',
+        parseReason: 'amount-sign-conflict',
+      },
+    });
+  });
 });
