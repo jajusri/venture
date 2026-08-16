@@ -22,9 +22,10 @@ import {
 } from '../application/connector-lifecycle-service.js';
 import { DashboardService, DESKTOP_WINDOW_TITLE } from '../application/dashboard-service.js';
 import { ConnectorIdentityStore } from '../application/connector-identity-store.js';
-import { PowerShellRouteQuerier } from '../application/network/route-querier.js';
+import { getLiveIpv4Addresses, PowerShellRouteQuerier } from '../application/network/route-querier.js';
 import {
   evaluateTrustedLanEligibility,
+  excludeStaleAddresses,
   resolveActiveNetworkAdapter,
   type ActiveNetworkAdapter,
   type ActiveNetworkResolution,
@@ -613,7 +614,11 @@ async function startManagedLanChildFor(resolution: ActiveNetworkResolution): Pro
  */
 async function resolveCurrentNetworkFresh(): Promise<ActiveNetworkResolution> {
   const adapters = await routeQuerier.queryAdapters();
-  const resolution = resolveActiveNetworkAdapter(adapters);
+  // TD-017: cross-check against the OS's own live interface list before trusting the route
+  // query's answer — see excludeStaleAddresses' doc for why this matters even on a manual
+  // button-triggered re-resolution.
+  const liveAdapters = excludeStaleAddresses(adapters, getLiveIpv4Addresses());
+  const resolution = resolveActiveNetworkAdapter(liveAdapters);
   activeNetworkAdapter = resolution.adapter;
   lastNetworkResolution = resolution;
   return resolution;
@@ -760,6 +765,9 @@ const routeQuerier = new PowerShellRouteQuerier();
 const networkWatcher = new NetworkChangeWatcher({
   routeQuerier,
   pollIntervalMs: 5_000,
+  // TD-017: reject a route-query answer whose address is no longer live on this machine, and
+  // fail closed (rather than silently keep a stale bind) after a bounded run of query failures.
+  getLiveIpv4Addresses: () => getLiveIpv4Addresses(),
   onChange: (resolution) => {
     void handleNetworkChange(resolution);
   },

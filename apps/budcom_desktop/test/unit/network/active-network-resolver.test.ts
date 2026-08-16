@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActiveNetworkAdapter } from '../../../src/application/network/active-network-resolver.js';
 import {
   evaluateTrustedLanEligibility,
+  excludeStaleAddresses,
   isEligibleCandidate,
   resolveActiveNetworkAdapter,
   resolveMobileEndpointHost,
@@ -127,6 +128,70 @@ describe('resolveActiveNetworkAdapter', () => {
 
     expect(resolution.adapter).toBeNull();
     expect(resolution.rejectedReason).toContain('No default-route');
+  });
+});
+
+/**
+ * TD-017: field defect regression. Windows' route/adapter query can transiently keep reporting an
+ * adapter's just-departed address for a short window after the machine has actually moved to a
+ * different network — the observed failure kept a Connector bound to a mobile-hotspot-departed
+ * home-Wi-Fi IP after the user physically switched networks. excludeStaleAddresses is the
+ * cross-check that closes that window by rejecting any candidate whose IP isn't currently backed
+ * by a live OS-level interface.
+ */
+describe('excludeStaleAddresses', () => {
+  it('keeps an adapter whose IP is currently live', () => {
+    const candidates = [adapter({ ipv4: '10.142.207.231' })];
+
+    const result = excludeStaleAddresses(candidates, new Set(['10.142.207.231']));
+
+    expect(result).toHaveLength(1);
+  });
+
+  it('drops an adapter whose IP is not currently live (the exact TD-017 field scenario)', () => {
+    // Route query still lists the old home-network address; the OS's own live interface list no
+    // longer includes it because the machine has genuinely moved to the hotspot network.
+    const staleHomeNetworkAdapter = adapter({ ipv4: '192.168.29.34' });
+
+    const result = excludeStaleAddresses([staleHomeNetworkAdapter], new Set(['10.142.207.231']));
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('when a stale entry and a live entry both appear, only the live one survives filtering — and it then wins selection even with a worse route metric', () => {
+    const staleButBetterMetric = adapter({
+      adapterId: '{STALE}',
+      ipv4: '192.168.29.34',
+      routeMetric: 5, // would win on metric alone if not excluded as stale
+    });
+    const liveButWorseMetric = adapter({
+      adapterId: '{LIVE}',
+      ipv4: '10.142.207.231',
+      routeMetric: 50,
+    });
+
+    const filtered = excludeStaleAddresses(
+      [staleButBetterMetric, liveButWorseMetric],
+      new Set(['10.142.207.231']),
+    );
+    const resolution = resolveActiveNetworkAdapter(filtered);
+
+    expect(filtered).toHaveLength(1);
+    expect(resolution.adapter?.adapterId).toBe('{LIVE}');
+  });
+
+  it('drops an adapter with a null IP rather than treating it as "no live filter to apply"', () => {
+    const noIp = adapter({ ipv4: null as unknown as string });
+
+    const result = excludeStaleAddresses([noIp], new Set(['10.142.207.231']));
+
+    expect(result).toHaveLength(0);
+  });
+
+  it('an empty live-address set (e.g. transient os.networkInterfaces() hiccup) excludes every candidate — fails closed, never open', () => {
+    const result = excludeStaleAddresses([adapter()], new Set());
+
+    expect(result).toHaveLength(0);
   });
 });
 

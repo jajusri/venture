@@ -127,6 +127,22 @@ export function isEligibleCandidate(adapter: RawAdapterInfo): boolean {
   return true;
 }
 
+/**
+ * TD-017: excludes adapters whose IPv4 address is not currently assigned to any live local
+ * interface. Windows' route/adapter query can transiently keep reporting an adapter's
+ * just-departed address for a short window after the underlying network has actually changed
+ * (observed field defect — the machine kept a stale bind after moving to a mobile hotspot).
+ * Applying this filter to the raw candidate list before selection means a stale-but-
+ * structurally-valid-looking entry is never even a candidate, so selection naturally falls
+ * through to whichever adapter is genuinely live, or to "no eligible adapter" if none are.
+ */
+export function excludeStaleAddresses(
+  adapters: readonly RawAdapterInfo[],
+  liveIpv4Addresses: ReadonlySet<string>,
+): RawAdapterInfo[] {
+  return adapters.filter((adapter) => adapter.ipv4 !== null && liveIpv4Addresses.has(adapter.ipv4));
+}
+
 function trustRank(category: WindowsNetworkProfileCategory): number {
   switch (category) {
     case 'Private':

@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { networkInterfaces as osNetworkInterfaces } from 'node:os';
 
 export type WindowsNetworkProfileCategory = 'Public' | 'Private' | 'DomainAuthenticated' | 'Unknown';
 export type AdapterOperationalStatus = 'Up' | 'Down' | 'Unknown';
@@ -166,6 +167,31 @@ export class PowerShellRouteQuerier implements RouteQuerier {
       );
     });
   }
+}
+
+/**
+ * TD-017: the last-line-of-defense cross-check against PowerShell route-table staleness. During a
+ * real network transition, `Get-NetRoute`/`Get-NetIPAddress` have been observed (field defect) to
+ * still list an adapter's just-departed address for a short window after Windows has actually
+ * moved to a new network — the shell-out has no way to know its own answer is stale. Node's
+ * `os.networkInterfaces()` is synchronous, spawns no process, and always reflects the OS's live
+ * view at the exact moment of the call, so cross-referencing a resolved address against this set
+ * immediately before use closes that staleness window without waiting for Windows' route table to
+ * catch up.
+ */
+export function getLiveIpv4Addresses(
+  getInterfaces: typeof osNetworkInterfaces = osNetworkInterfaces,
+): ReadonlySet<string> {
+  const result = new Set<string>();
+  const interfaces = getInterfaces();
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries ?? []) {
+      if (entry.family === 'IPv4' && !entry.internal) {
+        result.add(entry.address);
+      }
+    }
+  }
+  return result;
 }
 
 /** Deterministic test double — never touches a real NIC or shells out. */

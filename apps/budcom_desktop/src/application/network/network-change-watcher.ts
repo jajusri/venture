@@ -1,6 +1,14 @@
 import type { ActiveNetworkAdapter, ActiveNetworkResolution } from './active-network-resolver.js';
-import { resolveActiveNetworkAdapter } from './active-network-resolver.js';
+import { excludeStaleAddresses, resolveActiveNetworkAdapter } from './active-network-resolver.js';
 import type { RouteQuerier } from './route-querier.js';
+
+/** Default bound on consecutive query failures tolerated before failing closed (TD-017). At the
+ * default 5s poll interval this is ~10-15s of uncertainty before the user is told, not silence. */
+const DEFAULT_MAX_CONSECUTIVE_FAILURES = 3;
+
+const UNRESOLVED_AFTER_REPEATED_FAILURE_REASON =
+  'Network changed and could not be confirmed after several attempts. Reconnecting automatically — ' +
+  'this should resolve once the new network settles.';
 
 export interface NetworkChangeWatcherOptions {
   readonly routeQuerier: RouteQuerier;
@@ -9,6 +17,17 @@ export interface NetworkChangeWatcherOptions {
   readonly onError?: (error: unknown) => void;
   readonly setIntervalImpl?: (handler: () => void, ms: number) => ReturnType<typeof setInterval>;
   readonly clearIntervalImpl?: (handle: ReturnType<typeof setInterval>) => void;
+  /**
+   * TD-017: returns the IPv4 addresses currently assigned to a live local interface, used to
+   * reject a resolved adapter whose address the route query is reporting stale. Omit to skip this
+   * cross-check (existing tests that construct fixture adapters with addresses unrelated to the
+   * real host's interfaces rely on this being opt-in); production wiring always supplies the real
+   * `getLiveIpv4Addresses` from route-querier.ts.
+   */
+  readonly getLiveIpv4Addresses?: () => ReadonlySet<string>;
+  /** Consecutive `queryAdapters()` failures tolerated before failing closed to an explicit
+   * unresolved-network signal. Defaults to 3. */
+  readonly maxConsecutiveFailures?: number;
 }
 
 function fingerprint(adapter: ActiveNetworkAdapter | null): string {
@@ -35,6 +54,7 @@ export class NetworkChangeWatcher {
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastFingerprint: string | null = null;
   private pollInFlight = false;
+  private consecutiveFailures = 0;
 
   constructor(private readonly options: NetworkChangeWatcherOptions) {}
 
@@ -66,17 +86,35 @@ export class NetworkChangeWatcher {
     }
     this.pollInFlight = true;
     try {
-      const adapters = await this.options.routeQuerier.queryAdapters();
-      const resolution = resolveActiveNetworkAdapter(adapters);
-      const nextFingerprint = fingerprint(resolution.adapter);
-      if (nextFingerprint !== this.lastFingerprint) {
-        this.lastFingerprint = nextFingerprint;
-        this.options.onChange(resolution);
-      }
+      const rawAdapters = await this.options.routeQuerier.queryAdapters();
+      this.consecutiveFailures = 0;
+      const liveAdapters = this.options.getLiveIpv4Addresses
+        ? excludeStaleAddresses(rawAdapters, this.options.getLiveIpv4Addresses())
+        : rawAdapters;
+      const resolution = resolveActiveNetworkAdapter(liveAdapters);
+      this.reportIfChanged(resolution);
     } catch (error) {
       this.options.onError?.(error);
+      this.consecutiveFailures += 1;
+      const maxFailures = this.options.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES;
+      if (this.consecutiveFailures >= maxFailures) {
+        // TD-017: bounded retry budget exhausted — fail closed rather than silently leaving a
+        // previously-resolved (now unconfirmable) adapter authoritative. Resetting the counter
+        // here means a still-failing querier reports this once per new fingerprint transition,
+        // not on every subsequent poll.
+        this.consecutiveFailures = 0;
+        this.reportIfChanged({ adapter: null, rejectedReason: UNRESOLVED_AFTER_REPEATED_FAILURE_REASON });
+      }
     } finally {
       this.pollInFlight = false;
+    }
+  }
+
+  private reportIfChanged(resolution: ActiveNetworkResolution): void {
+    const nextFingerprint = fingerprint(resolution.adapter);
+    if (nextFingerprint !== this.lastFingerprint) {
+      this.lastFingerprint = nextFingerprint;
+      this.options.onChange(resolution);
     }
   }
 }

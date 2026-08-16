@@ -1951,3 +1951,92 @@ CLOSED — physically confirmed fixed (§28).
 
 **Session 3 (Connectivity resilience, §11) may now begin.** Sessions 1, 4, 5 remain
 outstanding and unscheduled.
+
+---
+
+## 35. Session 3 — items Q, R (2026-08-16)
+
+| Item | Result | Notes |
+|---|---|---|
+| Q — Transient Wi-Fi interruption, same network (off/on) | **PASS** | Automatic recovery, no manual refresh needed |
+| R — Real network-address change (moved to mobile hotspot) | **FAIL** | Connector became completely unreachable — see investigation below |
+
+### 35.1 Item R investigation — root cause
+
+Physical sequence: Desktop and Android both moved to a mobile hotspot
+(SSID "JioFiber-PARme_5G", a portable hotspot device). Old IP `192.168.29.34` →
+new IP `10.142.207.231`. No re-pairing, QR re-scan, or manual IP entry was
+performed. Android reported "Connector is unavailable"; Desktop's own Connector
+Status showed "Could not reach the Connector." Fixing the Windows network
+profile to Private did not restore connectivity.
+
+Read-only diagnosis (PowerShell `Get-NetIPConfiguration`/`Get-NetConnectionProfile`/
+`Get-NetTCPConnection -OwningProcess <connector pid>`/`Get-NetFirewallRule`, `curl`
+against loopback/localhost/both IPs, and `budcom-desktop.log` correlation) traced
+the failure through the required layer order:
+
+1. **Connector process** — alive, responsive (PID confirmed via `Get-NetTCPConnection`).
+2. **Network binding** — **first failing layer.** The Connector's HTTP/HTTPS
+   listeners were bound only to the old address, `192.168.29.34:8080`/`8443`.
+   `curl` to `127.0.0.1`, `localhost`, and the new hotspot IP `10.142.207.231`
+   all returned HTTP 000. Desktop's own health-check client was itself still
+   dialing `192.168.29.34` — proving the staleness lived in the shared
+   `activeNetworkAdapter` resolution (main.ts), not merely in the spawned
+   child's own config.
+3. **Windows Firewall** — ruled out as the cause: ~11 matching Budcom/Connector
+   Private-profile rules were present and correctly enabled. (Loopback failing
+   independently confirms the firewall was never the blocker — a firewall rule
+   cannot block `127.0.0.1`.)
+4. **Hotspot client isolation** — explicitly disproven, not assumed: even the
+   machine's own loopback traffic failed, and a hotspot's peer-isolation
+   setting cannot affect a machine's own loopback traffic.
+5. **mDNS/Android discovery/reconnect** — never reached; nothing to discover,
+   since no listener was reachable at any address.
+
+**Verdict: Desktop-side defect, not TD-017, not hotspot isolation.** Root
+cause: `route-querier.ts`'s PowerShell-shelled route query intermittently
+failed outright during the transition (`network_resolution_failed`, repeated
+in the log), and even on polls where it *succeeded*, it could return a
+structurally-valid adapter entry still carrying the just-departed network's
+address (Windows' route table observed to transiently lag a real network
+change). `network-change-watcher.ts` routed a query exception to `onError`
+only, with no retry bound and no invalidation of stale state; nothing
+cross-checked a resolved adapter's address against what the OS actually had
+currently assigned. Recorded as **TD-029** (P0) in the registry, distinct
+from TD-017 (see registry entry for the exact relationship — TD-017's own
+Android-side fix and status are unaffected).
+
+### 35.2 Architectural decision and fix (2026-08-16)
+
+Approved as an MVP-1 P0 blocker, fixed at the smallest robust scope rather
+than a networking rewrite. Full detail, evidence, and the exact governing
+requirements are in TD-029's registry entry. Summary of the fix:
+
+- `route-querier.ts`: added `getLiveIpv4Addresses()` — a synchronous,
+  no-process-spawn read of `os.networkInterfaces()`, immune to the shelled-out
+  route query's staleness window.
+- `active-network-resolver.ts`: added `excludeStaleAddresses()`, applied to
+  the raw candidate list *before* selection, so a stale-but-structurally-valid
+  entry is never a candidate.
+- `network-change-watcher.ts`: applies the live-address cross-check before
+  resolving; tracks consecutive query failures and fails closed (explicit
+  null-adapter signal with a clear "reconnecting" reason) after a bounded
+  count (default 3, ~10-15s at the 5s poll interval) rather than staying
+  silently stale indefinitely.
+- `main.ts`: wires the real live-address check into both the periodic watcher
+  and the manual Start/Restart re-resolution path.
+- No changes were needed to `route-backed-lifecycle-override.ts` or
+  `trusted-lan-rebind-coordinator.ts` — the coordinator already stopped the
+  current child and refused to start a replacement for a null-adapter
+  resolution; the fix's job was ensuring that resolution correctly *becomes*
+  null (or the genuine new address) instead of silently staying stale.
+
+**Automated validation:** Desktop 696/696 tests passing (123 in the network
+module, including 20 new/updated tests for this fix — live-address filtering,
+bounded-failure fail-closed signaling, counter-reset-on-success, post-fail-closed
+recovery, and an end-to-end test wiring a real `TrustedLanRebindCoordinator`
+through the exact old-IP → transitioning → new-IP sequence). Connector
+1414/1414. Contract 5/5. Desktop `tsc` (main/preload/renderer) and build clean.
+
+**Physical retest required before Session 3 can continue past item R** — see
+§36.
