@@ -35,7 +35,7 @@ class PdfPageRendererTest {
     }
 
     @Test
-    fun opensARealSinglePagePdfAndReportsCorrectPageCount() = runBlocking {
+    fun opensARealSinglePagePdfAndReportsCorrectPageCount(): Unit = runBlocking {
         val file = writePdf("single-page.pdf", pageCount = 1)
 
         val document = renderer.open(file.absolutePath)
@@ -48,7 +48,7 @@ class PdfPageRendererTest {
 
     // I — multipage document path.
     @Test
-    fun opensARealMultiPagePdfAndRendersEveryPage() = runBlocking {
+    fun opensARealMultiPagePdfAndRendersEveryPage(): Unit = runBlocking {
         val file = writePdf("multi-page.pdf", pageCount = 3)
 
         val document = renderer.open(file.absolutePath)!!
@@ -65,14 +65,14 @@ class PdfPageRendererTest {
 
     // K — missing/unreadable file handled, never throws.
     @Test
-    fun openReturnsNullForAMissingFileRatherThanThrowing() = runBlocking {
+    fun openReturnsNullForAMissingFileRatherThanThrowing(): Unit = runBlocking {
         val document = renderer.open(File(cacheDir, "does-not-exist-${System.nanoTime()}.pdf").absolutePath)
 
         assertNull(document)
     }
 
     @Test
-    fun openReturnsNullForAFileThatIsNotAValidPdf() = runBlocking {
+    fun openReturnsNullForAFileThatIsNotAValidPdf(): Unit = runBlocking {
         val file = File(cacheDir, "not-a-pdf.pdf").apply { writeText("this is not a pdf") }
 
         val document = renderer.open(file.absolutePath)
@@ -82,7 +82,7 @@ class PdfPageRendererTest {
     }
 
     @Test
-    fun renderPageReturnsNullForAnOutOfRangeIndexRatherThanThrowing() = runBlocking {
+    fun renderPageReturnsNullForAnOutOfRangeIndexRatherThanThrowing(): Unit = runBlocking {
         val file = writePdf("bounds-check.pdf", pageCount = 1)
         val document = renderer.open(file.absolutePath)!!
 
@@ -94,7 +94,7 @@ class PdfPageRendererTest {
     }
 
     @Test
-    fun closeIsSafeToCallMoreThanOnce() = runBlocking {
+    fun closeIsSafeToCallMoreThanOnce(): Unit = runBlocking {
         val file = writePdf("double-close.pdf", pageCount = 1)
         val document = renderer.open(file.absolutePath)!!
 
@@ -105,7 +105,7 @@ class PdfPageRendererTest {
     }
 
     @Test
-    fun renderingAfterCloseReturnsNullRatherThanCrashing() = runBlocking {
+    fun renderingAfterCloseReturnsNullRatherThanCrashing(): Unit = runBlocking {
         val file = writePdf("render-after-close.pdf", pageCount = 1)
         val document = renderer.open(file.absolutePath)!!
         document.close()
