@@ -63,7 +63,7 @@ describe('Voucher controlled release path', () => {
     expect(health.status).toBe(200);
     expect(health.body).toMatchObject({
       schemaVersion: '1.0.0',
-      connectorVersion: '0.4.4',
+      connectorVersion: '0.4.5',
       repositoryAvailable: true,
       databaseAccessible: true,
       readOnly: true,
