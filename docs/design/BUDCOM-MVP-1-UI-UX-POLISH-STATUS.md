@@ -279,8 +279,8 @@ match production `index.html`, see §4).
 ## 11. Approved visual design implementation — Android (2026-08-17)
 
 **Status:** automated implementation, validation and in-place installation complete at
-`continuity.22`; final human visual approval pending. This is distinct from the earlier hygiene
-polish recorded in §§1–10.
+`continuity.22`; FINAL HUMAN ANDROID VISUAL APPROVAL recorded from the owner on 2026-08-17. This is
+distinct from the earlier hygiene polish recorded in §§1–10.
 
 ### Approved references
 
@@ -317,8 +317,8 @@ Diagnostics destinations remain reachable through compact secondary actions or c
 surfaces. Dark mode preserves the approved geometry/hierarchy using the existing theme rather than
 forcing a light-only application.
 
-**Desktop approved visual implementation is deferred until the Android visual language is
-human-approved.** No Desktop production file is part of this pass.
+No Desktop production file was part of the Android pass; the subsequent Desktop implementation is
+recorded in §12.
 
 ### Automated evidence
 
@@ -334,3 +334,51 @@ human-approved.** No Desktop production file is part of this pass.
 - Final on-device Home and Ledger captures were inspected. The updated focused Compose UI tests
   compiled and were packaged in the AndroidTest APK; connected instrumentation was not executed
   against the owner's stateful phone.
+
+## 12. Final visual implementation — Desktop (2026-08-17)
+
+**Android authority update:** the owner has now given FINAL HUMAN ANDROID VISUAL APPROVAL to
+`0.1.1-continuity.22` (versionCode 23). That installed implementation is the primary living BUDCOM
+visual-language reference.
+
+**Desktop status:** automated visual implementation, validation, screenshot review and installer
+packaging complete at `0.4.17`; final human Desktop visual approval pending. No approved Desktop
+master exists in `D:\BUDCOM-Design-Archive`, so the approved Android hierarchy, dark surface/color
+relationships, restrained accent treatment, typography rhythm and state vocabulary were adapted
+for Windows rather than copied at mobile dimensions.
+
+### Audit and decisions
+
+| Finding | Classification | Resolution |
+|---|---|---|
+| Nine equal top tabs create a crowded application-shell impression | IMPLEMENT | Recast as a compact persistent Windows sidebar with a clear active marker. |
+| Connection, company, sync and version cards compete equally | IMPLEMENT | Consolidated them visually into one dense status band; operational state, company and sync lead. |
+| Header/card/footer repeat state | IMPLEMENT PRESENTATION / KEEP DATA | Header is concise live context, dashboard is operational detail, footer is an unobtrusive persistent confirmation. No state source or semantics changed. |
+| Refresh and company controls lack visual priority | IMPLEMENT | Primary/secondary button hierarchy and focus treatment now make Refresh immediately discoverable while retaining existing behavior. |
+| Detailed Connector, pairing, logs, diagnostics and settings surfaces | KEEP | Existing operator purpose and behavior retained; inherited shared surfaces, spacing and controls. |
+| Private-storage setup/unavailable states | KEEP + IMPLEMENT CONSISTENCY | Fail-closed content/actions retained; overlay/surface/control treatment aligned with the visual system. |
+| New tray behavior or product rename | DEFER / REQUIRES PRODUCT DECISION | Not part of this presentation-only pass. |
+
+### Deliberate Desktop adaptations
+
+The Desktop remains a resizable, information-dense Connector/operator companion: vertical
+mouse/keyboard navigation, minimal scrolling at normal window sizes, compact status cells and
+persistent footer confirmation. It does not reproduce Android bottom navigation, mobile spacing,
+accounting screens, Insights, Connect or Vartalap. No animation, framework or dependency was added.
+
+### Validation and artifact
+
+- Product commit: `96a7a55` (`feat(desktop): apply approved BUDCOM visual language`).
+- TypeScript main/preload/renderer checks: passing.
+- Full Desktop suite: 696/696 passing.
+- Desktop build, bundled Connector `0.4.6` build and NSIS packaging: passing.
+- Screenshot review: updated Dashboard capture inspected at 1280×900 and corrected to the final
+  sidebar/status-band composition.
+- Installer: `release/controlled-pilot/0.4.17/artifacts/BudcomDesktop-0.4.17-x64-setup.exe`,
+  106,073,397 bytes, SHA-256
+  `826BE50F8946FAF67DE572F60C5CE9AB2C05F78B99A6A71E988B98398FCEFA8D`.
+- Size delta against `0.4.15`: +899 bytes (+0.0008%); zero dependencies added and no meaningful
+  runtime/resource impact.
+- Automatic in-place installation stopped at the required Windows UAC boundary: the per-machine
+  installation is under `C:\Program Files`, and this session is not elevated. No uninstall, AppData
+  reset or configuration change was attempted.

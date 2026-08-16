@@ -6,15 +6,15 @@
 ## 1. Current phase
 
 **MVP-1 CONTROLLED PILOT — GO / CLOSED**
-**ANDROID APPROVED VISUAL DESIGN IMPLEMENTATION — AUTOMATED WORK COMPLETE**
-**FINAL HUMAN ANDROID VISUAL APPROVAL PENDING**
-**DESKTOP MVP-1 UI/UX POLISH — FINAL HUMAN VISUAL APPROVAL PENDING**
+**ANDROID `continuity.22` — FINAL HUMAN VISUAL APPROVAL COMPLETE**
+**DESKTOP `0.4.17` VISUAL IMPLEMENTATION — AUTOMATED WORK COMPLETE**
+**FINAL HUMAN DESKTOP VISUAL APPROVAL PENDING**
 
 ## 2. Branch / HEAD
 
 - Branch: `main`
-- Product-code baseline: `9b29abf`
-- Versions: Desktop `0.4.16`; Connector `0.4.6`; Android candidate
+- Product-code baseline: `96a7a55`
+- Versions: Desktop candidate `0.4.17`; Connector `0.4.6`; Android
   `0.1.1-continuity.22` (versionCode 23).
 - The documentation-only ledger/checkpoint commit follows this product-code baseline; use
   `git log -1` for the self-referential documentation tip.
@@ -23,6 +23,8 @@
 ## 3. Current evidence
 
 ```
+96a7a55 feat(desktop): apply approved BUDCOM visual language
+9b29abf feat(android): implement approved MVP-1 visual masters
 bc9cd55 chore: bump desktop 0.4.15->0.4.16, android continuity.20->continuity.21 for UI/UX polish candidate packaging
 63b919e docs: record MVP-1 UI/UX polish pass status, P2/DEFER punch list, and human visual-review checklist
 7db7dd9 fix(desktop): connecting-state indicator, broken Dashboard refresh, and raw status text
@@ -36,11 +38,9 @@ Full detail for the UI/UX work: `docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md
 
 - Controlled Pilot: **GO / CLOSED** under the constraints in
   `docs/planning/BUDCOM-MVP-1-CONTROLLED-PILOT-CLOSURE-STATUS.md` and the Quality Scorecard.
-- Android: automated implementation/validation and in-place installation of `continuity.22` are
-  complete on device `10BF44124K000E3`; the prior `continuity.21` approval does not substitute for
-  final human approval of the newly applied archive masters.
-- Desktop: functional polish is automated-clean; no evidence yet establishes human visual approval
-  of Desktop `0.4.16`.
+- Android: owner FINAL HUMAN VISUAL APPROVAL recorded for installed `continuity.22` on 2026-08-17.
+- Desktop: `0.4.17` visual implementation, automated validation, screenshot review and installer
+  packaging complete; installation and final human visual approval remain.
 
 ## 4. Approved Stitch reference
 
@@ -102,9 +102,8 @@ instruction.
 
 ## 9. Exact NEXT TASK
 
-**Obtain FINAL HUMAN ANDROID VISUAL APPROVAL of installed `continuity.22`** using the
-approved-master checklist in
-`docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §11.
+**Install Desktop `0.4.17` via the packaged per-machine installer, then obtain FINAL HUMAN DESKTOP
+VISUAL APPROVAL** using `docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §12.
 
-**Not started:** Desktop approved visual implementation, public-release packaging, MVP-1.1. Do not
-begin any of them before Android visual approval.
+**Not started:** public-release packaging and MVP-1.1. Do not begin either before Desktop visual
+approval.
