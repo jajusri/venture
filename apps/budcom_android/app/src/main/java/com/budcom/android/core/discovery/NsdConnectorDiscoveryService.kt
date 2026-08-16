@@ -18,13 +18,19 @@ private const val POLL_INTERVAL_MS = 50L
  * A single bounded pass: starts discovery, resolves whatever services are found within
  * [discover]'s timeout window, then always stops discovery — no background listener is
  * left registered between calls.
+ *
+ * Holds a [MulticastLockController] for the duration of the pass. Without it, several OEM Wi-Fi
+ * stacks silently drop every mDNS multicast frame the device would otherwise receive — discovery
+ * still reports success, it simply never sees any candidate, which is indistinguishable at this
+ * API from a genuinely empty network. See [MulticastLockController]'s doc comment.
  */
 @Singleton
 class NsdConnectorDiscoveryService @Inject constructor(
     private val nsdManager: NsdManager,
+    private val multicastLock: MulticastLockController,
 ) : ConnectorDiscoveryPort {
 
-    override suspend fun discover(timeoutMs: Long): List<DiscoveredConnector> {
+    override suspend fun discover(timeoutMs: Long): List<DiscoveredConnector> = multicastLock.withLock {
         val found = Channel<DiscoveredConnector>(capacity = Channel.UNLIMITED)
 
         val resolveListener = object : NsdManager.ResolveListener {

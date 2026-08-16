@@ -19,7 +19,9 @@ import com.budcom.android.core.connection.OkHttpConnectorHealthProbe
 import com.budcom.android.core.connection.data.local.PairedConnectorLocalDataSource
 import com.budcom.android.core.connection.data.local.RoomPairedConnectorLocalDataSource
 import com.budcom.android.core.discovery.ConnectorDiscoveryPort
+import com.budcom.android.core.discovery.MulticastLockController
 import com.budcom.android.core.discovery.NsdConnectorDiscoveryService
+import com.budcom.android.core.discovery.WifiMulticastLockController
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -45,6 +47,10 @@ abstract class ConnectionBindModule {
     @Binds
     @Singleton
     abstract fun bindConnectorDiscoveryPort(impl: NsdConnectorDiscoveryService): ConnectorDiscoveryPort
+
+    @Binds
+    @Singleton
+    abstract fun bindMulticastLockController(impl: WifiMulticastLockController): MulticastLockController
 
     @Binds
     @Singleton
