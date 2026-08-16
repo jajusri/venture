@@ -445,10 +445,28 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-026 — Out-of-window carried-forward Vouchers are not re-verified against Tally (no deletion/edit tombstone)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-026 |
+| **Description** | Investigated 2026-08-16 following a physical report of BUDCOM showing 94 Vouchers against a Tally-side manual count of 62 for ESTIMATION. Full read-only reconciliation (live Tally XML export queried directly with the same TDL request/window BUDCOM uses, diffed GUID-for-GUID against the active Connector snapshot) found **0 discrepancy** for the actual freshly-requested window (`2026-07-18`..`2026-08-16`, the Connector's default 30-day rolling window since Android's `POST sync/vouchers` call sends an empty body) — 94 present in both, 0 Tally-only, 0 BUDCOM-only, 0 duplicates, identical voucher-type breakdown. The 94-vs-62 discrepancy itself is closed as count-scope mismatch (the user's manual Tally count was very likely scoped to a different date range/report), not a BUDCOM defect. **However, a real, separate architectural gap was found and confirmed from code during that investigation:** `SqliteVoucherRepository.carryForwardVouchersOutsideWindow()` (`connector/budcom_connector/src/storage/sqlite/sqlite-voucher-repository.ts`) copies Vouchers from the previously-active snapshot into the new one whenever their `voucher_date` falls *outside* the freshly-requested sync window — entirely without re-querying Tally for those older records. There is no tombstone, deletion marker, or re-verification mechanism for this carried-forward population. If a Voucher dated outside the currently-requested window is later edited or deleted in Tally, BUDCOM will keep silently re-promoting its last-known state indefinitely, until some future sync's window happens to widen enough to cover that date again. This did **not** occur in the investigated case (0 vouchers were carried forward into the 94-count snapshot — every one was freshly re-verified), so it is confirmed latent, not actively triggered, as of this writing. |
+| **Impact** | Theoretical, not yet observed in practice: stale/deleted-in-Tally Voucher data could persist indefinitely for date ranges outside whatever window a given sync happens to request, with no visible signal to the user that those older records haven't been re-checked. Current-window (the last ~30 days by default) deletion/edit semantics are confirmed correct. |
+| **Priority** | P2 |
+| **Target milestone** | Post-MVP-1 — do not action during this controlled-pilot closure unless further physical evidence elevates it (explicit architectural decision, 2026-08-16) |
+| **Status** | Open — recorded, not implemented. Explicitly deferred by architectural decision. |
+| **Introduced** | Multi-phase Voucher extraction architecture, commit `aa96637` (2026-07-30) — the carry-forward mechanism has existed since the snapshot-based sync design was introduced, not a regression from this session's other Voucher fixes. |
+| **Evidence** | `docs/planning/BUDCOM-MVP-1-CONTROLLED-PILOT-CLOSURE-STATUS.md` §30 (94-vs-62 investigation) — live Tally XML export (94 unique GUIDs) vs. active Connector snapshot (94 unique GUIDs), GUID-for-GUID diff: 94 present-both, 0 Tally-only, 0 BUDCOM-only, 0 duplicates; confirmed 0 of the 94 rows were carry-forwarded (all freshly re-verified, dated inside the requested window). |
+| **Likely fix direction (not scoped for this pilot)** | Options to evaluate later: periodically run a wider/full-history reconciliation pass that re-verifies carried-forward records against Tally; mark carried-forward rows with a "last-verified" timestamp/window and surface staleness; or bound how long a record can be carried forward before requiring re-verification. Any of these needs an explicit architectural decision, not a unilateral implementation. |
+| **Do not action without** | Further physical evidence that this has actually manifested (a real stale/deleted Voucher observed outside the freshly-synced window), or explicit product-owner prioritization. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-026 | Out-of-window carried-forward Vouchers are not re-verified against Tally (no deletion/edit tombstone) | P2 | Open — recorded, not implemented; explicitly deferred | Post-MVP-1 |
 | TD-025 | Private-storage loss mid-session degrades to generic "Disconnected" rather than the storage recovery screen | P2 | Open — recorded, not implemented | Post-MVP-1 (or sooner if hit in pilot) |
 | TD-024 | `desktop:choose-storage-mode` did not re-validate the drive is actually removable | P1 | **Fixed (automated validation)** | Pre-MVP-1 release hardening |
 | TD-023 | Connector `querySnapshot()` loads the full company snapshot on every paged request | P3 | Open — recorded, not implemented | Post-MVP-1 |

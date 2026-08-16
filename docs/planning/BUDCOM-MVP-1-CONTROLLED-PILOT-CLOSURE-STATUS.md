@@ -1646,7 +1646,7 @@ designed to work.
 
 ---
 
-## 29. Final verdict (current, 2026-08-16, seventh pass)
+## 29. Final verdict (superseded by §31 — see below)
 
 **TD-001 CLOSED — physically confirmed fixed.** The Voucher `parser_failure` defect
 that blocked Session 2 is resolved end-to-end: root cause identified from real
@@ -1677,3 +1677,116 @@ with zero data loss.
 **Per explicit instruction: Session 3 is not started this pass.** The next step is
 the remaining Session 2 HUMAN CHECK items, reported separately to the user in
 efficient order.
+
+---
+
+## 30. Data-integrity investigation — 94 vs 62 Vouchers (2026-08-16)
+
+**Trigger.** Immediately after the §28 physical PASS, the user reported Mobile BUDCOM
+showing 94 Vouchers for ESTIMATION while Tally itself showed only 62 total (including
+Optional), having intentionally deleted several Vouchers in Tally earlier. Session 2
+progression was stopped pending reconciliation. This investigation was entirely
+read-only: no new BUDCOM sync was triggered, no Tally data was altered, no BUDCOM data
+was deleted, and no production code was changed until the findings were reported and
+reviewed.
+
+### 30.1 Exact reconciliation
+
+The Connector's own `POST /sync/vouchers` route defaults to `dateFrom = today − 29,
+dateTo = today` whenever the request body omits them (`api/routes/vouchers.ts:56-58`).
+Android's `SyncApi.startVoucherSync()` is called with an **empty**
+`VoucherSyncStartRequestDto()` (`SyncRemoteDataSource.kt:42`) — so the actual verified
+window for this sync was `2026-07-18`..`2026-08-16`, not the wider `2026-07-12`
+recorded in the snapshot's stored period (which is a historical union carried across
+many prior syncs, not this sync's own request).
+
+A standalone, read-only script sent the exact same Voucher discovery TDL request
+BUDCOM's own discovery phase builds (`buildVoucherCollectionRequestSpec`) directly to
+Tally's export port, entirely bypassing the Connector's sync/promotion pipeline (no
+snapshot created or touched). Result, diffed GUID-for-GUID against the active BUDCOM
+snapshot for the same window:
+
+| | Count |
+|---|---|
+| Live Tally XML export | 94, 94 unique GUIDs |
+| Active BUDCOM snapshot | 94, 94 unique GUIDs |
+| A. Present in both | 94 |
+| B. Present only in Tally | 0 |
+| C. Present only in BUDCOM | 0 |
+| D. Duplicate GUIDs (either side) | 0 |
+
+Voucher-type breakdown identical on both sides: Sales 54, Receipt 34, Contra 1,
+Purchase 1, Credit Note 1, Debit Note 1, Payment 1, Journal 1. `IsCancelled`: 94/94
+"No" on both sides.
+
+### 30.2 Carry-forward mechanism — investigated, found not to be the cause here
+
+`SqliteVoucherRepository.carryForwardVouchersOutsideWindow()` copies Vouchers from the
+previously-active snapshot into the new one when their `voucher_date` falls outside
+the freshly-requested window, without re-querying Tally for those older rows. Direct
+inspection of the active snapshot confirmed **0 of the 94 rows fall outside the
+`2026-07-18`..`2026-08-16` window** — every single one was freshly extracted and
+re-verified against Tally in this sync, none carried forward. The mechanism is real
+(confirmed from code) but did not contribute to this snapshot.
+
+### 30.3 Query-path correctness
+
+`SqliteVoucherRepository.querySnapshot()` resolves the single active `snapshot_id` via
+`voucher_active_snapshots` and filters `voucher_headers` by both `company_id` and that
+exact `snapshot_id` — confirmed from code to never union multiple snapshots. The "94"
+Android displays is exactly this snapshot's row count, correctly scoped.
+
+### 30.4 Conclusion
+
+The 94-vs-62 discrepancy is closed as **count-scope mismatch**, not a BUDCOM defect —
+Tally's own live, machine-readable export for the exact window BUDCOM actually
+queried matches BUDCOM's snapshot exactly, GUID for GUID. The user's manual 62-count
+in Tally's UI was almost certainly scoped to a different date range/report than
+BUDCOM's `2026-07-18`..`2026-08-16` window (51 of the 94 vouchers land on `2026-08-14`
+alone, which a narrower or differently-anchored manual check could easily miss).
+
+A real, separate, previously-undocumented architectural gap was found and recorded
+during this investigation: out-of-window carried-forward Vouchers have no
+re-verification/tombstone mechanism against Tally (TD-026, P2, explicitly deferred —
+did not manifest in this dataset, 0 of 94 were carried forward).
+
+One additional observation, recorded without further action per explicit instruction:
+three near-identical Voucher snapshots were promoted within a 5-minute span
+(`945a4735...` 01:31, `a681079c...` 01:34, `1e536f4d...` 01:36 UTC), each with
+identical counts and windows — consistent with repeated taps or an app-side retry, not
+flagged as a correctness issue absent further evidence.
+
+---
+
+## 31. Architectural decision recorded + final verdict (current, 2026-08-16, eighth pass)
+
+**Architectural decision (2026-08-16):** the 94-vs-62 investigation result is
+accepted. Current controlled-pilot Voucher state is correct for the actual
+Android-requested window. No Voucher sync behavior is being changed because of this
+count discrepancy. TD-026 (out-of-window carry-forward has no re-verification
+mechanism) is recorded as P2/deferred — not to be solved during this controlled-pilot
+closure absent further physical evidence elevating it. Current-window deletion/update
+semantics are confirmed correct and preserved as evidence. The repeated near-identical
+snapshot promotions are recorded as an observation only.
+
+**TD-001 remains CLOSED — physically confirmed fixed** (§28); this investigation
+(§30) is a separate matter that does not reopen it.
+
+**What changed this pass:**
+- 94-vs-62 discrepancy fully reconciled with live-Tally evidence and closed as
+  count-scope mismatch, not a defect (§30.1).
+- Carry-forward mechanism investigated and confirmed real but not causally
+  responsible for this dataset (§30.2); recorded as TD-026 for future architectural
+  attention, explicitly not actioned now.
+- Query-path snapshot-scoping confirmed correct from code (§30.3).
+- No code changed, no data touched, no new sync triggered during the entire
+  investigation.
+
+**What has NOT changed / remains open:**
+- All of §3's TD-013–TD-020 physical-confirmation gaps remain open.
+- Session 2 items G, H, J, M, N, O, P remain unconfirmed — resuming now per explicit
+  instruction, one at a time. Sessions 1, 3, 4, 5 have not started.
+
+**Per explicit instruction: Session 3 still not started.** Resuming Session 2's
+remaining HUMAN CHECK items now, one at a time, in the requested order: G, H, J, M,
+N, O, P.
