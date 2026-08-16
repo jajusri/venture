@@ -1,6 +1,6 @@
 import type { ConnectorNetworkExposure } from './network-binding.js';
 
-export const CONNECTOR_VERSION = '0.4.5';
+export const CONNECTOR_VERSION = '0.4.6';
 export const SCHEMA_VERSION = '1.0.0';
 
 export interface ConnectorConfig {

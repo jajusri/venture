@@ -1,6 +1,6 @@
 {
   "name": "@budcom/desktop",
-  "version": "0.4.14",
+  "version": "0.4.15",
   "private": true,
   "description": "Business OS Tally Connector — Windows desktop shell",
   "main": "dist/main/main.js",
