@@ -96,6 +96,7 @@ export class TallyVoucherExtractor implements VoucherReadPort {
     );
     let durationMs = exchange.durationMs;
     let rawByteLength = exchange.byteLength;
+    let amountSignConflictCount = 0;
     const hasLegacyEmbeddedLedgerRows = !this.enforceTwoPhase &&
       items.some((voucher) => voucher.ledgerEntries.length > 0);
     if (items.length > 0 && !hasLegacyEmbeddedLedgerRows) {
@@ -111,7 +112,9 @@ export class TallyVoucherExtractor implements VoucherReadPort {
           ledgerExchange.rawXml,
           resolveXmlParserOptionsForOperation(ApprovedOperationId.VoucherLedgerEntries),
         );
-        items = [...joinAndReconcileVoucherLedgers(items, ledgerEntries)];
+        const joinResult = joinAndReconcileVoucherLedgers(items, ledgerEntries);
+        items = [...joinResult.vouchers];
+        amountSignConflictCount = joinResult.amountSignConflictCount;
       } catch (error) {
         throw new AppError(
           ErrorCodes.VALIDATION_ERROR,
@@ -183,6 +186,7 @@ export class TallyVoucherExtractor implements VoucherReadPort {
       durationMs,
       rawByteLength,
       illegalCharactersSanitized,
+      amountSignConflictCount,
     };
   }
 }

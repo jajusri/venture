@@ -68,6 +68,10 @@ export interface VoucherSynchronizationResult {
    * parsing (e.g. the TD-001 `&#4;` export artifact) -- telemetry only, never the
    * removed characters' surrounding content. Zero when nothing was sanitized. */
   readonly illegalCharactersSanitized: number;
+  /** Count of Voucher ledger entries where IsDeemedPositive disagreed with the signed
+   * Amount's sign -- tolerated, not fatal. Telemetry only, never which voucher/ledger.
+   * Zero when no entry disagreed. */
+  readonly amountSignConflictCount: number;
   readonly startedAt: string;
   readonly finishedAt: string;
   readonly durationMs: number;

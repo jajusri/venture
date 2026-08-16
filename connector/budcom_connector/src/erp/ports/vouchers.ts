@@ -17,6 +17,11 @@ export interface VoucherExtractionResult {
    * parsing (e.g. Tally's `&#4;` export artifact, TD-001) -- telemetry only, never the
    * removed characters' surrounding content. Zero when nothing was sanitized. */
   readonly illegalCharactersSanitized: number;
+  /** Count of Voucher ledger entries where IsDeemedPositive disagreed with the signed
+   * Amount's sign -- tolerated, not fatal (see VoucherLedgerExtractionEntry
+   * .amountSignConflict). Telemetry only, never which voucher/ledger. Zero when no
+   * entry disagreed. */
+  readonly amountSignConflictCount: number;
 }
 
 /** ERP-neutral, company- and period-scoped production Voucher read boundary. */

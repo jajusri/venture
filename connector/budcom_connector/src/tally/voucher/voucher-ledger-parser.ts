@@ -20,13 +20,11 @@ export class VoucherLedgerEntryParser {
     const ledgerName = requiredLedgerName(node);
     const signedAmount = normalizeSignedAmount(requiredAmountText(node));
     const isDeemedPositive = parseLogical(requiredIsDeemedPositiveText(node));
-    if (isDeemedPositive !== signedAmount.startsWith('-')) {
-      throw new VoucherEntryParseError(
-        'amount-sign-conflict',
-        `Voucher ledger sign conflicts with IsDeemedPositive for ${parentGuid}.`,
-      );
-    }
-    return { parentGuid, ledgerName, isDeemedPositive, signedAmount };
+    // IsDeemedPositive and the signed Amount's sign are independent Tally fields (see
+    // VoucherLedgerExtractionEntry.amountSignConflict) -- a disagreement is tolerated,
+    // not fatal. Amount's sign remains the sole source for Dr/Cr side downstream.
+    const amountSignConflict = isDeemedPositive !== signedAmount.startsWith('-');
+    return { parentGuid, ledgerName, isDeemedPositive, signedAmount, amountSignConflict };
   }
 }
 

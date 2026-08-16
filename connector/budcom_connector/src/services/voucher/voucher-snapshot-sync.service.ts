@@ -278,6 +278,7 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
         startedMs,
         persistedVoucherCount,
         illegalCharactersSanitized: extractionResult.illegalCharactersSanitized,
+        amountSignConflictCount: extractionResult.amountSignConflictCount,
       });
     } catch (error) {
       const cancelled = error instanceof VoucherSyncCancelled;
@@ -333,6 +334,7 @@ export class VoucherSynchronizationService implements VoucherSnapshotSyncService
         startedMs,
         persistedVoucherCount,
         illegalCharactersSanitized: extractionResult?.illegalCharactersSanitized ?? 0,
+        amountSignConflictCount: extractionResult?.amountSignConflictCount ?? 0,
       });
     } finally {
       if (reservationAcquired) {
@@ -492,6 +494,7 @@ function result(input: {
   startedMs: number;
   persistedVoucherCount?: number;
   illegalCharactersSanitized?: number;
+  amountSignConflictCount?: number;
 }): VoucherSynchronizationResult {
   const metrics = input.metrics ?? createMetrics();
   const finishedMs = Date.now();
@@ -512,6 +515,7 @@ function result(input: {
     failureDetail: input.failureDetail ?? null,
     notificationFailureCount: input.notificationFailureCount ?? 0,
     illegalCharactersSanitized: input.illegalCharactersSanitized ?? 0,
+    amountSignConflictCount: input.amountSignConflictCount ?? 0,
     startedAt: input.startedAt,
     finishedAt: new Date(finishedMs).toISOString(),
     durationMs: Math.max(0, finishedMs - input.startedMs),
@@ -539,6 +543,7 @@ function result(input: {
       failureReason: summary.failureReason,
       failureDetail: summary.failureDetail,
       illegalCharactersSanitized: summary.illegalCharactersSanitized,
+      amountSignConflictCount: summary.amountSignConflictCount,
     });
   } catch {
     // Logging is observational and must never affect synchronization.

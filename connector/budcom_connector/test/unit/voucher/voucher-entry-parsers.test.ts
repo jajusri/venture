@@ -60,12 +60,13 @@ const VALID_INVENTORY_ENTRY = `<INVENTORYENTRY>
 </INVENTORYENTRY>`;
 
 describe('VoucherLedgerEntryParser -- distinguishable failure reasons', () => {
-  it('parses a well-formed entry without error (control case)', () => {
+  it('parses a well-formed, agreeing entry without error (control case)', () => {
     expect(ledgerParser().parse(envelope(VALID_LEDGER_ENTRY))).toEqual([{
       parentGuid: 'voucher-guid',
       ledgerName: 'Customer',
       isDeemedPositive: true,
       signedAmount: '-100.00',
+      amountSignConflict: false,
     }]);
   });
 
@@ -141,16 +142,35 @@ describe('VoucherLedgerEntryParser -- distinguishable failure reasons', () => {
     expectReason(() => ledgerParser().parse(envelope(entry)), 'missing-or-invalid-is-deemed-positive');
   });
 
-  it('amount-sign-conflict: IsDeemedPositive=Yes with a positive Amount', () => {
+  // TD-001 round 4 (2026-08-16): ISDEEMEDPOSITIVE reflects a ledger's debit/credit-
+  // positive nature by group classification; the signed Amount's sign independently
+  // encodes this specific transaction's actual Dr/Cr direction (the codebase's own
+  // established inferSideFromSign() convention, extraction/normalization/amounts.ts).
+  // These are legitimately independent Tally fields -- physical evidence (0.4.9/0.4.10/
+  // 0.4.11 all failed identically with parseReason 'amount-sign-conflict' on real,
+  // stable ESTIMATION data) confirmed this is a real, valid business case, not a
+  // malformed record. A disagreement is now tolerated: the entry still parses, flagged
+  // via amountSignConflict rather than aborting the whole Voucher sync window.
+  it('tolerates IsDeemedPositive=Yes with a positive Amount -- parses with amountSignConflict', () => {
     const entry = VALID_LEDGER_ENTRY.replace('<AMOUNT>-100.00</AMOUNT>', '<AMOUNT>100.00</AMOUNT>');
-    expectReason(() => ledgerParser().parse(envelope(entry)), 'amount-sign-conflict');
+    expect(ledgerParser().parse(envelope(entry))).toEqual([{
+      parentGuid: 'voucher-guid',
+      ledgerName: 'Customer',
+      isDeemedPositive: true,
+      signedAmount: '100.00',
+      amountSignConflict: true,
+    }]);
   });
 
-  it('amount-sign-conflict: IsDeemedPositive=No with a negative Amount', () => {
-    const entry = VALID_LEDGER_ENTRY
-      .replace('Yes', 'No')
-      .replace('<AMOUNT>-100.00</AMOUNT>', '<AMOUNT>-100.00</AMOUNT>');
-    expectReason(() => ledgerParser().parse(envelope(entry)), 'amount-sign-conflict');
+  it('tolerates IsDeemedPositive=No with a negative Amount -- parses with amountSignConflict', () => {
+    const entry = VALID_LEDGER_ENTRY.replace('Yes', 'No');
+    expect(ledgerParser().parse(envelope(entry))).toEqual([{
+      parentGuid: 'voucher-guid',
+      ledgerName: 'Customer',
+      isDeemedPositive: false,
+      signedAmount: '-100.00',
+      amountSignConflict: true,
+    }]);
   });
 });
 

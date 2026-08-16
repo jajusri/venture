@@ -134,7 +134,7 @@ describe('TallyVoucherExtractor', () => {
     </COLLECTION></DATA></BODY></ENVELOPE>`;
     const invalidLedger = `<ENVELOPE><HEADER><STATUS>1</STATUS></HEADER><BODY><DATA><COLLECTION>
       <LEDGERENTRY>
-        <LEDGERNAME>Customer</LEDGERNAME><ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+        <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
         <AMOUNT>100.00</AMOUNT><PARENTGUID>voucher-guid</PARENTGUID>
       </LEDGERENTRY>
     </COLLECTION></DATA></BODY></ENVELOPE>`;
@@ -167,8 +167,86 @@ describe('TallyVoucherExtractor', () => {
       details: {
         reasonCode: 'voucher-ledger-validation',
         operation: 'VoucherLedgerEntries',
-        parseReason: 'amount-sign-conflict',
+        parseReason: 'missing-ledger-name',
       },
     });
+  });
+
+  // TD-001 round 4 (2026-08-16, Option C): the production 0.4.9/0.4.10/0.4.11 physical
+  // failure (parseReason 'amount-sign-conflict') is now tolerated rather than fatal.
+  // Proves the full extraction path completes successfully, the voucher's ledger
+  // entries and totals remain correct, and the count of tolerated conflicts is
+  // surfaced via amountSignConflictCount -- never which voucher/ledger.
+  it('completes a Voucher sync when a ledger entry has an amount-sign conflict, counting it without aborting', async () => {
+    const discovery = `<ENVELOPE><HEADER><STATUS>1</STATUS></HEADER><BODY><DATA><COLLECTION>
+      <VOUCHER>
+        <DATE>20260724</DATE><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+        <VOUCHERNUMBER>16</VOUCHERNUMBER><GUID>voucher-guid</GUID>
+      </VOUCHER>
+    </COLLECTION></DATA></BODY></ENVELOPE>`;
+    // Entry 1 conflicts (IsDeemedPositive=Yes but Amount is positive); entry 2 agrees
+    // (IsDeemedPositive=Yes, Amount negative). Balances to zero either way.
+    const ledger = `<ENVELOPE><HEADER><STATUS>1</STATUS></HEADER><BODY><DATA><COLLECTION>
+      <LEDGERENTRY>
+        <LEDGERNAME>Customer</LEDGERNAME><ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+        <AMOUNT>100.00</AMOUNT><PARENTGUID>voucher-guid</PARENTGUID>
+      </LEDGERENTRY><LEDGERENTRY>
+        <LEDGERNAME>Sales</LEDGERNAME><ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+        <AMOUNT>-100.00</AMOUNT><PARENTGUID>voucher-guid</PARENTGUID>
+      </LEDGERENTRY>
+    </COLLECTION></DATA></BODY></ENVELOPE>`;
+    const emptyInventory = `<ENVELOPE><HEADER><STATUS>1</STATUS></HEADER><BODY><DATA><COLLECTION>
+    </COLLECTION></DATA></BODY></ENVELOPE>`;
+    const gateway = {
+      executeApprovedRead: vi.fn()
+        .mockResolvedValueOnce({
+          operationId: ApprovedOperationId.Vouchers,
+          rawXml: discovery,
+          byteLength: Buffer.byteLength(discovery),
+          durationMs: 1,
+        })
+        .mockResolvedValueOnce({
+          operationId: ApprovedOperationId.VoucherLedgerEntries,
+          rawXml: ledger,
+          byteLength: Buffer.byteLength(ledger),
+          durationMs: 1,
+        })
+        .mockResolvedValueOnce({
+          operationId: ApprovedOperationId.VoucherInventoryEntries,
+          rawXml: emptyInventory,
+          byteLength: Buffer.byteLength(emptyInventory),
+          durationMs: 1,
+        }),
+    } as unknown as TallyReadGateway;
+    const voucherParser = new VoucherCollectionParser(new TallyXmlResponseParser());
+    const extractor = new TallyVoucherExtractor(
+      gateway,
+      voucherParser,
+      new VoucherXmlMapper(voucherParser),
+      undefined,
+      true,
+    );
+
+    const result = await extractor.readVouchers('ESTIMATION', PERIOD);
+
+    expect(result.amountSignConflictCount).toBe(1);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.ledgerEntries).toEqual([
+      {
+        lineNumber: 1,
+        ledgerName: 'Customer',
+        amount: { amount: '100', side: 'debit' },
+        isDeemedPositive: true,
+        allocations: [],
+      },
+      {
+        lineNumber: 2,
+        ledgerName: 'Sales',
+        amount: { amount: '100', side: 'credit' },
+        isDeemedPositive: true,
+        allocations: [],
+      },
+    ]);
+    expect(result.items[0]?.amount).toEqual({ amount: '100', side: null });
   });
 });

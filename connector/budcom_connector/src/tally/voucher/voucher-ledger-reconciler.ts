@@ -7,10 +7,19 @@ import { normalizeGuid } from './voucher-ledger-parser.js';
 import { formatDecimal, parseDecimal, rescale } from '../../erp/shared/decimal-money.js';
 import { VoucherReconciliationError } from './voucher-reconciliation-error.js';
 
+export interface VoucherLedgerJoinResult {
+  readonly vouchers: readonly VoucherDetails[];
+  /** Count of ledger entries where IsDeemedPositive disagreed with the signed
+   * Amount's sign -- tolerated, not fatal (see VoucherLedgerExtractionEntry
+   * .amountSignConflict). Telemetry only, never which voucher/ledger. */
+  readonly amountSignConflictCount: number;
+}
+
 export function joinAndReconcileVoucherLedgers(
   vouchers: readonly VoucherDetails[],
   extractedEntries: readonly VoucherLedgerExtractionEntry[],
-): readonly VoucherDetails[] {
+): VoucherLedgerJoinResult {
+  const amountSignConflictCount = extractedEntries.filter((entry) => entry.amountSignConflict).length;
   const vouchersByGuid = new Map<string, VoucherDetails>();
   for (const voucher of vouchers) {
     if (!voucher.guid) continue;
@@ -38,7 +47,7 @@ export function joinAndReconcileVoucherLedgers(
     grouped.set(entry.parentGuid, entries);
   }
 
-  return vouchers.map((voucher) => {
+  const joinedVouchers = vouchers.map((voucher) => {
     if (!voucher.guid) {
       if (extractedEntries.length > 0) {
         throw new VoucherReconciliationError(
@@ -76,6 +85,8 @@ export function joinAndReconcileVoucherLedgers(
       allocations: [],
     };
   });
+
+  return { vouchers: joinedVouchers, amountSignConflictCount };
 }
 
 function toVoucherLedgerEntry(

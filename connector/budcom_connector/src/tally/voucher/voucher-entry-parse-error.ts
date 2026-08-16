@@ -17,8 +17,7 @@ export type VoucherEntryParseReason =
   | 'missing-ledger-name'
   | 'missing-stock-item-name'
   | 'missing-or-malformed-amount'
-  | 'missing-or-invalid-is-deemed-positive'
-  | 'amount-sign-conflict';
+  | 'missing-or-invalid-is-deemed-positive';
 
 export class VoucherEntryParseError extends Error {
   constructor(readonly reason: VoucherEntryParseReason, message: string) {

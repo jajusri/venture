@@ -76,6 +76,7 @@ function extractionResult(
     durationMs: 1,
     rawByteLength: 1,
     illegalCharactersSanitized: 0,
+    amountSignConflictCount: 0,
     ...overrides,
   };
 }
@@ -290,6 +291,20 @@ describe('VoucherSnapshotSyncServiceImpl', () => {
     ).synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
 
     expect(result).toMatchObject({ outcome: 'completed', illegalCharactersSanitized: 2 });
+  });
+
+  // TD-001 round 4 (2026-08-16, Option C): a tolerated ledger-entry amount-sign
+  // conflict must not abort the sync -- it completes normally and the count is
+  // surfaced through the full VoucherSynchronizationResult, same as
+  // illegalCharactersSanitized above.
+  it('reports amountSignConflictCount on a successful sync that tolerated a conflict', async () => {
+    const repo = repository();
+    const result = await service(
+      repo,
+      async () => extractionResult([vouchers[0]!], { amountSignConflictCount: 1 }),
+    ).synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+
+    expect(result).toMatchObject({ outcome: 'completed', amountSignConflictCount: 1 });
   });
 
   it.each(['writeVoucherBatch', 'finalizeSnapshot', 'promoteSnapshot'] as const)(
