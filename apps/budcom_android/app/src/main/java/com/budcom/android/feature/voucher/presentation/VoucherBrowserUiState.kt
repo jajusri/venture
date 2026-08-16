@@ -48,10 +48,22 @@ data class VoucherBrowserUiState(
      * reconciled" — this flag must also be true.
      */
     val historyReconciliationScopeIsAuthoritative: Boolean? = null,
+    /** Null means the "All" chip is selected. Never a fetch parameter — purely a display filter over [vouchers]. */
+    val selectedTypeFilter: String? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isLoadingMore
     val hasContent: Boolean get() = vouchers.isNotEmpty()
     val hasCompany: Boolean get() = !companyId.isNullOrBlank()
+
+    /** Distinct voucher types seen so far, in the compact horizontal filter strip. Grows as more pages load; never shows a type this company has no vouchers for. */
+    val availableTypeFilters: List<String> get() = vouchers.map { it.typeLabel }.distinct().sorted()
+
+    /** What the list should actually render — [vouchers] narrowed to [selectedTypeFilter], never a separate fetch. */
+    val filteredVouchers: List<VoucherRowUi> get() = if (selectedTypeFilter == null) {
+        vouchers
+    } else {
+        vouchers.filter { it.typeLabel == selectedTypeFilter }
+    }
 
     private object DefaultDateRange {
         private val range = VoucherDateRangeDefaults.lastDaysInclusive()
@@ -115,6 +127,8 @@ sealed interface VoucherBrowserEvent {
     data class DateFromChanged(val value: String) : VoucherBrowserEvent
     data class DateToChanged(val value: String) : VoucherBrowserEvent
     data object ApplyDateRange : VoucherBrowserEvent
+    /** Null selects "All". Purely local display state — never triggers a reload. */
+    data class TypeFilterChanged(val type: String?) : VoucherBrowserEvent
 }
 
 internal fun AppError.toVoucherUiError(): MasterDataUiError = toMasterDataUiError()

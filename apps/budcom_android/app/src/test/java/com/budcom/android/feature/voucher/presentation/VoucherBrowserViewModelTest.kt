@@ -122,6 +122,28 @@ class VoucherBrowserViewModelTest {
     }
 
     @Test
+    fun `TypeFilterChanged updates selection without refetching`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        val callsBefore = repository.listCalls + repository.refreshCalls
+        vm.onEvent(VoucherBrowserEvent.TypeFilterChanged("Sales"))
+        advanceUntilIdle()
+        assertEquals("Sales", vm.uiState.value.selectedTypeFilter)
+        assertEquals(callsBefore, repository.listCalls + repository.refreshCalls)
+    }
+
+    @Test
+    fun `a new selected company resets the type filter back to All`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(VoucherBrowserEvent.TypeFilterChanged("Sales"))
+        advanceUntilIdle()
+        companySession.selected.value = "other-company"
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.selectedTypeFilter)
+    }
+
+    @Test
     fun `empty result`() = runTest(dispatcher) {
         repository.listResult = AppResult.Success(
             VoucherPage("estimation", emptyList(), 1, 50, 0, 1),

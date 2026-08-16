@@ -43,12 +43,20 @@
     <string name="dashboard_action_company">Company selection</string>
     <string name="dashboard_action_master_data">Master data</string>
     <string name="dashboard_action_vouchers">Vouchers</string>
+    <string name="dashboard_action_ledgers">Ledgers</string>
     <string name="dashboard_action_search">Search</string>
     <string name="dashboard_action_sync">Sync</string>
     <string name="dashboard_action_diagnostics">Diagnostics</string>
     <string name="dashboard_action_settings">Settings</string>
     <string name="dashboard_sync_heading">Synchronization</string>
     <string name="dashboard_sync_status_label">Status</string>
+    <string name="dashboard_primary_vouchers_subtitle">View synced vouchers</string>
+    <string name="dashboard_primary_ledgers_subtitle">View account balances</string>
+    <string name="dashboard_sync_now">Sync</string>
+    <string name="dashboard_sync_now_description">Sync now</string>
+    <string name="dashboard_tally_connected">Tally connected</string>
+    <string name="dashboard_tally_unavailable">Tally unavailable</string>
+    <string name="dashboard_tally_unknown">Tally status unknown</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_retry">Retry</string>
@@ -145,7 +153,7 @@
     <string name="master_data_subtitle">Browse Connector master records for the selected company.</string>
     <string name="master_data_open_ledgers">Ledgers</string>
     <string name="master_data_open_stock_items">Stock items</string>
-    <string name="master_data_offline_banner">Device is offline. Showing retained list when available.</string>
+    <string name="master_data_offline_banner">Device is offline. Showing the most recently retained data.</string>
     <string name="master_data_retry">Retry</string>
 
     <string name="ledger_browser_title">Ledgers</string>
@@ -166,6 +174,8 @@
     <string name="voucher_browser_title">Vouchers</string>
     <string name="voucher_search_hint">Search vouchers</string>
     <string name="voucher_empty">No vouchers found for this company and date range. Sync vouchers on the Connector if the list is empty.</string>
+    <string name="voucher_filtered_empty">No %1$s vouchers in this date range.</string>
+    <string name="voucher_type_filter_all">All</string>
     <string name="voucher_date_from">From (YYYY-MM-DD)</string>
     <string name="voucher_date_to">To (YYYY-MM-DD)</string>
     <string name="voucher_apply_dates">Apply date range</string>

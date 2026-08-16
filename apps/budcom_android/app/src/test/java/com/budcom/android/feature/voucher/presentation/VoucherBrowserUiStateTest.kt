@@ -96,4 +96,45 @@ class VoucherBrowserUiStateTest {
         val label = state(VoucherHistoryReconciliationStatus.Failed).reconciliationStatusLabel()
         assertEquals("Historical reconciliation did not complete · Showing available data", label)
     }
+
+    private fun row(id: String, typeLabel: String) = VoucherRowUi(
+        id = id,
+        primaryLabel = "N-$id",
+        secondaryLabel = null,
+        dateLabel = "2026-08-01",
+        typeLabel = typeLabel,
+        statusLabel = "Active",
+        amountLabel = null,
+    )
+
+    @Test
+    fun `available type filters are the distinct sorted types actually loaded, not a fixed taxonomy`() {
+        val state = VoucherBrowserUiState(
+            vouchers = listOf(row("1", "Sales"), row("2", "Payment"), row("3", "Sales")),
+        )
+        assertEquals(listOf("Payment", "Sales"), state.availableTypeFilters)
+    }
+
+    @Test
+    fun `no selected filter means All, so filtered vouchers equal the full loaded list`() {
+        val vouchers = listOf(row("1", "Sales"), row("2", "Payment"))
+        val state = VoucherBrowserUiState(vouchers = vouchers, selectedTypeFilter = null)
+        assertEquals(vouchers, state.filteredVouchers)
+    }
+
+    @Test
+    fun `selecting a type filter narrows the rendered list without touching the underlying loaded vouchers`() {
+        val vouchers = listOf(row("1", "Sales"), row("2", "Payment"), row("3", "Sales"))
+        val state = VoucherBrowserUiState(vouchers = vouchers, selectedTypeFilter = "Sales")
+        assertEquals(listOf(row("1", "Sales"), row("3", "Sales")), state.filteredVouchers)
+        assertEquals(3, state.vouchers.size)
+    }
+
+    @Test
+    fun `a filter matching nothing yields an empty filtered list while vouchers remain loaded`() {
+        val vouchers = listOf(row("1", "Sales"))
+        val state = VoucherBrowserUiState(vouchers = vouchers, selectedTypeFilter = "Receipt")
+        assertEquals(emptyList<VoucherRowUi>(), state.filteredVouchers)
+        assertEquals(1, state.vouchers.size)
+    }
 }

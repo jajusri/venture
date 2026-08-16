@@ -35,6 +35,7 @@ class VoucherDetailsScreenTest {
                 VoucherDetailsScreen(
                     state = VoucherDetailsUiState(isInitialLoading = true),
                     onEvent = {},
+                    onBack = {},
                     pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
@@ -52,6 +53,7 @@ class VoucherDetailsScreenTest {
                         details = sampleContent(),
                     ),
                     onEvent = {},
+                    onBack = {},
                     pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
@@ -76,6 +78,7 @@ class VoucherDetailsScreenTest {
                         details = sampleContent(dateLabel = "07 Aug 2026"),
                     ),
                     onEvent = {},
+                    onBack = {},
                     pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
@@ -96,6 +99,7 @@ class VoucherDetailsScreenTest {
                         showShareOptions = true,
                     ),
                     onEvent = {},
+                    onBack = {},
                     pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
@@ -112,11 +116,53 @@ class VoucherDetailsScreenTest {
                 VoucherDetailsScreen(
                     state = VoucherDetailsUiState(isInitialLoading = false, details = sampleContent()),
                     onEvent = {},
+                    onBack = {},
                     pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
         composeRule.onNodeWithTag("share_invoice").assertDoesNotExist()
+        composeRule.onNodeWithTag("voucher_details_preview_button").assertDoesNotExist()
+    }
+
+    // TD-028 parity: an eligible voucher gets a direct, always-visible one-tap Preview entry
+    // point in the TopAppBar, matching LedgerStatementScreen's "ledger_statement_preview_button".
+    @Test
+    fun eligibleInvoiceShowsDirectPreviewButtonInTopBar() {
+        var previewRequested = false
+        composeRule.setContent {
+            BudcomTheme {
+                VoucherDetailsScreen(
+                    state = VoucherDetailsUiState(
+                        isInitialLoading = false,
+                        details = sampleContent(),
+                        canShareInvoice = true,
+                    ),
+                    onEvent = { if (it is VoucherDetailsEvent.PreviewPdf) previewRequested = true },
+                    onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("voucher_details_preview_button").assertIsDisplayed().performClick()
+        assertTrue(previewRequested)
+    }
+
+    @Test
+    fun backButtonInvokesOnBack() {
+        var backPressed = false
+        composeRule.setContent {
+            BudcomTheme {
+                VoucherDetailsScreen(
+                    state = VoucherDetailsUiState(isInitialLoading = false, details = sampleContent()),
+                    onEvent = {},
+                    onBack = { backPressed = true },
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("voucher_details_back").performClick()
+        assertTrue(backPressed)
     }
 
     @Test
@@ -130,6 +176,7 @@ class VoucherDetailsScreenTest {
                         error = MasterDataUiError.Timeout("The request timed out."),
                     ),
                     onEvent = { if (it is VoucherDetailsEvent.Retry) retried = true },
+                    onBack = {},
                     pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
@@ -149,6 +196,7 @@ class VoucherDetailsScreenTest {
                         details = sampleContent(),
                     ),
                     onEvent = {},
+                    onBack = {},
                     pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
@@ -208,6 +256,7 @@ class VoucherDetailsScreenTest {
                         details = sampleContent().copy(inventoryLines = lines),
                     ),
                     onEvent = {},
+                    onBack = {},
                     pdfPageRenderer = fakePdfPageRenderer,
                 )
             }

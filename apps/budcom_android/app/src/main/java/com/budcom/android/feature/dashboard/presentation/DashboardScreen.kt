@@ -1,5 +1,6 @@
 package com.budcom.android.feature.dashboard.presentation
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,27 +12,40 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -58,6 +72,7 @@ fun DashboardRoute(
     onOpenCompanySelection: () -> Unit,
     onOpenMasterData: () -> Unit,
     onOpenVouchers: () -> Unit,
+    onOpenLedgers: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSync: () -> Unit,
     onOpenDiagnostics: () -> Unit,
@@ -72,6 +87,7 @@ fun DashboardRoute(
                 DashboardNavigation.CompanySelection -> onOpenCompanySelection()
                 DashboardNavigation.MasterData -> onOpenMasterData()
                 DashboardNavigation.Vouchers -> onOpenVouchers()
+                DashboardNavigation.Ledgers -> onOpenLedgers()
                 DashboardNavigation.Search -> onOpenSearch()
                 DashboardNavigation.Sync -> onOpenSync()
                 DashboardNavigation.Diagnostics -> onOpenDiagnostics()
@@ -111,17 +127,32 @@ fun DashboardScreen(
     Scaffold(
         modifier = modifier.fillMaxSize().testTag("dashboard_screen"),
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.dashboard_title)) },
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        text = state.selectedCompanyName?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.dashboard_title),
+                    )
+                },
                 actions = {
                     // Always reachable — first-time / setup / loading must not lock recovery out.
-                    TextButton(
+                    val syncNowDescription = stringResource(R.string.dashboard_sync_now_description)
+                    IconButton(
+                        onClick = { onEvent(DashboardEvent.Refresh) },
+                        enabled = !state.isBusy,
+                        modifier = Modifier
+                            .testTag("dashboard_topbar_sync")
+                            .semantics { contentDescription = syncNowDescription },
+                    ) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                    }
+                    IconButton(
                         onClick = { onEvent(DashboardEvent.OpenSettings) },
                         modifier = Modifier
                             .testTag("dashboard_topbar_settings")
                             .semantics { contentDescription = "Open settings" },
                     ) {
-                        Text(stringResource(R.string.dashboard_action_settings))
+                        Icon(Icons.Filled.Settings, contentDescription = null)
                     }
                 },
             )
@@ -193,6 +224,18 @@ fun DashboardScreen(
                             .testTag("dashboard_content"),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
+                        // A/c Data Home layout (BUDCOM-UI-DESIGN-DECISIONS §3 / approved Stitch
+                        // master BUDCOM-AC-DATA-HOME-MASTER.png): permanent search below the
+                        // header, a compact freshness/Tally-connection summary, then Vouchers and
+                        // Ledgers as the primary entries — all reusing existing navigation events
+                        // and state, nothing new fetched or computed. The detailed cards below are
+                        // unchanged so no existing capability (test connection, validate session,
+                        // quick actions) is lost, only supplemented.
+                        HomeSearchEntry(onEvent = onEvent)
+                        HomeCompactStatusRow(state = state, onEvent = onEvent)
+                        HomePrimaryEntries(onEvent = onEvent)
+                        HorizontalDivider()
+
                         OperationalBanner(state = state)
 
                         if (state.isRefreshing || state.isTestingConnection || state.isValidatingSession) {
@@ -217,6 +260,167 @@ fun DashboardScreen(
                     .testTag("dashboard_refresh_indicator"),
             )
         }
+    }
+}
+
+/**
+ * Permanent Universal Search entry directly below the company header (BUDCOM-UI-DESIGN-DECISIONS
+ * §3). This is a navigation affordance, not an inline search field — it opens the existing
+ * [UniversalSearchScreen][com.budcom.android.feature.search.presentation.UniversalSearchScreen]
+ * via the same [DashboardEvent.OpenSearch] event the Quick Actions button already uses.
+ */
+@Composable
+private fun HomeSearchEntry(onEvent: (DashboardEvent) -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("dashboard_search_entry")
+            .clickable { onEvent(DashboardEvent.OpenSearch) }
+            .semantics { contentDescription = "Search" },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(R.string.search_subtitle),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Compact Fresh / last-sync / Tally-connected state with a one-tap Sync action
+ * (BUDCOM-UI-DESIGN-DECISIONS §3). Purely a terser presentation of state already computed
+ * elsewhere on this screen ([DashboardUiState.operationalMode], [DashboardUiState.syncStatusLabel],
+ * [DashboardUiState.connectorConnected]) — no new data source. [OperationalBanner] below remains
+ * the detailed/error surface for the same state; this row is the at-a-glance summary.
+ */
+@Composable
+private fun HomeCompactStatusRow(state: DashboardUiState, onEvent: (DashboardEvent) -> Unit) {
+    val (dotColor, freshnessWord) = when (state.operationalMode) {
+        DashboardOperationalMode.FullyOperational -> MaterialTheme.colorScheme.tertiary to "Fresh"
+        DashboardOperationalMode.PartiallyAvailable -> MaterialTheme.colorScheme.tertiary to "Partial"
+        DashboardOperationalMode.Offline -> MaterialTheme.colorScheme.error to "Offline"
+        DashboardOperationalMode.ConnectorUnavailable -> MaterialTheme.colorScheme.error to "Unavailable"
+        DashboardOperationalMode.NoServerConfiguration -> MaterialTheme.colorScheme.error to "Not configured"
+        DashboardOperationalMode.NotReady -> MaterialTheme.colorScheme.error to "Not ready"
+        DashboardOperationalMode.NoCompanySelected -> MaterialTheme.colorScheme.error to "No company"
+        DashboardOperationalMode.SessionInvalid -> MaterialTheme.colorScheme.error to "Session invalid"
+    }
+    val tallyWord = when (state.connectorConnected) {
+        true -> stringResource(R.string.dashboard_tally_connected)
+        false -> stringResource(R.string.dashboard_tally_unavailable)
+        null -> stringResource(R.string.dashboard_tally_unknown)
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().testTag("dashboard_compact_status"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f),
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 6.dp)
+                    .size(8.dp)
+                    .background(color = dotColor, shape = CircleShape),
+            )
+            Text(
+                text = "$freshnessWord · ${state.syncStatusLabel} · $tallyWord",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("dashboard_compact_status_text"),
+            )
+        }
+        TextButton(
+            onClick = { onEvent(DashboardEvent.Refresh) },
+            enabled = !state.isBusy,
+            modifier = Modifier.testTag("dashboard_compact_sync"),
+        ) {
+            Text(stringResource(R.string.dashboard_sync_now))
+        }
+    }
+}
+
+/**
+ * Vouchers and Ledgers as the primary Home entries, Stock Items deliberately absent from prime
+ * space (BUDCOM-UI-DESIGN-DECISIONS §3 — Stock Items remains reachable via Master Data below).
+ * Reuses [DashboardEvent.OpenVouchers]/[DashboardEvent.OpenLedgers]; no new destinations.
+ */
+@Composable
+private fun HomePrimaryEntries(onEvent: (DashboardEvent) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        HomePrimaryEntryRow(
+            icon = Icons.AutoMirrored.Filled.List,
+            title = stringResource(R.string.dashboard_action_vouchers),
+            subtitle = stringResource(R.string.dashboard_primary_vouchers_subtitle),
+            testTag = "dashboard_primary_vouchers",
+            onClick = { onEvent(DashboardEvent.OpenVouchers) },
+        )
+        HomePrimaryEntryRow(
+            icon = Icons.Filled.AccountBox,
+            title = stringResource(R.string.dashboard_action_ledgers),
+            subtitle = stringResource(R.string.dashboard_primary_ledgers_subtitle),
+            testTag = "dashboard_primary_ledgers",
+            onClick = { onEvent(DashboardEvent.OpenLedgers) },
+        )
+    }
+}
+
+@Composable
+private fun HomePrimaryEntryRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    testTag: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .testTag(testTag)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.small,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

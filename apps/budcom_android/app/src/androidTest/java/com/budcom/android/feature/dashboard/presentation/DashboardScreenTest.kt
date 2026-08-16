@@ -113,6 +113,34 @@ class DashboardScreenTest {
     }
 
     @Test
+    fun homeLayoutElementsAreShownAndNavigable() {
+        val events = mutableListOf<DashboardEvent>()
+        composeRule.setContent {
+            BudcomTheme {
+                DashboardScreen(
+                    state = operationalState(),
+                    onEvent = { events.add(it) },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("dashboard_search_entry").assertIsDisplayed()
+        composeRule.onNodeWithTag("dashboard_compact_status").assertIsDisplayed()
+        composeRule.onNodeWithTag("dashboard_primary_vouchers").assertIsDisplayed()
+        composeRule.onNodeWithTag("dashboard_primary_ledgers").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("dashboard_search_entry").performClick()
+        composeRule.onNodeWithTag("dashboard_primary_vouchers").performClick()
+        composeRule.onNodeWithTag("dashboard_primary_ledgers").performClick()
+        composeRule.onNodeWithTag("dashboard_compact_sync").performClick()
+        composeRule.onNodeWithTag("dashboard_topbar_sync").assertIsEnabled().performClick()
+
+        assertTrue(events.contains(DashboardEvent.OpenSearch))
+        assertTrue(events.contains(DashboardEvent.OpenVouchers))
+        assertTrue(events.contains(DashboardEvent.OpenLedgers))
+        assertTrue(events.count { it == DashboardEvent.Refresh } >= 2)
+    }
+
+    @Test
     fun refreshAndTestConnectionActionsEmitEvents() {
         val events = mutableListOf<DashboardEvent>()
         composeRule.setContent {

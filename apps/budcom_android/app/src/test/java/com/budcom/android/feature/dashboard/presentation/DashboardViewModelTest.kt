@@ -276,6 +276,7 @@ class DashboardViewModelTest {
         viewModel.onEvent(DashboardEvent.OpenCompanySelection)
         viewModel.onEvent(DashboardEvent.OpenMasterData)
         viewModel.onEvent(DashboardEvent.OpenVouchers)
+        viewModel.onEvent(DashboardEvent.OpenLedgers)
         viewModel.onEvent(DashboardEvent.OpenSearch)
         viewModel.onEvent(DashboardEvent.OpenSync)
         viewModel.onEvent(DashboardEvent.OpenDiagnostics)
@@ -287,6 +288,7 @@ class DashboardViewModelTest {
                 DashboardNavigation.CompanySelection,
                 DashboardNavigation.MasterData,
                 DashboardNavigation.Vouchers,
+                DashboardNavigation.Ledgers,
                 DashboardNavigation.Search,
                 DashboardNavigation.Sync,
                 DashboardNavigation.Diagnostics,

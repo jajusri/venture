@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.ExperimentalMaterialApi
@@ -19,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -107,6 +109,12 @@ fun VoucherBrowserScreen(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                VoucherTypeFilterStrip(
+                    availableTypes = state.availableTypeFilters,
+                    selectedType = state.selectedTypeFilter,
+                    onTypeSelected = { onEvent(VoucherBrowserEvent.TypeFilterChanged(it)) },
+                )
+
                 if (!state.isOnline) {
                     MasterDataOfflineBanner(testTag = "voucher_offline_banner")
                 }
@@ -212,29 +220,39 @@ fun VoucherBrowserScreen(
                                 modifier = Modifier.testTag("voucher_inline_error"),
                             )
                         }
-                        LazyColumn(
-                            state = listState,
-                            contentPadding = PaddingValues(bottom = 24.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .testTag("voucher_list"),
-                        ) {
-                            items(state.vouchers, key = { it.id }) { row ->
-                                VoucherRowCard(
-                                    row = row,
-                                    onClick = { onOpenVoucherDetails(row.id) },
-                                )
-                            }
-                            if (state.isLoadingMore) {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        CircularProgressIndicator()
+                        if (state.filteredVouchers.isEmpty()) {
+                            MasterDataEmptyMessage(
+                                message = stringResource(
+                                    R.string.voucher_filtered_empty,
+                                    state.selectedTypeFilter.orEmpty(),
+                                ),
+                                testTag = "voucher_filtered_empty",
+                            )
+                        } else {
+                            LazyColumn(
+                                state = listState,
+                                contentPadding = PaddingValues(bottom = 24.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("voucher_list"),
+                            ) {
+                                items(state.filteredVouchers, key = { it.id }) { row ->
+                                    VoucherRowCard(
+                                        row = row,
+                                        onClick = { onOpenVoucherDetails(row.id) },
+                                    )
+                                }
+                                if (state.isLoadingMore) {
+                                    item {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            CircularProgressIndicator()
+                                        }
                                     }
                                 }
                             }
@@ -249,6 +267,44 @@ fun VoucherBrowserScreen(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .testTag("voucher_refresh_indicator"),
+            )
+        }
+    }
+}
+
+/**
+ * Compact horizontal type filter strip directly under the Vouchers header (BUDCOM-UI-DESIGN-DECISIONS
+ * §5): All is always first and selected by default; other chips are derived from the voucher types
+ * actually present so far rather than a fixed taxonomy, so a company never sees a filter for a type
+ * it has no vouchers of. Scrolls horizontally when it doesn't fit. Selecting a chip only changes what
+ * [VoucherBrowserUiState.filteredVouchers] renders — the underlying fetched/cached collection never changes.
+ */
+@Composable
+private fun VoucherTypeFilterStrip(
+    availableTypes: List<String>,
+    selectedType: String?,
+    onTypeSelected: (String?) -> Unit,
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("voucher_type_filter_strip"),
+    ) {
+        item {
+            FilterChip(
+                selected = selectedType == null,
+                onClick = { onTypeSelected(null) },
+                label = { Text(stringResource(R.string.voucher_type_filter_all)) },
+                modifier = Modifier.testTag("voucher_type_filter_all"),
+            )
+        }
+        items(availableTypes, key = { it }) { type ->
+            FilterChip(
+                selected = selectedType == type,
+                onClick = { onTypeSelected(type) },
+                label = { Text(type) },
+                modifier = Modifier.testTag("voucher_type_filter_$type"),
             )
         }
     }

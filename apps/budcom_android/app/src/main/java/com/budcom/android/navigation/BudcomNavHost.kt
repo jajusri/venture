@@ -1,11 +1,8 @@
 package com.budcom.android.navigation
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,6 +29,7 @@ import com.budcom.android.feature.sync.presentation.SyncRoute
 import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsViewModel
+import com.budcom.android.ui.components.FullScreenLoading
 
 /**
  * Root navigation host for BUDCO Android.
@@ -52,9 +50,7 @@ fun BudcomNavHost(
     val startDestination by rootViewModel.startDestination.collectAsStateWithLifecycle()
     val resolvedStartDestination = startDestination
     if (resolvedStartDestination == null) {
-        Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
+        FullScreenLoading(modifier = modifier.fillMaxSize())
         return
     }
     NavHost(
@@ -90,6 +86,7 @@ fun BudcomNavHost(
                 onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
                 onOpenMasterData = { navController.navigate(Routes.MASTER_DATA) },
                 onOpenVouchers = { navController.navigate(Routes.vouchers()) },
+                onOpenLedgers = { navController.navigate(Routes.ledgers()) },
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenSync = { navController.navigate(Routes.SYNC) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
@@ -209,7 +206,7 @@ fun BudcomNavHost(
                 },
             ),
         ) {
-            VoucherDetailsRoute()
+            VoucherDetailsRoute(onBack = { navController.popBackStack() })
         }
     }
 }

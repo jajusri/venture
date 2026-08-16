@@ -70,6 +70,7 @@ sealed interface DashboardEvent {
     data object OpenCompanySelection : DashboardEvent
     data object OpenMasterData : DashboardEvent
     data object OpenVouchers : DashboardEvent
+    data object OpenLedgers : DashboardEvent
     data object OpenSearch : DashboardEvent
     data object OpenSync : DashboardEvent
     data object OpenDiagnostics : DashboardEvent

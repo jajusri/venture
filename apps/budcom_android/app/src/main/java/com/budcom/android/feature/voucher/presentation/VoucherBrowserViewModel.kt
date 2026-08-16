@@ -60,6 +60,7 @@ class VoucherBrowserViewModel @Inject constructor(
                     it.copy(
                         companyId = companyId,
                         historyReconciliationStatus = VoucherHistoryReconciliationStatus.NotStarted,
+                        selectedTypeFilter = null,
                     )
                 }
                 onEvent(VoucherBrowserEvent.Load)
@@ -128,6 +129,9 @@ class VoucherBrowserViewModel @Inject constructor(
             }
             VoucherBrowserEvent.ApplyDateRange -> {
                 load(page = 1, append = false, refreshing = false)
+            }
+            is VoucherBrowserEvent.TypeFilterChanged -> {
+                _uiState.update { it.copy(selectedTypeFilter = event.type) }
             }
         }
     }
