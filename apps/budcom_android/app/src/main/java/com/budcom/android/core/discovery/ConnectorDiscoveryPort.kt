@@ -11,6 +11,16 @@ data class DiscoveredConnector(
     val port: Int,
     val apiVersion: String?,
     val authRequired: Boolean,
+    /**
+     * TD-017 (real root cause): [port] is, and must remain, the plain HTTP API port — the legacy
+     * enrolment/reconnection paths ([com.budcom.android.core.connection.ConnectorConnectionResolver],
+     * [com.budcom.android.core.connection.ConnectorEnrolmentService]) dial it directly as
+     * `http://host:port`. The authenticated transport is HTTPS-only and needs this separate
+     * secure port, which the Connector only advertises when its HTTPS listener is actually
+     * running — null here means this candidate has no usable authenticated endpoint at all, not
+     * "assume the primary port".
+     */
+    val securePort: Int? = null,
 )
 
 /**

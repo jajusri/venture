@@ -81,6 +81,9 @@ private fun NsdServiceInfo.toDiscoveredConnectorOrNull(): DiscoveredConnector? {
     val name = attrs["name"]?.toString(Charsets.UTF_8) ?: serviceName ?: connectorId
     val apiVersion = attrs["apiVersion"]?.toString(Charsets.UTF_8)
     val authRequired = attrs["authRequired"]?.toString(Charsets.UTF_8)?.toBooleanStrictOrNull() ?: false
+    // TD-017 (real root cause): absent or unparseable means "no secure transport advertised" —
+    // never falls back to the primary port, which would repeat the exact bug this fixes.
+    val securePort = attrs["securePort"]?.toString(Charsets.UTF_8)?.toIntOrNull()
     return DiscoveredConnector(
         connectorId = connectorId,
         name = name,
@@ -88,5 +91,6 @@ private fun NsdServiceInfo.toDiscoveredConnectorOrNull(): DiscoveredConnector? {
         port = port,
         apiVersion = apiVersion,
         authRequired = authRequired,
+        securePort = securePort,
     )
 }

@@ -68,12 +68,18 @@ class DefaultAuthenticatedConnectorEndpointResolver @Inject constructor(
 
     override suspend fun resolveVerifiedEndpoint(expected: TrustedConnectorEndpoint): VerifiedEndpointResolution {
         val discovered = discoveryPort.discover(DISCOVERY_TIMEOUT_MS)
-        val candidates = discovered.filter { it.connectorId == expected.connectorId }
+        // TD-017 (real root cause): a candidate whose connectorId matches but which never
+        // advertised a secure port has nothing this HTTPS-only path can verify against — the
+        // previous code used the plain HTTP `port` field here instead, so every pinned-TLS
+        // handshake attempt was doomed before it started (a plain HTTP listener never completes a
+        // TLS handshake). Filtering here rather than crashing/erroring keeps a mixed discovery
+        // result (e.g. a genuinely secure-transport-disabled installation) a clean Unavailable.
+        val candidates = discovered.filter { it.connectorId == expected.connectorId && it.securePort != null }
 
         var sawIdentityMismatch = false
         var sawInvalidCertificate = false
         for (candidate in candidates) {
-            val candidateEndpoint = expected.copy(host = candidate.host, securePort = candidate.port)
+            val candidateEndpoint = expected.copy(host = candidate.host, securePort = candidate.securePort!!)
             when (verifyPinnedHandshake(candidateEndpoint)) {
                 CandidateVerification.Verified -> return VerifiedEndpointResolution.Verified(candidateEndpoint)
                 CandidateVerification.IdentityMismatch -> sawIdentityMismatch = true

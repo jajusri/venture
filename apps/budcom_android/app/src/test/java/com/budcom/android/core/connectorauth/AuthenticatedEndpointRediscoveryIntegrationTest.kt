@@ -99,9 +99,12 @@ class AuthenticatedEndpointRediscoveryIntegrationTest {
                     connectorId = CONNECTOR_ID,
                     name = "Front Desk",
                     host = serverB.hostName,
-                    port = serverB.port,
+                    // TD-017 (real root cause): a distinct dummy plain-HTTP port, deliberately
+                    // never equal to securePort below — the resolver must use securePort only.
+                    port = serverB.port + 10_000,
                     apiVersion = "1",
                     authRequired = true,
+                    securePort = serverB.port,
                 ),
             ),
         )
@@ -163,9 +166,10 @@ class AuthenticatedEndpointRediscoveryIntegrationTest {
                     connectorId = CONNECTOR_ID, // forged/reused identity claim
                     name = "Front Desk", // forged/reused friendly name
                     host = attackerServer.hostName,
-                    port = attackerServer.port,
+                    port = attackerServer.port + 10_000,
                     apiVersion = "1",
                     authRequired = true,
+                    securePort = attackerServer.port,
                 ),
             ),
         )

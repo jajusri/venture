@@ -383,7 +383,9 @@ private fun discoveredFrom(server: MockWebServer, connectorId: String): Discover
     connectorId = connectorId,
     name = "Front Desk",
     host = server.hostName,
-    port = server.port,
+    // TD-017 (real root cause): distinct dummy plain-HTTP port; the resolver must use securePort.
+    port = server.port + 10_000,
     apiVersion = "1",
     authRequired = true,
+    securePort = server.port,
 )

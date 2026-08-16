@@ -162,6 +162,41 @@ class AuthenticatedConnectorEndpointResolverTest {
         assertEquals("/health", request.path)
     }
 
+    // TD-017 (real root cause, 2026-08-16 physical retest): the mDNS advertisement's SRV port is
+    // the plain HTTP port (legacy enrolment/reconnection paths dial it directly), never the
+    // separate HTTPS secure port this resolver needs — the Connector never advertised a secure
+    // port at all until this fix, so this exact scenario (matching connectorId, real live
+    // candidate, no secure port) was silently hit on every single rediscovery attempt in
+    // production, on every network change, unconditionally. Proven live: a real device could
+    // reach a real, healthy Connector's plain HTTP port over TCP, but every TLS handshake this
+    // resolver attempted against that same port failed instantly (0 IPv4/000 HTTP), while the
+    // Connector's actual secure port answered correctly in ~13ms.
+    @Test
+    fun `TD-017 real root cause -- a matching-connectorId candidate with no advertised secure port is never attempted, not Verified`() = runTest {
+        val (server, heldCertificate) = newServer()
+        server.enqueue(MockResponse().setResponseCode(200)) // would succeed if ever (wrongly) dialed
+        val expectedWithFingerprint = expected.copy(transportFingerprint = fingerprintOf(heldCertificate))
+        val discovery = FakeConnectorDiscoveryPort(
+            listOf(
+                DiscoveredConnector(
+                    connectorId = EXPECTED_CONNECTOR_ID,
+                    name = "Some Advertised Name",
+                    host = server.hostName,
+                    port = server.port,
+                    apiVersion = "1",
+                    authRequired = true,
+                    securePort = null,
+                ),
+            ),
+        )
+        val resolver = DefaultAuthenticatedConnectorEndpointResolver(discovery, factory)
+
+        val result = resolver.resolveVerifiedEndpoint(expectedWithFingerprint)
+
+        assertEquals(VerifiedEndpointResolution.Unavailable, result)
+        assertEquals(0, server.requestCount)
+    }
+
     @Test
     fun `discovery is invoked with a bounded, non-zero timeout`() = runTest {
         val discovery = FakeConnectorDiscoveryPort(emptyList())
@@ -178,10 +213,15 @@ private fun discoveredFrom(server: MockWebServer, heldCertificate: HeldCertifica
     DiscoveredConnector(
         connectorId = connectorId,
         name = "Some Advertised Name",
-        host = server.hostName,
-        port = server.port,
+        // TD-017 (real root cause): distinct dummy plain-HTTP port, deliberately never equal to
+        // the TLS mock server's own port — the resolver must never touch this field. If it did,
+        // every test here would fail closed (the "port" is not TLS-capable), which is exactly the
+        // regression these tests exist to catch.
+        port = server.port + 10_000,
         apiVersion = "1",
         authRequired = true,
+        securePort = server.port,
+        host = server.hostName,
     )
 
 /** A [TrustedConnectorEndpoint] not tied to any real server — the "already trusted" baseline a resolver call starts from. */

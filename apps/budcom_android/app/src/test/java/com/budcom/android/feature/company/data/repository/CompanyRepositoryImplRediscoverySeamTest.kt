@@ -128,9 +128,12 @@ class CompanyRepositoryImplRediscoverySeamTest {
                     connectorId = CONNECTOR_ID,
                     name = "Front Desk",
                     host = liveServer.hostName,
-                    port = liveServer.port,
+                    // TD-017 (real root cause): distinct dummy plain-HTTP port; the resolver must
+                    // use securePort only.
+                    port = liveServer.port + 10_000,
                     apiVersion = "1",
                     authRequired = true,
+                    securePort = liveServer.port,
                 ),
             ),
         )
@@ -187,7 +190,7 @@ class CompanyRepositoryImplRediscoverySeamTest {
         vault.storePendingVerification("cred-1", "device-1", "device-bearer-token", staleEndpoint, 1_000L)
         vault.markActive("cred-1", 2_000L)
         val discovery = FakeConnectorDiscoveryPort(
-            listOf(DiscoveredConnector(CONNECTOR_ID, "Front Desk", liveServer.hostName, liveServer.port, "1", true)),
+            listOf(DiscoveredConnector(CONNECTOR_ID, "Front Desk", liveServer.hostName, liveServer.port + 10_000, "1", true, liveServer.port)),
         )
         val port = OkHttpAuthenticatedConnectorApiClient(
             DefaultAuthenticatedConnectorContextProvider(vault),
