@@ -2776,3 +2776,118 @@ device's Wi-Fi was observed to roam networks on its own mid-test last
 time, watch for or screen out auto-reconnect behavior during the retest
 so a genuine app-level result isn't confounded by an unrelated OS-level
 roam a second time.
+
+---
+
+## 42. Session 3 item R — round 5: hotspot-leg retest against continuity.18 still failed, TD-032 proven correctly deployed, remaining gap isolated to the hotspot's own multicast forwarding (2026-08-16)
+
+### 42.1 Physical retest result
+
+Desktop 0.4.15 / Connector 0.4.6 / Android continuity.18 (versionCode 19)
+installed. Same hotspot-transition sequence as round 4. **Android still
+did not recover** — "Device is offline." Live state investigated exactly
+as it stood: ADB confirmed continuity.18/versionCode 19 genuinely
+installed, the device genuinely still on the Nord 5 hotspot (not
+silently roamed back this time), Windows Private, Connector 0.4.6
+healthy with `discoveryAdvertising: true`.
+
+### 42.2 TD-032's own fix proven correctly deployed and running
+
+Rather than assume TD-032's fix was the remaining cause, its actual
+runtime behavior was proven directly, not from source or unit tests:
+
+- `adb shell dumpsys wifi`'s `WifiMulticastLockManager` section, polled
+  every 0.4s and correlated against live `ip maddr` output, showed
+  `Active lock owners: {10452=1, 1000=1}` (UID 10452 = this app) at the
+  exact moments `224.0.0.251` was joined on `wlan0` — direct proof the
+  app's own `MulticastLockController` is instantiated, wired, and
+  successfully acquiring the lock for the duration of each discovery
+  pass, exactly as designed.
+- This is a materially different, better result than round 4's retest
+  (against continuity.17, before this fix): the mDNS multicast group was
+  never once joined in that round across an equivalent polling window.
+  **TD-032's fix measurably changed device behavior for the better.**
+
+### 42.3 Yet discovery still finds nothing — decisive live trace
+
+Temporary (and, given its value, kept as a durable improvement) Timber
+logging was added across every previously-silent `NsdManager.DiscoveryListener`/
+`ResolveListener` callback and the resolver's candidate-filtering step,
+logging only counts/booleans/enum outcomes — never host/IP/fingerprint
+material, and `connectorId` only as an 8-character prefix (already
+broadcast in cleartext over mDNS, never a secret). The app was reinstalled
+in place (`adb install -r`, data/credentials verified untouched via
+datastore file mtimes) and relaunched, exactly as the pre-authorized
+last-resort diagnostic step. Live streaming logcat (not a buffer dump —
+this device's shared ring buffer was independently confirmed to be
+churning fast enough from unrelated OEM background services to evict
+this app's own recent entries within 2-4 minutes) captured, repeatedly:
+
+```
+AuthenticatedConnectorApi: transport failure classified as TIMEOUT
+NsdConnectorDiscovery: discovery started
+NsdConnectorDiscovery: discover() pass complete, resolvedCount=0
+AuthenticatedEndpointResolver: resolve start expectedConnectorId=9c98ff3c discovered=0 matchingId=0 withSecurePort=0
+NsdConnectorDiscovery: discovery stopped
+```
+
+`onServiceFound` never fired, not once, across multiple complete 5-second
+discovery windows — despite the lock correctly held and the multicast
+group correctly joined for the exact same windows.
+
+### 42.4 Differential test — ruling out generic hotspot isolation before concluding environmental
+
+Per explicit instruction not to assume hotspot isolation merely because
+Android was offline, and given Android had previously proven raw
+reachability to the Connector on this same hotspot, unicast reachability
+was re-tested in the current live state rather than assumed:
+
+```
+adb shell "time nc -w 3 10.142.207.231 8080 < /dev/null"  → connects in 0.08s
+adb shell "time nc -w 3 10.142.207.231 8443 < /dev/null"  → connects in 0.05s
+```
+
+Both ports connect instantly. **Ordinary unicast traffic between the two
+Wi-Fi clients on this hotspot works perfectly.** Combined with §42.2/42.3
+— lock held, group joined, zero services ever found — this cleanly
+isolates the remaining gap to the OnePlus Nord 5 hotspot's own handling
+of *multicast* traffic specifically between its connected Wi-Fi clients,
+not a general network block and not a BUDCOM code defect. Many phone-based
+mobile hotspot implementations are documented not to forward multicast/mDNS
+between STA clients even while forwarding unicast normally, for
+battery-saving reasons — this is a real, independently-known
+characteristic of this class of hardware, not unique to this device.
+
+### 42.5 No new BUDCOM defect this round; durable observability added
+
+No further code fix was made — per explicit instruction, this
+investigation did not make a speculative production change once the
+evidence pointed at the environment rather than the app. The one durable
+change made was keeping the diagnostic Timber logging added in §42.3: it
+has clear, demonstrated lasting value (it is what made this exact
+live diagnosis possible, where total prior silence had cost multiple
+retest rounds), logs nothing sensitive, and changes no behavior — full
+regression reconfirmed clean after adding it (one unrelated
+`VoucherRepositoryImplTest` flake, confirmed transient by re-running it
+alone; full suite otherwise 1,021/1,021 debug + 1,021/1,021 release, 0
+lint issues, clean assemble).
+
+| Field | Value |
+|---|---|
+| Android version | `versionCode 20` / `versionName 0.1.1-continuity.19` (bumped from `19`/`continuity.18`) |
+| Artifact | `BudcomAndroid-b3a4d5c-debug.apk` |
+| SHA-256 | `33f4eef37d5d32f746e81d564ac36efa992aeb74bb6e698f7a2af0e786420c0c` |
+| Desktop / Connector | Unchanged — `0.4.15` / `0.4.6` |
+| Output path | `release/controlled-pilot/android/0.1.1-continuity.19-b3a4d5c/` |
+
+### 42.6 Next required step
+
+Retest specifically against a **real Wi-Fi router**, not the phone-based
+Nord 5 hotspot, for at least the leg that depends on mDNS rediscovery —
+e.g., the original Jio Fiber network, or any other genuine router network
+available. The Nord 5 hotspot remains valid for exercising TD-029's
+Desktop-side rebind behavior (already confirmed working on it), but is
+not a reliable environment for confirming the mDNS-dependent Android
+rediscovery chain (TD-017/TD-031/TD-032 combined) specifically, given the
+proven multicast-forwarding gap in §42.4. Candidates for this retest:
+Desktop/Connector `0.4.15`/`0.4.6`, Android `continuity.19`.
