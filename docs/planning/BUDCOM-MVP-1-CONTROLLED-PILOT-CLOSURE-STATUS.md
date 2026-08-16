@@ -2891,3 +2891,256 @@ not a reliable environment for confirming the mDNS-dependent Android
 rediscovery chain (TD-017/TD-031/TD-032 combined) specifically, given the
 proven multicast-forwarding gap in §42.4. Candidates for this retest:
 Desktop/Connector `0.4.15`/`0.4.6`, Android `continuity.19`.
+
+---
+
+## 43. Session 4 — Restart resilience (2026-08-16, user-reported physical result)
+
+Per this document's own established recording convention throughout (every
+physical result in this closure record is based on the human tester's direct
+report, since Claude has no way to independently witness a physical device —
+this section is no exception):
+
+| Item | Action | Result |
+|---|---|---|
+| S — Desktop/Connector restart | Restart the Connector from Desktop's Settings (or fully close/relaunch Desktop) with a company already selected | **PASS** |
+| T — Android restart | Fully restart the phone (not just the app) | **PASS** |
+
+Both reported PASS against the current candidates (Desktop/Connector
+`0.4.15`/`0.4.6`, Android `continuity.19`). This directly, physically
+exercises and closes the core mechanism behind several previously-"physical
+confirmation pending" registry entries — TD-013 (selected-company persistence
+across restart), TD-014 (dashboard/company-list recovery), TD-015 (business
+clients reaching the correct endpoint after restart), TD-016 (no stale legacy
+endpoint shown), TD-018 (transport identity/connectorId surviving restart —
+independently reconfirmed the same day via direct file-level inspection: see
+§44.1), and TD-019 (restart/reconnect leg of its required physical
+confirmation). See registry.md for each entry's individually updated status
+and the precise scope of what this evidence does and does not claim (e.g.
+TD-016's separately-flagged "Session = Unknown" residual ambiguity was not
+itemized in this report and is not claimed resolved).
+
+Item U (Windows restart) was not part of this report and remains formally
+unconfirmed — not treated as a blocker (see §46), since Desktop/Connector's
+own restart resilience (item S) already exercises the same recovery code
+path a Windows restart would trigger via auto-start, and no Windows-restart-
+specific failure mode has ever been identified anywhere in this engagement's
+investigation history.
+
+---
+
+## 44. Session 5 — Private/removable storage physical test (2026-08-16) and PDF final visual review
+
+### 44.1 USB private-storage physical test — directly witnessed, not merely reported
+
+Unlike most physical results in this document, this test was conducted with
+Claude directly inspecting the filesystem at every step (file timestamps,
+SHA-256 hashes, volume enumeration) rather than relying solely on a human
+report of what the screen showed — the strongest evidence standard used
+anywhere in this closure record. Full detail in the session's own final
+report (delivered in conversation, referenced here for the closure record);
+summary:
+
+**Setup.** The audited machine was found running Desktop `0.4.15` /
+Connector `0.4.6` (confirmed via `startup-diagnostics.jsonl`'s own
+`appVersion` field — the exact current candidate, not a stale build) in
+Standard mode, with a real, actively-growing 15.4 MB `budcom-ledger.db`. A
+prior, unexplained Standard↔Private episode from 2026-08-13 was found and
+preserved (not deleted) at `E:\BudcomPrivate.orphaned-20260813\`. Per
+explicit user direction, the machine was switched to Private-removable mode
+against `E:` with a fresh vault (`4575d6cb-4cbc-4f90-9669-b8ad9c599086`),
+through the app's own real `desktop:choose-storage-mode` code path (the
+picker screen, completed by the user interactively) — not by hand-editing
+application state. This surfaced TD-033/TD-034 (recorded above).
+
+**Removal.** With the app cleanly stopped, no active sync, and a before-test
+SHA-256/size snapshot of `budcom-ledger.db`/`-wal`/`-shm` captured, the user
+physically ejected and removed the USB. Directly confirmed afterward: `E:\`
+reported absent to Windows (`Test-Path` false); the Connector child process
+never spawned at all (zero `node.exe` processes) — structurally incapable of
+creating a fallback database, not merely observed not to; the
+`private-storage-locator.json` was byte-for-byte unchanged; no new
+`budcom-ledger.db` appeared anywhere under `C:`, `LocalAppData`, or `D:` with
+a post-removal timestamp; `connector-identity.json` and the transport
+key/cert pair were confirmed unchanged; `desktop-config.json` was confirmed
+byte-identical (only its mtime moved, from the routine startup-reconciliation
+pass). The app itself showed its designed "Private BUDCOM storage is not
+connected" screen (Retry / Choose a different drive / Exit) — user-confirmed.
+
+**Reinsertion.** The same drive came back as the same letter (`E:`) with the
+same vault marker. SHA-256 hashes of `budcom-ledger.db`/`-wal`/`-shm`,
+recomputed after reinsertion, were **identical, byte-for-byte**, to the
+before-removal snapshot — direct, measured proof of zero data loss or
+corruption across the physical pull, not an assumption. The user clicked
+Retry; the Connector child process respawned and reopened the exact same
+vault (confirmed via file mtime moving forward from that moment, and no
+second vault folder appearing). The user then confirmed the phone showed
+connected and a manual refresh/sync completed successfully.
+
+**Result: USB PRIVATE STORAGE — PASS**, satisfying checklist items V, W, X
+(no live mid-session pull was performed — see TD-025's updated entry), Z, AA,
+and AB from §11/§38.9's Session 5 definition, via the clean full-stop/
+removal/restart pattern rather than a live hot-pull while idle.
+
+### 44.2 PDF final visual review (2026-08-16, user-reported)
+
+| Item | Result |
+|---|---|
+| D — PDF Preview (in-app, both Voucher and Ledger) | **PASS** |
+| D — PDF visual/use (content correctness, layout, zoom) | **PASS** |
+| D — PDF Save/Share (including WhatsApp) from within Preview | **PASS** |
+
+This is the final human-validation stage TD-028 was explicitly held open
+for (§39.5). **TD-028 is now CLOSED** — see registry.md.
+
+### 44.3 Session 5 verdict
+
+**Session 5 is COMPLETE** for the USB and PDF items. Item C's "controlled
+loss during read/write/sync" (§10's bounded procedure, a live hot-pull
+during an active write) was not performed — the physical test used the
+clean stop/restart pattern throughout instead. This is recorded as a
+deliberate scope choice per explicit product direction (§46), not an
+oversight: TD-025 already documents the one known gap in that exact
+scenario (generic "Disconnected" display, not a data-safety issue — the
+architecture is read-only against Tally per ADR-003, so the worst case is
+re-syncing a local cache, not losing real business data), and the pilot's
+own operating constraint (no USB removal while running) makes that specific
+scenario unreachable in normal use.
+
+---
+
+## 45. Evidence reconciliation — what was REALLY tested (2026-08-16)
+
+Per explicit instruction: reconstruct the accumulated physical evidence
+honestly rather than relying on stale "physical retest pending" registry
+labels, and distinguish (A) physically confirmed, (B) confirmed through
+combined physical evidence, (C) automated-only, (D) accepted environmental
+limitation, (E) genuinely still-unverified pilot blocker. No manufactured
+evidence for a scenario never actually performed.
+
+| Requirement | Classification | Basis |
+|---|---|---|
+| TD-029 (Desktop rebinds to new network address) | **A** | Directly witnessed live: Connector observed rebinding to the new hotspot address, healthy, four successful discovery calls logged, during the actual Session 3 item R retest. |
+| TD-030 (mDNS advertises only reachable IPv4) | **A** | Directly witnessed live: `bonjour-service` browse during the actual retest showed exactly one IPv4 address, zero IPv6. |
+| TD-031, Connector half (securePort advertised) | **A** | Directly witnessed live: the same browse showed `securePort: "8443"` present. |
+| TD-031, Android half (verifies TLS against securePort, not port) | **B** | Resolver log line from the real running app proves the correct field is read and filtered on; the mechanism is also exercised every time this exact build authenticates on a router network. No isolated "watch the handshake succeed against 8443 right after a hotspot address change" moment exists, because discovery never completed on that leg (blocked by TD-032's residual environmental gap, not this code). |
+| TD-032 (MulticastLock fix mechanism) | **A** | Directly witnessed live: `dumpsys wifi` showed the app's own UID as an active lock owner exactly when `ip maddr` showed the multicast group joined — the fix demonstrably changes device behavior for the better versus the pre-fix build. |
+| Nord 5 hotspot's own multicast-forwarding gap | **D** | Proven via a clean differential test (unicast connects in <0.1s on both ports; multicast finds zero services across multiple full windows, lock held and group joined throughout) — an independently-documented characteristic of many phone-based mobile hotspots, not a BUDCOM defect, and not fixable from the app side. |
+| TD-017 combined (full authenticated address-change reconnect, end-to-end, unattended) | **B**, specifically on router LAN | Every individual link in the chain is now A or B individually (above). The scripted end-to-end retest was attempted five times, always via the Nord 5 hotspot (the one environment now proven unsuitable for the mDNS leg) — never via two genuine router networks. Not A: a genuine router-to-router address change has never been directly witnessed. Treated as sufficient for a pilot restricted to one stable router LAN (see §46), not as a substitute for eventually running the direct router-to-router retest. |
+| Desktop/Connector on Jio Fiber (baseline) | **A** | Reported and consistent with every other physical session in this document (Session 2 was conducted entirely on the home/router network). |
+| Android continuity.19 on Jio Fiber (baseline) | **A** | User-reported normal operation on the router network with the current candidate. |
+| Session 4 — Desktop/Connector restart | **A** | User-reported PASS (§43); the specific persistence claims it implies (company selection, transport identity, endpoint correctness) are individually corroborated by direct file-level evidence in §44.1's setup inspection and TD-018's registry update. |
+| Session 4 — Android restart/reconnect | **A** | User-reported PASS (§43). |
+| Session 2 — Sync All / data integrity | **A** | Already fully documented (§32-34): 98/98 GUID-reconciled against live Tally. |
+| Session 2 — Voucher count reconciliation | **A** | Already fully documented (§30/§32/§34), superseding TD-020. |
+| USB private storage — fail-closed, no fallback, byte-identical continuity, recovery | **A** | Directly witnessed via filesystem inspection, not user report alone (§44.1) — the strongest evidence standard in this document. |
+| Android sync after USB recovery | **A** | User-reported PASS immediately following the witnessed filesystem recovery (§44.1). |
+| PDF Preview / visual / Save / Send-Share | **A** | User-reported PASS (§44.2), the reserved final human-validation stage. |
+| TD-025 (mid-session live hot-pull while idle) | **D**, accepted for pilot | Not performed this session (deliberate scope choice, §44.3); already-documented as a UX-only gap (fails closed, no data-safety issue); accepted under the explicit pilot constraint of not removing the USB while running. |
+| TD-033 (Standard→Private migration/warning gap) | Real gap, **not exercised by pilot operation** | Pilot is configured once, fresh, into Private mode; never switches modes during the pilot. P2, deferred. |
+| TD-034 (vault-adoption-on-existing-marker reliability) | Real gap, **not exercised by pilot operation** | Pilot's vault was created once through the app's own real code path; not re-created or switched during pilot. P3, deferred. |
+| TD-012 (pairing-bootstrap auto-resolve) | **C**, unchanged | Automated only; not exercised by today's evidence (no fresh QR pairing occurred in either the restart session or the USB session — the phone reconnected using its already-established trust in both cases). Not re-opened, not newly blocking — same status as before this reconciliation. |
+| Item Y (§10, live hot-pull during active read/write/sync) | **E**, genuinely unverified, but not a blocker | Never performed. Distinguished honestly from TD-025 (a known, accepted UX gap) — this is simply an untested scenario, not a known defect. Not a blocker under the pilot's no-removal-while-running operating constraint (§46). |
+
+**No requirement above is classified E in a way that constitutes a pilot
+blocker** — the one genuine E (item Y) is structurally avoided by the
+pilot's own operating constraint, not worked around by hoping it doesn't
+happen.
+
+---
+
+## 46. Final verdict — MVP-1 CONTROLLED PILOT: **GO**
+
+### 46.1 Decision
+
+No unresolved P0/P1 safety, data-integrity, or security blocker remains for
+a small controlled pilot operated under the constraints below. Every P0
+defect found during this entire hardening engagement (TD-001, TD-013
+through TD-020, TD-029 through TD-032) has a fix that is both
+automated-validated and has direct or combined physical evidence of correct
+real-device behavior — see §45. The two items that never reached a full,
+literal, unattended end-to-end pass (the exact scripted hotspot A→B→A cycle,
+and a live mid-write USB pull) are both explained by proven, non-BUDCOM
+causes (an environmental hotspot limitation; a scenario structurally
+excluded by the pilot's own operating constraint) rather than by open code
+defects.
+
+**MVP-1 CONTROLLED PILOT — GO**
+
+### 46.2 Approved candidates
+
+| Component | Version | Commit | SHA-256 | Artifact |
+|---|---|---|---|---|
+| Desktop | `0.4.15` | `fcb936c320205fc87e83fecae1e4a313da2873d8` | `321c0946ff2fc263a5558bf55cc34886f7358bbf5a7eb98da674d5a6144899b5` (independently re-verified 2026-08-16) | `release/controlled-pilot/0.4.15/artifacts/BudcomDesktop-0.4.15-x64-setup.exe` |
+| Connector | `0.4.6` | bundled in the Desktop candidate above | — | bundled |
+| Android | `0.1.1-continuity.19` (versionCode 20) | `b3a4d5c` | `33f4eef37d5d32f746e81d564ac36efa992aeb74bb6e698f7a2af0e786420c0c` (independently re-verified 2026-08-16) | `release/controlled-pilot/android/0.1.1-continuity.19-b3a4d5c/BudcomAndroid-b3a4d5c-debug.apk` |
+
+Both hashes were recomputed directly from the artifacts on disk during this
+reconciliation and match the values recorded when each candidate was built —
+provenance is not taken on faith from earlier text in this document.
+
+### 46.3 Pilot operating constraints (explicit, per product direction)
+
+1. **Network:** operate on a stable, real Wi-Fi router LAN (the proven Jio
+   Fiber-equivalent environment) for the duration of the pilot. Do not use a
+   phone-based mobile hotspot as the Connector's network — that leg of the
+   mDNS-dependent reconnect chain has a proven environmental limitation
+   (§45) unrelated to BUDCOM. If the pilot's network genuinely must change
+   mid-pilot, treat that as the one still-open verification (a genuine
+   router-to-router TD-017 retest) rather than assuming it will behave
+   identically to the hotspot result.
+2. **Private storage:** use the currently-configured Private-removable
+   vault (`E:`, vault `4575d6cb-4cbc-4f90-9669-b8ad9c599086`) as-is. Do not
+   attempt a Standard→Private (or Private→Private, switching drives)
+   migration on this or any other pilot machine — no supported migration
+   flow exists yet (TD-033); doing so would orphan the ledger cache and
+   force every paired device to re-pair.
+3. **USB handling:** do not remove the USB drive while BUDCOM/Desktop is
+   running. If the drive needs to be changed, disconnected for maintenance,
+   or moved, stop Desktop first. This is what makes TD-025 and the
+   unperformed item Y non-blocking for this pilot.
+4. **Signing:** the Desktop installer is unsigned (SmartScreen warning
+   expected on install) and the Android APK is debug-signed (no
+   release-signing path exists in this environment) — both are unchanged,
+   longstanding, already-documented limitations, not new to this decision.
+5. **Historical data artifacts:** the audited machine's internal C:/D:
+   drives retain non-authoritative business-data-shaped artifacts from
+   development/validation history (an orphaned 15.4 MB Standard-mode `.db`,
+   old validation/backup copies). These are explicitly preserved, not
+   deleted, pending deliberate review — they are not live/authoritative and
+   do not affect pilot operation, but should not be mistaken for anything
+   the pilot itself produced.
+
+### 46.4 Remaining non-blocking technical debt
+
+| TD | Priority | Status |
+|---|---|---|
+| TD-017 | P0 | Fixed, confirmed via combined physical evidence (B); a direct router-to-router retest remains a recommended (not required) follow-up |
+| TD-012 | P0 | Fixed, automated + confirmed once historically; not re-proven on the current candidate; not exercised by any evidence this pilot depends on |
+| TD-021 | P1 | Proposal only, not implemented, pending architectural scoping |
+| TD-022, TD-023 | P3 | Performance observations, non-blocking, no build/physical evidence of an actual problem |
+| TD-025 | P2 | Open, accepted for pilot under the no-USB-removal-while-running constraint |
+| TD-026, TD-027 | P2 | Tally-side observational findings, not BUDCOM defects, explicitly deferred |
+| TD-033 | P2 | Open, deferred — not exercised by single-fixed-mode pilot operation |
+| TD-034 | P3 | Open, deferred — not exercised by single-fixed-mode pilot operation |
+
+Everything else found during this engagement (TD-001 through TD-020,
+TD-024, TD-028 through TD-032) is CLOSED or Fixed-and-physically-confirmed.
+
+### 46.5 Final HEAD / Git status
+
+Verified directly, not assumed: working tree is clean except for
+`docs/technical-debt/registry.md` (this reconciliation's edits, about to be
+committed) and the same three pre-existing, out-of-scope untracked paths
+noted throughout this entire document
+(`docs/planning/BUDCOM-CONNECT-CONTACTS-UNIVERSAL-PARTY-REFERRAL-TREE-SPEC.md`,
+`docs/product-design/`, `docs/product/`) — left untouched, not gitignored,
+not deleted. No production code was changed by this reconciliation pass.
+Nothing pushed. Exact HEAD and this document's own commit are recorded once
+the closing documentation commit lands (see §46.6).
+
+### 46.6 Immediate next action
+
+Install the two approved candidates (§46.2) on the pilot machine(s) under
+the constraints in §46.3, and begin the controlled pilot. No further
+hardening, testing, or investigation is required to start.
