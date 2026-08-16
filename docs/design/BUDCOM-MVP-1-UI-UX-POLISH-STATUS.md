@@ -275,3 +275,62 @@ match production `index.html`, see §4).
 7. Sign off on, or redirect, the three explicitly-deferred product/architecture calls in §7
    (Desktop tray, connection-state consolidation, product naming) before any future pass acts on
    them.
+
+## 11. Approved visual design implementation — Android (2026-08-17)
+
+**Status:** automated implementation, validation and in-place installation complete at
+`continuity.22`; final human visual approval pending. This is distinct from the earlier hygiene
+polish recorded in §§1–10.
+
+### Approved references
+
+- `D:\BUDCOM-Design-Archive\01_APPROVED_MASTERS\AC_DATA_HOME\BUDCOM-AC-DATA-HOME-MASTER.png`
+- `D:\BUDCOM-Design-Archive\01_APPROVED_MASTERS\LEDGER_STATEMENT\BUDCOM-LEDGER-STATEMENT-MASTER.png`
+- `D:\BUDCOM-Design-Archive\01_APPROVED_MASTERS\VOUCHER_DETAIL\BUDCOM-VOUCHER-DETAIL-MASTER.png`
+- Voucher density/filter guidance: the two images under
+  `D:\BUDCOM-Design-Archive\02_APPROVED_NEXT_SCREENS\VOUCHERS_UNIFIED\`.
+
+### Screen/reference matrix
+
+| Screen/state | Classification | Implementation decision |
+|---|---|---|
+| A/c Data Home | APPROVED MASTER EXISTS — IMPLEMENT | Master composition is primary: search, compact status, Vouchers/Ledgers and quiet secondary tools. Legacy technical cards appear only when recovery is actionable. |
+| Ledger Statement / Detailed access | APPROVED MASTER EXISTS — IMPLEMENT | Balance-first hierarchy, segmented period surface and dense accounting rows. Existing Preview/Share long-press/Detailed flow preserved. |
+| Voucher Details | APPROVED MASTER EXISTS — IMPLEMENT | Flat document hierarchy: identity/party/reference/amount, item/accounting detail, narration and existing Preview/share actions. |
+| Voucher Browser / filters | APPROVED NEXT SCREEN — IMPLEMENT CONSISTENTLY | Preserve unified chronological list and working filter strip; use approved dense professional list treatment. |
+| Company selection | NO APPROVED MASTER — CONSISTENCY ONLY | Preserve structure/behavior; inherit theme. |
+| Sync | NO APPROVED MASTER — CONSISTENCY ONLY | Preserve prior feedback/copy fixes; inherit theme. |
+| Ledger Browser | NO APPROVED MASTER — CONSISTENCY ONLY | Preserve local-first browser behavior; inherit hierarchy. |
+| Stock Items | NO APPROVED MASTER — CONSISTENCY ONLY | Preserve browser; remains outside prime Home placement. |
+| PDF Preview | NO APPROVED MASTER — CONSISTENCY ONLY | Existing shared preview/Save/Share architecture preserved. |
+| Settings / Diagnostics | NO APPROVED MASTER — CONSISTENCY ONLY | Preserve structure and prior copy cleanup. |
+| Loading / offline / empty / error | NO APPROVED MASTER — CONSISTENCY ONLY | Existing truthful shared states preserved. |
+| Android shell/navigation | FUTURE FUNCTION SHOWN — DO NOT FABRICATE | Connect/Vartalap destinations do not exist in MVP-1; no dead bottom tabs added. |
+| Home Insights | FUTURE FUNCTION SHOWN — DO NOT FABRICATE | No approved MVP-1 data/computation exists; no fabricated financial figures or controls. |
+
+### Deliberate divergences
+
+The Home master’s Insights numbers/chart and Connect/Vartalap tabs are visual references to future
+scope, not authorization to fabricate data or dead navigation. Settings remains the reachable
+header utility instead of a non-existent drawer. Existing recovery, company, Stock, Sync and
+Diagnostics destinations remain reachable through compact secondary actions or contextual recovery
+surfaces. Dark mode preserves the approved geometry/hierarchy using the existing theme rather than
+forcing a light-only application.
+
+**Desktop approved visual implementation is deferred until the Android visual language is
+human-approved.** No Desktop production file is part of this pass.
+
+### Automated evidence
+
+- Product commit: `9b29abf` (`feat(android): implement approved MVP-1 visual masters`).
+- JVM tests: debug 1030/1030 and release 1030/1030 passing.
+- `lintDebug`, `lintRelease`, `assembleDebug` and `assembleDebugAndroidTest`: BUILD SUCCESSFUL.
+- APK: `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk`, 14,261,943 bytes,
+  SHA-256 `BB3E3E3143C7D3BB735DB06E04648EB6DC0DA2E2BC9C4FC96E5DD3DCAFEB4660`.
+- In-place `adb install -r` to device `10BF44124K000E3`: success; installed versionName
+  `0.1.1-continuity.22`, versionCode 23. Existing company context (`ESTIMATION`) and trusted
+  Connector state (`Tally connected`) remained observable after launch; no uninstall or data clear
+  was performed.
+- Final on-device Home and Ledger captures were inspected. The updated focused Compose UI tests
+  compiled and were packaged in the AndroidTest APK; connected instrumentation was not executed
+  against the owner's stateful phone.
