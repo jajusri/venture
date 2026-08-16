@@ -2069,3 +2069,101 @@ verification — all stages **PASS**.
 decision (repeat item R exactly, both devices, against this candidate).**
 Do not proceed to PDF/USB/restart testing or the remainder of Session 3 until
 this passes.
+
+---
+
+## 37. Autonomous hardening run — TD-030 found and fixed (2026-08-16)
+
+Continuation of item R under an explicit autonomous mandate (user away):
+physically retesting the 0.4.13 candidate confirmed TD-029's fix works
+(Desktop/Connector correctly moved to the new hotspot address), but Android
+remained offline. Investigated further using the connected Android device
+over ADB per the mandate's authorization.
+
+### 37.1 Investigation
+
+Live evidence gathered (all read-only, no Connector/Tally state touched):
+
+- `Get-NetTCPConnection -OwningProcess <connector pid>` and a local HTTP
+  probe confirmed the Connector was correctly listening and reachable at its
+  new address — the Desktop-side rebind (TD-029) was working as designed.
+- A live `bonjour-service` browse of `_budcom._tcp.local` from the Desktop
+  machine (using the Connector's own production discovery library, not a
+  simulation) showed the advertisement carried the correct IPv4 address
+  **plus 2-3 IPv6 addresses** with nothing listening on them.
+  `Get-NetTCPConnection` confirmed the HTTP/HTTPS servers are IPv4-only —
+  confirmed unconditionally in the server bind code, which always passes an
+  explicit IPv4 literal to `.listen()`.
+- Traced to `mdns-advertiser.ts`: the published options carried no address
+  restriction, so `bonjour-service` auto-enumerated every local address via
+  `os.networkInterfaces()`, IPv4 and IPv6 alike, and published a record for
+  each — independent of what the HTTP server actually bound to.
+- Android's `NsdConnectorDiscoveryService.kt` reads exactly one address per
+  resolved service (`NsdServiceInfo.host`) — a known Android platform
+  inconsistency in which address family wins when both are advertised.
+  `AuthenticatedConnectorEndpointResolver.kt` (TD-017's fix) then has no
+  fallback if that one candidate is unreachable.
+- ADB device connected (`10BF44124K000E3`); by the time device access was
+  available both Desktop and Android had already returned to the shared home
+  network (confirmed: Desktop back at `192.168.29.34`, Android's `wlan0` at
+  `192.168.29.111`, same subnet), so the exact live failure could not be
+  re-reproduced without a further physical network switch. Verified instead
+  that the same over-advertisement pattern (correct IPv4 + multiple IPv6
+  addresses) is present on the home network too — this is not
+  hotspot-specific. Read-only inspection of the app's encrypted credential
+  vault (`adb shell run-as ... secure_pairing_credential_vault.preferences_pb`,
+  mtime unchanged since 2026-08-09) confirmed no `Verified` endpoint
+  replacement had ever successfully persisted, consistent with rediscovery
+  never reaching a working candidate.
+- Direct device-side logcat proof of the exact IPv6 address Android's NSD
+  resolved during the original failure could not be captured (see above).
+  The fix does not depend on that proof: the over-advertisement defect is
+  proven with certainty on its own and unconditionally violates "never
+  advertise an address you don't listen on" regardless of which exact
+  address Android picked in this one instance.
+
+### 37.2 Fix — TD-030
+
+Recorded in full in the registry. Summary: `mdns-advertiser.ts` now sets
+`disableIPv6: true` on every publish, using `bonjour-service`'s own built-in
+switch (`service.js`: unconditionally skips AAAA record construction) rather
+than teaching Android to tolerate a false advertisement, per the governing
+rule and the user's explicit preference for fixing at the source. A narrower,
+currently-unobserved gap (bonjour-service also has no way to restrict IPv4
+publication to only the actively-selected adapter, should a machine ever have
+multiple eligible non-APIPA IPv4 interfaces) was identified and explicitly
+not addressed — not currently triggered, and closing it would require
+bypassing the library's automatic address enumeration entirely, which is a
+broader change than the proven defect justifies.
+
+Two follow-on version-drift test failures were caught by the packaging
+pipeline itself (`CONNECTOR_VERSION` in `defaults.ts` not yet bumped to match
+`package.json`; three tests asserting the literal prior version string in
+`/health` responses) and fixed in the same pass.
+
+**Automated validation:** `mdns-advertiser.test.ts` +2 tests. Full connector
+suite 1416/1416 (was 1414). Connector `tsc`/`eslint` clean. Connector version
+0.4.4 → 0.4.5.
+
+### 37.3 Combined candidate produced
+
+| Field | Value |
+|---|---|
+| Desktop version | `0.4.14` (bumped from `0.4.13`) |
+| Connector version | `0.4.5` (bumped from `0.4.4` — carries TD-030) |
+| Installer | `BudcomDesktop-0.4.14-x64-setup.exe` |
+| SHA-256 | `7c908df4323fb5b20f4d28cf723c665d3a0fddf630f81d58c33dfc9858724ff1` |
+| Size | 106,072,122 bytes |
+| Commit | `c73665877900bda3a1388f716125831ee4e23195` (three commits: TD-030 fix, `CONNECTOR_VERSION` drift fix, version-string test updates) |
+| Output path | `release/controlled-pilot/0.4.14/artifacts/` |
+| Android | Unchanged — `continuity.15`, versionCode 16 |
+
+### 37.4 Item R — recorded as PENDING HUMAN CONFIRMATION, not a blocker to further autonomous work
+
+Per the explicit autonomous-run mandate: the combined TD-029 + TD-030 fix has
+reached the point where only a physical retest remains. This is recorded as
+**PENDING HUMAN CONFIRMATION** (Desktop + Android both move to a different
+network, confirm automatic reconnect with no re-pair/QR/manual IP, confirm
+sync succeeds both directions) and folded into the final consolidated human
+validation checklist rather than stopping the autonomous run. Continuing to
+the next hardening area.
