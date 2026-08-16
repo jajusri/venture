@@ -1,11 +1,18 @@
 # BUDCOM MVP-1 UI/UX Polish — Status
 
-**Status:** AUTOMATED WORK COMPLETE — final human visual approval pending
+**Status:** AUTOMATED WORK COMPLETE — Android human visual approval complete; Desktop human
+visual approval pending
 **Scope:** Bounded MVP-1 UI/UX polish pass, post-Controlled-Pilot. Presentation-layer only — see
 `docs/design/BUDCOM-UI-DESIGN-DECISIONS.md` for the separately-governed Home/Insights/Business-Profile
 direction, which this pass does **not** implement beyond the one exception noted in §2.
 **Companion files:** `docs/design/BUDCOM-SCREEN-INVENTORY.md`,
 `docs/planning/BUDCOM-MVP-1-0-X-REFINEMENT-REGISTER.md`
+
+**Owner review update (2026-08-17):** The owner physically inspected the newly installed Android
+`0.1.1-continuity.21` (versionCode 22) UI/UX-polished candidate and visually approved the Android
+pass. This is owner physical/visual review evidence; it does not claim that every instrumented test
+was rerun and does not establish Desktop visual approval. Desktop `0.4.16` remains pending the
+visual checklist in §10.
 
 ## 1. Method
 

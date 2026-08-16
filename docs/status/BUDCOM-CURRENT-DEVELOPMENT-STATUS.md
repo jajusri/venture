@@ -1,29 +1,42 @@
 # BUDCOM Current Development Status
 
-**Status:** Canonical, single-source-of-truth checkpoint. Update at the end of every meaningful
-work unit — see the permanent rule in §6. This file must never fall out of sync with `git log`.
+**Status:** Canonical concise current-state checkpoint. The historical/audit record is
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`. Update both when a work unit changes their subject.
 
 ## 1. Current phase
 
-**MVP-1 UI/UX POLISH — AUTOMATED WORK COMPLETE**
-**FINAL HUMAN VISUAL APPROVAL PENDING**
+**MVP-1 CONTROLLED PILOT — GO / CLOSED**
+**ANDROID MVP-1 UI/UX POLISH — HUMAN VISUALLY APPROVED**
+**DESKTOP MVP-1 UI/UX POLISH — FINAL HUMAN VISUAL APPROVAL PENDING**
 
 ## 2. Branch / HEAD
 
 - Branch: `main`
-- HEAD: `63b919e5232f85cd69c65c0ea3c86fb86070dc8d`
+- Product-code baseline: `bc9cd55969b3fb2158be30700a75facafdf9471a`
+- Versions: Desktop `0.4.16`; Connector `0.4.6`; Android `0.1.1-continuity.21`
+  (versionCode 22).
+- The documentation-only ledger/checkpoint commit follows this product-code baseline; use
+  `git log -1` for the self-referential documentation tip.
 - Not pushed to `origin`.
 
-## 3. Latest UI/UX commits (newest first)
+## 3. Current evidence
 
 ```
+bc9cd55 chore: bump desktop 0.4.15->0.4.16, android continuity.20->continuity.21 for UI/UX polish candidate packaging
 63b919e docs: record MVP-1 UI/UX polish pass status, P2/DEFER punch list, and human visual-review checklist
 7db7dd9 fix(desktop): connecting-state indicator, broken Dashboard refresh, and raw status text
 eb532f7 fix(android): polish loading/error/status copy consistency across Company, Diagnostics, Settings, Sync
 b58d85c feat(android): A/c Data Home reconciled with approved Stitch reference + unified Voucher type-filter strip (UIP-002/UIP-003)
 ```
 
-Full detail for all four: `docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md`.
+Full detail for the UI/UX work: `docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md`.
+
+- Controlled Pilot: **GO / CLOSED** under the constraints in
+  `docs/planning/BUDCOM-MVP-1-CONTROLLED-PILOT-CLOSURE-STATUS.md` and the Quality Scorecard.
+- Android: the owner physically inspected the newly installed `continuity.21` UI/UX-polished
+  build on 2026-08-17 and visually approved the Android pass.
+- Desktop: functional polish is automated-clean; no evidence yet establishes human visual approval
+  of Desktop `0.4.16`.
 
 ## 4. Approved Stitch reference
 
@@ -50,14 +63,19 @@ for the archive's own governance of this file).
 
 ## 6. Permanent rule — checkpoint discipline
 
-**Every future meaningful BUDCOM Claude work unit must end with:**
+**Every future meaningful BUDCOM AI development work unit must end with:**
 
-> inspect → implement → test → commit → update this canonical checkpoint → clean-tree audit → exact NEXT TASK.
+> INSPECT → IMPLEMENT → TEST → COMMIT → UPDATE RELEVANT STATUS DOC → UPDATE CANONICAL
+> CURRENT-DEVELOPMENT CHECKPOINT → CLEAN-TREE AUDIT → RECORD EXACT NEXT TASK.
 
-No completed work may exist only in Claude chat/session memory. If a work unit ends without this
+No completed work may exist only in Claude/Codex/chat session memory. If a work unit ends without this
 file being updated to match the real `git log`/`git status`, that work unit is not finished.
 
-## 7. Test/build status (as of HEAD above)
+At the start of a new AI development session: read this checkpoint; inspect `git status` and recent
+Git history; read the relevant domain status and Development Ledger; reconstruct state from
+repository evidence; continue rather than redo completed work.
+
+## 7. Test/build status (latest recorded UI/UX regression evidence)
 
 - Android: JVM debug + release unit tests — passing. `lintDebug` — clean, no new findings.
   `assembleDebug` / `assembleDebugAndroidTest` — build clean. `connectedAndroidTest` — **not run**
@@ -80,9 +98,8 @@ instruction.
 
 ## 9. Exact NEXT TASK
 
-**Install the latest UI/UX-polished Android/Desktop candidates and perform final human visual
-approval** — against the approved Stitch reference (§4) and the checklist in
-`docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §10.
+**Install Desktop `0.4.16` and perform and record its final human visual approval** against the
+checklist in `docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §10. Android `continuity.21` has
+already been installed and visually approved by the owner.
 
-**Not started:** public-release packaging, MVP-1.1. Do not begin either until the visual approval
-above is complete and the user explicitly authorizes moving forward.
+**Not started:** public-release packaging, MVP-1.1. Do not begin either.
