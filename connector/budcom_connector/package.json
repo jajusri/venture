@@ -1,6 +1,6 @@
 {
   "name": "@budcom/connector",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "Budcom local read-only Tally connector service",
   "type": "module",
