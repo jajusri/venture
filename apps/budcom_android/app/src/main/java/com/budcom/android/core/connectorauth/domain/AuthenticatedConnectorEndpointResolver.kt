@@ -10,9 +10,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import okhttp3.HttpUrl
 import okhttp3.Request
+import timber.log.Timber
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TIMBER_TAG = "AuthenticatedEndpointResolver"
 
 /** Outcome of one [AuthenticatedConnectorEndpointResolver.resolveVerifiedEndpoint] attempt. */
 sealed class VerifiedEndpointResolution {
@@ -75,12 +78,23 @@ class DefaultAuthenticatedConnectorEndpointResolver @Inject constructor(
         // TLS handshake). Filtering here rather than crashing/erroring keeps a mixed discovery
         // result (e.g. a genuinely secure-transport-disabled installation) a clean Unavailable.
         val candidates = discovered.filter { it.connectorId == expected.connectorId && it.securePort != null }
+        // Never logs host/IP/fingerprint: counts and the connectorId prefix (already broadcast
+        // in cleartext over mDNS, never secret) are enough to diagnose without exposing topology.
+        Timber.tag(TIMBER_TAG).d(
+            "resolve start expectedConnectorId=%s discovered=%d matchingId=%d withSecurePort=%d",
+            expected.connectorId.take(8),
+            discovered.size,
+            discovered.count { it.connectorId == expected.connectorId },
+            candidates.size,
+        )
 
         var sawIdentityMismatch = false
         var sawInvalidCertificate = false
         for (candidate in candidates) {
             val candidateEndpoint = expected.copy(host = candidate.host, securePort = candidate.securePort!!)
-            when (verifyPinnedHandshake(candidateEndpoint)) {
+            val verification = verifyPinnedHandshake(candidateEndpoint)
+            Timber.tag(TIMBER_TAG).d("candidate verification=%s", verification)
+            when (verification) {
                 CandidateVerification.Verified -> return VerifiedEndpointResolution.Verified(candidateEndpoint)
                 CandidateVerification.IdentityMismatch -> sawIdentityMismatch = true
                 CandidateVerification.CertificateInvalid -> sawInvalidCertificate = true

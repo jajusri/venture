@@ -6,11 +6,13 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val SERVICE_TYPE = "_budcom._tcp."
 private const val POLL_INTERVAL_MS = 50L
+private const val TIMBER_TAG = "NsdConnectorDiscovery"
 
 /**
  * Real [android.net.nsd.NsdManager]-backed discovery of `_budcom._tcp` services.
@@ -34,28 +36,50 @@ class NsdConnectorDiscoveryService @Inject constructor(
         val found = Channel<DiscoveredConnector>(capacity = Channel.UNLIMITED)
 
         val resolveListener = object : NsdManager.ResolveListener {
-            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
+            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                Timber.tag(TIMBER_TAG).d("resolve failed errorCode=%d", errorCode)
+            }
 
             override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                serviceInfo.toDiscoveredConnectorOrNull()?.let { found.trySendBlocking(it) }
+                val connector = serviceInfo.toDiscoveredConnectorOrNull()
+                // Never logs host/IP: connectorId/securePort presence are enough to diagnose
+                // without exposing any network-topology detail.
+                Timber.tag(TIMBER_TAG).d(
+                    "resolved connectorId=%s hasSecurePort=%b",
+                    connector?.connectorId?.take(8),
+                    connector?.securePort != null,
+                )
+                connector?.let { found.trySendBlocking(it) }
             }
         }
 
         val discoveryListener = object : NsdManager.DiscoveryListener {
-            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) = Unit
-            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) = Unit
-            override fun onDiscoveryStarted(serviceType: String) = Unit
-            override fun onDiscoveryStopped(serviceType: String) = Unit
-            override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                Timber.tag(TIMBER_TAG).w("start discovery failed errorCode=%d", errorCode)
+            }
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+                Timber.tag(TIMBER_TAG).w("stop discovery failed errorCode=%d", errorCode)
+            }
+            override fun onDiscoveryStarted(serviceType: String) {
+                Timber.tag(TIMBER_TAG).d("discovery started")
+            }
+            override fun onDiscoveryStopped(serviceType: String) {
+                Timber.tag(TIMBER_TAG).d("discovery stopped")
+            }
+            override fun onServiceLost(serviceInfo: NsdServiceInfo) {
+                Timber.tag(TIMBER_TAG).d("service lost")
+            }
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                Timber.tag(TIMBER_TAG).d("service found, resolving")
                 runCatching { nsdManager.resolveService(serviceInfo, resolveListener) }
+                    .onFailure { Timber.tag(TIMBER_TAG).w(it, "resolveService threw") }
             }
         }
 
         val startedDiscovery = runCatching {
             nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        }.isSuccess
+        }.onFailure { Timber.tag(TIMBER_TAG).w(it, "discoverServices threw") }.isSuccess
         if (!startedDiscovery) {
             found.close()
             return emptyList()
@@ -76,7 +100,9 @@ class NsdConnectorDiscoveryService @Inject constructor(
 
         runCatching { nsdManager.stopServiceDiscovery(discoveryListener) }
         found.close()
-        return results.distinctBy { it.connectorId }
+        val distinct = results.distinctBy { it.connectorId }
+        Timber.tag(TIMBER_TAG).d("discover() pass complete, resolvedCount=%d", distinct.size)
+        return distinct
     }
 }
 
