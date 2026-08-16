@@ -10,11 +10,19 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToIndex
+import com.budcom.android.core.pdf.PdfPageRenderer
+import com.budcom.android.core.pdf.PdfPreviewDocument
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.ui.theme.BudcomTheme
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+
+/** None of these screen-state tests open Preview, so a renderer that never resolves a document
+ * is sufficient — it exists only to satisfy the required constructor parameter. */
+private val fakePdfPageRenderer = object : PdfPageRenderer {
+    override suspend fun open(filePath: String): PdfPreviewDocument? = null
+}
 
 class VoucherDetailsScreenTest {
     @get:Rule
@@ -27,6 +35,7 @@ class VoucherDetailsScreenTest {
                 VoucherDetailsScreen(
                     state = VoucherDetailsUiState(isInitialLoading = true),
                     onEvent = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -43,6 +52,7 @@ class VoucherDetailsScreenTest {
                         details = sampleContent(),
                     ),
                     onEvent = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -66,6 +76,7 @@ class VoucherDetailsScreenTest {
                         details = sampleContent(dateLabel = "07 Aug 2026"),
                     ),
                     onEvent = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -85,13 +96,13 @@ class VoucherDetailsScreenTest {
                         showShareOptions = true,
                     ),
                     onEvent = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
         composeRule.onNodeWithTag("share_invoice").assertExists()
-        composeRule.onNodeWithTag("share_invoice_pdf").assertExists()
+        composeRule.onNodeWithTag("preview_invoice_pdf").assertExists()
         composeRule.onNodeWithTag("share_invoice_summary").assertExists()
-        composeRule.onNodeWithTag("save_invoice_pdf").assertExists()
     }
 
     @Test
@@ -101,6 +112,7 @@ class VoucherDetailsScreenTest {
                 VoucherDetailsScreen(
                     state = VoucherDetailsUiState(isInitialLoading = false, details = sampleContent()),
                     onEvent = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -118,6 +130,7 @@ class VoucherDetailsScreenTest {
                         error = MasterDataUiError.Timeout("The request timed out."),
                     ),
                     onEvent = { if (it is VoucherDetailsEvent.Retry) retried = true },
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -136,6 +149,7 @@ class VoucherDetailsScreenTest {
                         details = sampleContent(),
                     ),
                     onEvent = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -194,6 +208,7 @@ class VoucherDetailsScreenTest {
                         details = sampleContent().copy(inventoryLines = lines),
                     ),
                     onEvent = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }

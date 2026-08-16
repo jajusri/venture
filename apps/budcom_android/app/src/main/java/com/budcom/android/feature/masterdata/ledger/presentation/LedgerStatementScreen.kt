@@ -92,7 +92,12 @@ fun LedgerStatementRoute(
             }
         }
     }
-    LedgerStatementScreen(state = state, onEvent = viewModel::onEvent, onBack = onBack)
+    LedgerStatementScreen(
+        state = state,
+        onEvent = viewModel::onEvent,
+        onBack = onBack,
+        pdfPageRenderer = viewModel.pdfPageRenderer,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -101,8 +106,21 @@ fun LedgerStatementScreen(
     state: LedgerStatementUiState,
     onEvent: (LedgerStatementEvent) -> Unit,
     onBack: () -> Unit,
+    pdfPageRenderer: com.budcom.android.core.pdf.PdfPageRenderer,
     modifier: Modifier = Modifier,
 ) {
+    state.previewPdf?.let { pdf ->
+        com.budcom.android.core.pdf.PdfPreviewScreen(
+            filePath = pdf.cacheFilePath,
+            title = pdf.suggestedFilename,
+            renderer = pdfPageRenderer,
+            onBack = { onEvent(LedgerStatementEvent.DismissPreview) },
+            onSave = { onEvent(LedgerStatementEvent.SaveFromPreview) },
+            onShare = { onEvent(LedgerStatementEvent.ShareFromPreview) },
+            isActionBusy = state.isShareBusy,
+        )
+        return
+    }
     val pullRefreshState = rememberPullRefreshState(
         refreshing = state.isRefreshing,
         onRefresh = { onEvent(LedgerStatementEvent.Refresh) },

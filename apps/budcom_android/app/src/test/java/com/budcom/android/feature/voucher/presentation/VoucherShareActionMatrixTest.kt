@@ -17,6 +17,8 @@ import com.budcom.android.feature.voucher.domain.model.VoucherQuery
 import com.budcom.android.feature.voucher.domain.model.VoucherStatus
 import com.budcom.android.feature.voucher.domain.model.VoucherSummary
 import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
+import com.budcom.android.core.pdf.PdfPageRenderer
+import com.budcom.android.core.pdf.PdfPreviewDocument
 import com.budcom.android.feature.voucher.sharing.InvoiceShareCoordinator
 import com.budcom.android.feature.voucher.sharing.InvoiceShareResult
 import com.budcom.android.feature.voucher.sharing.PreparedInvoicePdf
@@ -75,6 +77,9 @@ class VoucherShareActionMatrixTest {
         companySession = company,
         connectivityObserver = connectivity,
         invoiceShareCoordinator = shareCoordinator,
+        pdfPageRenderer = object : PdfPageRenderer {
+            override suspend fun open(filePath: String): PdfPreviewDocument? = null
+        },
     )
 
     @Test

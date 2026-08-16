@@ -2387,21 +2387,29 @@ original item R)**
   crash, any corruption detected at Z, or a competing database found at AA.
 
 **D. PDF final visual review — LAST, as you requested**
-- Voucher PDF: Generate from a voucher's detail screen. **Note: there is no
-  in-app preview step today (TD-028, deferred by your own decision) — the
-  file generates directly.** Open/view the generated PDF, confirm visual
-  correctness (party/date/voucher number/amounts/layout, "ESTIMATE" heading
-  with the review-only footer), then Save, then Share via WhatsApp.
-- Ledger Statement PDF: Generate (Summary and Detailed if time allows), view
-  for visual correctness (ledger identity/period/opening-closing balance/
-  Dr-Cr/transaction rows/pagination), then Save/Share.
-- Pass criterion: both PDFs look correct on visual inspection; Save and
-  Share both complete normally.
-- Stop condition: any visual defect, incorrect data, or a Save/Share failure.
+- Install the TD-028 Android candidate (`continuity.16`, versionCode 17,
+  §39.4) in place first — no data clear, no re-pair needed.
+- Voucher PDF: from a voucher's detail screen, tap "View invoice PDF" —
+  confirm Preview opens in-app (not an external app/chooser) and shows the
+  correct document (party/date/voucher number/amounts/layout, "ESTIMATE"
+  heading with the review-only footer, correct multipage scrolling if
+  applicable, pinch-zoom feels usable). Then tap Save from within Preview,
+  then Share from within Preview via WhatsApp.
+- Ledger Statement PDF: from Advanced Share Options, tap "Preview PDF" —
+  confirm the same in-app preview opens and shows correct content (ledger
+  identity/period/opening-closing balance/Dr-Cr/transaction rows/
+  pagination). Then Save and Share (including WhatsApp where applicable)
+  from within Preview.
+- Pass criterion: Preview opens in-app (not an external handoff) for both
+  document types, content looks visually correct, Save and Share both
+  complete normally from within Preview.
+- Stop condition: Preview fails to open, shows the wrong/stale document, any
+  visual defect or incorrect data, or a Save/Share failure.
 
 **Estimated total human time: 20-30 minutes**, assuming no STOP condition is
 hit (A: ~5-8 min including two network transitions; B: ~8-10 min, mostly
-wait time; C: ~10-12 min if a spare drive is available; D: ~5 min).
+wait time; C: ~10-12 min if a spare drive is available; D: ~5-7 min
+including the Android install).
 
 ### 38.10 Explicit statement
 
@@ -2411,3 +2419,91 @@ Every software-verifiable MVP-1 hardening task reachable without physical
 human participation has been completed, tested, and documented. What
 remains is exactly §38.9 above, plus the standing TD-028 preview question
 (§38.4) reserved for your explicit decision, not resolved autonomously.
+
+---
+
+## 39. TD-028 PDF Preview — implemented (2026-08-16, architectural decision supersedes the earlier deferral)
+
+The earlier decision to defer TD-028 to post-MVP-1 (§34.2) was explicitly
+superseded by a follow-on architectural decision: the user wants PDF review
+to be the *last* stage of the final human validation session, which
+requires Preview to actually exist first. Full detail, evidence, and the
+exact governing constraints are in TD-028's registry entry; summary below.
+
+### 39.1 What was built
+
+A shared `core/pdf/` package — `PdfPageRenderer`/`AndroidPdfPageRenderer`
+wraps the platform's own `android.graphics.pdf.PdfRenderer` (the read-side
+counterpart to the `PdfDocument` API this app already uses to *generate*
+every PDF) and `PdfPreviewScreen` is one Compose screen reused by both
+Voucher and Ledger. **No new dependency was added** — evaluated and
+preferred over a third-party PDF-viewer library per the explicit
+reuse-before-adding-dependencies instruction.
+
+- **Voucher:** the bottom sheet's separate "Share PDF"/"Save PDF" buttons
+  became one "View invoice PDF" action that opens Preview; Save and Share
+  are explicit buttons *inside* Preview, acting on the exact already-
+  prepared PDF (never a second, separately regenerated document). The
+  pre-existing direct `SharePdf`/`SavePdf` events are untouched.
+- **Ledger:** the Advanced Share Options sheet already had a "Preview PDF"
+  button, but it launched a bare `ACTION_VIEW` intent with no guarantee any
+  app could handle it — effectively non-functional on many devices. It now
+  opens the same in-app preview. The fast one-tap Share Ledger path and the
+  other Advanced Share Options destinations (WhatsApp to Party, WhatsApp —
+  choose recipient, Share via…, Save PDF) are unchanged — deliberately not
+  forced through Preview, to avoid degrading an already-shipped fast path.
+  **Flagged for your own call, not decided unilaterally:** if you want every
+  Ledger share path to require Preview first too, that's a small follow-up,
+  not something this pass assumed.
+- Save/Share/WhatsApp continue to use the exact same coordinator methods,
+  FileProvider URIs, cache-file lifecycle, and recipient-resolution logic
+  every existing path already used — nothing about those was redesigned.
+
+### 39.2 Known, accepted limitation
+
+Preview's open/loading state is plain Compose state, not
+`SavedStateHandle`-backed. A configuration change (rotation) safely
+re-renders the same file; process death while backgrounded returns the user
+to the underlying Voucher/Ledger screen rather than a re-opened preview —
+fails closed (no crash, no stale content), matches how this screen already
+treats other transient UI-only state, and is not remediated here since doing
+so is out of scope for a narrow workflow-completion fix.
+
+### 39.3 Automated validation
+
+31 new/updated focused tests (Voucher ViewModel +12, Ledger ViewModel +4,
+new instrumented `PdfPageRendererTest` +7 and `PdfPreviewScreenTest` +6,
+plus existing screen tests updated for the new button). Full suite: Android
+JVM debug and release 1,016/1,016 each (was 1,002), 0 skipped/errors;
+`lintDebug`/`lintRelease` 0 issues each; `assembleDebug`/
+`assembleDebugAndroidTest` both successful. Connector 1,416/1,416, Desktop
+696/696, contract 5/5 all reconfirmed unaffected — zero files touched
+outside `apps/budcom_android` this pass.
+
+**APK size impact:** measured the identical commit with and without this
+change via `git stash` (controlled, apples-to-apples): +29,266 bytes,
+**+0.213%** — confirms the "no new dependency" claim; the delta is purely
+the new code itself.
+
+A second-pass critical self-review (17 questions covering preview/share
+document identity, temp-file safety, permissions, FileProvider security,
+Optional/Estimate framing, accounting-data mutation, and regression risk)
+found no issues requiring a fix beyond the one limitation recorded in §39.2.
+
+### 39.4 Candidate produced
+
+| Field | Value |
+|---|---|
+| Android version | `versionCode 17` / `versionName 0.1.1-continuity.16` (bumped from `16`/`continuity.15`) |
+| Artifact | `app-debug.apk` (debug-signed — no signed-release path exists in this environment, an already-documented limitation, unchanged) |
+| SHA-256 | `0c2e724e07521724ee744114a0b6a74318d07f0edecc81f4026f5d5e742ea136` |
+| Size | 13,960,832 bytes |
+| Desktop | Unchanged — `0.4.14` (this work never touched `apps/budcom_desktop` or `connector`) |
+| Connector | Unchanged — `0.4.5` |
+
+### 39.5 Status
+
+**TD-028: Implemented — automated validation passed. Physical/visual
+confirmation pending**, reserved for the final human validation session,
+last, exactly as requested. Not marked CLOSED — only your own visual
+approval of representative generated PDFs can close it.

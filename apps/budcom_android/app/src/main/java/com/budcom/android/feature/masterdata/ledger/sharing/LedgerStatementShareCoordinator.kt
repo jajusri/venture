@@ -18,9 +18,6 @@ interface LedgerStatementShareCoordinator {
      * `+91XXXXXXXXXX`-style number — this never resolves or validates a recipient itself. The
      * user still performs the final Send inside WhatsApp; BUDCOM never sends automatically. */
     fun createWhatsAppDirectIntent(pdf: PreparedLedgerStatementPdf, e164Number: String): LedgerStatementShareResult<Intent>
-
-    /** A view-only intent for the optional Preview PDF action — never a send action. */
-    fun createPreviewIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent>
     suspend fun savePdf(pdf: PreparedLedgerStatementPdf, destination: Uri): LedgerStatementShareResult<Unit>
     fun releasePdf(pdf: PreparedLedgerStatementPdf)
 }

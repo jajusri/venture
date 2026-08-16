@@ -64,6 +64,7 @@ class LedgerStatementViewModelTest {
     private lateinit var connectivity: StatementFakeConnectivity
     private lateinit var shareCoordinator: FakeShareCoordinator
     private lateinit var sharingPreferencesStore: FakeLedgerSharingPreferencesStore
+    private lateinit var pdfPageRenderer: FakeLedgerPdfPageRenderer
 
     @Before
     fun setUp() {
@@ -75,6 +76,7 @@ class LedgerStatementViewModelTest {
         connectivity = StatementFakeConnectivity(true)
         shareCoordinator = FakeShareCoordinator()
         sharingPreferencesStore = FakeLedgerSharingPreferencesStore()
+        pdfPageRenderer = FakeLedgerPdfPageRenderer()
         // A ledger with no synced balance and no local movements is a benign default; individual
         // tests override via [ledgerDao.entity]/[movementDao] as needed.
         ledgerDao.entity = LedgerEntity(
@@ -100,6 +102,7 @@ class LedgerStatementViewModelTest {
         connectivityObserver = connectivity,
         shareCoordinator = shareCoordinator,
         sharingPreferencesStore = sharingPreferencesStore,
+        pdfPageRenderer = pdfPageRenderer,
     )
 
     @Test
@@ -322,7 +325,6 @@ class LedgerStatementViewModelTest {
         shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
             PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
         )
-        shareCoordinator.previewIntentResult = LedgerStatementShareResult.Success(Intent())
 
         vm.onEvent(LedgerStatementEvent.AdvancedPeriodChanged(LedgerPeriodSelection.ThisMonth))
         vm.onEvent(LedgerStatementEvent.AdvancedStatementModeChanged(LedgerStatementMode.Detailed))
@@ -333,6 +335,8 @@ class LedgerStatementViewModelTest {
         assertEquals(1, movementDao.inventoryQueryCalls)
         assertEquals("a one-time override must never be persisted as the new default", 0, sharingPreferencesStore.saveCalls)
         assertFalse(vm.uiState.value.showShareOptions)
+        // TD-028: Preview now opens in-app rather than launching an external intent.
+        assertEquals("x.pdf", vm.uiState.value.previewPdf?.suggestedFilename)
 
         // The next fast share must fall back to the original default, not the one-time override.
         shareCoordinator.shareIntentResult = LedgerStatementShareResult.Success(Intent())
@@ -426,18 +430,73 @@ class LedgerStatementViewModelTest {
     }
 
     @Test
-    fun `Preview PDF via the advanced options path launches a preview intent`() = runTest(dispatcher) {
+    fun `Preview PDF via the advanced options path opens the in-app preview with the exact prepared pdf`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        val prepared = PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf")
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(prepared)
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.PreviewPdf))
+            advanceUntilIdle()
+            expectNoEvents()
+        }
+        assertEquals(prepared, vm.uiState.value.previewPdf)
+    }
+
+    @Test
+    fun `Save from preview emits the SAF create-document effect using the already-prepared pdf, without re-preparing`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()
         shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
             PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
         )
-        shareCoordinator.previewIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.PreviewPdf))
+        advanceUntilIdle()
+        val prepareCallsBeforeSave = shareCoordinator.prepareCalls
         vm.shareEffects.test {
-            vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.PreviewPdf))
+            vm.onEvent(LedgerStatementEvent.SaveFromPreview)
+            advanceUntilIdle()
+            assertTrue(awaitItem() is LedgerStatementShareEffect.CreatePdfDocument)
+        }
+        assertEquals(prepareCallsBeforeSave, shareCoordinator.prepareCalls)
+        assertEquals(null, vm.uiState.value.previewPdf)
+    }
+
+    @Test
+    fun `Share from preview emits LaunchShare using the already-prepared pdf, without re-preparing`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.shareIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.PreviewPdf))
+        advanceUntilIdle()
+        val prepareCallsBeforeShare = shareCoordinator.prepareCalls
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.ShareFromPreview)
             advanceUntilIdle()
             assertTrue(awaitItem() is LedgerStatementShareEffect.LaunchShare)
         }
+        assertEquals(prepareCallsBeforeShare, shareCoordinator.prepareCalls)
+        assertEquals(null, vm.uiState.value.previewPdf)
+    }
+
+    @Test
+    fun `Dismissing preview without saving or sharing releases the held pdf`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        vm.onEvent(LedgerStatementEvent.AdvancedShare(LedgerShareDestination.PreviewPdf))
+        advanceUntilIdle()
+        assertEquals(0, shareCoordinator.releaseCalls)
+
+        vm.onEvent(LedgerStatementEvent.DismissPreview)
+
+        assertEquals(1, shareCoordinator.releaseCalls)
+        assertEquals(null, vm.uiState.value.previewPdf)
     }
 
     @Test
@@ -520,16 +579,18 @@ private class FakeShareCoordinator : LedgerStatementShareCoordinator {
     var whatsAppDirectIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
     var lastWhatsAppDirectNumber: String? = null
         private set
-    var previewIntentResult: LedgerStatementShareResult<Intent> = LedgerStatementShareResult.Failure("unused")
     var lastPreparedStatement: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement? = null
         private set
     var releaseCalls = 0
+        private set
+    var prepareCalls = 0
         private set
 
     override suspend fun preparePdf(
         statement: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement,
         companyName: String?,
     ): LedgerStatementShareResult<PreparedLedgerStatementPdf> {
+        prepareCalls++
         lastPreparedStatement = statement
         return prepareResult
     }
@@ -540,14 +601,16 @@ private class FakeShareCoordinator : LedgerStatementShareCoordinator {
         lastWhatsAppDirectNumber = e164Number
         return whatsAppDirectIntentResult
     }
-    override fun createPreviewIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> = previewIntentResult
-
     override suspend fun savePdf(pdf: PreparedLedgerStatementPdf, destination: Uri): LedgerStatementShareResult<Unit> =
         LedgerStatementShareResult.Success(Unit)
 
     override fun releasePdf(pdf: PreparedLedgerStatementPdf) {
         releaseCalls++
     }
+}
+
+private class FakeLedgerPdfPageRenderer : com.budcom.android.core.pdf.PdfPageRenderer {
+    override suspend fun open(filePath: String): com.budcom.android.core.pdf.PdfPreviewDocument? = null
 }
 
 private class FakeCompanySession(initial: String?) : CompanySessionPort {

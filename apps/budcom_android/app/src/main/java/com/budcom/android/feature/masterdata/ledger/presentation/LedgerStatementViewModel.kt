@@ -43,6 +43,10 @@ class LedgerStatementViewModel @Inject constructor(
     private val connectivityObserver: NetworkConnectivityObserver,
     private val shareCoordinator: LedgerStatementShareCoordinator,
     private val sharingPreferencesStore: LedgerSharingPreferencesStore,
+    /** TD-028: exposed for the Compose layer to render the open preview — see
+     * [com.budcom.android.feature.voucher.presentation.VoucherDetailsViewModel] for the identical
+     * pattern used on the Voucher side. */
+    val pdfPageRenderer: com.budcom.android.core.pdf.PdfPageRenderer,
 ) : ViewModel() {
 
     private val ledgerId: String = savedStateHandle.get<String>(LEDGER_ID_ARG)
@@ -141,6 +145,9 @@ class LedgerStatementViewModel @Inject constructor(
                     destination = event.destination,
                 )
             }
+            LedgerStatementEvent.DismissPreview -> dismissPreview()
+            LedgerStatementEvent.SaveFromPreview -> deliverFromPreview(save = true)
+            LedgerStatementEvent.ShareFromPreview -> deliverFromPreview(save = false)
             is LedgerStatementEvent.SaveDestinationSelected -> resolveSaveResult(event.uri)
             is LedgerStatementEvent.ShareActivityFinished -> finishShare(event)
         }
@@ -287,13 +294,19 @@ class LedgerStatementViewModel @Inject constructor(
                 launchedSaveOperations.addLast(operationId)
                 _shareEffects.emit(LedgerStatementShareEffect.CreatePdfDocument(operationId, pdf.suggestedFilename))
             }
+            // TD-028: Preview is now the in-app gateway to Save/Share, not an external ACTION_VIEW
+            // handoff — holds the already-prepared pdf in UI state instead of emitting a launch
+            // effect, mirroring the Voucher side.
+            LedgerShareDestination.PreviewPdf -> {
+                pendingSavePdf?.let(shareCoordinator::releasePdf)
+                pendingSavePdf = null
+                _uiState.update { it.copy(previewPdf = pdf) }
+            }
             LedgerShareDestination.WhatsAppSelect,
             LedgerShareDestination.AndroidShare,
-            LedgerShareDestination.PreviewPdf,
             -> {
                 val intentResult = when (destination) {
                     LedgerShareDestination.WhatsAppSelect -> shareCoordinator.createWhatsAppShareIntent(pdf)
-                    LedgerShareDestination.PreviewPdf -> shareCoordinator.createPreviewIntent(pdf)
                     else -> shareCoordinator.createPdfShareIntent(pdf)
                 }
                 when (intentResult) {
@@ -305,6 +318,41 @@ class LedgerStatementViewModel @Inject constructor(
                     is LedgerStatementShareResult.Failure -> showShareError(intentResult.message)
                 }
             }
+        }
+    }
+
+    /** Back from preview without saving/sharing: releases the held cache file — a later re-open
+     * regenerates deterministically from the same statement/period/mode, never stale content. */
+    private fun dismissPreview() {
+        _uiState.value.previewPdf?.let(shareCoordinator::releasePdf)
+        _uiState.update { it.copy(previewPdf = null) }
+    }
+
+    /** Save/Share tapped from within the open preview — acts on the exact PDF already on screen,
+     * never re-prepares. */
+    private fun deliverFromPreview(save: Boolean) {
+        val pdf = _uiState.value.previewPdf ?: return showShareError("The prepared ledger statement PDF is no longer available.")
+        if (shareJob?.isActive == true) return
+        val operationId = ++nextOperationId
+        shareJob = viewModelScope.launch {
+            _uiState.update { it.copy(isShareBusy = true, shareError = null, shareMessage = null, previewPdf = null) }
+            if (save) {
+                pendingSavePdf?.let(shareCoordinator::releasePdf)
+                pendingSavePdf = pdf
+                pendingSaveOperationId = operationId
+                launchedSaveOperations.addLast(operationId)
+                _shareEffects.emit(LedgerStatementShareEffect.CreatePdfDocument(operationId, pdf.suggestedFilename))
+            } else {
+                when (val intent = shareCoordinator.createPdfShareIntent(pdf)) {
+                    is LedgerStatementShareResult.Success -> {
+                        pendingShareOperationId = operationId
+                        launchedShareOperations.addLast(operationId)
+                        _shareEffects.emit(LedgerStatementShareEffect.LaunchShare(operationId, intent.value))
+                    }
+                    is LedgerStatementShareResult.Failure -> showShareError(intent.message)
+                }
+            }
+            _uiState.update { it.copy(isShareBusy = false) }
         }
     }
 
@@ -354,6 +402,7 @@ class LedgerStatementViewModel @Inject constructor(
         pendingSavePdf = null
         pendingSaveOperationId = null
         pendingShareOperationId = null
+        _uiState.value.previewPdf?.let(shareCoordinator::releasePdf)
         super.onCleared()
     }
 

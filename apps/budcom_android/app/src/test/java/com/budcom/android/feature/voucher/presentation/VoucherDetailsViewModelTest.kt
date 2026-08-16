@@ -25,6 +25,8 @@ import com.budcom.android.feature.voucher.domain.repository.VoucherRepository
 import com.budcom.android.feature.voucher.domain.usecase.GetCachedVoucherSummaryUseCase
 import com.budcom.android.feature.voucher.domain.usecase.GetVoucherDetailsUseCase
 import com.budcom.android.feature.voucher.domain.usecase.RefreshVoucherDetailsUseCase
+import com.budcom.android.core.pdf.PdfPageRenderer
+import com.budcom.android.core.pdf.PdfPreviewDocument
 import com.budcom.android.feature.voucher.sharing.InvoiceShareCoordinator
 import com.budcom.android.feature.voucher.sharing.InvoiceShareCacheBoundary
 import com.budcom.android.feature.voucher.sharing.InvoiceShareCachePolicy
@@ -62,6 +64,7 @@ class VoucherDetailsViewModelTest {
     private lateinit var companySession: DetailsFakeCompanySession
     private lateinit var connectivity: DetailsFakeConnectivity
     private lateinit var shareCoordinator: FakeInvoiceShareCoordinator
+    private lateinit var pdfPageRenderer: FakePdfPageRenderer
 
     @Before
     fun setUp() {
@@ -70,6 +73,7 @@ class VoucherDetailsViewModelTest {
         companySession = DetailsFakeCompanySession("estimation")
         connectivity = DetailsFakeConnectivity(true)
         shareCoordinator = FakeInvoiceShareCoordinator()
+        pdfPageRenderer = FakePdfPageRenderer()
     }
 
     @After
@@ -85,6 +89,7 @@ class VoucherDetailsViewModelTest {
         companySession = companySession,
         connectivityObserver = connectivity,
         invoiceShareCoordinator = shareCoordinator,
+        pdfPageRenderer = pdfPageRenderer,
     )
 
     @Test
@@ -548,6 +553,176 @@ class VoucherDetailsViewModelTest {
         vm.onEvent(VoucherDetailsEvent.SaveDestinationSelected(null))
         assertEquals(2, shareCoordinator.releaseCalls)
     }
+
+    // TD-028 focused coverage ------------------------------------------------------------------
+
+    @Test
+    fun `A - PreviewPdf opens the in-app preview with the prepared pdf`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(prepared("s-1"))
+
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+
+        assertEquals("s-1.pdf", vm.uiState.value.previewPdf?.suggestedFilename)
+    }
+
+    @Test
+    fun `C - Save and Share from preview act on the exact prepared pdf, never re-preparing`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        val pdf = prepared("s-1")
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(pdf)
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+        assertEquals(1, shareCoordinator.prepareCalls)
+
+        vm.onEvent(VoucherDetailsEvent.ShareFromPreview)
+        advanceUntilIdle()
+
+        // Still exactly one prepare call — Share from preview reused the already-held pdf.
+        assertEquals(1, shareCoordinator.prepareCalls)
+    }
+
+    @Test
+    fun `D - dismissing preview clears preview state but leaves the loaded voucher content untouched`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(prepared("s-1"))
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+        val detailsBefore = vm.uiState.value.details
+
+        vm.onEvent(VoucherDetailsEvent.DismissPreview)
+
+        assertEquals(null, vm.uiState.value.previewPdf)
+        assertEquals(detailsBefore, vm.uiState.value.details)
+    }
+
+    @Test
+    fun `E - Save from preview emits CreatePdfDocument for the prepared pdf's filename`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(prepared("s-1"))
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+
+        val effect = async { vm.shareEffects.first() }
+        runCurrent()
+        vm.onEvent(VoucherDetailsEvent.SaveFromPreview)
+        advanceUntilIdle()
+
+        val result = effect.await() as VoucherDetailsShareEffect.CreatePdfDocument
+        assertEquals("s-1.pdf", result.suggestedFilename)
+        assertEquals(null, vm.uiState.value.previewPdf)
+    }
+
+    @Test
+    fun `F - Share from preview emits LaunchShare built from the prepared pdf`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(prepared("s-1"))
+        shareCoordinator.pdfShareResult = InvoiceShareResult.Success(Intent())
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+
+        val effect = async { vm.shareEffects.first() }
+        runCurrent()
+        vm.onEvent(VoucherDetailsEvent.ShareFromPreview)
+        advanceUntilIdle()
+
+        assertTrue(effect.await() is VoucherDetailsShareEffect.LaunchShare)
+        assertEquals(null, vm.uiState.value.previewPdf)
+    }
+
+    @Test
+    fun `H - preview never regenerates a separate document -- it is the exact object preparePdf returned`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        val pdf = prepared("s-1")
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(pdf)
+
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+
+        // Reference/value equality to the coordinator's own return value proves this is the same
+        // generated artifact Save/Share operate on, not a second, separately rendered copy — the
+        // same guarantee that keeps the "ESTIMATE" framing (or any other rendering detail)
+        // automatically consistent between preview and the eventual saved/shared file.
+        assertEquals(pdf, vm.uiState.value.previewPdf)
+    }
+
+    @Test
+    fun `J - a failed prepare does not open a broken preview`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = InvoiceShareResult.Failure("Invoice PDF could not be generated. Please try again.")
+
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+
+        assertEquals(null, vm.uiState.value.previewPdf)
+        assertEquals("Invoice PDF could not be generated. Please try again.", vm.uiState.value.shareError)
+    }
+
+    @Test
+    fun `L - repeated Preview open does not prepare a second pdf while one is already open`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(prepared("s-1"))
+
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+
+        assertEquals(1, shareCoordinator.prepareCalls)
+    }
+
+    @Test
+    fun `L - Preview then Back then Preview regenerates deterministically and releases the first file`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(prepared("s-1"))
+
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+        vm.onEvent(VoucherDetailsEvent.DismissPreview)
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+
+        assertEquals(2, shareCoordinator.prepareCalls)
+        assertEquals(1, shareCoordinator.releaseCalls)
+        assertEquals("s-1.pdf", vm.uiState.value.previewPdf?.suggestedFilename)
+    }
+
+    @Test
+    fun `M and N - opening and dismissing preview never calls refresh or mutates repository state`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(prepared("s-1"))
+        val refreshCallsBefore = repository.refreshCalls
+
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+        vm.onEvent(VoucherDetailsEvent.DismissPreview)
+
+        assertEquals(refreshCallsBefore, repository.refreshCalls)
+    }
+
+    @Test
+    fun `viewModel teardown while preview is open releases the held preview pdf`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = InvoiceShareResult.Success(prepared("s-1"))
+        vm.onEvent(VoucherDetailsEvent.PreviewPdf)
+        advanceUntilIdle()
+
+        ViewModelStore().apply { put("voucher", vm); clear() }
+
+        assertEquals(1, shareCoordinator.releaseCalls)
+    }
 }
 
 private fun prepared(name: String, path: String = "/cache/invoice-share/$name.pdf") = PreparedInvoicePdf(
@@ -580,6 +755,25 @@ private class FakeInvoiceShareCoordinator : InvoiceShareCoordinator {
         releaseCalls++
         releasedPdfs += pdf
         onRelease(pdf)
+    }
+}
+
+private class FakePdfPageRenderer : PdfPageRenderer {
+    var openResult: PdfPreviewDocument? = FakePdfPreviewDocument()
+    var lastOpenedPath: String? = null
+    var openCalls = 0
+    override suspend fun open(filePath: String): PdfPreviewDocument? {
+        openCalls++
+        lastOpenedPath = filePath
+        return openResult
+    }
+}
+
+private class FakePdfPreviewDocument(override val pageCount: Int = 1) : PdfPreviewDocument {
+    var closeCalls = 0
+    override suspend fun renderPage(index: Int, targetWidthPx: Int): android.graphics.Bitmap? = null
+    override fun close() {
+        closeCalls++
     }
 }
 

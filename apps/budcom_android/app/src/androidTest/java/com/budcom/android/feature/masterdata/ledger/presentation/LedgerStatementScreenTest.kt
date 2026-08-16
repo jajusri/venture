@@ -9,12 +9,20 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import com.budcom.android.core.pdf.PdfPageRenderer
+import com.budcom.android.core.pdf.PdfPreviewDocument
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.ui.theme.BudcomTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+
+/** None of these screen-state tests open Preview, so a renderer that never resolves a document
+ * is sufficient — it exists only to satisfy the required constructor parameter. */
+private val fakePdfPageRenderer = object : PdfPageRenderer {
+    override suspend fun open(filePath: String): PdfPreviewDocument? = null
+}
 
 class LedgerStatementScreenTest {
     @get:Rule
@@ -28,6 +36,7 @@ class LedgerStatementScreenTest {
                     state = LedgerStatementUiState(isInitialLoading = true),
                     onEvent = {},
                     onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -46,6 +55,7 @@ class LedgerStatementScreenTest {
                     ),
                     onEvent = { if (it is LedgerStatementEvent.Retry) retried = true },
                     onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -61,6 +71,7 @@ class LedgerStatementScreenTest {
                     state = LedgerStatementUiState(isInitialLoading = false, content = sampleContent()),
                     onEvent = {},
                     onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -78,6 +89,7 @@ class LedgerStatementScreenTest {
                     state = LedgerStatementUiState(isInitialLoading = false, content = sampleContent(rows = emptyList())),
                     onEvent = {},
                     onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -96,6 +108,7 @@ class LedgerStatementScreenTest {
                     ),
                     onEvent = {},
                     onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -111,6 +124,7 @@ class LedgerStatementScreenTest {
                     state = LedgerStatementUiState(isInitialLoading = false),
                     onEvent = {},
                     onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
@@ -129,12 +143,14 @@ class LedgerStatementScreenTest {
                     ),
                     onEvent = {},
                     onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }
         composeRule.onNodeWithTag("ledger_statement_share_button").assertIsEnabled()
-        composeRule.onNodeWithTag("ledger_statement_share_pdf").assertIsDisplayed()
-        composeRule.onNodeWithTag("ledger_statement_save_pdf").assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger_statement_destination_android_share").assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger_statement_destination_save_pdf").assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger_statement_destination_preview_pdf").assertIsDisplayed()
     }
 
     @Test
@@ -151,6 +167,7 @@ class LedgerStatementScreenTest {
                     ),
                     onEvent = { if (it is LedgerStatementEvent.PeriodChanged) applied = it },
                     onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
                 )
             }
         }

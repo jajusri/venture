@@ -42,6 +42,10 @@ class VoucherDetailsViewModel @Inject constructor(
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
     private val invoiceShareCoordinator: InvoiceShareCoordinator,
+    /** TD-028: exposed for the Compose layer to render the open preview — kept here rather than a
+     * separate Hilt entry point in the Composable, matching how this screen already sources every
+     * other collaborator through its ViewModel. */
+    val pdfPageRenderer: com.budcom.android.core.pdf.PdfPageRenderer,
 ) : ViewModel() {
 
     private val voucherId: String = savedStateHandle.get<String>(VOUCHER_ID_ARG)
@@ -91,6 +95,10 @@ class VoucherDetailsViewModel @Inject constructor(
             VoucherDetailsEvent.SharePdf -> preparePdf(save = false)
             VoucherDetailsEvent.ShareSummary -> shareSummary()
             VoucherDetailsEvent.SavePdf -> preparePdf(save = true)
+            VoucherDetailsEvent.PreviewPdf -> openPreview()
+            VoucherDetailsEvent.DismissPreview -> dismissPreview()
+            VoucherDetailsEvent.SaveFromPreview -> deliverFromPreview(save = true)
+            VoucherDetailsEvent.ShareFromPreview -> deliverFromPreview(save = false)
             is VoucherDetailsEvent.SaveDestinationSelected -> resolveSaveResult(event.uri)
             is VoucherDetailsEvent.ShareActivityFinished -> finishShare(event)
         }
@@ -282,6 +290,61 @@ class VoucherDetailsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * TD-028: prepares the invoice PDF (if not already held from a previous preview open in this
+     * screen visit) and shows it in-app before any Save/Share action — "generate -> preview ->
+     * save/share", never a separately regenerated document for the eventual action.
+     */
+    private fun openPreview() {
+        if (_uiState.value.previewPdf != null) return
+        if (shareJob?.isActive == true) return
+        val details = loadedDetails ?: return showShareError("Invoice data is unavailable.")
+        if (!details.isShareableInvoice()) return showShareError("This voucher cannot be shared as an invoice.")
+        shareJob = viewModelScope.launch {
+            _uiState.update { it.copy(isShareBusy = true, showShareOptions = false, shareError = null, shareMessage = null) }
+            when (val result = invoiceShareCoordinator.preparePdf(details)) {
+                is InvoiceShareResult.Failure -> showShareError(result.message)
+                is InvoiceShareResult.Success -> _uiState.update { it.copy(previewPdf = result.value) }
+            }
+            _uiState.update { it.copy(isShareBusy = false) }
+        }
+    }
+
+    /** Back from preview without saving/sharing: releases the held cache file — a later re-open
+     * regenerates deterministically from the same [loadedDetails], never stale content. */
+    private fun dismissPreview() {
+        _uiState.value.previewPdf?.let(invoiceShareCoordinator::releasePdf)
+        _uiState.update { it.copy(previewPdf = null) }
+    }
+
+    /** Save/Share tapped from within the open preview — acts on the exact PDF already on screen,
+     * never re-prepares. */
+    private fun deliverFromPreview(save: Boolean) {
+        val pdf = _uiState.value.previewPdf ?: return showShareError("The prepared invoice PDF is no longer available.")
+        if (shareJob?.isActive == true) return
+        val operationId = ++nextOperationId
+        shareJob = viewModelScope.launch {
+            _uiState.update { it.copy(isShareBusy = true, shareError = null, shareMessage = null, previewPdf = null) }
+            if (save) {
+                pendingSavePdf?.let(invoiceShareCoordinator::releasePdf)
+                pendingSavePdf = pdf
+                pendingSaveOperationId = operationId
+                launchedSaveOperations.addLast(operationId)
+                _shareEffects.emit(VoucherDetailsShareEffect.CreatePdfDocument(operationId, pdf.suggestedFilename))
+            } else {
+                when (val intent = invoiceShareCoordinator.createPdfShareIntent(pdf)) {
+                    is InvoiceShareResult.Success -> {
+                        pendingShareOperationId = operationId
+                        launchedShareOperations.addLast(operationId)
+                        _shareEffects.emit(VoucherDetailsShareEffect.LaunchShare(operationId, intent.value))
+                    }
+                    is InvoiceShareResult.Failure -> showShareError(intent.message)
+                }
+            }
+            _uiState.update { it.copy(isShareBusy = false) }
+        }
+    }
+
     private fun shareSummary() {
         if (shareJob?.isActive == true) return
         val details = loadedDetails ?: return showShareError("Invoice data is unavailable.")
@@ -346,6 +409,7 @@ class VoucherDetailsViewModel @Inject constructor(
         pendingSavePdf = null
         pendingSaveOperationId = null
         pendingShareOperationId = null
+        _uiState.value.previewPdf?.let(invoiceShareCoordinator::releasePdf)
         super.onCleared()
     }
 

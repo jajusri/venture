@@ -44,6 +44,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.app.Activity
 import com.budcom.android.R
+import com.budcom.android.core.pdf.PdfPreviewScreen
 import com.budcom.android.feature.masterdata.presentation.MasterDataErrorBlock
 import com.budcom.android.feature.masterdata.presentation.MasterDataLoadingIndicator
 import com.budcom.android.feature.masterdata.presentation.MasterDataOfflineBanner
@@ -75,6 +76,7 @@ fun VoucherDetailsRoute(
     VoucherDetailsScreen(
         state = state,
         onEvent = viewModel::onEvent,
+        pdfPageRenderer = viewModel.pdfPageRenderer,
     )
 }
 
@@ -83,8 +85,21 @@ fun VoucherDetailsRoute(
 fun VoucherDetailsScreen(
     state: VoucherDetailsUiState,
     onEvent: (VoucherDetailsEvent) -> Unit,
+    pdfPageRenderer: com.budcom.android.core.pdf.PdfPageRenderer,
     modifier: Modifier = Modifier,
 ) {
+    state.previewPdf?.let { pdf ->
+        PdfPreviewScreen(
+            filePath = pdf.cacheFilePath,
+            title = pdf.suggestedFilename,
+            renderer = pdfPageRenderer,
+            onBack = { onEvent(VoucherDetailsEvent.DismissPreview) },
+            onSave = { onEvent(VoucherDetailsEvent.SaveFromPreview) },
+            onShare = { onEvent(VoucherDetailsEvent.ShareFromPreview) },
+            isActionBusy = state.isShareBusy,
+        )
+        return
+    }
     val pullRefreshState = rememberPullRefreshState(
         refreshing = state.isRefreshing,
         onRefresh = { onEvent(VoucherDetailsEvent.Refresh) },
@@ -427,9 +442,11 @@ private fun ShareInvoiceOptions(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("Share invoice", style = MaterialTheme.typography.titleLarge)
-            Button(onClick = { onEvent(VoucherDetailsEvent.SharePdf) }, modifier = Modifier.fillMaxWidth().testTag("share_invoice_pdf")) { Text("Share PDF") }
+            // TD-028: PDF actions now go through in-app Preview first ("generate -> preview ->
+            // save/share") rather than launching the OS chooser directly; Share summary is plain
+            // text, not a PDF, so it has no preview step and is unaffected.
+            Button(onClick = { onEvent(VoucherDetailsEvent.PreviewPdf) }, modifier = Modifier.fillMaxWidth().testTag("preview_invoice_pdf")) { Text("View invoice PDF") }
             Button(onClick = { onEvent(VoucherDetailsEvent.ShareSummary) }, modifier = Modifier.fillMaxWidth().testTag("share_invoice_summary")) { Text("Share summary") }
-            Button(onClick = { onEvent(VoucherDetailsEvent.SavePdf) }, modifier = Modifier.fillMaxWidth().testTag("save_invoice_pdf")) { Text("Save PDF") }
         }
     }
 }

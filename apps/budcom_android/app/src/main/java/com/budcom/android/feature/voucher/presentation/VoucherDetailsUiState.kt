@@ -8,6 +8,7 @@ import com.budcom.android.feature.voucher.domain.model.VoucherInventoryLine
 import com.budcom.android.feature.voucher.domain.model.VoucherLedgerLine
 import com.budcom.android.feature.voucher.domain.model.VoucherMoney
 import com.budcom.android.feature.voucher.domain.model.VoucherCacheState
+import com.budcom.android.feature.voucher.sharing.PreparedInvoicePdf
 
 data class VoucherDetailsUiState(
     val voucherId: String = "",
@@ -35,6 +36,9 @@ data class VoucherDetailsUiState(
     val shareError: String? = null,
     val cacheState: VoucherCacheState = VoucherCacheState.NoCache,
     val lastSyncedAt: Long? = null,
+    /** TD-028: set once the invoice PDF has been prepared for preview; the same generated file
+     * Save/Share act on. Null when preview is not open. */
+    val previewPdf: PreparedInvoicePdf? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isDownloadingDetails
     val hasContent: Boolean get() = details != null
@@ -84,6 +88,11 @@ sealed interface VoucherDetailsEvent {
     data object SharePdf : VoucherDetailsEvent
     data object ShareSummary : VoucherDetailsEvent
     data object SavePdf : VoucherDetailsEvent
+    /** TD-028: opens the in-app preview — the normal gateway to Save/Share for the PDF itself. */
+    data object PreviewPdf : VoucherDetailsEvent
+    data object DismissPreview : VoucherDetailsEvent
+    data object SaveFromPreview : VoucherDetailsEvent
+    data object ShareFromPreview : VoucherDetailsEvent
     data class SaveDestinationSelected(val uri: android.net.Uri?) : VoucherDetailsEvent
     data class ShareActivityFinished(val cancelled: Boolean) : VoucherDetailsEvent
 }

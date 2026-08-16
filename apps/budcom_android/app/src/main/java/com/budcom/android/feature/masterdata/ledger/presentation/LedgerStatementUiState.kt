@@ -8,6 +8,7 @@ import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementTransaction
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerSharingPreferences
 import com.budcom.android.feature.masterdata.ledger.sharing.LedgerShareDestination
+import com.budcom.android.feature.masterdata.ledger.sharing.PreparedLedgerStatementPdf
 import com.budcom.android.feature.masterdata.ledger.sharing.RecipientResolutionSource
 import com.budcom.android.feature.masterdata.ledger.sharing.resolveWhatsAppRecipient
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
@@ -43,6 +44,9 @@ data class LedgerStatementUiState(
     val isShareBusy: Boolean = false,
     val shareMessage: String? = null,
     val shareError: String? = null,
+    /** TD-028: set once the statement PDF has been prepared for preview; the same generated file
+     * Save/Share act on. Null when preview is not open. */
+    val previewPdf: PreparedLedgerStatementPdf? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing
     val hasContent: Boolean get() = content != null
@@ -93,6 +97,9 @@ sealed interface LedgerStatementEvent {
      * the new default. Also the sole path for Save PDF and Preview PDF, which are destinations
      * rather than separate top-level actions. */
     data class AdvancedShare(val destination: LedgerShareDestination) : LedgerStatementEvent
+    data object DismissPreview : LedgerStatementEvent
+    data object SaveFromPreview : LedgerStatementEvent
+    data object ShareFromPreview : LedgerStatementEvent
     data class SaveDestinationSelected(val uri: android.net.Uri?) : LedgerStatementEvent
     data class ShareActivityFinished(val cancelled: Boolean) : LedgerStatementEvent
 }

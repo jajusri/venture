@@ -97,20 +97,6 @@ class AndroidLedgerStatementShareCoordinator @Inject constructor(
         return LedgerStatementShareResult.Success(send)
     }
 
-    override fun createPreviewIntent(pdf: PreparedLedgerStatementPdf): LedgerStatementShareResult<Intent> {
-        val contentUri = Uri.parse(pdf.contentUri)
-        val view = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(contentUri, PDF_MIME)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        if (view.resolveActivity(context.packageManager) == null) {
-            releasePdf(pdf)
-            return LedgerStatementShareResult.Failure("No app is available to preview PDF files.")
-        }
-        protectSharedFile(pdf)
-        return LedgerStatementShareResult.Success(view)
-    }
-
     private fun buildSendIntent(pdf: PreparedLedgerStatementPdf): Intent {
         val contentUri = Uri.parse(pdf.contentUri)
         return Intent(Intent.ACTION_SEND).apply {
