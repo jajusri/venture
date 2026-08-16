@@ -14,6 +14,17 @@ export interface MdnsPublishOptions {
   readonly type: string;
   readonly port: number;
   readonly txt: Record<string, string>;
+  /**
+   * TD-030: the underlying publisher (bonjour-service) otherwise auto-advertises an A/AAAA
+   * record for every non-internal local address it finds via os.networkInterfaces(), regardless
+   * of what the Connector's HTTP/HTTPS servers actually bind to. The Connector always binds an
+   * explicit IPv4 literal (see route-backed-lifecycle-override.ts/active-network-resolver.ts) and
+   * never listens on IPv6 — so IPv6 records are never anything but a false, unreachable
+   * advertisement. Always true; kept as an explicit field (not a hardcoded publisher default) so
+   * the invariant is visible at the call site and covered by a test, rather than living silently
+   * inside the publisher implementation.
+   */
+  readonly disableIPv6: true;
 }
 
 /** Narrow seam over bonjour-service so tests never open a real multicast socket. */
@@ -109,6 +120,7 @@ export class MdnsAdvertiser implements ServiceLifecycle {
         apiVersion: this.deps.getApiVersion(),
         authRequired: String(this.deps.getAuthRequired()),
       },
+      disableIPv6: true,
     };
   }
 

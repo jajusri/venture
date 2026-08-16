@@ -67,6 +67,47 @@ describe('MdnsAdvertiser', () => {
     expect(Object.keys(advertisement.txt).sort()).toEqual(['apiVersion', 'authRequired', 'connectorId', 'name']);
   });
 
+  // TD-030 regression: bonjour-service otherwise auto-advertises an AAAA record for every local
+  // IPv6 address it finds, regardless of what the Connector's HTTP/HTTPS servers actually bind
+  // to (always an explicit IPv4 literal, never IPv6) — a field defect where Android's mDNS
+  // resolver picked one of these unreachable advertised IPv6 addresses instead of the correct,
+  // reachable IPv4 one, leaving a securely paired device unable to rediscover a Connector that
+  // had, in fact, correctly rebound after a real network change (see TD-029).
+  it('TD-030: always disables IPv6 record publication, since the Connector never listens on IPv6', async () => {
+    const fake = createFakePublisher();
+    const advertiser = new MdnsAdvertiser({
+      identity: createIdentity('connector-abc'),
+      getPort: () => 8080,
+      getApiVersion: () => '1.0.0',
+      getAuthRequired: () => false,
+      logger: noopLogger,
+      createPublisher: () => fake.publisher,
+    });
+
+    await advertiser.start();
+
+    expect(fake.published[0]?.disableIPv6).toBe(true);
+  });
+
+  it('TD-030: disableIPv6 remains true across a republish (rebind never re-enables IPv6)', async () => {
+    const fake = createFakePublisher();
+    let port = 8080;
+    const advertiser = new MdnsAdvertiser({
+      identity: createIdentity('connector-abc'),
+      getPort: () => port,
+      getApiVersion: () => '1.0.0',
+      getAuthRequired: () => false,
+      logger: noopLogger,
+      createPublisher: () => fake.publisher,
+    });
+
+    await advertiser.start();
+    port = 8081;
+    advertiser.republish();
+
+    expect(fake.published[1]?.disableIPv6).toBe(true);
+  });
+
   it('re-publishes with the route-backed port/host after a rebind, keeping the same connector id', async () => {
     const fake = createFakePublisher();
     let port = 8080;
