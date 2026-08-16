@@ -1323,17 +1323,21 @@ touched this round): 66 files / 677 tests.
 | Desktop | `0.4.10` → `0.4.11` | Bundles the Connector |
 | Android | `0.1.1-continuity.15` (unchanged) | No Android source touched this round |
 
-### 23.2 Desktop controlled-pilot build
+### 23.2 Desktop controlled-pilot build — RESULT: PASS
 
-Full pipeline (connector lint/build/test/architecture/audit, desktop build/lint/test/
-audit, contract tests, NSIS packaging, package-boundary, packaged-runtime-contract,
-packaged-connector-dependencies, manifest, verify-manifest, release-acceptance).
+Full pipeline (connector lint/build/test/architecture/audit — 159 files / 1412 tests —
+desktop build/lint/test/audit — 66 files / 677 tests — contract tests — 5 tests — NSIS
+packaging, package-boundary, packaged-runtime-contract, packaged-connector-dependencies,
+manifest, verify-manifest, release-acceptance) — all PASS. `sourceTreeCleanAtStart:
+true`, `dirtyTree: false` — no provenance drift.
 
 **Artifact:** `release/controlled-pilot/0.4.11/artifacts/BudcomDesktop-0.4.11-x64-setup.exe`
+**Size:** 106,069,591 bytes (~101.2 MB)
+**SHA-256:** `855c9f6d98fc610f16effeb04072b29182c0ba0c9ee625d9214a54ff1081797d`
+**Producing commit:** `ba43aeb5a2b9e25f123cfb42f855047403466ebf`
+**Bundled Connector version:** `0.4.3` · **Storage schema version:** `12` (unchanged)
+**Signing:** unsigned (accepted controlled-pilot limitation, as before)
 **Full report:** `release/controlled-pilot/0.4.11/reports/release-report.json`
-
-(Artifact identity — SHA-256, size, producing commit — filled in below once the
-pipeline completes; see §23.3.)
 
 ### 23.3 Pre-packaging git hygiene
 
@@ -1362,7 +1366,8 @@ regression-history writeup.
   sign-conflict assertion) postdates 0.4.3 by 4 days, has never been modified since
   introduction, and has no documented prior successful physical run against ESTIMATION
   (§22.2).
-- A fresh Desktop candidate exists bundling this: `0.4.11` (§23).
+- A fresh Desktop candidate exists bundling this: `0.4.11`, SHA-256
+  `855c9f6d98fc610f16effeb04072b29182c0ba0c9ee625d9214a54ff1081797d` (§23).
 
 **What has NOT changed / is NOT yet known:**
 - The exact failing branch is still unconfirmed — that is what the next retest's audit
