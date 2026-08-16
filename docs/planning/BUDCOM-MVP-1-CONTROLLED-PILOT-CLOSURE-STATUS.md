@@ -2040,3 +2040,32 @@ through the exact old-IP → transitioning → new-IP sequence). Connector
 
 **Physical retest required before Session 3 can continue past item R** — see
 §36.
+
+---
+
+## 36. TD-029 fix candidate production (2026-08-16)
+
+Committed at `5deaf60392ce8980ec0848f073d3dcb791804445` (tree clean at build
+start — three pre-existing, unrelated untracked files under `docs/planning/`
+and `docs/product*` were stashed for the build and restored immediately after,
+untouched). Full pipeline run: connector lint/build/test (1414/1414), desktop
+lint/build/test (696/696), contract tests (5/5), `npm audit --omit=dev` (0
+vulnerabilities), NSIS packaging, package-boundary and packaged-runtime-contract
+checks, packaged-connector-dependency inspection, manifest generation and
+verification — all stages **PASS**.
+
+| Field | Value |
+|---|---|
+| Desktop version | `0.4.13` (bumped from `0.4.12`) |
+| Connector version | `0.4.4` (unchanged — this fix is Desktop-only) |
+| Installer | `BudcomDesktop-0.4.13-x64-setup.exe` |
+| SHA-256 | `a4c479cf0d4954c6c5f9e175f5533cd5c6589644a677f6bac4a46174156dcb0c` |
+| Size | 106,071,734 bytes |
+| Commit | `5deaf60392ce8980ec0848f073d3dcb791804445` |
+| Output path | `release/controlled-pilot/0.4.13/artifacts/` |
+| Android | Unchanged — `continuity.15`, versionCode 16, unaffected by this fix |
+
+**Next required step: the physical retest specified in the architectural
+decision (repeat item R exactly, both devices, against this candidate).**
+Do not proceed to PDF/USB/restart testing or the remainder of Session 3 until
+this passes.
