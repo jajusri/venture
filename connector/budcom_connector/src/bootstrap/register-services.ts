@@ -236,6 +236,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         getPort: () => config.port,
         getApiVersion: () => config.schemaVersion,
         getAuthRequired: () => config.networkExposure === 'lan' && config.requireDeviceAuthForLan,
+        getSecureTransportPort: () => (config.secureTransportEnabled ? config.secureTransportPort : null),
         logger: logger.child({ service: 'MdnsAdvertiser' }),
         createPublisher: createBonjourMdnsPublisherFactory(),
       }),

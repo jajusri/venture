@@ -40,6 +40,19 @@ export interface MdnsAdvertiserDeps {
   readonly getPort: () => number;
   readonly getApiVersion: () => string;
   readonly getAuthRequired: () => boolean;
+  /**
+   * TD-017 (real root cause): the SRV `port` this advertisement carries is, and must remain, the
+   * plain HTTP API port — Android's legacy/unauthenticated connector-enrolment and reconnection
+   * paths (`ConnectorConnectionResolver`, `ConnectorEnrolmentService`) dial it directly as
+   * `http://host:port`. The authenticated transport's rediscovery (`AuthenticatedConnectorEndpointResolver`)
+   * is HTTPS-only and needs the *separate* secure port — which was never advertised at all before
+   * this fix, so every rediscovery attempt tried a TLS handshake against the plain HTTP port and
+   * failed every single time. Returns null (and the TXT field is omitted entirely) when secure
+   * transport isn't actually running, so a candidate is never advertised as authenticated-capable
+   * when nothing is listening there — same "never advertise what you don't listen on" invariant
+   * as `disableIPv6` above.
+   */
+  readonly getSecureTransportPort: () => number | null;
   readonly logger: Logger;
   readonly createPublisher: MdnsPublisherFactory;
 }
@@ -110,16 +123,21 @@ export class MdnsAdvertiser implements ServiceLifecycle {
 
   private buildOptions(): MdnsPublishOptions {
     const identity = this.deps.identity.getOrCreateIdentity();
+    const securePort = this.deps.getSecureTransportPort();
+    const txt: Record<string, string> = {
+      connectorId: identity.connectorId,
+      name: identity.connectorName,
+      apiVersion: this.deps.getApiVersion(),
+      authRequired: String(this.deps.getAuthRequired()),
+    };
+    if (securePort !== null) {
+      txt.securePort = String(securePort);
+    }
     return {
       name: identity.connectorName,
       type: BUDCOM_MDNS_SERVICE_TYPE,
       port: this.deps.getPort(),
-      txt: {
-        connectorId: identity.connectorId,
-        name: identity.connectorName,
-        apiVersion: this.deps.getApiVersion(),
-        authRequired: String(this.deps.getAuthRequired()),
-      },
+      txt,
       disableIPv6: true,
     };
   }

@@ -50,6 +50,7 @@ describe('MdnsAdvertiser', () => {
       getPort: () => 8080,
       getApiVersion: () => '1.0.0',
       getAuthRequired: () => false,
+      getSecureTransportPort: () => 8443,
       logger: noopLogger,
       createPublisher: () => fake.publisher,
     });
@@ -63,8 +64,73 @@ describe('MdnsAdvertiser', () => {
     expect(advertisement.txt.connectorId).toBe('connector-abc');
     expect(advertisement.txt.apiVersion).toBe('1.0.0');
     expect(advertisement.txt.authRequired).toBe('false');
+    expect(advertisement.txt.securePort).toBe('8443');
     // Only the allow-listed keys — never company/voucher/customer/token data.
-    expect(Object.keys(advertisement.txt).sort()).toEqual(['apiVersion', 'authRequired', 'connectorId', 'name']);
+    expect(Object.keys(advertisement.txt).sort()).toEqual(['apiVersion', 'authRequired', 'connectorId', 'name', 'securePort']);
+  });
+
+  // TD-017 (real root cause): the SRV port this advertisement carries has always been, and must
+  // remain, the plain HTTP port (Android's legacy enrolment/reconnection paths dial it directly).
+  // The authenticated-transport rediscovery path is HTTPS-only and was never told the secure
+  // port at all before this fix — every rediscovery attempt tried a TLS handshake against the
+  // plain HTTP port and failed unconditionally, for every candidate, on every network change.
+  it('TD-017: advertises the secure transport port as a distinct TXT field, separate from the primary SRV port', async () => {
+    const fake = createFakePublisher();
+    const advertiser = new MdnsAdvertiser({
+      identity: createIdentity('connector-abc'),
+      getPort: () => 8080,
+      getApiVersion: () => '1.0.0',
+      getAuthRequired: () => false,
+      getSecureTransportPort: () => 8443,
+      logger: noopLogger,
+      createPublisher: () => fake.publisher,
+    });
+
+    await advertiser.start();
+
+    const [advertisement] = fake.published;
+    expect(advertisement.port).toBe(8080);
+    expect(advertisement.txt.securePort).toBe('8443');
+  });
+
+  // Mirrors the disableIPv6/TD-030 invariant: never advertise a port nothing is listening on.
+  it('TD-017: omits the securePort TXT field entirely when secure transport is not running', async () => {
+    const fake = createFakePublisher();
+    const advertiser = new MdnsAdvertiser({
+      identity: createIdentity('connector-abc'),
+      getPort: () => 8080,
+      getApiVersion: () => '1.0.0',
+      getAuthRequired: () => false,
+      getSecureTransportPort: () => null,
+      logger: noopLogger,
+      createPublisher: () => fake.publisher,
+    });
+
+    await advertiser.start();
+
+    const [advertisement] = fake.published;
+    expect('securePort' in advertisement.txt).toBe(false);
+  });
+
+  it('TD-017: securePort tracks a route-driven change across a republish', async () => {
+    const fake = createFakePublisher();
+    let securePort: number | null = 8443;
+    const advertiser = new MdnsAdvertiser({
+      identity: createIdentity('connector-abc'),
+      getPort: () => 8080,
+      getApiVersion: () => '1.0.0',
+      getAuthRequired: () => false,
+      getSecureTransportPort: () => securePort,
+      logger: noopLogger,
+      createPublisher: () => fake.publisher,
+    });
+
+    await advertiser.start();
+    securePort = null;
+    advertiser.republish();
+
+    expect(fake.published[0]?.txt.securePort).toBe('8443');
+    expect('securePort' in (fake.published[1]?.txt ?? {})).toBe(false);
   });
 
   // TD-030 regression: bonjour-service otherwise auto-advertises an AAAA record for every local
@@ -80,6 +146,7 @@ describe('MdnsAdvertiser', () => {
       getPort: () => 8080,
       getApiVersion: () => '1.0.0',
       getAuthRequired: () => false,
+      getSecureTransportPort: () => 8443,
       logger: noopLogger,
       createPublisher: () => fake.publisher,
     });
@@ -97,6 +164,7 @@ describe('MdnsAdvertiser', () => {
       getPort: () => port,
       getApiVersion: () => '1.0.0',
       getAuthRequired: () => false,
+      getSecureTransportPort: () => 8443,
       logger: noopLogger,
       createPublisher: () => fake.publisher,
     });
@@ -116,6 +184,7 @@ describe('MdnsAdvertiser', () => {
       getPort: () => port,
       getApiVersion: () => '1.0.0',
       getAuthRequired: () => false,
+      getSecureTransportPort: () => 8443,
       logger: noopLogger,
       createPublisher: () => fake.publisher,
     });
@@ -137,6 +206,7 @@ describe('MdnsAdvertiser', () => {
       getPort: () => 8080,
       getApiVersion: () => '1.0.0',
       getAuthRequired: () => false,
+      getSecureTransportPort: () => 8443,
       logger: noopLogger,
       createPublisher: () => fake.publisher,
     });
@@ -158,6 +228,7 @@ describe('MdnsAdvertiser', () => {
       getPort: () => 8080,
       getApiVersion: () => '1.0.0',
       getAuthRequired: () => true,
+      getSecureTransportPort: () => 8443,
       logger: noopLogger,
       createPublisher: () => fake.publisher,
     });
@@ -174,6 +245,7 @@ describe('MdnsAdvertiser', () => {
       getPort: () => 8080,
       getApiVersion: () => '1.0.0',
       getAuthRequired: () => false,
+      getSecureTransportPort: () => 8443,
       logger: noopLogger,
       createPublisher: () => fake.publisher,
     });
@@ -191,6 +263,7 @@ describe('MdnsAdvertiser', () => {
       getPort: () => 8080,
       getApiVersion: () => '1.0.0',
       getAuthRequired: () => false,
+      getSecureTransportPort: () => 8443,
       logger: noopLogger,
       createPublisher,
     });
