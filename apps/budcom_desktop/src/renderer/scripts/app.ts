@@ -21,6 +21,7 @@ import type { ConnectorLifecycleStatus } from '../../application/connector-lifec
 import type { MobileAccessStatus } from '../../application/mobile-access-status-service.js';
 import type { RemovableVolumeInfo } from '../../application/private-storage/removable-volume-enumerator.js';
 import type { ChooseStorageModeResult, StorageGateState } from '../../application/private-storage/private-storage-types.js';
+import { mapDiscoveryUserMessage } from '../../application/connector-error.js';
 import { renderStorageGate } from './storage-gate.js';
 
 export interface DesktopBridge {
@@ -243,6 +244,36 @@ export function getDisplayConnectionState(): DisplayConnectionState {
   return display;
 }
 
+function formatConnectionTone(tone: DisplayConnectionState['tone']): string {
+  switch (tone) {
+    case 'connected':
+      return 'Connected';
+    case 'connecting':
+      return 'Connecting';
+    case 'disconnected':
+      return 'Disconnected';
+    default:
+      return tone;
+  }
+}
+
+function formatSessionStatus(status: string): string {
+  switch (status) {
+    case 'NO_COMPANY_SELECTED':
+      return 'No company selected';
+    case 'ACTIVE':
+      return 'Active';
+    case 'INVALID':
+      return 'Invalid';
+    case 'DISCONNECTED':
+      return 'Disconnected';
+    case 'ERROR':
+      return 'Error';
+    default:
+      return status;
+  }
+}
+
 function renderConnectionDisplay(): void {
   const state = latestDashboardState;
   const display = getDisplayConnectionState();
@@ -251,7 +282,7 @@ function renderConnectionDisplay(): void {
   setText('header-connection-label', display.label);
   setText('dashboard-connection', display.label);
   setText('connection-detail-label', display.label);
-  setText('connection-detail-indicator', display.tone);
+  setText('connection-detail-indicator', formatConnectionTone(display.tone));
   setText('diag-connector-status', display.label);
   setText('diag-overall', display.overall);
   const headerIndicator = document.getElementById('connection-indicator');
@@ -310,9 +341,6 @@ export function renderDashboard(
 
   setText('dashboard-health', `Health: ${state.healthStatus}`);
   setText('dashboard-company-name', companyName);
-  setText('dashboard-company-id', state.companyId);
-  setText('dashboard-selection-time', state.selectionTime);
-  setText('dashboard-session-status', state.sessionStatus);
   setText('dashboard-erp-name', state.erpName);
   if (options.includeRefreshTimestamp ?? true) {
     setText('dashboard-last-refresh', state.lastRefresh);
@@ -322,9 +350,9 @@ export function renderDashboard(
   setText('dashboard-version', state.connectorVersion);
   setText('dashboard-desktop-version', state.desktopVersion);
 
-  setText('connection-detail-reachable', String(state.connectorReachable));
+  setText('connection-detail-reachable', state.connectorReachable ? 'Yes' : 'No');
   setText('connection-detail-health', state.healthStatus);
-  setText('connection-detail-session', state.sessionStatus);
+  setText('connection-detail-session', formatSessionStatus(state.sessionStatus));
 
   renderConnectionDisplay();
   updateCompanyRequiredActions();
@@ -723,12 +751,18 @@ export async function loadCompanies(): Promise<void> {
     if (generation !== companyLoadGeneration) {
       return;
     }
+    // TD-014 continuation: this call already fetches a fresh DashboardState to resolve the
+    // selected company id below — render it too, so the Connection/Sync/Version summary the
+    // user is looking at actually updates on a manual Refresh click instead of only the company
+    // list. Quiet (no refresh-timestamp bump, no status banner) since this isn't the user-facing
+    // "Refreshing…" flow that refreshUi({ showLoading: true }) drives.
+    renderDashboard(dashboard, { includeRefreshTimestamp: false, showStatusFeedback: false });
     renderCompanyList(
       companies.items,
       dashboard.companyId === '—' ? '' : dashboard.companyId,
       companies.items.length > 0
         ? `${companies.items.length} companies available`
-        : `Discovery status: ${companies.status}`,
+        : mapDiscoveryUserMessage(companies.status, companies.reason),
     );
     lastCompanyLoadFailed = false;
   } catch {

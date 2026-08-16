@@ -55,9 +55,6 @@ describe('renderer dashboard', () => {
       <div id="dashboard-connection"></div>
       <div id="dashboard-health"></div>
       <div id="dashboard-company-name"></div>
-      <div id="dashboard-company-id"></div>
-      <div id="dashboard-selection-time"></div>
-      <div id="dashboard-session-status"></div>
       <div id="dashboard-erp-name"></div>
       <div id="dashboard-last-refresh"></div>
       <div id="dashboard-sync"></div>
@@ -84,7 +81,8 @@ describe('renderer dashboard', () => {
     renderDashboard(sampleState);
     expect(document.getElementById('dashboard-company-name')?.textContent).toBe('ESTIMATION');
     expect(document.getElementById('dashboard-connection')?.textContent).toBe('Connected');
-    expect(document.getElementById('dashboard-session-status')?.textContent).toBe('ACTIVE');
+    // Humanized, not the raw SessionDisplayStatus enum ('ACTIVE') — see formatSessionStatus.
+    expect(document.getElementById('connection-detail-session')?.textContent).toBe('Active');
     expect(document.getElementById('connection-indicator')?.className).toContain('indicator-connected');
   });
 

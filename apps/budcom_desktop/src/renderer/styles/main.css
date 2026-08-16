@@ -66,6 +66,7 @@ body {
 }
 
 .indicator-connected { background: var(--green); }
+.indicator-connecting,
 .indicator-waiting { background: var(--yellow); }
 .indicator-starting { background: var(--yellow); }
 .indicator-disconnected { background: var(--red); }
