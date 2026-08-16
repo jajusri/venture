@@ -870,7 +870,7 @@ again via `git status --short`.
 
 ---
 
-## 16. Final verdict (superseded by §19 — see below)
+## 16. Final verdict (superseded by §20 — see below)
 
 **NOT READY** — but the one confirmed PILOT BLOCKER found by physical testing (§13) now
 has an implemented, tested, packaged fix awaiting physical confirmation.
@@ -1089,7 +1089,43 @@ source was touched this round, matching the minimum-necessary-candidate instruct
 
 ---
 
-## 19. Final verdict (current, 2026-08-16, fourth pass)
+## 19. Diagnostic-candidate production (2026-08-16, fourth pass)
+
+### 19.1 Version identity
+
+| Component | Version | Producing commit | Why bumped |
+|---|---|---|---|
+| Connector | `0.4.1` → `0.4.2` | `fe1ff8d` (tree state at pipeline start) | Real behavior change (file-based failure auditor, typed reconciliation errors, XmlParseError detail preservation) |
+| Desktop | `0.4.9` → `0.4.10` | `fe1ff8d` | Bundles the Connector — the 0.4.9 candidate no longer reflects current code |
+| Android | `0.1.1-continuity.15` (unchanged) | `8808e76` | No Android source changed this round; no rebuild required or produced |
+
+### 19.2 Desktop controlled-pilot build — RESULT: PASS
+
+Full pipeline (connector lint/build/test/architecture/audit — 158 files / 1383 tests —
+desktop build/lint/test/audit — 66 files / 677 tests — contract tests — 5 tests — NSIS
+packaging, package-boundary, packaged-runtime-contract, packaged-connector-dependencies,
+manifest, verify-manifest, release-acceptance) — all PASS. `sourceTreeCleanAtStart:
+true`, `generatedChangesAfterBuild: []` — no provenance drift.
+
+**Artifact:** `release/controlled-pilot/0.4.10/artifacts/BudcomDesktop-0.4.10-x64-setup.exe`
+**Size:** 106,068,131 bytes (~101.2 MB)
+**SHA-256:** `c483e8e7f2975e94b3b4870b20b8f36fd3354a2385ab2398df16d1e0132a6a7a`
+**Producing commit:** `fe1ff8d900809a9592abe2611e5cd648db1be023` (`sourceTreeCleanAtStart: true`, `dirtyTree: false`)
+**Bundled Connector version:** `0.4.2` · **Storage schema version:** `12` (unchanged)
+**Signing:** unsigned (accepted controlled-pilot limitation, as before)
+**Full report:** `release/controlled-pilot/0.4.10/reports/release-report.json`
+
+### 19.3 Pre-packaging git hygiene
+
+Same disposition as §9.2/§15.4: the same pre-existing untracked post-MVP-1 paths
+(`docs/planning/BUDCOM-CONNECT-CONTACTS-UNIVERSAL-PARTY-REFERRAL-TREE-SPEC.md`,
+`docs/product-design/`, `docs/product/`) were temporarily set aside with `git stash
+push -u` for the packaging run only and restored immediately after with `git stash
+pop` — confirmed present, untracked, unmodified again via `git status --short`.
+
+---
+
+## 20. Final verdict (current, 2026-08-16, fourth pass)
 
 **NOT READY.** TD-001's root cause remains **unconfirmed** — the sanitizer fix from the
 third pass did not resolve the real physical failure. This pass does not claim a fix;
@@ -1104,9 +1140,15 @@ it claims only that the next physical retest will, for the first time, be able t
   first diagnostic round unretrievable (§18.1, §17.1).
 - A second, independently-motivated hypothesis (voucher deletion between two-phase
   requests) was investigated and made distinguishably diagnosable via a new typed
-  `reconciliationReason` (§18.2), with regression-test proof of the mechanism.
+  `reconciliationReason` (§18.2), refined by a request/response shape investigation
+  (§18.2a) showing the orphan-* path requires a GUID to appear in a *later* phase that
+  discovery didn't see — not pure deletion alone — with regression-test proof of the
+  mechanism.
 - Confirmed all of the above reaches the packaged build artifact, not just unit tests
   (§18.3).
+- A fresh Desktop candidate exists bundling all of this: `0.4.10`, SHA-256
+  `c483e8e7f2975e94b3b4870b20b8f36fd3354a2385ab2398df16d1e0132a6a7a` (§19). Android
+  candidate is unchanged (`continuity.15`, `8808e76`) — no rebuild was needed.
 
 **What has NOT changed / is NOT yet known:**
 - The actual root cause of the real physical failure is still **unknown**. Two
@@ -1120,9 +1162,10 @@ it claims only that the next physical retest will, for the first time, be able t
   investigation. Session 1, 3, 4, 5 of §11 remain to be run; Session 2 steps H onward
   remain blocked.
 
-**Required next physical action (exactly one):** install the next Desktop candidate
-(bundling the file-based failure auditor; Android unchanged) and run exactly one fresh
-Voucher sync against ESTIMATION. Regardless of pass/fail, retrieve
+**Required next physical action (exactly one):** install `0.4.10` over the current
+Desktop (bundling the file-based failure auditor; Android's already-paired
+`continuity.15` needs no reinstall) and run exactly one fresh Voucher sync against
+ESTIMATION. Regardless of pass/fail, retrieve
 `{userDataRoot}/connector-diagnostics/voucher-sync-failure-audit.jsonl` afterward and
 report its last entry — this is the first time the actual failure classification will
 be recoverable. **Do not attempt a third speculative code fix before reading that
