@@ -132,6 +132,65 @@ class LedgerStatementScreenTest {
     }
 
     @Test
+    fun previewButtonDisabledWithoutContentAndEnabledWithContent() {
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerStatementScreen(
+                    state = LedgerStatementUiState(isInitialLoading = false),
+                    onEvent = {},
+                    onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("ledger_statement_preview_button").assertIsNotEnabled()
+    }
+
+    @Test
+    fun tappingPreviewButtonEmitsPreviewLedgerFastDirectlyWithoutOpeningAdvancedOptions() {
+        var emitted: LedgerStatementEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerStatementScreen(
+                    state = LedgerStatementUiState(isInitialLoading = false, content = sampleContent()),
+                    onEvent = { emitted = it },
+                    onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("ledger_statement_preview_button").assertIsEnabled()
+        composeRule.onNodeWithTag("ledger_statement_preview_button").performClick()
+        assertEquals(LedgerStatementEvent.PreviewLedgerFast, emitted)
+    }
+
+    @Test
+    fun previewOpensInAppWhenPreviewPdfIsSetAndBackDismissesIt() {
+        var dismissed = false
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerStatementScreen(
+                    state = LedgerStatementUiState(
+                        isInitialLoading = false,
+                        content = sampleContent(),
+                        previewPdf = com.budcom.android.feature.masterdata.ledger.sharing.PreparedLedgerStatementPdf(
+                            contentUri = "content://x",
+                            cacheFilePath = "/cache/x.pdf",
+                            suggestedFilename = "x.pdf",
+                        ),
+                    ),
+                    onEvent = { if (it is LedgerStatementEvent.DismissPreview) dismissed = true },
+                    onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("pdf_preview_screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("pdf_preview_back").performClick()
+        assertTrue(dismissed)
+    }
+
+    @Test
     fun shareOptionsSheetShowsSharePdfAndSavePdfActions() {
         composeRule.setContent {
             BudcomTheme {

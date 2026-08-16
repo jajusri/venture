@@ -430,6 +430,54 @@ class LedgerStatementViewModelTest {
     }
 
     @Test
+    fun `PreviewLedgerFast opens the in-app preview directly, without the advanced options sheet`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        val prepared = PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf")
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(prepared)
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.PreviewLedgerFast)
+            advanceUntilIdle()
+            expectNoEvents()
+        }
+        assertEquals(prepared, vm.uiState.value.previewPdf)
+        assertFalse("the direct Preview tap must never open the advanced options sheet", vm.uiState.value.showShareOptions)
+    }
+
+    @Test
+    fun `PreviewLedgerFast uses the currently displayed period, not a stale one`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(LedgerStatementEvent.PeriodSelected(LedgerPeriodSelection.PreviousFinancialYear))
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        vm.onEvent(LedgerStatementEvent.PreviewLedgerFast)
+        advanceUntilIdle()
+        assertEquals("2025-04-01", shareCoordinator.lastPreparedStatement?.period?.from)
+        assertEquals("2026-03-31", shareCoordinator.lastPreparedStatement?.period?.to)
+    }
+
+    @Test
+    fun `Save from a direct PreviewLedgerFast acts on the exact same prepared pdf, without re-preparing`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        vm.onEvent(LedgerStatementEvent.PreviewLedgerFast)
+        advanceUntilIdle()
+        val prepareCallsBeforeSave = shareCoordinator.prepareCalls
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.SaveFromPreview)
+            advanceUntilIdle()
+            assertTrue(awaitItem() is LedgerStatementShareEffect.CreatePdfDocument)
+        }
+        assertEquals(prepareCallsBeforeSave, shareCoordinator.prepareCalls)
+    }
+
+    @Test
     fun `Preview PDF via the advanced options path opens the in-app preview with the exact prepared pdf`() = runTest(dispatcher) {
         val vm = createVm()
         advanceUntilIdle()

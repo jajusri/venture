@@ -87,6 +87,10 @@ sealed interface LedgerStatementEvent {
     /** Normal Share Ledger tap — uses [LedgerStatementUiState.sharingPreferences] and the
      * currently displayed period immediately, with no options screen. */
     data object ShareLedgerFast : LedgerStatementEvent
+    /** Direct one-tap Preview entry point (parity with Voucher's "View invoice PDF") — generates
+     * the statement PDF for the currently displayed period/mode and opens it in the shared in-app
+     * preview, without going through the long-press Advanced Options sheet. */
+    data object PreviewLedgerFast : LedgerStatementEvent
     /** Long-press on Share Ledger — opens the advanced/change-options sheet for a one-time
      * override; see [LedgerStatementUiState.advancedPeriod] and siblings. */
     data object OpenShareOptions : LedgerStatementEvent

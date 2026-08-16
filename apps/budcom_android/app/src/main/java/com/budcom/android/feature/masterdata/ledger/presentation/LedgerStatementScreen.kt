@@ -138,6 +138,15 @@ fun LedgerStatementScreen(
                     }
                 },
                 actions = {
+                    // Parity with Voucher's "View invoice PDF": a direct, always-visible, one-tap
+                    // Preview entry point, separate from the Share icon's long-press Advanced
+                    // Options (where Preview PDF also remains available as one of several
+                    // destinations, unchanged).
+                    TextButton(
+                        onClick = { onEvent(LedgerStatementEvent.PreviewLedgerFast) },
+                        enabled = state.hasContent && !state.isShareBusy,
+                        modifier = Modifier.testTag("ledger_statement_preview_button"),
+                    ) { Text("Preview") }
                     // Tap: immediately shares using the remembered default (Settings -> Ledger
                     // Sharing) with no options screen — the locked ~3-tap fast path. Long-press:
                     // opens advanced/change options for a one-time override, reusing this same
