@@ -1505,7 +1505,7 @@ packaging run only, restored immediately after.
 
 ---
 
-## 27. Final verdict (current, 2026-08-16, sixth pass)
+## 27. Final verdict (superseded by §29 — see below)
 
 **Root cause confirmed and fixed.** TD-001's Voucher `parser_failure` is understood
 end-to-end: `IsDeemedPositive`/signed-`Amount` disagreement is a real, valid Tally
@@ -1542,3 +1542,138 @@ the audit file, if anything is recorded on a successful run, or via a future sur
 metric), whether existing voucher data/totals remain correct, and whether any new,
 different failure reason appears. **Do not proceed to USB/mobile debugging unless this
 candidate still fails after this exact semantic fix.**
+
+---
+
+## 28. Physical retest of 0.4.12 — PASS. TD-001 PHYSICALLY CONFIRMED FIXED (2026-08-16)
+
+Desktop `0.4.12` installed successfully. From the already-paired, already-installed
+Android `continuity.15` app — no manual Desktop-side sync action was performed — a
+fresh Voucher sync against ESTIMATION was run. Result: **completed successfully.** No
+`parser_failure`. Voucher list/details display correctly. No visible data loss,
+corruption, or new error.
+
+### 28.1 Connector-side evidence, inspected directly (not taken on the user's report alone)
+
+**Failure audit** (`{userDataRoot}/connector-diagnostics/voucher-sync-failure-audit.jsonl`):
+unchanged since the last 0.4.11 failure entry — **no new failure record for this run**,
+which is exactly the expected shape for a successful sync (the auditor only writes on
+failure).
+
+**Voucher snapshot state**, queried read-only directly from the live Connector SQLite
+database (`connector-data/budcom-ledger.db`, `node:sqlite` `DatabaseSync` opened with
+`readOnly: true`, no writes):
+
+```
+Active/PROMOTED snapshot: 945a4735-2333-4786-8389-c98d80a26fe9
+  date range:    2026-07-12 .. 2026-08-16 (today)
+  status:        PROMOTED
+  created_at:    2026-08-16T01:31:06.793Z
+  validated_at:  2026-08-16T01:31:11.430Z
+  promoted_at:   2026-08-16T01:31:11.431Z
+  failed_at:     null
+  failure_reason: null
+  voucher_count: 94
+
+Aggregate over the promoted snapshot's voucher_headers:
+  total_ledger_entries:    189
+  total_inventory_entries: 332
+  total_allocations:       0
+  incomplete_count:        0   (zero vouchers flagged dataQuality='incomplete')
+  cancelled_count:         0
+  sample of incomplete vouchers: [] (none)
+```
+
+This is real promotion evidence, not an inference: the snapshot transitioned
+PENDING→WRITING→VALIDATED→PROMOTED, replacing the previously-active (now presumably
+archived) snapshot atomically, with zero rejected/incomplete records.
+
+**Noteworthy, honestly reported gap:** `amountSignConflictCount` and
+`illegalCharactersSanitized` are **not persisted anywhere retrievable** for a
+successful run. They exist only in the transient `VoucherSynchronizationResult`
+returned to the API caller and in the `voucher.sync.completed` structured log line —
+and that log line goes through `logger.info()` → stdout, which is discarded entirely
+in the packaged Connector child process (`stdio: ['ignore', 'ignore', 'pipe']`, the
+same constraint documented in §17.1 for failures). This is a real, symmetric
+limitation of the current diagnostic design: it was built to capture *failures*
+(file-based, bypasses stdio), and this gap for *successes* was not in scope of the
+approved fix. **The exact `amountSignConflictCount` for this specific successful run
+cannot be honestly reported — it was not fabricated or estimated.** What can be said
+with confidence: the fix's logic path was exercised (the same ESTIMATION ledger data
+that previously triggered `amount-sign-conflict` on every attempt was processed again,
+this time without aborting), and zero vouchers were dropped or marked incomplete.
+
+**A refinement to the round-3 regression history, visible only now:** an earlier
+snapshot for ESTIMATION (`8fd497b6...`, `date_from: 2026-07-12`, `date_to:
+2026-08-13`, 41 vouchers, promoted 2026-08-13T04:59:40Z) also has status `PROMOTED`
+(now archived) using the current multi-phase architecture. This means a *narrower*
+Voucher sync (through 2026-08-13) had succeeded before Session 2's failures began —
+the conflicting ledger entry(ies) were evidently added to Tally's ESTIMATION data
+between 2026-08-13 and the Session 2 test window, not present in every historical
+sync. This doesn't change the fix's correctness, but refines §22.2's finding from "no
+prior successful run of the multi-phase architecture" to "no prior successful run of
+the *specific data* that included the conflicting entries."
+
+### 28.2 Architecture note: why no manual Desktop sync was needed (documented, not a defect)
+
+This is expected, correct behavior, not something to change. `POST /sync/vouchers` is
+a standard authenticated route on the Connector's own local HTTP API
+(`api/routes/vouchers.ts`), mounted whenever the production dependency graph wires
+`VoucherSynchronizationService` + `ConnectorSessionService` — which it always does.
+**Desktop is not an intermediary or relay for sync requests.** Its role is (a)
+launching and supervising the Connector child process (`ConnectorLifecycleService`)
+so it exists and is reachable at all, and (b) providing a UI to select the active
+company, which persists in the session/database independent of which client later
+triggers a sync. Once paired, Android is an independent, direct client of the same
+local Connector API Desktop's own UI calls — it does not need Desktop to relay,
+forward, or "kick off" anything. The only precondition is that the Connector process
+is running (guaranteed by Desktop having been installed and started) and that a
+company is already selected (already true, carried over from the prior session). No
+code change is warranted here, per instruction — this is simply how the system was
+designed to work.
+
+### 28.3 Documentation updates made this pass
+
+- `docs/technical-debt/registry.md` TD-001: marked **PHYSICALLY CONFIRMED FIXED**,
+  citing the 0.4.12 evidence above.
+- `docs/governance/BUDCOM-QUALITY-SCORECARD.md`: "Physical validation" raised from 1,
+  reflecting that a current-version Desktop+Connector build has now been physically
+  installed and exercised end-to-end for the Voucher sync workflow (previously the
+  note there stated no post-0.4.3 build had ever been physically tested — no longer
+  true). Kept conservative: only one workflow (Voucher sync) on one company has been
+  confirmed; the remaining Session 2 items and all of Sessions 1/3/4/5 are still
+  outstanding, so the raise is modest, not a jump to "strong."
+
+---
+
+## 29. Final verdict (current, 2026-08-16, seventh pass)
+
+**TD-001 CLOSED — physically confirmed fixed.** The Voucher `parser_failure` defect
+that blocked Session 2 is resolved end-to-end: root cause identified from real
+production audit evidence (not guessed), fix implemented and reviewed before
+deployment, and now physically confirmed on real hardware against real Tally data
+with zero data loss.
+
+**What changed this pass:**
+- 0.4.12 physical retest: PASS. Voucher sync completed, 94 vouchers promoted, 0
+  incomplete/rejected, no `parser_failure`, no new error (§28).
+- Connector-side evidence inspected directly (failure audit unchanged, snapshot
+  promotion confirmed via read-only SQLite query) rather than taken on report alone
+  (§28.1).
+- Architecture accurately documented: Android's ability to sync without a manual
+  Desktop trigger is expected behavior (direct API client), not a gap (§28.2).
+- TD-001 and the Quality Scorecard updated to the extent this evidence supports
+  (§28.3).
+
+**What has NOT changed / remains open:**
+- Exact `amountSignConflictCount` for this run is not retrievable (documented
+  limitation, §28.1) — not fabricated.
+- All of §3's TD-013–TD-020 physical-confirmation gaps remain open.
+- Session 2 items B/F/I/K/L are reasonably satisfied by this round's evidence; G
+  (combined "Sync all"), H (repeated refresh), J (Ledger statement), M (voucher-type
+  coverage), N (Voucher PDF), O (Ledger PDF), and P (WhatsApp share/save) remain
+  unconfirmed. Sessions 1, 3, 4, 5 have not started.
+
+**Per explicit instruction: Session 3 is not started this pass.** The next step is
+the remaining Session 2 HUMAN CHECK items, reported separately to the user in
+efficient order.
