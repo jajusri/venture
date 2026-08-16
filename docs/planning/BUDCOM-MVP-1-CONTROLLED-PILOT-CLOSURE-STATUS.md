@@ -2660,3 +2660,119 @@ Desktop restart, no QR/re-pair, and no manual IP entry at any point. A
 manual Android app restart during the retest does not constitute a PASS for
 this defect — the code fix is not considered physically confirmed until that
 full cycle succeeds unattended.
+
+---
+
+## 41. Session 3 item R — round 4: hotspot-leg physical retest FAIL, TD-032 found and fixed (2026-08-16)
+
+### 41.1 Physical retest result
+
+Desktop 0.4.15 / Connector 0.4.6 / Android continuity.17 (versionCode 18)
+installed. Sequence: Jio Fiber → PASS (Desktop and Android both working) →
+switched both devices to the Nord 5 mobile hotspot → Windows hotspot
+profile set to Private → Desktop/Connector recovered and worked normally
+on the hotspot → **Android did not recover.** Android showed "Device
+offline" then, after roughly a minute, "Connector is unavailable." No
+restart, re-pair, QR scan, manual IP entry, or ADB disconnect was
+performed at any point — the live failed state was investigated exactly
+as it stood, per explicit instruction.
+
+### 41.2 Live investigation — Connector-side (TD-031) independently reconfirmed correct
+
+Before assuming TD-031 was still the cause, its fix was reverified live,
+not from source alone: `Get-NetTCPConnection`/`Invoke-RestMethod` confirmed
+the Connector healthy at the hotspot address, `connectorVersion: "0.4.6"`.
+A live `bonjour-service` browse of `_budcom._tcp.local` from the Desktop
+machine, at the exact time of the Android failure, returned:
+
+```
+{ "name": "VIDHI", "port": 8080, "addresses": ["10.142.207.231"],
+  "txt": { "connectorId": "...", "authRequired": "false", "securePort": "8443" } }
+```
+
+**TD-031's fix is correct and working.** The failure was proven to be
+downstream of it, not a recurrence of it.
+
+### 41.3 Live investigation — Android-side, without restarting the app
+
+Via ADB against the live, still-running process (PID confirmed, package
+`com.budcom.android.debug` continuity.17/versionCode 18):
+`AuthenticatedConnectorApi` was retrying continuously — every 15-45
+seconds, never stuck, never terminal — for the entire ~9 minutes the
+device remained on the hotspot, and every attempt classified as
+`TIMEOUT`. Two brief `CONNECTION_REFUSED` results appeared during one
+transient Wi-Fi flap and were not pursued further as a separate cause.
+
+Decisive evidence: `adb shell ip maddr show wlan0`, polled at 300ms
+resolution across multiple full 5-second discovery windows while the
+device was confirmed on the hotspot (SSID "Nord5", `10.142.207.147`),
+**never once** showed the mDNS multicast group `224.0.0.251` joined on
+the interface. No mDNS listener — app-level or system-level — was
+actually receiving multicast traffic on this device during this period,
+regardless of anything the Connector correctly advertised.
+
+**Environmental note, recorded for completeness, not as product
+evidence:** partway through this investigation the device's own Wi-Fi
+silently roamed itself from the Nord 5 hotspot back to the original
+Jio Fiber network, confirmed via `dumpsys wifi`'s own connection-event
+history (`CMD_IP_CONFIGURATION_SUCCESSFUL`, freq 5785MHz, matching
+JioFiber_5G) — with no restart, re-pair, or manual action by the tester
+or this investigation. The dashboard afterward correctly showed "Fully
+operational" against the original, still-valid Jio endpoint — genuine
+success once back on that network, not evidence of hotspot recovery. This
+is an OS-level Wi-Fi auto-reconnect behavior outside BUDCOM's control,
+consistent with prior guidance to treat transient device/environment
+instability as exactly that, not a product defect.
+
+### 41.4 Root cause — TD-032
+
+Source trace confirmed the mechanism: this test device (vivo I2407i,
+confirmed via `/proc/vivo_rsc` references in its own logs) belongs to the
+BBK Electronics family (vivo/OPPO/OnePlus/iQOO), whose Wi-Fi stacks are
+documented to filter multicast frames at the driver/firmware level to
+save power unless some app on the device currently holds a
+`WifiManager.MulticastLock` — `NsdManager` does not acquire one on the
+app's behalf on these builds. `AndroidManifest.xml` already declared
+`CHANGE_WIFI_MULTICAST_STATE`, but no code anywhere ever created or held
+the lock itself. Recorded as **TD-032** (P0) — full detail in the
+registry entry, including its explicit distinction from TD-017/029/030/031.
+
+This means even a Connector that correctly advertises everything TD-031
+needs can never be found by Android on an affected device, because
+discovery itself never receives the multicast packets carrying that
+advertisement — a defect layered underneath TD-031, not a recurrence of
+it.
+
+### 41.5 Fix, validation, and candidate produced
+
+Additive: `MulticastLockController` (new seam over
+`WifiManager.MulticastLock`, with a `withLock{}` helper mirroring
+`kotlinx.coroutines.sync.Mutex.withLock`'s exact signature so existing
+early-return control flow in `NsdConnectorDiscoveryService.discover()`
+keeps working unchanged), wired via Hilt, held for the full discovery
+pass and always released. No change to trust, fingerprint, credential, or
+pairing logic. Committed at `22381e1` (fix) / `1ae3b79` (version bump).
+
+4 new focused unit tests (acquire/release ordering, exception safety,
+cancellation safety, non-local-return safety). Full Android regression:
+1,021/1,021 debug unit tests (was 1,017), 1,021/1,021 release unit tests,
+0 lint issues, clean assemble — all passing.
+
+| Field | Value |
+|---|---|
+| Android version | `versionCode 19` / `versionName 0.1.1-continuity.18` (bumped from `18`/`continuity.17`) |
+| Artifact | `BudcomAndroid-1ae3b79-debug.apk` |
+| SHA-256 | `4c84276cdc1d2ac4160ae1eddbfb1ee17d7550757cb84dd3335111664226cdfe` |
+| Size | 13,960,832 bytes |
+| Desktop / Connector | Unchanged — `0.4.15` / `0.4.6` (TD-032 is Android-only) |
+| Output path | `release/controlled-pilot/android/0.1.1-continuity.18-1ae3b79/` |
+
+### 41.6 Next required step
+
+Physical retest, same standard as before: Desktop/Connector 0.4.15 +
+Android continuity.18, full A→B→A hotspot cycle, both directions, no app
+restart, no Desktop restart, no QR/re-pair, no manual IP entry. Given this
+device's Wi-Fi was observed to roam networks on its own mid-test last
+time, watch for or screen out auto-reconnect behavior during the retest
+so a genuine app-level result isn't confounded by an unrelated OS-level
+roam a second time.
