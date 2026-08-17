@@ -556,11 +556,23 @@ export class SqliteVoucherRepository implements VoucherRepositoryPort {
         filters.push('voucher_status = @status');
         values.status = criteria.status;
       }
+      // TD-023: exact-match filters, distinct from the fuzzy `query` field below — added so the
+      // list endpoint (which needs these two) can move off the unbounded querySnapshot() path
+      // onto this already-paginated query without losing any filtering behavior.
+      if (criteria.voucherNumber) {
+        filters.push('voucher_number = @voucherNumber');
+        values.voucherNumber = criteria.voucherNumber;
+      }
+      if (criteria.partyName) {
+        filters.push('party_name = @partyName');
+        values.partyName = criteria.partyName;
+      }
       if (criteria.query?.trim()) {
         filters.push(`(
           lower(voucher_number) LIKE @query OR
           lower(reference_number) LIKE @query OR
-          lower(party_name) LIKE @query
+          lower(party_name) LIKE @query OR
+          lower(voucher_type) LIKE @query
         )`);
         values.query = `%${criteria.query.trim().toLowerCase()}%`;
       }

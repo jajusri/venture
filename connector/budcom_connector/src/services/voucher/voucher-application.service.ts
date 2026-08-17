@@ -1,4 +1,4 @@
-import type { VoucherDetails, VoucherSummaryRecord } from '../../erp/voucher/voucher-domain.js';
+import type { VoucherDetails, VoucherSearchCriteria, VoucherSummaryRecord } from '../../erp/voucher/voucher-domain.js';
 import type { VoucherApplicationService } from './voucher-application.interface.js';
 import type {
   VoucherDetailsDto,
@@ -36,30 +36,21 @@ export class VoucherApplicationServiceImpl implements VoucherApplicationService 
   }
 
   async list(query: VoucherListQueryDto): Promise<VoucherListDto> {
-    const vouchers = await this.getRepository().querySnapshot(query.companyId);
-    const filtered = vouchers.filter((voucher) =>
-      voucher.date >= query.criteria.dateFrom &&
-      voucher.date <= query.criteria.dateTo &&
-      (!query.criteria.voucherType || voucher.voucherType === query.criteria.voucherType) &&
-      (!query.voucherNumber || voucher.voucherNumber === query.voucherNumber) &&
-      (!query.partyName || voucher.partyName === query.partyName) &&
-      (!query.criteria.query || matchesSearch(voucher, query.criteria.query))
-    );
-    const ordered = [...filtered].sort((left, right) =>
-      compareVouchers(left, right, query.criteria.sortBy, query.criteria.sortDirection)
-    );
-    const totalItems = ordered.length;
-    const start = (query.criteria.page - 1) * query.criteria.pageSize;
+    // TD-023: search() is already SQL-paginated (LIMIT/OFFSET against the active snapshot,
+    // filtered/sorted in SQL) — previously this method loaded the entire company snapshot via
+    // querySnapshot() and filtered/sorted/paginated it in application memory on every single
+    // request, which scaled with total accumulated history rather than the requested page.
+    const criteria: VoucherSearchCriteria = {
+      ...query.criteria,
+      ...(query.voucherNumber ? { voucherNumber: query.voucherNumber } : {}),
+      ...(query.partyName ? { partyName: query.partyName } : {}),
+    };
+    const result = await this.getRepository().search(query.companyId, criteria);
     const mapItem = query.includeDetails ? toPublicDetails : toPublicRecord;
     return {
       companyId: query.companyId,
-      items: ordered.slice(start, start + query.criteria.pageSize).map(mapItem),
-      pagination: {
-        page: query.criteria.page,
-        pageSize: query.criteria.pageSize,
-        totalItems,
-        totalPages: Math.max(1, Math.ceil(totalItems / query.criteria.pageSize)),
-      },
+      items: result.items.map(mapItem),
+      pagination: result.pagination,
     };
   }
 
@@ -83,39 +74,6 @@ export class VoucherApplicationServiceImpl implements VoucherApplicationService 
     const snapshot = await this.getRepository().getSnapshot(companyId, snapshotId);
     return { companyId, snapshot: snapshot ? toSnapshotDto(snapshot) : null };
   }
-}
-
-function matchesSearch(voucher: VoucherDetails, query: string): boolean {
-  const needle = query.toLocaleLowerCase('en-US');
-  return [
-    voucher.voucherNumber,
-    voucher.referenceNumber,
-    voucher.partyName,
-    voucher.voucherType,
-  ].some((value) => value?.toLocaleLowerCase('en-US').includes(needle));
-}
-
-function compareVouchers(
-  left: VoucherDetails,
-  right: VoucherDetails,
-  field: 'date' | 'voucherNumber' | 'amount',
-  direction: 'asc' | 'desc',
-): number {
-  const leftValue = field === 'date'
-    ? left.date
-    : field === 'voucherNumber'
-      ? left.voucherNumber ?? ''
-      : left.amount?.amount ?? '';
-  const rightValue = field === 'date'
-    ? right.date
-    : field === 'voucherNumber'
-      ? right.voucherNumber ?? ''
-      : right.amount?.amount ?? '';
-  const compared = field === 'amount'
-    ? Number(leftValue) - Number(rightValue)
-    : leftValue.localeCompare(rightValue, 'en-US');
-  const stable = compared || left.voucherId.localeCompare(right.voucherId, 'en-US');
-  return direction === 'desc' ? -stable : stable;
 }
 
 function toPublicRecord(voucher: VoucherSummaryRecord): VoucherPublicRecord {

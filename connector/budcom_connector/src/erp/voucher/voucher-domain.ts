@@ -116,6 +116,10 @@ export interface VoucherSearchCriteria extends VoucherDateRange {
   readonly query?: string;
   readonly voucherType?: string;
   readonly status?: VoucherStatus;
+  /** TD-023: exact match, distinct from the fuzzy `query` field. */
+  readonly voucherNumber?: string;
+  /** TD-023: exact match, distinct from the fuzzy `query` field. */
+  readonly partyName?: string;
   readonly page: number;
   readonly pageSize: number;
   readonly sortBy: VoucherSortField;
@@ -123,6 +127,9 @@ export interface VoucherSearchCriteria extends VoucherDateRange {
 }
 
 export interface VoucherSearchResult {
-  readonly items: readonly VoucherSummaryRecord[];
+  // TD-023: SqliteVoucherRepository.search() parses each row's complete voucher_json blob (the
+  // same source every other repository read method uses) — it always returns full VoucherDetails,
+  // never a narrower projection, so the type here now says what the implementation actually does.
+  readonly items: readonly VoucherDetails[];
   readonly pagination: VoucherPage;
 }

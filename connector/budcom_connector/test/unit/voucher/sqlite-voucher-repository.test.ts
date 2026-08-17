@@ -236,6 +236,58 @@ describe('SqliteVoucherRepository', () => {
     expect(statistics.countsByType).toHaveLength(8);
   });
 
+  // TD-023: these two exact-match filters were added to search() specifically so the /api/v1/vouchers
+  // list endpoint could move off the unbounded querySnapshot()-then-filter-in-memory path onto this
+  // already-paginated SQL query without losing any filtering behavior it previously had.
+  it('filters by an exact voucherNumber, distinct from the fuzzy query field', async () => {
+    const { repo } = createRepository();
+    await persistAndPromote(repo, 'company-a', 'exact-1', fixtureVouchers);
+    const target = fixtureVouchers.find((voucher) => voucher.voucherNumber)!;
+
+    const result = await repo.search('company-a', {
+      ...PERIOD,
+      voucherNumber: target.voucherNumber!,
+      page: 1,
+      pageSize: 25,
+      sortBy: 'date',
+      sortDirection: 'asc',
+    });
+    expect(result.items.map((voucher) => voucher.voucherId)).toEqual([target.voucherId]);
+  });
+
+  it('filters by an exact partyName, distinct from the fuzzy query field', async () => {
+    const { repo } = createRepository();
+    await persistAndPromote(repo, 'company-a', 'exact-2', fixtureVouchers);
+    const target = fixtureVouchers.find((voucher) => voucher.partyName)!;
+
+    const result = await repo.search('company-a', {
+      ...PERIOD,
+      partyName: target.partyName!,
+      page: 1,
+      pageSize: 25,
+      sortBy: 'date',
+      sortDirection: 'asc',
+    });
+    expect(result.items.every((voucher) => voucher.partyName === target.partyName)).toBe(true);
+    expect(result.items.map((voucher) => voucher.voucherId)).toContain(target.voucherId);
+  });
+
+  it('matches the free-text query field against voucherType as well as number/reference/party', async () => {
+    const { repo } = createRepository();
+    await persistAndPromote(repo, 'company-a', 'exact-3', fixtureVouchers);
+
+    const result = await repo.search('company-a', {
+      ...PERIOD,
+      query: 'sales',
+      page: 1,
+      pageSize: 25,
+      sortBy: 'date',
+      sortDirection: 'asc',
+    });
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items.every((voucher) => voucher.voucherType.toLowerCase().includes('sales'))).toBe(true);
+  });
+
   it('stores every nested allocation as a validated allocation record', async () => {
     const { repo, database } = createRepository();
     const sales = fixtureVouchers[1]!;
