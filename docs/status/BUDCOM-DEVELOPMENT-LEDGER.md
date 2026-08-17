@@ -250,6 +250,16 @@ and 1,021 release JVM tests, both lints/assembles clean, and Desktop 696/696 wit
 Counts evolved as tests were added; these are dated evidence, not a fresh run for this docs-only
 reconstruction.
 
+**2026-08-17 pre-signing technical-debt closure — fresh full run, all four components, this
+session:** Connector 159 files/1,423 tests passing, ESLint clean, `tsc`/build clean. Desktop 68
+files/711 tests passing (708 baseline + 3 new this session: 2 TD-004 regression tests, 1
+startup-diagnostics redaction test), `tsc --noEmit` clean across all three configs (main/preload/
+renderer), full `npm run build` clean. Contract: 5/5 passing, unchanged. Android (source
+unchanged this session, confirmation run): `testDebugUnitTest` 1,030/1,030, `testReleaseUnitTest`
+1,030/1,030, `lintDebug`/`lintRelease` both 0 errors, `assembleDebug`/`assembleRelease`/
+`assembleDebugAndroidTest` all BUILD SUCCESSFUL; `connectedAndroidTest` deliberately not run (no
+physical-device go-ahead this session). Zero regressions found anywhere.
+
 `connectedAndroidTest` packaging succeeded. Specific device/instrumented evidence exists, but the
 latest polish checkpoint does not claim a complete fresh connected run. The Quality Scorecard’s
 latest result is Controlled-Pilot GO (automated evidence 5, physical evidence 5 in recorded scope).
