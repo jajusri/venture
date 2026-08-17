@@ -2,12 +2,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { ConnectorIdentityStore } from '../../src/application/connector-identity-store.js';
 
+const mintedDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of mintedDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function createTempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-connector-identity-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-connector-identity-'));
+  mintedDirs.push(dir);
+  return dir;
 }
 
 describe('ConnectorIdentityStore', () => {

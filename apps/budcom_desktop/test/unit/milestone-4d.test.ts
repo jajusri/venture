@@ -22,6 +22,20 @@ import { LogService } from '../../src/application/log-service.js';
 import { RecoveryService } from '../../src/application/recovery-service.js';
 import { SettingsService } from '../../src/application/settings-service.js';
 
+const mintedDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of mintedDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function mkTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  mintedDirs.push(dir);
+  return dir;
+}
+
 describe('desktop config schema', () => {
   it('validates defaults', () => {
     const result = validateDesktopConfig(getEnvironmentDefaults(false));
@@ -50,7 +64,7 @@ describe('desktop config schema', () => {
 
 describe('desktop config store', () => {
   it('persists and reloads settings', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-config-'));
+    const tempDir = mkTempDir('budcom-config-');
     const paths = resolveDesktopConfigPaths(tempDir);
     const defaults = getEnvironmentDefaults(true);
     const store = new DesktopConfigStore({ paths, defaults });
@@ -61,7 +75,7 @@ describe('desktop config store', () => {
   });
 
   it('recovers corrupt configuration from defaults', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-config-'));
+    const tempDir = mkTempDir('budcom-config-');
     const paths = resolveDesktopConfigPaths(tempDir);
     fs.mkdirSync(tempDir, { recursive: true });
     fs.writeFileSync(paths.configFilePath, '{not-json', 'utf8');
@@ -111,7 +125,7 @@ describe('settings service', () => {
   });
 
   it('validates invalid settings patch', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-settings-'));
+    const tempDir = mkTempDir('budcom-settings-');
     const paths = resolveDesktopConfigPaths(tempDir);
     const store = new DesktopConfigStore({ paths, defaults: getEnvironmentDefaults(true) });
     const service = new SettingsService({ configStore: store, logService: new LogService(), connectorExecutable: process.execPath });
@@ -120,7 +134,7 @@ describe('settings service', () => {
   });
 
   it('saves valid settings', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-settings-'));
+    const tempDir = mkTempDir('budcom-settings-');
     const paths = resolveDesktopConfigPaths(tempDir);
     const store = new DesktopConfigStore({ paths, defaults: getEnvironmentDefaults(true) });
     const service = new SettingsService({ configStore: store, logService: new LogService(), connectorExecutable: process.execPath });
@@ -138,7 +152,7 @@ describe('log redaction and file logging', () => {
   });
 
   it('rotates log files when size exceeded', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-log-'));
+    const tempDir = mkTempDir('budcom-log-');
     const writer = new FileLogWriter({ logsDir: tempDir, maxFileBytes: 20, maxFiles: 2 });
     writer.appendLine('012345678901234567890');
     writer.appendLine('next-line');
@@ -157,7 +171,7 @@ describe('log redaction and file logging', () => {
 
 describe('diagnostics service', () => {
   it('exports sanitized bundle', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-diag-'));
+    const tempDir = mkTempDir('budcom-diag-');
     const paths = resolveDesktopConfigPaths(tempDir);
     const store = new DesktopConfigStore({ paths, defaults: getEnvironmentDefaults(true) });
     const service = new DiagnosticsService({

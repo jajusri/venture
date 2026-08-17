@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildDiagnosticExportDirName,
@@ -14,6 +14,20 @@ import { resolveDesktopConfigPaths } from '../../src/application/desktop-config-
 import { DesktopConfigStore } from '../../src/application/desktop-config-store.js';
 import { DiagnosticsService } from '../../src/application/diagnostics-service.js';
 import { LogService } from '../../src/application/log-service.js';
+
+const mintedDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of mintedDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function mkTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  mintedDirs.push(dir);
+  return dir;
+}
 
 function createExportBundle(exportRoot: string, generatedAtIso: string): string {
   const dirName = buildDiagnosticExportDirName(generatedAtIso);
@@ -73,7 +87,7 @@ function createDiagnosticsHarness(tempDir: string, retentionDays = 7) {
 
 describe('diagnostic export retention integration', () => {
   it('16. startup cleanup does not throw when cleanup fails', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-startup-retention-'));
+    const tempDir = mkTempDir('budcom-startup-retention-');
     const { retentionService, paths } = createDiagnosticsHarness(tempDir);
     const failingFs = {
       existsSync: () => true,
@@ -96,7 +110,7 @@ describe('diagnostic export retention integration', () => {
   });
 
   it('17. successful export remains successful when post-export cleanup fails', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-retention-fail-'));
+    const tempDir = mkTempDir('budcom-export-retention-fail-');
     const { diagnosticsService, paths, retentionService } = createDiagnosticsHarness(tempDir);
     const cleanupSpy = vi.spyOn(retentionService, 'cleanup').mockImplementation(() => {
       throw new Error('cleanup failed');
@@ -110,7 +124,7 @@ describe('diagnostic export retention integration', () => {
   });
 
   it('18. post-export cleanup protects the newly generated export', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-protect-newest-'));
+    const tempDir = mkTempDir('budcom-export-protect-newest-');
     const { diagnosticsService, paths } = createDiagnosticsHarness(tempDir, 7);
     createExportBundle(paths.diagnosticsExportDir, '2026-05-01T00:00:00.000Z');
     createExportBundle(paths.diagnosticsExportDir, '2026-04-01T00:00:00.000Z');
@@ -124,7 +138,7 @@ describe('diagnostic export retention integration', () => {
   });
 
   it('preserves unrelated files in the real export directory during cleanup', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-unrelated-'));
+    const tempDir = mkTempDir('budcom-export-unrelated-');
     const { diagnosticsService, paths, retentionService } = createDiagnosticsHarness(tempDir, 7);
     fs.mkdirSync(paths.diagnosticsExportDir, { recursive: true });
     fs.writeFileSync(path.join(paths.diagnosticsExportDir, 'support-notes.txt'), 'keep', 'utf8');
@@ -141,7 +155,7 @@ describe('diagnostic export retention integration', () => {
   });
 
   it('retention setting persists across restart and cleanup honors reloaded value', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-retention-restart-'));
+    const tempDir = mkTempDir('budcom-retention-restart-');
     const paths = resolveDesktopConfigPaths(tempDir);
     const defaults = getEnvironmentDefaults(true);
     const store = new DesktopConfigStore({ paths, defaults });
@@ -162,7 +176,7 @@ describe('diagnostic export retention integration', () => {
   });
 
   it('19. does not touch connector sync_runs storage', async () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-sync-runs-untouched-'));
+    const tempDir = mkTempDir('budcom-sync-runs-untouched-');
     const dbDir = path.join(tempDir, 'data');
     fs.mkdirSync(dbDir, { recursive: true });
     const syncRunsMarker = path.join(dbDir, 'sync-runs-marker.txt');
@@ -178,7 +192,7 @@ describe('diagnostic export retention integration', () => {
   });
 
   it('20. does not change backup lifecycle outside export cleanup scope', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-backup-lifecycle-'));
+    const tempDir = mkTempDir('budcom-backup-lifecycle-');
     const paths = resolveDesktopConfigPaths(tempDir);
     fs.mkdirSync(path.dirname(paths.configBackupPath), { recursive: true });
     fs.writeFileSync(paths.configBackupPath, '{"schemaVersion":1}', 'utf8');

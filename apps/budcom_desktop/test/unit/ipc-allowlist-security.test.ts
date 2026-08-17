@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   ALLOWED_IPC_CHANNELS,
@@ -18,6 +18,20 @@ import {
   validateSettingsInput,
   validateSyncOptions,
 } from '../../src/application/ipc-allowlist.js';
+
+const mintedDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of mintedDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function mkTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  mintedDirs.push(dir);
+  return dir;
+}
 
 describe('IPC security allowlist', () => {
   it('rejects unknown IPC channels', () => {
@@ -65,20 +79,20 @@ describe('IPC security allowlist', () => {
 
 describe('owned export directory validation', () => {
   it('allows undefined export directory and contained child paths', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-root-'));
+    const root = mkTempDir('budcom-export-root-');
     const child = path.join(root, 'budcom-diagnostics-2026-07-25T00-00-00-000Z');
     expect(validateExportDirectory(undefined, root)).toBeUndefined();
     expect(validateExportDirectory(child, root)).toBe(path.resolve(child));
   });
 
   it('rejects path traversal and absolute paths outside owned root', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-root-'));
+    const root = mkTempDir('budcom-export-root-');
     expect(() => validateExportDirectory(path.join(root, '..', 'escape'), root)).toThrow(/within the approved root|app-owned/i);
     expect(() => validateExportDirectory('/tmp/evil', root)).toThrow(/within the approved root|app-owned/i);
   });
 
   it('rejects null bytes in export directory input', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-root-'));
+    const root = mkTempDir('budcom-export-root-');
     expect(() => validateExportDirectory('safe\u0000evil', root)).toThrow(/invalid characters/i);
   });
 

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getEnvironmentDefaults } from '../../src/application/desktop-config-defaults.js';
 import { resolveDesktopConfigPaths } from '../../src/application/desktop-config-paths.js';
@@ -19,8 +19,17 @@ function writeConfig(filePath: string, config: DesktopConfigV1): void {
   fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }
 
+const mintedRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of mintedRoots.splice(0)) {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function createHarness(tempDir?: string) {
   const root = tempDir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-config-temp-'));
+  if (!tempDir) mintedRoots.push(root);
   const paths = resolveDesktopConfigPaths(root);
   const defaults = getEnvironmentDefaults(true);
   return { root, paths, defaults };

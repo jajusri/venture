@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { getEnvironmentDefaults } from '../../src/application/desktop-config-defaults.js';
 import { resolveDesktopConfigPaths } from '../../src/application/desktop-config-paths.js';
@@ -19,9 +19,23 @@ function writeConfig(filePath: string, config: object): void {
   fs.writeFileSync(filePath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
 }
 
+const mintedDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of mintedDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function mkTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  mintedDirs.push(dir);
+  return dir;
+}
+
 describe('desktop config temp reconciliation startup integration', () => {
   it('runs reconciliation before config load without blocking startup', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-startup-temp-'));
+    const tempDir = mkTempDir('budcom-startup-temp-');
     const paths = resolveDesktopConfigPaths(tempDir);
     const defaults = getEnvironmentDefaults(true);
     writeConfig(paths.configTempPath, { ...defaults, connectorPort: 21000 });
@@ -40,7 +54,7 @@ describe('desktop config temp reconciliation startup integration', () => {
   });
 
   it('preserves diagnostic export retention and sync-run marker files in the same userData tree', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-startup-boundary-'));
+    const tempDir = mkTempDir('budcom-startup-boundary-');
     const paths = resolveDesktopConfigPaths(tempDir);
     const defaults = getEnvironmentDefaults(true);
     writeConfig(paths.configFilePath, defaults);

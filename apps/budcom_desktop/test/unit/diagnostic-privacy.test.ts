@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { DiagnosticsService } from '../../src/application/diagnostics-service.js';
 import {
@@ -33,6 +33,20 @@ import { LogService } from '../../src/application/log-service.js';
 import type { LogEntry } from '../../src/application/types.js';
 
 const S = DIAGNOSTIC_PRIVACY_SENTINELS;
+
+const mintedDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of mintedDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function mkTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  mintedDirs.push(dir);
+  return dir;
+}
 
 function defaultConfigurationInput(status = 'loaded') {
   return {
@@ -110,7 +124,7 @@ function createDiagnosticsService(options: {
   sessionStatus?: 'ACTIVE' | 'NO_COMPANY_SELECTED';
   logService?: LogService;
 }) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-diag-privacy-'));
+  const tempDir = mkTempDir('budcom-diag-privacy-');
   const paths = resolveDesktopConfigPaths(tempDir);
   const store = new DesktopConfigStore({ paths, defaults: getEnvironmentDefaults(true) });
   const logService = options.logService ?? new LogService();

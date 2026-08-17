@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildDiagnosticExportDirName,
@@ -16,6 +16,20 @@ import {
 import type { StructuredLogInput } from '../../src/application/log-service.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const mintedDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of mintedDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function mkTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  mintedDirs.push(dir);
+  return dir;
+}
 
 function createExportBundle(exportRoot: string, generatedAtIso: string, content = '{}'): string {
   const dirName = buildDiagnosticExportDirName(generatedAtIso);
@@ -63,14 +77,14 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('2. treats an empty directory as a successful no-op', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-empty-exports-'));
+    const exportRoot = mkTempDir('budcom-empty-exports-');
     const service = createService(exportRoot);
     const result = cleanupAt(service, exportRoot, 14, Date.now());
     expect(result).toMatchObject({ ok: true, scannedCount: 0, deletedCount: 0 });
   });
 
   it('3. never deletes unrelated files', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-unrelated-exports-'));
+    const exportRoot = mkTempDir('budcom-unrelated-exports-');
     const unrelated = path.join(exportRoot, 'notes.txt');
     fs.writeFileSync(unrelated, 'keep', 'utf8');
     const now = Date.parse('2026-07-25T12:00:00.000Z');
@@ -80,7 +94,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('4. never deletes backup files', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-backup-exports-'));
+    const exportRoot = mkTempDir('budcom-backup-exports-');
     const backup = path.join(exportRoot, 'desktop-config.backup.json');
     fs.writeFileSync(backup, '{"schemaVersion":1}', 'utf8');
     const now = Date.parse('2026-07-25T12:00:00.000Z');
@@ -89,7 +103,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('5. never deletes temporary or non-owned files', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-temp-exports-'));
+    const exportRoot = mkTempDir('budcom-temp-exports-');
     fs.writeFileSync(path.join(exportRoot, 'partial-export.tmp'), 'temp', 'utf8');
     fs.mkdirSync(path.join(exportRoot, 'budcom-diagnostics-not-a-valid-timestamp'), { recursive: true });
     const now = Date.parse('2026-07-25T12:00:00.000Z');
@@ -100,7 +114,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('6. never deletes unrelated directories', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-unrelated-dir-exports-'));
+    const exportRoot = mkTempDir('budcom-unrelated-dir-exports-');
     const otherDir = path.join(exportRoot, 'manual-support-folder');
     fs.mkdirSync(otherDir);
     fs.writeFileSync(path.join(otherDir, 'readme.txt'), 'keep', 'utf8');
@@ -112,7 +126,7 @@ describe('DiagnosticExportRetentionService', () => {
     if (process.platform === 'win32') {
       return;
     }
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-symlink-exports-'));
+    const exportRoot = mkTempDir('budcom-symlink-exports-');
     const target = createExportBundle(exportRoot, '2026-06-01T00:00:00.000Z');
     const linkPath = path.join(exportRoot, buildDiagnosticExportDirName('2026-06-02T00:00:00.000Z'));
     fs.symlinkSync(target, linkPath, 'dir');
@@ -127,7 +141,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('8. keeps eligible exports inside the retention window', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-inside-retention-'));
+    const exportRoot = mkTempDir('budcom-inside-retention-');
     const recent = createExportBundle(exportRoot, '2026-07-20T00:00:00.000Z');
     const now = Date.parse('2026-07-25T12:00:00.000Z');
     cleanupAt(createService(exportRoot), exportRoot, 14, now);
@@ -135,7 +149,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('9. deletes expired eligible exports', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-expired-exports-'));
+    const exportRoot = mkTempDir('budcom-expired-exports-');
     const older = createExportBundle(exportRoot, '2026-06-01T00:00:00.000Z');
     const newer = createExportBundle(exportRoot, '2026-07-20T00:00:00.000Z');
     const now = Date.parse('2026-07-25T12:00:00.000Z');
@@ -146,7 +160,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('10. preserves the newest eligible export even when expired', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-preserve-newest-'));
+    const exportRoot = mkTempDir('budcom-preserve-newest-');
     const newest = createExportBundle(exportRoot, '2026-07-01T00:00:00.000Z');
     const now = Date.parse('2026-07-25T12:00:00.000Z');
     const result = cleanupAt(createService(exportRoot), exportRoot, 7, now);
@@ -156,14 +170,14 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('11. preserves a single expired eligible export', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-single-expired-'));
+    const exportRoot = mkTempDir('budcom-single-expired-');
     const only = createExportBundle(exportRoot, '2026-01-01T00:00:00.000Z');
     cleanupAt(createService(exportRoot), exportRoot, 7, Date.parse('2026-07-25T12:00:00.000Z'));
     expect(fs.existsSync(only)).toBe(true);
   });
 
   it('12. preserves only the newest export and deletes other expired ones', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-multi-expired-'));
+    const exportRoot = mkTempDir('budcom-multi-expired-');
     createExportBundle(exportRoot, '2026-05-01T00:00:00.000Z');
     createExportBundle(exportRoot, '2026-06-01T00:00:00.000Z');
     const newest = createExportBundle(exportRoot, '2026-07-01T00:00:00.000Z');
@@ -175,7 +189,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('13. uses deterministic filename ordering when export timestamps tie', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-tie-order-'));
+    const exportRoot = mkTempDir('budcom-tie-order-');
     const tiedTime = Date.parse('2026-06-01T00:00:00.000Z');
     const dirA = path.join(exportRoot, 'budcom-diagnostics-2026-13-40T00-00-00-000Z');
     const dirB = path.join(exportRoot, 'budcom-diagnostics-2026-13-39T00-00-00-000Z');
@@ -217,7 +231,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('14. preserves exports with invalid timestamps conservatively', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-invalid-ts-'));
+    const exportRoot = mkTempDir('budcom-invalid-ts-');
     const invalidDir = path.join(exportRoot, 'budcom-diagnostics-2026-13-40T00-00-00-000Z');
     fs.mkdirSync(invalidDir, { recursive: true });
     fs.writeFileSync(path.join(invalidDir, DIAGNOSTIC_EXPORT_BUNDLE_FILENAME), '{}', 'utf8');
@@ -249,7 +263,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('15. continues deleting other exports when one deletion fails', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-delete-failure-'));
+    const exportRoot = mkTempDir('budcom-delete-failure-');
     createExportBundle(exportRoot, '2026-05-01T00:00:00.000Z');
     createExportBundle(exportRoot, '2026-04-01T00:00:00.000Z');
     createExportBundle(exportRoot, '2026-07-01T00:00:00.000Z');
@@ -279,7 +293,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('21. uses the existing diagnosticsRetentionDays setting through cleanup options', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-retention-days-'));
+    const exportRoot = mkTempDir('budcom-retention-days-');
     createExportBundle(exportRoot, '2026-07-10T00:00:00.000Z');
     const retained = createExportBundle(exportRoot, '2026-07-22T00:00:00.000Z');
     cleanupAt(createService(exportRoot), exportRoot, 14, Date.parse('2026-07-25T12:00:00.000Z'));
@@ -288,7 +302,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('22. respects minimum and maximum supported retention values', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-retention-bounds-'));
+    const exportRoot = mkTempDir('budcom-retention-bounds-');
     const old = createExportBundle(exportRoot, '2026-01-01T00:00:00.000Z');
     const recent = createExportBundle(exportRoot, '2026-07-20T00:00:00.000Z');
     cleanupAt(createService(exportRoot), exportRoot, 1, Date.parse('2026-07-25T12:00:00.000Z'));
@@ -299,7 +313,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('23. returns accurate cleanup result counts', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-counts-'));
+    const exportRoot = mkTempDir('budcom-counts-');
     fs.writeFileSync(path.join(exportRoot, 'ignore.txt'), 'x', 'utf8');
     createExportBundle(exportRoot, '2026-05-01T00:00:00.000Z');
     createExportBundle(exportRoot, '2026-06-01T00:00:00.000Z');
@@ -313,7 +327,7 @@ describe('DiagnosticExportRetentionService', () => {
   });
 
   it('24. logs only aggregate cleanup metadata without sensitive paths', () => {
-    const exportRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-log-privacy-'));
+    const exportRoot = mkTempDir('budcom-log-privacy-');
     createExportBundle(exportRoot, '2026-05-01T00:00:00.000Z');
     createExportBundle(exportRoot, '2026-07-01T00:00:00.000Z');
     const logs: StructuredLogInput[] = [];

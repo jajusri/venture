@@ -115,10 +115,13 @@ describe('packaged runtime module-format contract', () => {
 
   it('fails CommonJS/ESM mismatch before acceptance when desktop entry is ESM', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-runtime-bad-'));
-    const badMain = path.join(tempDir, 'main.js');
-    fs.writeFileSync(badMain, 'import fs from "node:fs";\n', 'utf8');
-    expect(() => assertCommonJsRuntimeSource('bad desktop entry', fs.readFileSync(badMain, 'utf8')))
-      .toThrow(PackagedRuntimeContractError);
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    try {
+      const badMain = path.join(tempDir, 'main.js');
+      fs.writeFileSync(badMain, 'import fs from "node:fs";\n', 'utf8');
+      expect(() => assertCommonJsRuntimeSource('bad desktop entry', fs.readFileSync(badMain, 'utf8')))
+        .toThrow(PackagedRuntimeContractError);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

@@ -17,29 +17,33 @@ const XML = '<LEDGER NAME="Secret Co"><AMOUNT>999.00</AMOUNT></LEDGER>';
 describe('desktop file log sanitization parity (group 5)', () => {
   it('removes sensitive content from persisted file log lines', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-file-log-'));
-    const writer = new FileLogWriter({ logsDir: tempDir });
-    const logService = new LogService({ fileWriter: writer, consoleEnabled: false });
+    try {
+      const writer = new FileLogWriter({ logsDir: tempDir });
+      const logService = new LogService({ fileWriter: writer, consoleEnabled: false });
 
-    logService.appendStructured({
-      level: 'error',
-      message: `Failed for ${COMPANY} ledger ${LEDGER} gst ${GSTIN} xml ${XML} path ${PATH}`,
-      event: 'lifecycle_test',
-      component: 'connector-lifecycle',
-      metadata: {
-        errorCode: TOKEN,
-        attemptNumber: 1,
-        connectorOwnership: 'desktop-managed',
-      },
-    });
+      logService.appendStructured({
+        level: 'error',
+        message: `Failed for ${COMPANY} ledger ${LEDGER} gst ${GSTIN} xml ${XML} path ${PATH}`,
+        event: 'lifecycle_test',
+        component: 'connector-lifecycle',
+        metadata: {
+          errorCode: TOKEN,
+          attemptNumber: 1,
+          connectorOwnership: 'desktop-managed',
+        },
+      });
 
-    const fileContents = fs.readFileSync(writer.getLogFilePath(), 'utf8');
-    const haystack = fileContents.toLowerCase();
-    expect(haystack).not.toContain('jaju');
-    expect(haystack).not.toContain('sensitive debtor');
-    expect(haystack).not.toContain('29aabcu9603r1zm');
-    expect(haystack).not.toContain('<ledger');
-    expect(haystack).not.toContain('contosouser');
-    expect(haystack).not.toContain('sk-live');
-    expect(fileContents).not.toContain('\u0000');
+      const fileContents = fs.readFileSync(writer.getLogFilePath(), 'utf8');
+      const haystack = fileContents.toLowerCase();
+      expect(haystack).not.toContain('jaju');
+      expect(haystack).not.toContain('sensitive debtor');
+      expect(haystack).not.toContain('29aabcu9603r1zm');
+      expect(haystack).not.toContain('<ledger');
+      expect(haystack).not.toContain('contosouser');
+      expect(haystack).not.toContain('sk-live');
+      expect(fileContents).not.toContain('\u0000');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

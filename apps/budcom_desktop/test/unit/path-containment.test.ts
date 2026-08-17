@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   assertWriteTargetContained,
@@ -10,20 +10,34 @@ import {
 } from '../../src/application/path-containment.js';
 import { validateExportDirectory } from '../../src/application/ipc-allowlist.js';
 
+const mintedDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of mintedDirs.splice(0)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function mkTempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  mintedDirs.push(dir);
+  return dir;
+}
+
 describe('desktop path containment', () => {
   it('allows undefined export directory for automatic owned export', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-owned-'));
+    const root = mkTempDir('budcom-export-owned-');
     expect(validateExportDirectory(undefined, root)).toBeUndefined();
   });
 
   it('allows contained child export directories', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-owned-'));
+    const root = mkTempDir('budcom-export-owned-');
     const child = path.join(root, 'budcom-diagnostics-2026-07-25T00-00-00-000Z');
     expect(validateExportDirectory(child, root)).toBe(path.resolve(child));
   });
 
   it('rejects arbitrary path injection outside owned export root', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-owned-'));
+    const root = mkTempDir('budcom-export-owned-');
     expect(() => validateExportDirectory('/tmp/evil', root)).toThrow(/within the approved root|app-owned/i);
     expect(() => validateExportDirectory(path.join(root, '..', 'escape'), root)).toThrow(
       /within the approved root|app-owned/i,
@@ -34,8 +48,8 @@ describe('desktop path containment', () => {
     if (process.platform === 'win32') {
       return;
     }
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-owned-'));
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-export-outside-'));
+    const root = mkTempDir('budcom-export-owned-');
+    const outside = mkTempDir('budcom-export-outside-');
     fs.symlinkSync(outside, path.join(root, 'linked-export'), 'dir');
     expect(() =>
       validateExportDirectory(path.join(root, 'linked-export', 'bundle'), root),
