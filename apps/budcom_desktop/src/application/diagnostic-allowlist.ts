@@ -36,27 +36,6 @@ const BEARER_HEADER_PATTERN = /authorization\s*:\s*\S+/gi;
 const API_TOKEN_PATTERN = /\b(?:sk|pk|api)[-_][A-Za-z0-9_-]{8,}\b/gi;
 const INLINE_TOKEN_PATTERN = /\btoken\s+[A-Za-z0-9._-]{8,}\b/gi;
 
-/** Sentinel values used by privacy absence tests — must never appear in exported diagnostics. */
-export const DIAGNOSTIC_PRIVACY_SENTINELS = {
-  companyName: 'JAJU SANITATIONS PRIVATE LIMITED',
-  ledgerName: 'Sensitive Debtor Ledger',
-  gstin: '29AABCU9603R1ZM',
-  voucherNumber: 'VCH-2026-004821',
-  phone: '+91-9876543210',
-  email: 'finance@example-company.test',
-  amount: '125000.50 Dr',
-  xmlSnippet: '<LEDGER NAME="Secret Co"><AMOUNT>999.00</AMOUNT></LEDGER>',
-  secretToken: 'sk-live-diagnostic-leak-test-token',
-  windowsPath: 'C:\\Users\\ContosoUser\\Documents\\JAJU SANITATIONS\\budcom.db',
-  nestedCauseBody: '{"responseBody":"<STOCKITEM/>","headers":{"Authorization":"Bearer leak"}}',
-  stockItemName: 'Sensitive Stock Item Alpha',
-  postalAddress: '42 Industrial Estate, Bangalore 560001',
-  licenceId: 'LIC-BUDCOM-ENTERPRISE-998877',
-  rawGuid: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-  rawAlterId: 'AlterID:48291',
-  rawMasterId: 'MasterID:109283',
-} as const;
-
 export interface SafeDiagnosticSession {
   readonly status: SessionDisplayStatus | string;
   readonly selectedCompanyPresent: boolean;
@@ -519,17 +498,4 @@ export function formatSafeDiagnosticSummary(bundle: SafeDiagnosticBundleV1, logF
   ]
     .filter(Boolean)
     .join('\n');
-}
-
-export function assertDiagnosticOutputExcludesSentinels(serialized: string, extraSentinels: readonly string[] = []): void {
-  const haystack = serialized.toLowerCase();
-  const prohibited = [
-    ...Object.values(DIAGNOSTIC_PRIVACY_SENTINELS),
-    ...extraSentinels,
-  ];
-  for (const sentinel of prohibited) {
-    if (haystack.includes(sentinel.toLowerCase())) {
-      throw new Error(`Prohibited diagnostic sentinel leaked: ${sentinel.slice(0, 32)}`);
-    }
-  }
 }

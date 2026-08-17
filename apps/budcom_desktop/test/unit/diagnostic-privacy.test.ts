@@ -12,16 +12,18 @@ import {
   APPROVED_DIAGNOSTIC_LOGGING_CONFIG_KEYS,
   APPROVED_DIAGNOSTIC_SOURCE_SUMMARY_KEYS,
   APPROVED_DIAGNOSTIC_TALLY_CONFIG_KEYS,
-  assertDiagnosticOutputExcludesSentinels,
   buildSafeDiagnosticBundle,
   buildSafeDiagnosticConfiguration,
   DIAGNOSTIC_LIMITS,
-  DIAGNOSTIC_PRIVACY_SENTINELS,
   mapUnknownErrorToSafeDiagnostic,
   sanitizeDiagnosticLogEntries,
   sanitizeDiagnosticText,
   serializeSafeDiagnosticBundle,
 } from '../../src/application/diagnostic-allowlist.js';
+import {
+  assertDiagnosticOutputExcludesSentinels,
+  DIAGNOSTIC_PRIVACY_SENTINELS,
+} from '../helpers/diagnostic-privacy-sentinels.js';
 import type { DesktopConfigV1 } from '../../src/application/desktop-config-schema.js';
 import type { ConfigSource } from '../../src/application/desktop-config-resolver.js';
 import { getEnvironmentDefaults } from '../../src/application/desktop-config-defaults.js';
