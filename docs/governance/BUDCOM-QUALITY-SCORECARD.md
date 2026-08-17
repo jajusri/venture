@@ -56,3 +56,32 @@ reconciliation found a mandatory-gate dimension scored 0/1 either.
 **Formerly weakest dimension, now resolved:** Physical validation. Session 3's connectivity-resilience chain (TD-029/030/031/032) had each individual link directly witnessed live; Session 4 (Desktop/Connector + Android restart) and Session 5 (USB private-storage pull/reinsert, PDF final visual review) both physically confirmed PASS.
 **Accepted limitations for pilot operation:** operate on a stable real router LAN, not a phone-based mobile hotspot (TD-017's full chain is combined-evidence, not directly witnessed, specifically because every real address-change attempt used a hotspot now proven unsuitable for the mDNS leg — closure doc §45); do not remove the USB while BUDCOM is running (TD-025, and the never-performed live-mid-write item Y, both become unreachable under this constraint); do not attempt a Standard→Private storage-mode switch on any pilot machine (TD-033/TD-034, P2/P3, no migration flow exists yet — pilot is configured once, fresh, into Private mode); Desktop installer unsigned (SmartScreen expected), Android debug-signed only (no release-signing path in this environment) — both longstanding, unchanged; TD-022/TD-023 performance observations (P3, non-blocking); TD-026/TD-027 Tally-side observational findings (P2, not BUDCOM defects); historical non-authoritative business-data artifacts remain on the audited machine's internal C:/D: drives from development history, explicitly preserved pending deliberate review, not affecting pilot operation.
 **Everything else** found during this entire hardening engagement (TD-001, TD-013 through TD-020, TD-024, TD-028 through TD-032) is CLOSED or Fixed-and-physically-confirmed — see the technical-debt registry.
+
+---
+
+## MVP-1 public-release readiness view (2026-08-17)
+
+**Do not reuse the Controlled-Pilot GO above mechanically — public release has different
+requirements.** See `docs/planning/BUDCOM-MVP-1-PUBLIC-RELEASE-GATE-MATRIX.md` for the full
+gate-by-gate detail this section summarizes.
+
+| Dimension | Score 0–5 | Change from Controlled-Pilot pass | Notes |
+|---|---:|---|---|
+| Accounting correctness | 3 (unchanged) | — | No accounting-logic changes this pass. |
+| Data integrity | 3 → **4** | **Raised.** | TD-033 (guarded storage-mode switch) and TD-034 (fail-closed on unreadable vault marker) resolved and tested — both were real data/trust-safety gaps for a broad public audience unfamiliar with BUDCOM internals. Not 5: TD-025 (live USB-loss UX) remains an open, documented limitation, and private-storage vault identity remains filesystem-only (pre-existing, unchanged). |
+| Security/trust | 3 (unchanged) | — | No security-architecture changes this pass; TD-033's fix protects existing trust data from accidental loss but does not change the trust model itself. |
+| Installer/upgrade | 4 (Controlled-Pilot) → **BLOCKED (signing)** | **New dimension for public scope.** | Installer/upgrade mechanics themselves are sound (per-machine NSIS, safe legacy-identity migration, `deleteAppDataOnUninstall: false`, Android `adb install -r` upgrade-path continuity previously verified). Scored as blocked, not numerically, because **no Windows code-signing or Android release-signing credentials exist** — see gate matrix §6. This is the dominant reason public release cannot proceed regardless of any other dimension's score. |
+| Connectivity | 4 (unchanged) | — | No changes this pass; TD-029–032 chain remains as previously evidenced. |
+| Usability | 4 (unchanged) | — | UI/UX polish pass (prior session) already raised this; no regressions found this session. |
+| Supportability | 3 (new for public scope) | — | Release notes and a Quick-Start/troubleshooting guide were authored this session (`docs/planning/BUDCOM-MVP-1-RELEASE-NOTES.md`, `docs/planning/BUDCOM-MVP-1-QUICK-START.md`). Not higher: no dedicated rollback tooling exists beyond reinstalling a prior installer, and Android public `applicationId` remains an undecided release blocker (gate matrix §7). |
+
+**Mandatory gates recheck:** none of accounting/data-integrity, security/trust,
+migration/persistence, or core functional correctness score 0/1. The public-release verdict is
+blocked by **signing availability**, a release-engineering/business gate this scorecard's four
+mandatory dimensions do not directly capture — see the gate matrix's summary verdict.
+
+**Public-release verdict: BLOCKED — signing.** Everything reachable without a production signing
+identity has been evaluated; TD-033/TD-034 (the two evidence-backed public-facing data-safety gaps
+found in the controlled-pilot audit) are now resolved. See the gate matrix for the complete action
+list and the two flagged product decisions (Android public applicationId; TD-025's fuller fix)
+requiring owner input before the next pass.

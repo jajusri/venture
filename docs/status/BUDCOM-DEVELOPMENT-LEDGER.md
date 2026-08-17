@@ -31,12 +31,13 @@ changes their conclusion.
 
 | Area | Current evidence classification |
 |---|---|
-| MVP-1 | **CONTROLLED-PILOT VALIDATED** and Controlled-Pilot **GO**; bounded MVP-1 UI/UX polish implemented. Public release is not yet authorized. |
-| Android | **IMPLEMENTED / AUTOMATED-VALIDATED / PHYSICALLY VALIDATED / HUMAN VISUALLY APPROVED**. Owner-approved installed candidate: `0.1.1-continuity.22`, versionCode 23. |
-| Desktop | `0.4.17` **INSTALLED-RUNTIME FAILED / APPROVAL BLOCKED**. Corrected `0.4.18` is **IMPLEMENTED / AUTOMATED-VALIDATED / PACKAGED**; UAC installation and final human visual approval remain. |
+| MVP-1 | **CONTROLLED-PILOT VALIDATED** and Controlled-Pilot **GO**; bounded MVP-1 UI/UX polish implemented. **MVP-1 PUBLIC RELEASE PREPARATION in progress (2026-08-17)** — TD-033/TD-034 resolved; public release itself remains BLOCKED on signing (see gate matrix). |
+| Android | **IMPLEMENTED / AUTOMATED-VALIDATED / PHYSICALLY VALIDATED / HUMAN VISUALLY APPROVED**. Owner-approved installed candidate: `0.1.1-continuity.22`, versionCode 23. Unsigned `assembleRelease` also verified this session (release pipeline works; no signing credentials exist). |
+| Desktop | `0.4.17` **INSTALLED-RUNTIME FAILED**. Corrected `0.4.18` **INSTALLED / HUMAN VISUALLY & RUNTIME APPROVED** by owner (2026-08-17, this session). `0.4.19` (TD-033/034 fixes) packaged as an unsigned candidate, not installed over the approved `0.4.18`. |
 | Connector | **IMPLEMENTED / AUTOMATED-VALIDATED / CONTROLLED-PILOT VALIDATED**. Version `0.4.6`; read-only Tally boundary, SQLite snapshots, trust/discovery and private-storage participation are in place. |
 | Controlled Pilot | **CLOSED / GO** on 2026-08-16 under the documented stable-router, fixed-Private-storage and signing constraints. Documentation does not reopen it. |
-| UI/UX polish | Android pass **HUMAN VISUALLY APPROVED** by owner on 2026-08-17 after installation. Desktop functional polish is automated-clean; Desktop visual approval remains pending. |
+| UI/UX polish | Android pass **HUMAN VISUALLY APPROVED** by owner on 2026-08-17. Desktop **HUMAN VISUALLY & RUNTIME APPROVED** by owner on 2026-08-17 (this session) after the `0.4.18` correction. |
+| Public release | **BLOCKED — signing.** No Windows code-signing or Android release-signing credentials exist. TD-033/TD-034 resolved this session; Android public `applicationId` flagged, not decided. See `docs/planning/BUDCOM-MVP-1-PUBLIC-RELEASE-GATE-MATRIX.md`. |
 | Git at reconstruction start | `main` at `bc9cd55`, 284 commits from the 2026-07-22 root, 185 commits ahead of `origin/main`; three known planning/product paths were untracked and left untouched. |
 
 ## 3. Major development timeline
@@ -59,6 +60,8 @@ changes their conclusion.
 | 14. Approved Android visual implementation (2026-08-17) | `9b29abf`; three approved archive masters plus approved Voucher references | **IMPLEMENTED / AUTOMATED-VALIDATED / INSTALLED.** Replaced additive generic-card presentation with master-led Home, Ledger and Voucher Detail composition while preserving MVP-1 behavior. Debug/release JVM suites (1030 each), both lint variants and both APK assemblies pass. Candidate `continuity.22` was installed in place on device `10BF44124K000E3` with company/pairing state preserved; final human visual approval pending. |
 | 15. Owner Android approval + Desktop visual implementation (2026-08-17) | Owner approval; `96a7a55`; Android continuity.22 visual language | **ANDROID HUMAN VISUALLY APPROVED; DESKTOP IMPLEMENTED / AUTOMATED-VALIDATED / PACKAGED.** Desktop `0.4.17` adopts the approved BUDCOM hierarchy through a Windows sidebar, compact status band, restrained surfaces and consistent controls without changing behavior. 696 tests and all TS/build/package gates pass. Per-machine installation requires UAC; final human Desktop visual approval pending. |
 | 16. Desktop installed-runtime regression (2026-08-17) | Owner physical failure; installed CDP evidence; `e20053f` | **0.4.17 FAILED / 0.4.18 CORRECTED.** Packaged Chromium rejected a renderer ESM named import from CommonJS application output, so initialization aborted before binding clicks/loading data. `0.4.18` localizes the display mapping to the renderer, adds a module-boundary regression test, passes 697 tests and packaged real-state click/navigation/Refresh/resize validation, and is packaged for UAC installation. |
+| 17. Owner Desktop visual/runtime approval (2026-08-17) | Owner statement, this session; `0.4.18` confirmed installed and running on the audited machine (asar-verified) | **DESKTOP HUMAN VISUALLY/RUNTIME APPROVED.** Owner reported the corrected `0.4.18` build good after physical review. Corroborated technically: the installed `Budcom Desktop.exe`'s packaged `app.asar` reads version `0.4.18` and the process was observed running (4 processes) at session start. No specific screen-by-screen observation is claimed beyond the owner's own statement. |
+| 18. MVP-1 public-release preparation, part 1 (2026-08-17) | `6044e88`, `2a35e25`; gate matrix; release notes; quick-start | **TD-033/TD-034 RESOLVED.** Full public-release gate matrix produced (`docs/planning/BUDCOM-MVP-1-PUBLIC-RELEASE-GATE-MATRIX.md`). TD-033 (Standard↔Private storage switch) fixed with a guarded two-click confirmation gate — no silent switch, no data deleted. TD-034 (unreadable vault marker silently treated as absent) fixed — adoption path now fails closed with a distinct error. TD-025 (live USB-loss UX) explicitly documented as an accepted MVP-1 limitation rather than rushed — the narrow-safe fix touches shared renderer status-update plumbing and needs a dedicated pass. 9 new Desktop tests (706/706 passing); `tsc` clean. Desktop version bumped to `0.4.19` and a full unsigned candidate packaged (`release/controlled-pilot/0.4.19/`, mirrored with an explicit unsigned-not-for-distribution label under `release/public-candidate/`) after diagnosing and working around a Git-Bash-vs-PowerShell `tar` PATH ambiguity in the existing `dist:win` pipeline (no script changes). Android `assembleRelease` also verified this session: builds a real minified/shrunk unsigned `app-release-unsigned.apk` (2.3 MB) — confirms the release pipeline itself works; still blocked on signing. **No Windows code-signing or Android release-signing credentials exist anywhere in this repository or environment** — verified directly (no `.pfx`/`.p12`/`.jks`/`.keystore` files, no `signingConfigs` block, no CSC/keystore environment variables, `signAndEditExecutable: false`) — this is the dominant public-release blocker. Android public `applicationId` is also flagged (not decided) as a release blocker per governance, since a published Play Store package name is effectively permanent. Release notes and a Quick-Start/troubleshooting guide authored. Public-Release view added to the Quality Scorecard (BLOCKED — signing). Full Android JVM debug+release tests, both lints, both assembles, `assembleDebugAndroidTest`, and the `tests/contract` suite (5/5) all re-verified green this session. |
 
 ## 4. Android development
 
@@ -262,7 +265,7 @@ latest result is Controlled-Pilot GO (automated evidence 5, physical evidence 5 
 | Private USB | **PASS clean-stop:** unavailable UI, reinsert, byte-identical hash; live/mid-write removal not tested. |
 | PDF | **PASS:** Preview, content review, Save and WhatsApp Share. |
 | Android UI/UX | **HUMAN VISUALLY APPROVED:** owner inspected installed continuity.21 on 2026-08-17. |
-| Desktop UI/UX | **PENDING:** automated-clean, no owner visual approval record. |
+| Desktop UI/UX | **HUMAN VISUALLY & RUNTIME APPROVED:** owner reported the corrected `0.4.18` build good on 2026-08-17, after the `0.4.17` installed-runtime failure was diagnosed and fixed. Technically corroborated: the installed executable's packaged `app.asar` reads version `0.4.18`. |
 
 ## 17. Durable architectural decisions
 
@@ -320,15 +323,18 @@ Untracked planning/design artifacts do not make features implemented. MVP-1.1 ha
 
 | Classification | Evidence-grounded work |
 |---|---|
-| **BLOCKING PUBLIC RELEASE** | Human visual approval of Desktop 0.4.16; production/release signing (Windows and Android, not debug-only); final public artifacts with manifest/checksums and artifact-level regression from the intended clean baseline. |
-| **SHOULD FIX BEFORE PUBLIC RELEASE** | Explicit Standard→Private warning/migration/re-pair flow (TD-033); fail distinctly on unreadable markers and reproduce TD-034 through the app path; decide TD-025 broad-user UX; verify first-install/upgrade and provide basic release/install/storage guidance. |
-| **ACCEPTABLE FOR INITIAL LIMITED RELEASE** | Stable-router requirement; literal two-router residual; no USB hot removal; TD-022/023. Unsigned/debug signing only if distribution remains explicitly limited and warnings are accepted. |
+| **BLOCKING PUBLIC RELEASE** | Production/release signing (Windows code-signing certificate; Android release keystore) — neither exists in this repository or environment, verified 2026-08-17. Android public Play-Store `applicationId` decision (currently `com.budcom.android`, not formally locked as the public identity — effectively permanent once published). Final signed public artifacts with manifest/checksums and artifact-level regression once signing exists. |
+| **RESOLVED 2026-08-17** | Human visual/runtime approval of Desktop (`0.4.18`, owner-confirmed this session). Explicit Standard→Private warning/confirm flow (TD-033). Fail distinctly on unreadable markers (TD-034). First-install/upgrade behavior verified; release notes and Quick-Start guide authored (`docs/planning/BUDCOM-MVP-1-RELEASE-NOTES.md`, `docs/planning/BUDCOM-MVP-1-QUICK-START.md`). |
+| **SHOULD FIX BEFORE PUBLIC RELEASE** | TD-025 broad-user live-USB-loss UX — deliberately not implemented 2026-08-17 (touches shared renderer status-update plumbing; needs a dedicated pass), documented instead as an accepted MVP-1 limitation in the Quick-Start guide. |
+| **ACCEPTABLE FOR INITIAL LIMITED RELEASE** | Stable-router requirement; literal two-router residual; no USB hot removal; TD-022/023. |
 | **POST-RELEASE / DEFERRED** | TD-026 if usage warrants; TD-027 observation; UI theme/scaffold/localization, Desktop tray/navigation; MVP-1.1+. |
 
-**Exact NEXT TASK:** install corrected Desktop `0.4.18` through the packaged per-machine installer,
-then repeat and record FINAL HUMAN DESKTOP VISUAL APPROVAL using
-`docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §13, without starting public-release work or
-MVP-1.1.
+**Exact NEXT TASK:** obtain and configure Windows code-signing and Android release-signing
+credentials (see `docs/planning/BUDCOM-MVP-1-PUBLIC-RELEASE-GATE-MATRIX.md` §6 for the exact setup
+steps for each), and get an explicit product-owner decision on the public Android `applicationId`
+(§7) — both are human/external actions this session could not perform. Once signing exists, re-run
+`npm run dist:win` and `./gradlew bundleRelease`/`assembleRelease` to produce signed public
+artifacts. Do not start MVP-1.1 or external distribution before then.
 
 ## 21. Development and automation governance
 
