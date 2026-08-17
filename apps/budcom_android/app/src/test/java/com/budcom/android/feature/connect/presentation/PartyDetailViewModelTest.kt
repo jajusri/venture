@@ -487,4 +487,66 @@ private class InMemoryPartyRepository : PartyRepository {
         val items = notes.values.filter { it.companyId == companyId && it.partyId == partyId }.sortedByDescending { it.createdAt }
         return PartyNotePage(items, page, pageSize, items.size)
     }
+
+    override suspend fun getExportCandidates(
+        companyId: String,
+        partyId: String,
+    ): List<com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate> =
+        com.budcom.android.feature.party.domain.model.TallyExportFieldMapping.ELIGIBLE_FIELDS.map { fieldName ->
+            val row = provenance[Triple(companyId, partyId, fieldName)]
+            com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate(
+                fieldName = fieldName,
+                label = com.budcom.android.feature.party.domain.model.TallyExportFieldMapping.labelFor(fieldName),
+                tallyValue = row?.tallyValue,
+                budcomValue = row?.budcomValue,
+                state = row?.state ?: FieldProvenanceState.EmptyUnknown,
+            )
+        }
+
+    override suspend fun recordExport(
+        companyId: String,
+        partyId: String,
+        outputFileName: String,
+        fieldNames: List<String>,
+    ): com.budcom.android.feature.party.domain.model.PartyExportEvent {
+        clock += 1
+        fieldNames.forEach { fieldName ->
+            val key = Triple(companyId, partyId, fieldName)
+            val existing = provenance[key]
+            provenance[key] = PartyFieldProvenance(
+                companyId, partyId, fieldName, FieldProvenanceState.Exported,
+                existing?.tallyValue, existing?.budcomValue, existing?.lastConfirmedAt, clock, clock,
+            )
+        }
+        return com.budcom.android.feature.party.domain.model.PartyExportEvent(
+            companyId, java.util.UUID.randomUUID().toString(), partyId, clock, outputFileName, fieldNames,
+        )
+    }
+
+    override suspend fun reconcileExportedFieldFromTally(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        tallyRawValue: String?,
+    ): FieldProvenanceState {
+        clock += 1
+        val key = Triple(companyId, partyId, fieldName)
+        val existing = provenance[key]
+        val newState = when {
+            tallyRawValue.isNullOrBlank() -> existing?.state ?: FieldProvenanceState.EmptyUnknown
+            existing?.budcomValue != null && existing.budcomValue != tallyRawValue -> FieldProvenanceState.Conflict
+            else -> FieldProvenanceState.ConfirmedFromTally
+        }
+        provenance[key] = PartyFieldProvenance(
+            companyId, partyId, fieldName, newState, tallyRawValue, existing?.budcomValue,
+            if (newState == FieldProvenanceState.ConfirmedFromTally) clock else existing?.lastConfirmedAt, existing?.lastExportedAt, clock,
+        )
+        return newState
+    }
+
+    override suspend fun getExportHistory(
+        companyId: String,
+        partyId: String,
+        limit: Int,
+    ): List<com.budcom.android.feature.party.domain.model.PartyExportEvent> = emptyList()
 }

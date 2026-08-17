@@ -40,9 +40,10 @@ class PartyRepositoryImplTest {
     private val contactPersonDao = FakePartyContactPersonDao()
     private val tagDao = FakeTagDao()
     private val noteDao = FakePartyNoteDao()
+    private val exportEventDao = FakePartyExportEventDao()
 
     private fun repository() = PartyRepositoryImpl(
-        partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, noteDao, time, dispatchers,
+        partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, noteDao, exportEventDao, time, dispatchers,
     )
 
     private fun seed(
@@ -538,6 +539,164 @@ class PartyRepositoryImplTest {
         assertTrue(repo.getNotesForParty("co-B", partyIdA, 1, 20).items.isEmpty())
     }
 
+    // ============================== TALLY XML EXPORT (MVP-1.1-D) ==============================
+
+    @Test
+    fun `export candidates cover exactly the six Tally-eligible fields, never city or BUDCOM-only data`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+
+        val candidates = repo.getExportCandidates("co-1", partyId)
+
+        assertEquals(
+            listOf("primaryPhone", "primaryEmail", "addressLine1", "addressState", "addressPincode", "gstin"),
+            candidates.map { it.fieldName },
+        )
+        assertTrue("addressCity must never be export-eligible", candidates.none { it.fieldName == "addressCity" })
+    }
+
+    @Test
+    fun `an untouched field shows as EmptyUnknown with no pending or Tally value`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+
+        val candidate = repo.getExportCandidates("co-1", partyId).first { it.fieldName == PartyFieldNames.GSTIN }
+
+        assertEquals(FieldProvenanceState.EmptyUnknown, candidate.state)
+        assertNull(candidate.tallyValue)
+        assertNull(candidate.budcomValue)
+    }
+
+    @Test
+    fun `an edited field shows as pending with its BUDCOM value in the review list`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.PRIMARY_EMAIL, "owner@example.com")
+
+        val candidate = repo.getExportCandidates("co-1", partyId).first { it.fieldName == PartyFieldNames.PRIMARY_EMAIL }
+
+        assertEquals(FieldProvenanceState.BudcomOnlyPending, candidate.state)
+        assertEquals("owner@example.com", candidate.budcomValue)
+    }
+
+    @Test
+    fun `recording an export transitions only the included fields to Exported`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.PRIMARY_EMAIL, "owner@example.com")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.GSTIN, "29ABCDE1234F1Z5")
+
+        repo.recordExport("co-1", partyId, "BUDCOM-Tally-Export-ABC-Traders.xml", listOf(PartyFieldNames.PRIMARY_EMAIL))
+
+        val candidates = repo.getExportCandidates("co-1", partyId).associateBy { it.fieldName }
+        assertEquals(FieldProvenanceState.Exported, candidates.getValue(PartyFieldNames.PRIMARY_EMAIL).state)
+        assertEquals(FieldProvenanceState.BudcomOnlyPending, candidates.getValue(PartyFieldNames.GSTIN).state)
+    }
+
+    @Test
+    fun `recording an export writes a lightweight audit event with field names only`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.PRIMARY_EMAIL, "owner@example.com")
+
+        val event = repo.recordExport(
+            "co-1", partyId, "BUDCOM-Tally-Export-ABC-Traders.xml", listOf(PartyFieldNames.PRIMARY_EMAIL),
+        )
+
+        assertEquals(listOf(PartyFieldNames.PRIMARY_EMAIL), event.fieldNames)
+        assertEquals("BUDCOM-Tally-Export-ABC-Traders.xml", event.outputFileName)
+        val history = repo.getExportHistory("co-1", partyId)
+        assertEquals(1, history.size)
+        assertEquals(event.exportId, history.single().exportId)
+    }
+
+    @Test
+    fun `recording an export with only ineligible field names throws rather than exporting nothing`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        var threw = false
+        try {
+            repo.recordExport("co-1", partyId, "file.xml", listOf("addressCity"))
+        } catch (e: IllegalArgumentException) {
+            threw = true
+        }
+        assertTrue(threw)
+    }
+
+    @Test
+    fun `export history is newest first and bounded`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.GSTIN, "29ABCDE1234F1Z5")
+        time.now = 1_000L
+        repo.recordExport("co-1", partyId, "first.xml", listOf(PartyFieldNames.GSTIN))
+        time.now = 2_000L
+        repo.recordExport("co-1", partyId, "second.xml", listOf(PartyFieldNames.GSTIN))
+
+        val history = repo.getExportHistory("co-1", partyId)
+        assertEquals(listOf("second.xml", "first.xml"), history.map { it.outputFileName })
+    }
+
+    @Test
+    fun `re-sync confirms a phone that matches only after canonical normalization`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.PRIMARY_PHONE, "9876543210")
+        repo.recordExport("co-1", partyId, "file.xml", listOf(PartyFieldNames.PRIMARY_PHONE))
+
+        val state = repo.reconcileExportedFieldFromTally("co-1", partyId, PartyFieldNames.PRIMARY_PHONE, "+91 98765 43210")
+
+        assertEquals(FieldProvenanceState.ConfirmedFromTally, state)
+    }
+
+    @Test
+    fun `re-sync confirms an email that matches only after case and trim normalization`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.PRIMARY_EMAIL, "owner@example.com")
+        repo.recordExport("co-1", partyId, "file.xml", listOf(PartyFieldNames.PRIMARY_EMAIL))
+
+        val state = repo.reconcileExportedFieldFromTally("co-1", partyId, PartyFieldNames.PRIMARY_EMAIL, "  Owner@Example.com  ")
+
+        assertEquals(FieldProvenanceState.ConfirmedFromTally, state)
+    }
+
+    @Test
+    fun `re-sync confirms a GSTIN regardless of case`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.GSTIN, "29abcde1234f1z5")
+        repo.recordExport("co-1", partyId, "file.xml", listOf(PartyFieldNames.GSTIN))
+
+        val state = repo.reconcileExportedFieldFromTally("co-1", partyId, PartyFieldNames.GSTIN, "29ABCDE1234F1Z5")
+
+        assertEquals(FieldProvenanceState.ConfirmedFromTally, state)
+    }
+
+    @Test
+    fun `re-sync flags a genuinely different address as a conflict, never over-normalized`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.ADDRESS_LINE1, "12 Market Road")
+        repo.recordExport("co-1", partyId, "file.xml", listOf(PartyFieldNames.ADDRESS_LINE1))
+
+        val state = repo.reconcileExportedFieldFromTally("co-1", partyId, PartyFieldNames.ADDRESS_LINE1, "14 Market Road")
+
+        assertEquals(FieldProvenanceState.Conflict, state)
+    }
+
+    @Test
+    fun `a blank Tally read-back never downgrades an already-exported field, per TD-027 honesty`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.GSTIN, "29ABCDE1234F1Z5")
+        repo.recordExport("co-1", partyId, "file.xml", listOf(PartyFieldNames.GSTIN))
+
+        val state = repo.reconcileExportedFieldFromTally("co-1", partyId, PartyFieldNames.GSTIN, null)
+
+        assertEquals(FieldProvenanceState.Exported, state)
+    }
+
     // ============================== helpers ==============================
 
     private suspend fun partyIdFor(repo: com.budcom.android.feature.party.domain.repository.PartyRepository, ledgerId: String): String =
@@ -697,5 +856,21 @@ private class FakePartyNoteDao : com.budcom.android.feature.party.data.local.Par
     }
     override suspend fun delete(companyId: String, noteId: String) {
         store.remove(key(companyId, noteId))
+    }
+}
+
+private class FakePartyExportEventDao : com.budcom.android.feature.party.data.local.PartyExportEventDao {
+    val store = mutableMapOf<Pair<String, String>, com.budcom.android.feature.party.data.local.PartyExportEventEntity>()
+
+    override suspend fun recentForParty(
+        companyId: String,
+        partyId: String,
+        limit: Int,
+    ): List<com.budcom.android.feature.party.data.local.PartyExportEventEntity> =
+        store.values.filter { it.companyId == companyId && it.partyId == partyId }
+            .sortedByDescending { it.createdAt }.take(limit)
+
+    override suspend fun insert(entity: com.budcom.android.feature.party.data.local.PartyExportEventEntity) {
+        store[entity.companyId to entity.exportId] = entity
     }
 }

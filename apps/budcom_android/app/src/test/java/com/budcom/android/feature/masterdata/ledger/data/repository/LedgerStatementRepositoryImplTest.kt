@@ -206,6 +206,11 @@ private class StatementFakeRemote(private val result: ApiResult<LedgerStatement>
         callCount++
         return result
     }
+
+    override suspend fun fetchLedgerContactDetails(
+        ledgerId: String,
+    ): ApiResult<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails> =
+        error("fetchLedgerContactDetails is not exercised by ledger-statement tests")
 }
 
 private object StatementUnreachableRemote : LedgerRemoteDataSource {
@@ -216,6 +221,11 @@ private object StatementUnreachableRemote : LedgerRemoteDataSource {
 
     override suspend fun fetchLedgerStatement(ledgerId: String, range: LedgerStatementDateRange): ApiResult<LedgerStatement> =
         error("StatementUnreachableRemote must never be called on the AUTHENTICATED path")
+
+    override suspend fun fetchLedgerContactDetails(
+        ledgerId: String,
+    ): ApiResult<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails> =
+        error("fetchLedgerContactDetails is not exercised by ledger-statement tests")
 }
 
 private class StatementFakeAuthenticatedRemote(private val result: AppResult<LedgerStatement>) : AuthenticatedLedgerStatementRemoteDataSource {

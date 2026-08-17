@@ -401,4 +401,25 @@ private class SyncVmFakePartyRepository : PartyRepository {
         page: Int,
         pageSize: Int,
     ): com.budcom.android.feature.party.domain.model.PartyNotePage = error("unused")
+    override suspend fun getExportCandidates(
+        companyId: String,
+        partyId: String,
+    ): List<com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate> = error("unused")
+    override suspend fun recordExport(
+        companyId: String,
+        partyId: String,
+        outputFileName: String,
+        fieldNames: List<String>,
+    ): com.budcom.android.feature.party.domain.model.PartyExportEvent = error("unused")
+    override suspend fun reconcileExportedFieldFromTally(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        tallyRawValue: String?,
+    ): FieldProvenanceState = error("unused")
+    override suspend fun getExportHistory(
+        companyId: String,
+        partyId: String,
+        limit: Int,
+    ): List<com.budcom.android.feature.party.domain.model.PartyExportEvent> = error("unused")
 }

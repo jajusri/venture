@@ -202,4 +202,25 @@ private class ProspectCreateTestFakePartyRepository : PartyRepository {
     override suspend fun editNote(companyId: String, noteId: String, body: String): PartyNote? = error("unused")
     override suspend fun deleteNote(companyId: String, noteId: String) = error("unused")
     override suspend fun getNotesForParty(companyId: String, partyId: String, page: Int, pageSize: Int): PartyNotePage = error("unused")
+    override suspend fun getExportCandidates(
+        companyId: String,
+        partyId: String,
+    ): List<com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate> = error("unused")
+    override suspend fun recordExport(
+        companyId: String,
+        partyId: String,
+        outputFileName: String,
+        fieldNames: List<String>,
+    ): com.budcom.android.feature.party.domain.model.PartyExportEvent = error("unused")
+    override suspend fun reconcileExportedFieldFromTally(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        tallyRawValue: String?,
+    ): FieldProvenanceState = error("unused")
+    override suspend fun getExportHistory(
+        companyId: String,
+        partyId: String,
+        limit: Int,
+    ): List<com.budcom.android.feature.party.domain.model.PartyExportEvent> = error("unused")
 }
