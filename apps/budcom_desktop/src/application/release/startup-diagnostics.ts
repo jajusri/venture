@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { redactString } from '../log-redaction.js';
+
 export type StartupDiagnosticStage =
   | 'process_start'
   | 'single_instance_lock'
@@ -166,7 +168,8 @@ function sanitizeDetail(
       sanitized[key] = '[REDACTED]';
       continue;
     }
-    sanitized[key] = text.length > 500 ? `${text.slice(0, 500)}…` : text;
+    const redacted = redactString(text);
+    sanitized[key] = redacted.length > 500 ? `${redacted.slice(0, 500)}…` : redacted;
   }
   return sanitized;
 }

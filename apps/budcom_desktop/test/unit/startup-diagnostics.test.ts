@@ -21,6 +21,22 @@ describe('startup diagnostics', () => {
     }
   });
 
+  it('redacts sensitive content found inside a detail value, not just by key name (TD hygiene: value-content redaction)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-startup-diag-redact-'));
+    try {
+      const diagnostics = new StartupDiagnostics({ logsDir: dir });
+      diagnostics.record('bootstrap_error', {
+        message: 'Failed for company JAJU SANITATIONS — Authorization: Bearer sk-live-abc123 contact ops@example.com',
+      });
+      const fileContents = fs.readFileSync(path.join(dir, 'startup-diagnostics.jsonl'), 'utf8');
+      expect(fileContents).not.toContain('sk-live-abc123');
+      expect(fileContents).not.toContain('ops@example.com');
+      expect(fileContents).toContain('JAJU SANITATIONS');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('never throws when append fails', () => {
     const diagnostics = new StartupDiagnostics({
       logsDir: path.join(os.tmpdir(), 'budcom-startup-diag-missing-root', 'nested'),
