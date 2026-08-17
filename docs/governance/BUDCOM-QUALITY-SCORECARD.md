@@ -85,3 +85,30 @@ identity has been evaluated; TD-033/TD-034 (the two evidence-backed public-facin
 found in the controlled-pilot audit) are now resolved. See the gate matrix for the complete action
 list and the two flagged product decisions (Android public applicationId; TD-025's fuller fix)
 requiring owner input before the next pass.
+
+---
+
+## Pre-signing technical-debt closure pass (2026-08-17)
+
+A full non-signing gap inventory was built across the entire technical-debt registry (not limited
+to a fixed list) and every safe FIX NOW / IMPROVE NOW item was actioned. **No new public-release
+blocker was found.** Updates to the dimensions above:
+
+| Dimension | Change | Notes |
+|---|---|---|
+| Performance/resource efficiency | 3 (unchanged) | TD-023 fixed (connector query memory — no longer loads the full snapshot per paged request, zero behavior regression). TD-022 refined: the automatic background reconciliation walk was already bounded to 30-day windows; a real but narrower gap was found in the *manual* Voucher Browser refresh path (no date-span cap on user-typed ranges) — kept as an accepted limitation, not fixed, since the right cap is a product decision. |
+| Error/loading/empty-state honesty | 3 → **4** | TD-025's mid-session private-storage-loss gap fixed — a live loss now correctly shows the purpose-built recovery screen instead of a generic "Disconnected" state, reusing existing tested UI. A narrower, lower-impact sub-item (`desktop:restart-connector` reusing stale config after a drive-letter change) remains open, Post-MVP-1. |
+| Security/trust/privacy | 3 (unchanged) | TD-021 investigated further: the gap is architecturally deeper than one call site (would need both a wider response-classification change and a new cross-feature transport→Company dependency) — correctly left for architectural scoping rather than a unilateral cross-cutting change. TD-009 reviewed: still an accurate gap (trusted-LAN bind mode has no per-device authN unless the separate, opt-in secure-pairing subsystem is also enabled) — requiring pairing for trusted-LAN is a security-policy decision needing product sign-off, not an engineering fix. Hygiene: moved test-only privacy sentinels (a real-looking company name/GSTIN) out of shipped Desktop production source; closed a content-level (not just field-name) redaction gap in Desktop's startup-diagnostics log. |
+| Accounting/data integrity | 3 (unchanged) | TD-026 re-investigated: the requested out-of-window reconciliation mechanism was found already correctly implemented (`ReconcileVoucherWindowsUseCase`) — this session closed an automated-test evidence gap and corrected stale registry documentation, avoiding an unnecessary/risky sync-architecture change. |
+| Supportability | 3 (unchanged) | TD-004 fixed: Desktop Settings' Tally host/port fields previously persisted successfully but had zero effect on the spawned Connector — now forwarded correctly. TD-027 reviewed: still an accurate Tally-side observation, no BUDCOM defect; a prior deliberate decision not to add UI-facing messaging about it was reaffirmed, not reversed, since no new evidence has surfaced. |
+| Automated test evidence | 5 (unchanged) | Full four-component regression re-run at session end: Connector 159 files/1,423 tests, lint/build clean; Desktop 68 files/711 tests, `tsc` (3 configs) clean, full build clean; Contract 5/5; Android confirmed via full regression (see current-status checkpoint for exact counts). Two confirmed, unconditional test-infrastructure leaks fixed (Connector temp-SQLite directories via a new `globalSetup`/teardown; 13 Desktop test files' `mkdtemp` scratch directories via `afterEach`/`try-finally`) — both measured net-zero growth after the fix, pre-existing leaked directories left untouched per instruction. |
+
+**Flagged, not acted on:** `docs/diagnostics/m3-stock-items-raw-sample.xml` (~1,500 real-looking
+inventory item names, committed 2026-07-22 in `f6f59c4`) was re-confirmed unreachable by any
+packaging path (electron-builder file list, release scripts) but was **not** redacted or deleted —
+it predates this session, "do not rewrite history" is an explicit constraint, and whether this
+data is genuinely sensitive is an owner judgment call, not one this session should make
+unilaterally. Flagged here for an explicit decision.
+
+**No change to the BLOCKED — signing verdict above.** This pass found no additional non-signing
+defect that would newly block or delay public release once signing exists.
