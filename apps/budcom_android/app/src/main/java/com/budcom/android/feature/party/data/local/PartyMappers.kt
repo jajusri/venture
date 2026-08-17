@@ -6,6 +6,7 @@ import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.PartySourceType
 import com.budcom.android.feature.party.domain.model.Tag
@@ -97,6 +98,16 @@ internal fun PartyContactPersonEntity.toDomain(): PartyContactPerson = PartyCont
     email = email,
     isPrimary = isPrimary,
     provenance = provenance.toFieldProvenanceState(),
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+)
+
+internal fun PartyNoteEntity.toDomain(): PartyNote = PartyNote(
+    companyId = companyId,
+    noteId = noteId,
+    partyId = partyId,
+    body = body,
+    linkedVoucherId = linkedVoucherId,
     createdAt = createdAt,
     updatedAt = updatedAt,
 )

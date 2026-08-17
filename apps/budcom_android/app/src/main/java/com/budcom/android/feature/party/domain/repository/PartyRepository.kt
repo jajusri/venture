@@ -6,8 +6,11 @@ import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyNote
+import com.budcom.android.feature.party.domain.model.PartyNotePage
 import com.budcom.android.feature.party.domain.model.PartyPage
 import com.budcom.android.feature.party.domain.model.PartySourceLink
+import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
 
 /**
@@ -70,4 +73,54 @@ interface PartyRepository {
      * exact-10-digit Alias-phone rule non-destructively (architecture §8).
      */
     suspend fun reconcilePartiesFromEligibleLedgers(companyId: String, seeds: List<EligibleLedgerSeed>): List<Party>
+
+    // ---- MVP-1.1-C: Prospects, contact persons, tags, notes ----
+
+    /** Creates a BUDCOM-native Prospect: a Party with no Tally source link at all. Works fully
+     * offline. Duplicate-looking names/phones are never auto-merged (architecture §5.4/§5.5) —
+     * always creates a genuinely new Party with its own stable id. */
+    suspend fun createProspect(companyId: String, draft: ProspectDraft): Party
+
+    /** Single source link for one Party, if any (contrast with [getSourceLinksForCompany], the
+     * bulk company-wide read) — used to resolve the target Tally ledger for XML export and to
+     * decide whether accounting-context UI should show at all. */
+    suspend fun getSourceLinkForParty(companyId: String, partyId: String): PartySourceLink?
+
+    /** Creates a new contact person when [contactPersonId] is null, otherwise edits the existing
+     * one in place. Setting [isPrimary] true first demotes any other primary contact for the same
+     * Party, so at most one contact is ever primary. Never mutates [Party.primaryPhone]. */
+    suspend fun upsertContactPerson(
+        companyId: String,
+        partyId: String,
+        contactPersonId: String?,
+        name: String,
+        designation: String?,
+        mobile: String?,
+        whatsappNumber: String?,
+        email: String?,
+        isPrimary: Boolean,
+    ): PartyContactPerson
+
+    suspend fun deleteContactPerson(companyId: String, contactPersonId: String)
+
+    /** Every tag in the global (not company-scoped) tag vocabulary — for an "add existing tag"
+     * picker. */
+    suspend fun getAllTags(): List<Tag>
+
+    /** Returns the existing tag with this exact name under [parentTagId] if one exists, otherwise
+     * creates it — never creates a duplicate. */
+    suspend fun createOrGetTag(name: String, parentTagId: String?): Tag
+
+    suspend fun assignTag(companyId: String, partyId: String, tagId: String)
+
+    suspend fun unassignTag(companyId: String, partyId: String, tagId: String)
+
+    suspend fun addNote(companyId: String, partyId: String, body: String, linkedVoucherId: String?): PartyNote
+
+    suspend fun editNote(companyId: String, noteId: String, body: String): PartyNote?
+
+    suspend fun deleteNote(companyId: String, noteId: String)
+
+    /** Bounded, newest-first, indexed — never a full scan. */
+    suspend fun getNotesForParty(companyId: String, partyId: String, page: Int, pageSize: Int): PartyNotePage
 }

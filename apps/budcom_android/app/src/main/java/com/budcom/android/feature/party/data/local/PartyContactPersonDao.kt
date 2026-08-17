@@ -20,4 +20,7 @@ interface PartyContactPersonDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: PartyContactPersonEntity)
+
+    @Query("DELETE FROM party_contact_persons WHERE companyId = :companyId AND contactPersonId = :contactPersonId")
+    suspend fun delete(companyId: String, contactPersonId: String)
 }

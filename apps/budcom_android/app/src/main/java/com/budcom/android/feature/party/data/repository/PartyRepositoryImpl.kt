@@ -6,12 +6,17 @@ import com.budcom.android.core.util.TimeProvider
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyDao
 import com.budcom.android.feature.party.data.local.PartyEntity
+import com.budcom.android.feature.party.data.local.PartyContactPersonEntity
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceEntity
+import com.budcom.android.feature.party.data.local.PartyNoteDao
+import com.budcom.android.feature.party.data.local.PartyNoteEntity
 import com.budcom.android.feature.party.data.local.PartySourceLinkDao
 import com.budcom.android.feature.party.data.local.PartySourceLinkEntity
 import com.budcom.android.feature.party.data.local.PartyTagAssignmentRow
+import com.budcom.android.feature.party.data.local.PartyTagCrossRefEntity
 import com.budcom.android.feature.party.data.local.TagDao
+import com.budcom.android.feature.party.data.local.TagEntity
 import com.budcom.android.feature.party.data.local.asColumn
 import com.budcom.android.feature.party.data.local.toDomain
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
@@ -22,8 +27,11 @@ import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyNote
+import com.budcom.android.feature.party.domain.model.PartyNotePage
 import com.budcom.android.feature.party.domain.model.PartyPage
 import com.budcom.android.feature.party.domain.model.PartySourceLink
+import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import kotlinx.coroutines.withContext
@@ -41,6 +49,7 @@ class PartyRepositoryImpl @Inject constructor(
     private val fieldProvenanceDao: PartyFieldProvenanceDao,
     private val contactPersonDao: PartyContactPersonDao,
     private val tagDao: TagDao,
+    private val noteDao: PartyNoteDao,
     private val timeProvider: TimeProvider,
     private val dispatchers: DispatcherProvider,
 ) : PartyRepository {
@@ -270,6 +279,170 @@ class PartyRepositoryImpl @Inject constructor(
         }
         partyDao.upsert(updated)
     }
+
+    // ---- MVP-1.1-C: Prospects, contact persons, tags, notes ----
+
+    override suspend fun createProspect(companyId: String, draft: ProspectDraft): Party = withContext(dispatchers.io) {
+        val now = timeProvider.nowEpochMillis()
+        val partyId = UUID.randomUUID().toString()
+
+        partyDao.upsert(
+            PartyEntity(
+                companyId = companyId,
+                partyId = partyId,
+                displayName = draft.displayName,
+                classification = PartyClassification.Prospect.asColumn(),
+                primaryPhone = draft.phone,
+                primaryPhoneNormalized = PhoneNumberNormalizer.normalizeForSearch(draft.phone),
+                primaryEmail = draft.email,
+                addressLine1 = draft.addressLine1,
+                addressCity = draft.addressCity,
+                addressState = draft.addressState,
+                addressPincode = draft.addressPincode,
+                gstin = null,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
+
+        // No Tally source link is created — a Prospect is BUDCOM-native by definition (spec
+        // §4.1). Every provided Tally-compatible field still gets a provenance row so a future
+        // Tally link (architecture §27/§8) has a coherent pending starting point rather than an
+        // untracked one.
+        listOfNotNull(
+            draft.phone?.let { PartyFieldNames.PRIMARY_PHONE to it },
+            draft.email?.let { PartyFieldNames.PRIMARY_EMAIL to it },
+            draft.addressLine1?.let { PartyFieldNames.ADDRESS_LINE1 to it },
+            draft.addressCity?.let { PartyFieldNames.ADDRESS_CITY to it },
+            draft.addressState?.let { PartyFieldNames.ADDRESS_STATE to it },
+            draft.addressPincode?.let { PartyFieldNames.ADDRESS_PINCODE to it },
+        ).forEach { (fieldName, value) ->
+            fieldProvenanceDao.upsert(
+                baseProvenance(null, companyId, partyId, fieldName).copy(
+                    state = FieldProvenanceState.BudcomOnlyPending.asColumn(),
+                    budcomValue = value,
+                    updatedAt = now,
+                ),
+            )
+        }
+
+        draft.tagIds.forEach { tagId -> tagDao.assign(PartyTagCrossRefEntity(companyId, partyId, tagId, now)) }
+        draft.note?.takeIf(String::isNotBlank)?.let { body ->
+            noteDao.upsert(PartyNoteEntity(companyId, UUID.randomUUID().toString(), partyId, body, null, now, now))
+        }
+
+        partyDao.findById(companyId, partyId)!!.toDomain()
+    }
+
+    override suspend fun getSourceLinkForParty(companyId: String, partyId: String): PartySourceLink? =
+        withContext(dispatchers.io) { sourceLinkDao.findByPartyId(companyId, partyId).firstOrNull()?.toDomain() }
+
+    override suspend fun upsertContactPerson(
+        companyId: String,
+        partyId: String,
+        contactPersonId: String?,
+        name: String,
+        designation: String?,
+        mobile: String?,
+        whatsappNumber: String?,
+        email: String?,
+        isPrimary: Boolean,
+    ): PartyContactPerson = withContext(dispatchers.io) {
+        val now = timeProvider.nowEpochMillis()
+        val id = contactPersonId ?: UUID.randomUUID().toString()
+        val existing = contactPersonId?.let { contactPersonDao.findById(companyId, it) }
+
+        if (isPrimary) {
+            // At most one primary contact per Party — demote every other primary first, never
+            // silently leaving two.
+            contactPersonDao.findAllForParty(companyId, partyId)
+                .filter { it.isPrimary && it.contactPersonId != id }
+                .forEach { contactPersonDao.upsert(it.copy(isPrimary = false, updatedAt = now)) }
+        }
+
+        val entity = PartyContactPersonEntity(
+            companyId = companyId,
+            contactPersonId = id,
+            partyId = partyId,
+            name = name,
+            designation = designation,
+            mobile = mobile,
+            mobileNormalized = PhoneNumberNormalizer.normalizeForSearch(mobile),
+            whatsappNumber = whatsappNumber,
+            email = email,
+            isPrimary = isPrimary,
+            provenance = FieldProvenanceState.BudcomOnlyPending.asColumn(),
+            createdAt = existing?.createdAt ?: now,
+            updatedAt = now,
+        )
+        contactPersonDao.upsert(entity)
+        entity.toDomain()
+    }
+
+    override suspend fun deleteContactPerson(companyId: String, contactPersonId: String) =
+        withContext(dispatchers.io) { contactPersonDao.delete(companyId, contactPersonId) }
+
+    override suspend fun getAllTags(): List<Tag> =
+        withContext(dispatchers.io) { tagDao.findAll().map { it.toDomain() } }
+
+    override suspend fun createOrGetTag(name: String, parentTagId: String?): Tag = withContext(dispatchers.io) {
+        tagDao.findByNameUnderParent(name, parentTagId)?.toDomain()?.let { return@withContext it }
+        val parentPath = parentTagId?.let { tagDao.findById(it)?.path }
+        val path = if (parentPath != null) "$parentPath/$name" else name
+        val entity = TagEntity(
+            tagId = UUID.randomUUID().toString(),
+            parentTagId = parentTagId,
+            name = name,
+            path = path,
+            createdAt = timeProvider.nowEpochMillis(),
+        )
+        tagDao.upsert(entity)
+        entity.toDomain()
+    }
+
+    override suspend fun assignTag(companyId: String, partyId: String, tagId: String) =
+        withContext(dispatchers.io) {
+            tagDao.assign(PartyTagCrossRefEntity(companyId, partyId, tagId, timeProvider.nowEpochMillis()))
+        }
+
+    override suspend fun unassignTag(companyId: String, partyId: String, tagId: String) =
+        withContext(dispatchers.io) { tagDao.unassign(companyId, partyId, tagId) }
+
+    override suspend fun addNote(companyId: String, partyId: String, body: String, linkedVoucherId: String?): PartyNote =
+        withContext(dispatchers.io) {
+            val now = timeProvider.nowEpochMillis()
+            val entity = PartyNoteEntity(
+                companyId = companyId,
+                noteId = UUID.randomUUID().toString(),
+                partyId = partyId,
+                body = body,
+                linkedVoucherId = linkedVoucherId,
+                createdAt = now,
+                updatedAt = now,
+            )
+            noteDao.upsert(entity)
+            entity.toDomain()
+        }
+
+    override suspend fun editNote(companyId: String, noteId: String, body: String): PartyNote? =
+        withContext(dispatchers.io) {
+            val existing = noteDao.findById(companyId, noteId) ?: return@withContext null
+            val updated = existing.copy(body = body, updatedAt = timeProvider.nowEpochMillis())
+            noteDao.upsert(updated)
+            updated.toDomain()
+        }
+
+    override suspend fun deleteNote(companyId: String, noteId: String) =
+        withContext(dispatchers.io) { noteDao.delete(companyId, noteId) }
+
+    override suspend fun getNotesForParty(companyId: String, partyId: String, page: Int, pageSize: Int): PartyNotePage =
+        withContext(dispatchers.io) {
+            val safePage = page.coerceAtLeast(1)
+            val safeSize = pageSize.coerceIn(1, 100)
+            val total = noteDao.countForParty(companyId, partyId)
+            val items = noteDao.pageForParty(companyId, partyId, safeSize, (safePage - 1) * safeSize)
+            PartyNotePage(items.map { it.toDomain() }, safePage, safeSize, total)
+        }
 
     private fun baseProvenance(
         existing: PartyFieldProvenanceEntity?,

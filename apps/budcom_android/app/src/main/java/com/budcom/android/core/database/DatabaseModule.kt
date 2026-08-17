@@ -12,6 +12,7 @@ import com.budcom.android.core.connection.data.local.PairedConnectorDao
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyDao
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
+import com.budcom.android.feature.party.data.local.PartyNoteDao
 import com.budcom.android.feature.party.data.local.PartySourceLinkDao
 import com.budcom.android.feature.party.data.local.TagDao
 import androidx.room.migration.Migration
@@ -38,7 +39,7 @@ object DatabaseModule {
         context,
         AppDatabase::class.java,
         DatabaseConstants.NAME,
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
         .build()
 
     @Provides
@@ -76,6 +77,9 @@ object DatabaseModule {
 
     @Provides
     fun provideTagDao(db: AppDatabase): TagDao = db.tagDao()
+
+    @Provides
+    fun providePartyNoteDao(db: AppDatabase): PartyNoteDao = db.partyNoteDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -259,6 +263,26 @@ object DatabaseModule {
                     "ON `party_tag_assignments` (`companyId`, `tagId`)",
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_party_tag_assignments_tagId` ON `party_tag_assignments` (`tagId`)")
+        }
+    }
+
+    /**
+     * Additive-only: adds the single MVP-1.1-C `party_notes` table (BUDCOM-only Party notes,
+     * optionally referencing an existing Voucher by its stable id — never duplicating Voucher
+     * data). No existing table is touched.
+     */
+    val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `party_notes` (" +
+                    "`companyId` TEXT NOT NULL, `noteId` TEXT NOT NULL, `partyId` TEXT NOT NULL, " +
+                    "`body` TEXT NOT NULL, `linkedVoucherId` TEXT, `createdAt` INTEGER NOT NULL, " +
+                    "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `noteId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_party_notes_companyId_partyId_createdAt` " +
+                    "ON `party_notes` (`companyId`, `partyId`, `createdAt`)",
+            )
         }
     }
 }

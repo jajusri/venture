@@ -700,4 +700,67 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 6 -> 7 migration (adding the single MVP-1.1-C `party_notes` table)
+     * preserves every pre-existing row and never falls back to a destructive recreation.
+     */
+    @Test
+    fun migrate6To7_preservesExistingRowsAndAddsPartyNotesTableOnly() {
+        val db67DbName = "migration-test-db-6-7"
+
+        var db = helper.createDatabase(db67DbName, 6)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_parties (companyId, partyId, displayName, classification, primaryPhone, " +
+                "primaryPhoneNormalized, primaryEmail, addressLine1, addressCity, addressState, addressPincode, " +
+                "gstin, createdAt, updatedAt) VALUES ('acme-001', 'party-1', 'ABC Traders', 'customer', NULL, " +
+                "NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1736899200000, 1736899200000)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db67DbName, 7, false, DatabaseModule.MIGRATION_6_7)
+
+        db.query("SELECT name FROM cached_companies WHERE id = 'acme-001'").use { cursor ->
+            assertTrue("existing company row must survive the migration", cursor.moveToFirst())
+            assertEquals("Acme Corp", cursor.getString(0))
+        }
+        db.query("SELECT displayName FROM cached_parties WHERE companyId = 'acme-001' AND partyId = 'party-1'").use { cursor ->
+            assertTrue("existing party row must survive the migration", cursor.moveToFirst())
+            assertEquals("ABC Traders", cursor.getString(0))
+        }
+
+        val columns = mutableMapOf<String, String>()
+        db.query("PRAGMA table_info(`party_notes`)").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val typeIdx = cursor.getColumnIndexOrThrow("type")
+            while (cursor.moveToNext()) {
+                columns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+            }
+        }
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "noteId" to "TEXT", "partyId" to "TEXT", "body" to "TEXT",
+                "linkedVoucherId" to "TEXT", "createdAt" to "INTEGER", "updatedAt" to "INTEGER",
+            ),
+            columns,
+        )
+
+        db.execSQL(
+            "INSERT INTO party_notes (companyId, noteId, partyId, body, linkedVoucherId, createdAt, updatedAt) " +
+                "VALUES ('acme-001', 'note-1', 'party-1', 'Customer says 2 pieces short', 'v-1', " +
+                "1736899200000, 1736899200000)",
+        )
+        db.query(
+            "SELECT body FROM party_notes WHERE companyId = 'acme-001' AND partyId = 'party-1'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Customer says 2 pieces short", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

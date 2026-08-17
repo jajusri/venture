@@ -8,8 +8,11 @@ import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyNote
+import com.budcom.android.feature.party.domain.model.PartyNotePage
 import com.budcom.android.feature.party.domain.model.PartyPage
 import com.budcom.android.feature.party.domain.model.PartySourceLink
+import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import javax.inject.Inject
@@ -96,4 +99,69 @@ class ReconcilePartiesFromLedgersUseCase @Inject constructor(
         if (eligible.isEmpty()) return emptyList()
         return repository.reconcilePartiesFromEligibleLedgers(companyId, eligible)
     }
+}
+
+// ---- MVP-1.1-C: Prospects, contact persons, tags, notes ----
+
+class CreateProspectUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, draft: ProspectDraft): Party = repository.createProspect(companyId, draft)
+}
+
+class GetSourceLinkForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String): PartySourceLink? =
+        repository.getSourceLinkForParty(companyId, partyId)
+}
+
+class UpsertContactPersonUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(
+        companyId: String,
+        partyId: String,
+        contactPersonId: String?,
+        name: String,
+        designation: String?,
+        mobile: String?,
+        whatsappNumber: String?,
+        email: String?,
+        isPrimary: Boolean,
+    ): PartyContactPerson = repository.upsertContactPerson(
+        companyId, partyId, contactPersonId, name, designation, mobile, whatsappNumber, email, isPrimary,
+    )
+}
+
+class DeleteContactPersonUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, contactPersonId: String) = repository.deleteContactPerson(companyId, contactPersonId)
+}
+
+class GetAllTagsUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(): List<Tag> = repository.getAllTags()
+}
+
+class CreateOrGetTagUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(name: String, parentTagId: String?): Tag = repository.createOrGetTag(name, parentTagId)
+}
+
+class AssignTagUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, tagId: String) = repository.assignTag(companyId, partyId, tagId)
+}
+
+class UnassignTagUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, tagId: String) = repository.unassignTag(companyId, partyId, tagId)
+}
+
+class AddNoteUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, body: String, linkedVoucherId: String?): PartyNote =
+        repository.addNote(companyId, partyId, body, linkedVoucherId)
+}
+
+class EditNoteUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, noteId: String, body: String): PartyNote? = repository.editNote(companyId, noteId, body)
+}
+
+class DeleteNoteUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, noteId: String) = repository.deleteNote(companyId, noteId)
+}
+
+class GetNotesForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, page: Int = 1, pageSize: Int = 20): PartyNotePage =
+        repository.getNotesForParty(companyId, partyId, page, pageSize)
 }

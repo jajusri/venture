@@ -10,6 +10,11 @@ interface TagDao {
     @Query("SELECT * FROM party_tags WHERE tagId = :tagId")
     suspend fun findById(tagId: String): TagEntity?
 
+    /** Every tag in the (global, not company-scoped) tag vocabulary — used to populate an "add
+     * existing tag" picker. Tag vocabularies are expected to stay small in practice; unpaged. */
+    @Query("SELECT * FROM party_tags ORDER BY path COLLATE NOCASE ASC")
+    suspend fun findAll(): List<TagEntity>
+
     @Query("SELECT * FROM party_tags WHERE name = :name AND (:parentTagId IS NULL AND parentTagId IS NULL OR parentTagId = :parentTagId)")
     suspend fun findByNameUnderParent(name: String, parentTagId: String?): TagEntity?
 

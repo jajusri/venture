@@ -124,6 +124,28 @@ data class Tag(
     val createdAt: Long,
 )
 
+/** BUDCOM-only Party note (architecture §17) — never enters Tally XML. [linkedVoucherId] is a
+ * stable reference only, never a copy of Voucher data; the referenced Voucher may not be locally
+ * available (e.g. outside the synced window), which is a normal, handled state, not an error. */
+data class PartyNote(
+    val companyId: String,
+    val noteId: String,
+    val partyId: String,
+    val body: String,
+    val linkedVoucherId: String?,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
+
+data class PartyNotePage(
+    val items: List<PartyNote>,
+    val page: Int,
+    val pageSize: Int,
+    val totalItems: Int,
+) {
+    val canLoadMore: Boolean get() = page * pageSize < totalItems
+}
+
 /**
  * One ledger already known to be eligible for Party seeding (classification already resolved by
  * `LedgerPartyEligibilityPolicy`) — the unit the reconciliation use case hands to the repository.
@@ -133,4 +155,19 @@ data class EligibleLedgerSeed(
     val ledgerName: String,
     val alias: String?,
     val classification: PartyClassification,
+)
+
+/** Input for creating a BUDCOM-native Prospect — a Party with no Tally source link at all
+ * (architecture §27, spec §4.1). Every field except [displayName] is optional; no accounting
+ * information is required or possible at creation time. */
+data class ProspectDraft(
+    val displayName: String,
+    val phone: String? = null,
+    val email: String? = null,
+    val addressLine1: String? = null,
+    val addressCity: String? = null,
+    val addressState: String? = null,
+    val addressPincode: String? = null,
+    val tagIds: List<String> = emptyList(),
+    val note: String? = null,
 )

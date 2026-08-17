@@ -109,3 +109,25 @@ data class PartyContactPersonEntity(
     val createdAt: Long,
     val updatedAt: Long,
 )
+
+/**
+ * BUDCOM-only Party note (architecture §17/§17.1 — MVP-1.1-C). Never enters Tally XML. A note may
+ * optionally reference a synced Voucher by its existing stable id — never duplicating Voucher
+ * data locally, only the reference; the Voucher itself may later become locally unavailable
+ * (e.g. outside the currently-synced window), which the read side must handle gracefully rather
+ * than treating as an error.
+ */
+@Entity(
+    tableName = "party_notes",
+    primaryKeys = ["companyId", "noteId"],
+    indices = [Index(value = ["companyId", "partyId", "createdAt"])],
+)
+data class PartyNoteEntity(
+    val companyId: String,
+    val noteId: String,
+    val partyId: String,
+    val body: String,
+    val linkedVoucherId: String?,
+    val createdAt: Long,
+    val updatedAt: Long,
+)
