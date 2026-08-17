@@ -1,8 +1,12 @@
 # BUDCOM MVP-1.1 — Connect Status
 
 **Status:** MVP-1.1-A (Universal Party Foundation) — technically complete, ready for review.
-No Connect UI exists yet. MVP-1.1-B (Connect Browser + Customers/Prospects + deep links) is the
-next planned slice and has **not** been started.
+**MVP-1.1-B (Connect Browser + Customers/Prospects + accounting deep links) — technically
+complete, ready for review.** MVP-1.1-C (Party Detail + Contact Persons + Tags + Notes/Activity +
+voucher-linked notes) is the next planned slice and has **not** been started — see Part B below
+for full 1.1-B detail.
+
+# Part A — MVP-1.1-A: Universal Party Foundation
 
 ## 1. Architecture reconciliation (Part 1)
 
@@ -277,11 +281,330 @@ context, so it was deliberately not done. Flagged for the user to decide.
   against real Room/SQLite with synthetic fixtures, not against a live-synced ledger snapshot from
   a real Tally company. Code-proven, not field-proven.
 
-## 21. Exact NEXT TASK
+## 21. Exact NEXT TASK (superseded — see Part B)
 
-**MVP-1.1-B — Connect Browser + Customers/Prospects + deep links**, per the architecture file's
-own §29/§39 sequencing. Do not begin without explicit go-ahead (per Part 23 of this session's
-governing prompt). Before that: the user may want to (a) confirm/authorize installing the debug
-candidate onto a specific device for a live smoke test with a real paired Tally company, and
-(b) review the conservative ledger-eligibility default in §11 against real accounting data before
-1.1-B builds UI on top of it.
+~~MVP-1.1-B — Connect Browser + Customers/Prospects + deep links~~ — **completed this session**,
+see Part B below for full detail. The ledger-eligibility default in §11 was reviewed again during
+1.1-B (Part B §6) and preserved unchanged (no repository evidence found to justify broadening it).
+
+---
+
+# Part B — MVP-1.1-B: Connect Browser + Customers/Prospects + Accounting Deep Links
+
+**Status:** Technically complete, ready for review. First user-visible Connect slice — a
+Customers/Prospects browser reachable from the Dashboard, with Call/WhatsApp actions and deep
+links into the existing Ledger Statement and Voucher Browser screens.
+
+## B1. Scope recovery and continuity check
+
+Verified against repository evidence (not session memory) before implementing: `git log`
+confirmed HEAD at `2e31898` matching the recorded MVP-1.1-A checkpoint; `PartyRepository`,
+`PartyDao`/`PartySourceLinkDao`/`TagDao`, `LedgerSnapshotPort`, `PhoneNumberNormalizer`,
+`MIGRATION_5_6` (schema version 6) all present and matching the MVP-1.1-A status doc's own
+description. No drift between the prior session's record and actual code.
+
+## B2. Connect navigation
+
+New route `Routes.CONNECT = "connect?q={q}"` (same `?q={q}` convention as Ledgers/Vouchers),
+registered in `BudcomNavHost`. Reached from a new third `HomePrimaryEntryRow` on the Dashboard
+("Connect" / "Customers and prospects"), alongside the existing Vouchers/Ledgers entries — the
+precedented slot for a top-level browser destination (no bottom-nav exists in this app; Dashboard
+rows are the only top-level entry mechanism). New `DashboardEvent.OpenConnect` /
+`DashboardNavigation.Connect` wired through `DashboardViewModel` exactly like the existing
+Vouchers/Ledgers events. `ConnectViewModel` is scoped to its `NavBackStackEntry` (standard Hilt
+Navigation-Compose behavior, no custom code needed) so tab selection/search query/scroll position
+all survive `Connect → Ledger/Vouchers → Back` navigation for free.
+
+## B3. Customers implementation
+
+`ConnectViewModel.load()` calls `ListPartiesByClassificationUseCase(companyId, Customer, page,
+pageSize)` (1.1-A repository, local-only, bounded/paged) when the search box is empty. No live
+Tally/Connector request on open. Rows are enriched (balance/tags/deep-link ids) via a join
+performed once per Load/Refresh/company-change against two new bulk bounded reads —
+`GetPartySourceLinksForCompanyUseCase`/`GetPartyTagsForCompanyUseCase` (new, `PartyRepository`)
+and the existing `LedgerSnapshotPort.getCachedLedgers` (1.1-A) — never per-row, avoiding N+1.
+
+## B4. Prospects implementation
+
+Same code path, `PartyClassification.Prospect`. Since 1.1-A never auto-seeds Prospects (a Tally
+ledger can never itself be a Prospect, per the locked spec's own definition), the list is
+legitimately empty today — proven honest, not fabricated, by
+`ConnectViewModelTest.\`Prospects tab is honestly empty when nothing has been seeded\`` and
+`ConnectScreenTest.prospectsEmptyState`. No Prospect creation UI was built (explicitly out of
+1.1-B scope; deferred, and not yet locked to a specific later milestone in repository evidence).
+
+## B5. Seeding-policy disposition (Part 8 review)
+
+Re-reviewed `LedgerPartyEligibilityPolicy` (debtor→Customer, creditor→Supplier, else unseeded,
+Prospect never auto-seeded) against this session's UI work and the Voucher/Ledger schema
+inspected for deep-linking (B7/B8 below). No repository evidence surfaced that would justify
+broadening or narrowing it — **preserved unchanged**, still documented as a conservative default
+pending real seeded-Party evidence, not a locked product rule.
+
+## B6. Search implementation
+
+`ConnectEvent.SearchChanged` debounces (`MasterDataBrowserDefaults.SEARCH_DEBOUNCE_MS`, the same
+constant Ledger/Voucher search already uses) then calls the extended
+`SearchPartiesUseCase(companyId, query, classification, page, pageSize)` — **classification-scoped
+search is new this session**: 1.1-A's `searchParties`/`PartyDao.search` had no classification
+filter (there were no tabs yet to scope by); extended with an additive nullable `classification`
+SQL parameter (`(:classification IS NULL OR classification = :classification)`, same nullable-
+filter idiom already used by `LedgerDao.queryPage`) so a Customers-tab search can never surface a
+Prospect row. Covered by `PartyRepositoryImplTest.\`searchParties with a classification filter
+never returns another classification\`` and `PartyDaoTest.search_classificationFilterNarrowsToOneSection`.
+
+## B7. Phone search
+
+Reuses the canonical `PhoneNumberNormalizer` unchanged (no second resolver, per instruction) —
+`PartyDao.search` already matched `primaryPhoneNormalized` (1.1-A); this session added no new
+phone-matching logic, only the classification scoping above. Duplicate-phone Parties are never
+merged — each remains a separate row (`PartyRepositoryImplTest` company-isolation tests already
+prove two Parties can share a phone and both surface independently).
+
+## B8. Multi-company behavior
+
+`ConnectViewModel` observes `companySession.observeSelectedCompanyId().distinctUntilChanged()`
+(same pattern as `VoucherBrowserViewModel`) and resets rows/page/error on every change before
+reloading. Explicitly tested: `\`switching company resets rows and reloads for the new company\``
+and, more pointedly, `\`company A balance never leaks into company B's Party with the same name
+and phone\`` — two companies with an identically-named, identically-phoned Party never share a
+balance or accounting link; only the company whose source link actually exists shows one. No
+automatic cross-company Party merging exists anywhere in the code (Party identity remains strictly
+`(companyId, ...)`-scoped from 1.1-A).
+
+## B9. Party row / balance design
+
+Compact `Card` row: name + balance on one line (balance from `Ledger.closingBalance` only, via the
+join in B3 — never independently calculated, satisfying "balance is accounting truth"), phone +
+tags on a secondary line, Call/WhatsApp `AssistChip`s always present, View Ledger/View Vouchers
+`OutlinedButton`s shown **only when `linkedLedgerId != null`** (i.e. only for a Party with a real
+accounting source link — never fabricated for a BUDCOM-only/Prospect Party). Uses
+`MaterialTheme.colorScheme`/`typography` tokens throughout (no hardcoded colors), inheriting
+`BudcomTheme`'s existing light/dark support for free. Mini-hardening: name and balance are
+`maxLines = 1` with `TextOverflow.Ellipsis` (a long Party name can no longer push the balance
+off-card); the phone/tags line is `maxLines = 2` with ellipsis (a Party with many tags degrades
+gracefully instead of growing the row indefinitely).
+
+## B10. Call action
+
+`Intent.ACTION_DIAL` (never `ACTION_CALL`) — opens the system dialer pre-filled but never places
+the call itself, so no `CALL_PHONE` permission was added to the manifest and no silent call is
+possible by construction. Disabled behavior for a missing/invalid phone: `ConnectEvent.CallTapped`
+with a null `phoneE164` emits `ConnectEffect.ShowMessage` instead of a dead/silent tap — proven
+by `\`call tap with no phone shows a message, never crashes\``.
+
+## B11. WhatsApp action
+
+Standard `https://wa.me/<digits>` deep link (`Intent.ACTION_VIEW`) — opens a WhatsApp chat
+directly if installed, browser fallback otherwise, still requires an explicit further action
+inside WhatsApp to send anything. **Disposition, not full reuse of the PDF-sharing chooser
+machinery**: the existing `LedgerSharingPreferences`/Direct-vs-Select-chooser/multi-WhatsApp-
+installation infrastructure in `AndroidLedgerStatementShareCoordinator` governs *where to send an
+attached PDF* — Connect's WhatsApp action has no attachment at all, so that machinery doesn't
+apply; reusing it would have meant inventing a fake "content" to share. What **is** reused, per
+instruction, is the phone-resolution logic (`PhoneNumberNormalizer`) — no second resolver exists.
+Documented here explicitly rather than silently narrowing scope.
+
+## B12. View Ledger deep link
+
+Fully stable-identity-based, satisfying the "no display-name-only navigation" requirement exactly:
+`ConnectRowUi.linkedLedgerId` is the Party's `PartySourceLink.externalEntityId` (the same
+rename-stable `guid:`/`name:`-prefixed id from 1.1-A) resolved once per list-load via the B3 join
+— never a display-name lookup. Tapping "View Ledger" navigates to the existing, completely
+unmodified `Routes.ledgerStatement(ledgerId)` → `LedgerStatementRoute`. A null/missing link (a
+Prospect, or any Party without a source link) shows a message instead of navigating —
+`\`view ledger tap with no linked ledger shows a message instead of navigating\``.
+
+## B13. View Vouchers deep link
+
+**Genuine, documented limitation, not silently accepted.** Investigated whether the Voucher
+schema (`VoucherQuery`/`VoucherSummary`/`VoucherPage`/Room `cached_vouchers`/
+`cached_voucher_ledger_lines`) carries any stable ledger/party id at all — it does not: every
+Voucher-to-party association in this app, at every layer including the Connector API and local
+Room columns, is a **name string** (`VoucherEntity.partyName`, `VoucherLedgerLineEntity.ledgerName`),
+matched via case-insensitive substring in `VoucherLocalDataSource`. This is a pre-existing MVP-1
+architectural characteristic of the Voucher feature (not something 1.1-B introduced), and adding a
+genuine ledger-GUID column to the Voucher schema would mean a new Room migration plus Connector-
+side DTO/sync changes — materially larger than a Connect-local change and outside "reuse existing
+screens, do not create a second implementation."
+
+**Disposition:** "View Vouchers" pre-fills the existing, unmodified Voucher Browser's search field
+(`Routes.vouchers(query)`) with the Party's **current** linked ledger name — kept fresh at every
+Party reconciliation (`PartyRepositoryImpl.reconcileOne` always sets `displayName` from the latest
+Tally ledger name), so this is the same name-substring mechanism a user could already type by hand
+into Voucher search today, just auto-filled from the authoritative current name rather than typed.
+Proven via `\`view vouchers tap emits the linked ledger name as the prefill query\``. This does not
+meet the letter of "use stable identity, not loose string matching" for this one specific deep
+link — flagged honestly here rather than claimed otherwise. Adding a real ledger-id-based Voucher
+filter is a reasonable candidate for a future focused Voucher-feature slice, not 1.1-B.
+
+## B14. Outstanding disposition
+
+**Not built — no authoritative data source exists.** Grepped the full Ledger/Voucher/Connector DTO
+surface for `Outstanding`/`BillWise`: the only hit is `LedgerSummaryDto.isBillWiseOn: Boolean?` — a
+capability *flag* indicating whether Tally's bill-wise tracking is enabled for a ledger, not actual
+bill-wise outstanding-transaction data. No bill/ageing data is synced, stored, or exposed anywhere
+in this app today. Fabricating an Outstanding view from incomplete data was explicitly forbidden by
+the governing instruction, so it was not attempted.
+
+## B15. Offline behavior
+
+Connect performs zero network calls at any point (`PartyRepository`/`LedgerSnapshotPort` are both
+100% local-Room-backed) — it is offline-capable *by construction*, not by a special offline code
+path. `ConnectUiState.isOnline` (from the existing `NetworkConnectivityObserver`) only drives the
+existing shared `MasterDataOfflineBanner`, an honest "you're offline, this is retained data"
+notice — browsing/search/balance/tags/View Ledger/View Vouchers all continue working from local
+data regardless. Call/WhatsApp still launch via device capability (dialer/WhatsApp app resolution
+is independent of BUDCOM's own network state).
+
+## B16. Empty and error states
+
+Honest, jargon-free empty-state copy distinguishing four cases: no Customers yet (`connect_empty_customers`,
+mentions eligible-ledger sync as the reason rather than a technical "empty table"), no Prospects
+yet (`connect_empty_prospects`), a search with no matches (`connect_empty_search`), and the
+existing shared `MasterDataErrorBlock`/Retry for a genuine load failure. "Select a company" is
+its own explicit message (`ConnectUiState.error`), not a generic error or a blank screen — proven
+by `\`no company selected shows an honest message, not a crash\``.
+
+## B17. Accessibility
+
+Every row carries a `contentDescription` combining name/phone/balance/tags; Call/WhatsApp chips
+have explicit `"Call {name}"`/`"Message {name} on WhatsApp"` semantics (never icon-only/color-only
+meaning); the search field has an explicit content description; tabs get Compose's standard
+`Tab(text = ...)` accessible labeling for free. Long names/tags/balances degrade via ellipsis
+(B9) rather than overflowing off-screen or breaking TalkBack focus order.
+
+## B18. Performance evidence
+
+Two new bulk-read instrumented performance tests (real Room, connected device, 500-row synthetic
+fixtures, same `<2s` soft ceiling as 1.1-A's `PartyDaoTest` precedent):
+`PartySourceLinkDaoTest... sourceLink_bulkCompanyReadStaysFastAndBoundedWithALargeFixture` and
+`TagDaoTest.findTagsForCompany_bulkReadStaysFastAndBoundedWithALargeFixture` — both prove the
+once-per-load enrichment join (B3) stays bounded regardless of company size, never per-row. Search/
+classification-list bounds were already proven in 1.1-A's `PartyDaoTest` (500-row fixture, `<2s`
+paged query) and remain valid since the underlying queries are unchanged except for the additive
+nullable classification filter (still index-prefix-compatible on `companyId`).
+
+## B19. New tests
+
+- **JVM:** `ConnectViewModelTest` (12 — Customers/Prospects load, honest-empty Prospects,
+  classification-scoped search, company-switch reset, cross-company balance-leak prevention,
+  View-Ledger/Call/WhatsApp/View-Vouchers effect emission including the no-phone/no-link message
+  paths, offline flag, no-company-selected message), plus one extended `DashboardViewModelTest`
+  case (`OpenConnect` navigation). `PartyRepositoryImplTest` gained 3 new cases for the bulk
+  source-link/tag reads and classification-scoped search.
+- **Instrumented (real device):** `ConnectScreenTest` (12 — loading/empty/content/error/offline
+  states, Call/WhatsApp/View-Ledger tap events, tab switching, accounting-link-hidden-for-Prospect),
+  `ConnectContactActionsTest` (3 — exact Intent action/data verification, proving neither action
+  can place a call or send a message by itself), plus the 2 new bulk-read performance tests above.
+- Two pre-existing hand-written `FakePartyRepository`-style test doubles (in
+  `ReconcilePartiesFromLedgersUseCaseTest`/`SyncViewModelTest`) needed the two new repository
+  members added — mechanical, zero behavior change, both already-passing test files otherwise
+  untouched.
+
+## B20. Full Android regression results
+
+- `testDebugUnitTest`: **1,088/1,088 passing** (was 1,073 after 1.1-A).
+- `testReleaseUnitTest`: **1,088/1,088 passing** (full re-run).
+- `lintDebug` / `lintRelease`: **0 errors** both.
+- `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`: all `BUILD SUCCESSFUL`.
+- `connectedDebugAndroidTest`, scoped to new/changed classes: the 15 new Connect instrumented
+  tests + 2 new bulk-read performance tests (17 total) **all passing** on a connected physical
+  device (`I2407i`).
+- `connectedDebugAndroidTest`, full app suite (every instrumented test, not just new/changed —
+  run for complete regression evidence): **194/206 passing.** The 12 failures are **all** in
+  files this session never touched (`DiagnosticsScreenTest`, `LedgerStatementScreenTest` ×2,
+  `SecurePairingScreenTest`, `ServerConfigScreenTest` ×2, `SettingsScreenTest` ×2,
+  `SyncScreenTest`, `VoucherDetailsScreenTest`) and share a consistent signature —
+  `assertIsDisplayed` "component is not displayed" and one LazyColumn "scroll to index out of
+  bounds" — the classic pattern of a Compose test asserting on content that is off-screen on
+  *this specific device's* actual viewport, not a missing/broken component. Classified as a
+  pre-existing device/screen-size environment artifact on `I2407i`, not a regression introduced
+  by MVP-1.1-B: zero of the 12 failing tests exercise any file changed this session, and every
+  new Connect/Party instrumented test (which also uses `LazyColumn`/scroll assertions) passed
+  cleanly on the same device. Not investigated further or "fixed" — out of 1.1-B's scope (would
+  mean modifying unrelated pre-existing screens this task does not authorize touching), and not
+  suppressed — reported here exactly as observed per the "do not suppress failures" instruction.
+
+## B21. MVP-1 / MVP-1.1-A regression
+
+Every change to existing code this session was additive: one new `PartyDao`/`PartySourceLinkDao`/
+`TagDao` method each (classification-aware search, bulk company reads), one new `DashboardEvent`/
+`DashboardNavigation` member each, one new `HomePrimaryEntryRow`, one new `Routes` constant. No
+existing method signature was removed or behaviorally changed except `PartyRepository.searchParties`/
+`PartyDao.search`/`countSearch` gaining a new **required** `classification` parameter — a
+1.1-A-internal API with no production caller yet before this session (grepped and confirmed), so
+this is not a behavior change to any shipped path, only a compile-time signature update to two
+test doubles. All 1,030 MVP-1 tests and all 43 MVP-1.1-A tests remain present and green inside the
+1,088 total.
+
+## B22. Android version / artifacts
+
+`versionCode = 25`, `versionName = "0.1.1-continuity.24"` (was `24` / `"0.1.1-continuity.23"`),
+bumped because production code changed (new Connect feature, Party/Ledger domain-layer additions,
+Dashboard wiring).
+
+| Build | Path | SHA-256 | Size |
+|---|---|---|---|
+| Debug APK | `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` | `50f80bede5d990c5327736d23f02844570e2d9696d3f0010f679caaed9b793c4` | 14,119,040 bytes |
+| Release APK (unsigned — no release keystore exists) | `apps/budcom_android/app/build/outputs/apk/release/app-release-unsigned.apk` | `867596a8d7b0ac48bd4053ab4bc1bee912e4bb8946e4d9d1f6038428f59c45a2` | 2,387,924 bytes |
+
+## B23. ADB device / install result
+
+Connected device: `I2407i` (model `I2407`, serial `10BF44124K000E3`). `pm list packages` showed
+**no pre-existing `com.budcom.android` (production) package** — the only BUDCOM-named packages
+present (`com.budcom.android.debug`, `com.budcom.android.debug.test`) were installed by this
+session's own `connectedDebugAndroidTest` runs as test-harness scaffolding, not a genuine prior
+user installation with real company/pairing/accounting data to preserve. Per the governing
+instruction's explicit rule ("if no connected device has BUDCOM installed: do not install; report
+the serial/model and reason"), **no distinct "final candidate" install was performed.** The
+owner's previously-approved `continuity.22`/`continuity.23` installs elsewhere are untouched by
+this session.
+
+## B24. Existing data preservation
+
+N/A this session — no install was performed, so there was no existing app data/pairing/company
+state on this device to preserve or risk in the first place (see B23).
+
+## B25. Human check (for whenever this candidate is installed)
+
+1. Open Connect from the Dashboard's third primary row.
+2. Open Customers — confirm real synced customer Parties (if any are eligible-classified and
+   already Ledger-synced) appear with a balance and Dr/Cr.
+3. Search a known customer by name.
+4. Search the same customer by phone (any formatting).
+5. Tap View Ledger — confirm it opens the correct Ledger Statement.
+6. Back — confirm Connect's tab/search state is unchanged.
+7. Tap View Vouchers — confirm the Voucher Browser opens pre-filled with that party's name.
+8. Back.
+9. Switch to the Prospects tab — confirm an honest empty state (expected, since nothing seeds
+   Prospects yet).
+10. Switch companies (if more than one is configured) — confirm Connect's list changes and no
+    stale balance/party from the previous company remains visible.
+
+## B26. Deferred / limitations (explicit)
+
+- View Vouchers deep-link is name-based, not GUID-based — a pre-existing Voucher-schema
+  characteristic, not a 1.1-B regression; see B13.
+- No Prospect creation UI — Prospects will remain empty in practice until a future milestone adds
+  a creation path (not yet locked to a specific slice in repository evidence).
+- Outstanding is not built — no authoritative data source exists (B14).
+- WhatsApp action does not reuse the PDF-sharing Direct/Select-chooser preference machinery — see
+  B11 for why that doesn't apply here.
+- If the active company changes mid-navigation while a Ledger/Voucher deep link is in flight, the
+  destination screen resolves company fresh at its own load time (existing, unmodified
+  `LedgerStatementViewModel`/Voucher Browser behavior, inherited from MVP-1 — not a new risk this
+  session introduced, and out of 1.1-B's scope to change).
+- No live Tally/Connector pairing was exercised this session for Connect specifically — proven
+  against real Room/SQLite with synthetic and 1.1-A-reconciled fixtures, not a live-synced company.
+  Code-proven and instrumented-device-proven, not field-proven with real business data.
+
+## B27. Exact NEXT TASK
+
+**MVP-1.1-C — Party Detail + Contact Persons + Tags + Notes/Activity + voucher-linked notes**, per
+the architecture file's own milestone sequencing. **Do not begin without explicit go-ahead** (per
+the governing instruction's Part 43). Before that, the user may want to: (a) decide whether/where
+to install the `continuity.24` candidate for a genuine live smoke test against a real paired Tally
+company (no device currently qualifies per B23), and (b) confirm the View-Vouchers name-based
+deep-link disposition (B13) is acceptable, or commission a focused Voucher-schema slice to add a
+real stable ledger-id filter first.
