@@ -2,10 +2,10 @@
 
 **Status:** MVP-1.1-A (Universal Party Foundation) — technically complete, ready for review.
 MVP-1.1-B (Connect Browser + Customers/Prospects + accounting deep links) — technically complete,
-ready for review. **MVP-1.1-C (Party Detail + Prospect creation + Contact Persons + Tags +
-Notes/Activity + voucher-linked notes) — technically complete, ready for review.** MVP-1.1-D
-(Tally XML enrichment round-trip) is the next planned slice and has **not** been started — see
-Part C below for full 1.1-C detail.
+ready for review. MVP-1.1-C (Party Detail + Prospect creation + Contact Persons + Tags +
+Notes/Activity + voucher-linked notes) — technically complete, ready for review. **MVP-1.1-D
+(Tally XML enrichment round-trip) — technically complete, ready for review.** This closes the
+combined MVP-1.1-C+D session — see Part D below for full 1.1-D detail.
 
 # Part A — MVP-1.1-A: Universal Party Foundation
 
@@ -922,7 +922,360 @@ elsewhere is touched or implied by this.
 - No live Tally/Connector pairing was exercised this session for Part C — proven against real
   Room/SQLite with synthetic fixtures and instrumented-device tests, not a live-synced company.
 
-## C18. Exact NEXT TASK
+## C18. Exact NEXT TASK (superseded — see Part D)
 
-**MVP-1.1-D — Tally XML enrichment round-trip**, per the same session's own combined C+D
-specification. Begins from a clean, committed Part C. Not yet started.
+~~MVP-1.1-D — Tally XML enrichment round-trip~~ — **completed this session**, see Part D below for
+full detail.
+
+---
+
+# Part D — MVP-1.1-D: Tally XML Enrichment Round-Trip
+
+**Status:** Technically complete, ready for review. BUDCOM can now review pending/conflicted
+Tally-compatible field edits, generate a Tally-compatible external IMPORTDATA XML file for the
+user to manually import, record a lightweight export audit trail, and — on explicit user request
+— re-check the Connector's already-synced ledger snapshot to confirm or flag a conflict per field.
+BUDCOM never writes to Tally directly at any point.
+
+## D1. Scope recovery and continuity check
+
+Verified against repository evidence before implementing: `PartyFieldProvenance`'s
+`ExportReady`/`Exported` states and `lastExportedAt` column already existed from 1.1-A but had no
+production writer (documented as such in Part A §6/§20); `confirmFieldFromTally` already existed
+and was reusable as-is for a "field genuinely matches what Tally has" writer. No Tally XML
+write/import path existed anywhere in the Android app or the Connector before this session — the
+Connector is, and remains, 100% read-only.
+
+## D2. A genuine architectural gap found and closed: Android never read Ledger contact fields
+
+Before implementing re-sync, this session had to establish whether Android had *any* local ground
+truth for phone/email/address/GSTIN synced from Tally, since "re-sync confirmation" is meaningless
+without one. Investigation found: the Connector's `LedgerDetails` shape (mailing/contact/gst) is
+fully populated from real Tally ledger XML during sync and persisted to the Connector's own SQLite
+(`sqlite-ledger-repository.ts`, `mailing_json`/`contact_json`/`gst_json` columns) — but Android's
+`LedgerApi` had only ever called `GET /ledgers` (list), which returns the stripped-down
+`LedgerSummary` shape with none of these fields, and never called the already-existing,
+already-implemented `GET /ledgers/{id}` detail endpoint. Android's `PartyFieldProvenance.tallyValue`
+was consequently genuine ground truth for `primaryPhone` only (via the Alias-seeding heuristic from
+1.1-A, itself not a real Tally phone field) and `null` for every other field.
+
+**Resolution:** added a new, narrow, read-only capability — `LedgerApi.getLedgerDetail(id)` (new
+Retrofit method on the existing `LedgerApi` interface), `LedgerDetailDto`/`LedgerContactDetails`
+(DTO + domain model, mailing/contact/gst only), `LedgerRemoteDataSource.fetchLedgerContactDetails`
+(same `safeApiCall`/`ErrorMapper`/`withRetry(RetryPolicy.None)` pattern as every other Ledger call),
+and a new `LedgerLiveDetailPort` (Ledger-feature-owned, mirroring `LedgerSnapshotPort`'s hexagonal
+shape but explicitly *not* local-only — its doc comment says so) bound via `LedgerBindModule`. This
+is additive only: no existing `LedgerApi`/`LedgerRepository`/`Ledger` domain model method changed,
+the existing bulk Ledger sync/list/statement paths are untouched, and the new capability is wired
+into exactly one place — the Part D "Check Tally" action — never into any automatic/bulk path. Not
+a security/trust-architecture change: it reuses the exact same authenticated transport, error
+mapping, and connectivity-check infrastructure every other Ledger call already uses; no new
+Connector endpoint was created (`GET /ledgers/{id}` already existed, implemented, tested,
+server-side, simply never called by Android before).
+
+## D3. Eligible-field whitelist
+
+`TallyExportFieldMapping` (`feature/party/domain/model/TallyExportModels.kt`) — six fields, each
+mapped to a Connector-confirmed real Tally ledger XML tag name (cross-checked against
+`tally-ledger-mapper.ts`, which already reads these exact tags from live Tally extraction):
+
+| BUDCOM field | Tally XML tag |
+|---|---|
+| `primaryPhone` | `MOBILENUMBER` |
+| `primaryEmail` | `EMAIL` |
+| `addressLine1` | `ADDRESS` |
+| `addressState` | `STATENAME` |
+| `addressPincode` | `PINCODE` |
+| `gstin` | `PARTYGSTIN` |
+
+**`addressCity` is deliberately excluded** — Tally's ledger master has no distinct "city" tag (only
+free-form address lines), and the Connector's own extraction reads a single combined `ADDRESS`
+string, never a separate city value. Mapping it would mean inventing a Tally XML convention that
+doesn't exist and a field BUDCOM could never honestly re-confirm from a genuine Tally read-back —
+excluded rather than faked. Every BUDCOM-only field (tags, notes, extra contact persons,
+classification, internal metadata) is excluded by construction: it simply has no entry in the
+whitelist map, so it can never reach the XML generator regardless of what a future caller passes.
+
+## D4. Change-review + export lifecycle
+
+`PartyRepository` gained four new members: `getExportCandidates` (one review row per eligible
+field, joining current provenance + a plain-language label), `recordExport` (transitions every
+included field to `Exported` with `lastExportedAt` set, writes one audit event), 
+`reconcileExportedFieldFromTally` (the re-sync writer, §D6), `getExportHistory` (bounded,
+newest-first). New `party_export_events` table via `MIGRATION_7_8` (schema version 7→8, additive
+only, verified byte-for-byte against Room's generated `8.json`) stores `exportId`/`createdAt`/
+`outputFileName`/`fieldNamesCsv` — **field names only, never raw values** — the "lightweight
+XML audit/history evidence" the spec calls for, without becoming a sensitive-data surface itself.
+
+**`ExportReady` (from 1.1-A's own enum) is deliberately never persisted by Part D** — the
+in-review-screen field selection (checkboxes) is transient UI state
+(`PartyXmlExportUiState.selectedFieldNames`), not written to Room until a real file is actually
+saved. Persisting "reviewed but not yet exported" as a DB state risked an orphaned field stuck in
+that state forever if the user opened the review screen, checked a box, then backed out —
+simpler and equally honest to only ever persist a state once something real happened (`Exported`
+after a genuine successful Save).
+
+## D5. XML generation — `TallyLedgerXmlGenerator`
+
+Pure Kotlin (`feature/party/domain/xml/`), fully unit-testable, no Android framework dependency.
+Follows the standard, well-documented Tally external-import convention — `<TALLYREQUEST>Import
+Data</TALLYREQUEST>` / `<IMPORTDATA>` / `<REQUESTDATA>` / `<TALLYMESSAGE xmlns:UDF="TallyUDF">` /
+`<LEDGER NAME="..." ACTION="Alter">` — styled consistently with the Connector's own
+`TallyXmlRequestBuilder` (same 5-entity `escapeXml`, `&` escaped first to avoid double-escaping, no
+CDATA usage anywhere) but implemented independently since no prior XML-write path existed anywhere
+in this codebase.
+
+**Known, explicitly disclosed Tally XML limitation, not a BUDCOM shortcut:** Tally's XML
+`ACTION="Alter"` matches an existing Ledger master by `NAME`, not by GUID — there is no documented
+GUID-based alter-matching in Tally's external XML API. The ledger's GUID, when known, is still
+included as an informational `<GUID>` field inside the ledger body, but the real match key Tally
+itself uses is the `NAME` attribute — mitigated by always generating with the ledger's *current*
+known Tally name (`PartySourceLink.externalDisplayName`, kept fresh at every reconciliation), never
+a stale cached one. Documented in the generator's own KDoc rather than silently claimed otherwise
+(architecture §5.4/no-overclaiming discipline).
+
+Validation happens *before* any file write or SAF picker launch: non-blank company/ledger name,
+only whitelisted fields, no blank values (clearing a Tally field via export is explicitly not
+supported — an empty value is rejected, never silently emitted as an empty tag). 13 JVM tests cover
+well-formedness, correct tag emission, exclusion of any city tag, GUID informational-only inclusion,
+XML-special-character and Unicode escaping, and every rejection path.
+
+## D6. Re-sync confirmation — field-specific canonical comparison
+
+`reconcileExportedFieldFromTally` is a new method, deliberately **not** a modification of 1.1-A's
+`confirmFieldFromTally` (kept stable/untouched, still used by the Alias-phone seeding path) —
+re-sync needs field-appropriate canonical comparison before deciding Confirmed vs. Conflict, which
+`confirmFieldFromTally`'s original raw-string-equality check was never designed for:
+
+- **Phone** — `PhoneNumberNormalizer.normalizeForSearch` (lenient, digit-only, last-10) so
+  `9876543210` and `+91 98765 43210` are recognized as the same number.
+- **Email** — trim + lowercase.
+- **GSTIN** — trim + uppercase.
+- **State** — trim + lowercase.
+- **Address, pincode** — trim only, **deliberately not over-normalized** (spec's own explicit
+  instruction) — a genuinely different address is a real conflict, not a formatting difference.
+
+A blank/unavailable Tally read-back **never downgrades** an already-`Exported` field back to
+`EmptyUnknown` — "not yet re-synced" is preserved as-is, never misreported as failure (the TD-027
+honesty principle the governing prompt explicitly called out). Partial confirmation is inherently
+field-specific: `checkTally()` iterates every currently-`Exported` field independently, so one
+field can confirm while another conflicts and a third stays unchanged in the same pass.
+
+**Edit-after-export staleness handled for free, not as a special case:** `updateBudcomOnlyField`
+(1.1-A, unchanged) always resets a field's state to `BudcomOnlyPending` on any new edit, regardless
+of its prior state. A field the user re-edits after exporting therefore leaves the `Exported` set
+entirely and is skipped by the next "Check Tally" pass — the stale exported value can never be
+confirmed after the user's intent has changed, with zero new bookkeeping required.
+
+## D7. File generation, Save, and the Prospect exclusion
+
+`PartyXmlExportCoordinator`/`AndroidPartyXmlExportCoordinator` mirror
+`LedgerStatementShareCoordinator`'s proven prepare/save/release shape exactly, narrowed to
+Save-only (no share-intent/WhatsApp path — an enrichment XML is for manual Tally import, not for
+sending to a third party). Own `PartyXmlExportCacheBoundary`/`PartyXmlExportCachePolicy` pair
+(`CACHE_DIRECTORY = "party-xml-export"`, same path-containment/age/count-bounded-eviction logic as
+the Ledger-statement PDF cache, reusing the same `InvoiceShareFileOperations` wrapper, deliberately
+its own instance so this domain's cache pressure never affects Voucher/Ledger PDF caches). New
+`<cache-path name="party_xml_export" path="party-xml-export/" />` entry added to the existing
+`invoice_share_paths.xml` — reuses the app's one existing `FileProvider` authority, no new
+`<provider>`. Save uses `ActivityResultContracts.CreateDocument("application/xml")`, matching the
+PDF precedent's exact `saveLauncher.launch(suggestedFilename)` idiom.
+
+**Prospects are excluded from XML export entirely, structurally, not by a runtime check alone:**
+Party Detail's "Export to Tally" button lives inside the same `if (state.hasAccountingLink)` block
+as View Ledger/View Vouchers — a Prospect never sees the entry point at all. The ViewModel
+defensively re-checks `getSourceLinkForParty` at load time regardless (honest error, not a crash,
+if reached via a stale deep link) — the same double-defense pattern already established for View
+Ledger/View Vouchers in Part B.
+
+## D8. Security and offline properties
+
+No direct Tally write — the XML is written to a local file only; the user manually imports it into
+Tally via Tally's own Import Data feature. No new Connector *mutation* endpoint — the one new
+Connector call (`GET /ledgers/{id}`) is read-only and already existed, implemented, on the
+Connector side. No trusted-LAN/auth-bypass — reuses the exact same authenticated transport/error
+mapping as every other Ledger call. No device-phonebook access, no automatic sharing, no automatic
+Tally import, no shell execution of any generated or imported file. XML generation and the
+change-review screen work fully offline (every read is local Room; `companySession
+.observeSelectedCompany()` used for the company name is a locally-persisted value, deliberately
+*not* the network-backed `readSelectedCompany()`, to keep generation genuinely offline-capable) —
+only the explicit, separate "Check Tally" action requires connectivity, which is inherent to what
+that action does (asking Tally something).
+
+## D9. New tests
+
+- **JVM (37 new):** `PartyRepositoryImplTest` (+12 — six-field whitelist coverage/city exclusion,
+  untouched-field EmptyUnknown, pending-field display, export transitions only the included
+  fields, audit-event field-names-only recording, ineligible-field rejection, history
+  newest-first/bounded, phone/email/GSTIN canonical-match confirmation, address
+  genuine-difference conflict, TD-027 blank-read-back honesty), `TallyLedgerXmlGeneratorTest` (13,
+  new file — envelope structure, correct per-field tag emission, city-tag exclusion, GUID
+  informational-only inclusion, XML-escaping and Unicode, every validation-rejection path, stable
+  field-emission ordering), `LedgerDtoMappingTest` (+3 — detail-envelope deserialization with
+  mailing/contact/gst, ignoring unrelated fields, blank-string-to-null normalization),
+  `PartyXmlExportViewModelTest` (9, new file — Tally-backed candidate loading with default
+  pending/conflict selection, Prospect/no-source-link honest error, selection toggling, XML
+  generation and save-document effect emission, cancelled-save release, successful save recording
+  the export and transitioning state, no-exported-fields honest notice, successful re-sync
+  confirmation, Connector-unreachable honest error).
+- **Instrumented, real device (12 new):** `PartyXmlExportScreenTest` (11 — loading/error/retry,
+  field-checkbox toggle event, Generate disabled/enabled by selection, Check Tally
+  disabled/enabled by Exported-state presence, export-history display and its absence, conflict
+  state display, notice dialog dismiss), `AppDatabaseMigrationTest.migrate7To8_...` (1, §D4).
+
+## D10. A genuine bug found and fixed by instrumented testing
+
+The first real-device run of `PartyXmlExportScreenTest` crashed
+`exportHistoryIsShownWhenPresent` with `IllegalStateException: Vertically scrollable component was
+measured with an infinity maximum height constraints` — a nested `LazyColumn` inside the screen's
+outer `Column(Modifier.verticalScroll(...))` for the export-history list, a disallowed Compose
+layout combination. Fixed by replacing the inner `LazyColumn` with a plain `Column { forEach {...}
+}`, matching the pattern Party Detail's own notes/contact-person lists already use (never a nested
+`LazyColumn` inside a scrolling `Column` anywhere in this codebase) — the history list is always
+small and bounded (`getExportHistory`'s `limit`), so a `LazyColumn`'s lazy-composition benefit was
+never needed here in the first place. This is exactly the class of defect a JVM-only test suite
+cannot catch (it requires a real Compose measurement pass) — direct evidence for why the instrumented
+suite matters, not just JVM tests.
+
+## D11. Full Android regression results
+
+- `testDebugUnitTest`: **1,165/1,165 passing** (was 1,128 after Part C).
+- `testReleaseUnitTest`: **1,165/1,165 passing** (full re-run; the same incidental
+  `VoucherRepositoryImplTest` flake already documented in Part C reproduced 2–3 times across this
+  session's several full-regression re-runs, always in isolation-reproducible, always unrelated to
+  any file this session touched, always passing cleanly on immediate retry — not investigated
+  further, not suppressed, reported exactly as observed).
+- `lintDebug` / `lintRelease`: **0 errors** both; zero lint findings of any severity against any
+  Part D file.
+- `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`: all `BUILD SUCCESSFUL`.
+- `connectedDebugAndroidTest`, scoped to new/changed classes (`PartyXmlExportScreenTest`,
+  `PartyDetailScreenTest`, `ProspectCreateScreenTest`, `ConnectScreenTest` regression,
+  `AppDatabaseMigrationTest`): **52/52 passing** on the connected physical device (`I2407i`) —
+  after the §D10 fix; the pre-fix run correctly caught and failed on the real defect.
+- `connectedDebugAndroidTest`, full app suite: **229/241 passing.** The 12 failures are byte-for-byte
+  the same test names in the same files documented in Part C §C12/Part B §B20 (`DashboardScreenTest`,
+  `DiagnosticsScreenTest`, `LedgerStatementScreenTest`, `SecurePairingScreenTest`,
+  `ServerConfigScreenTest`, `SettingsScreenTest`, `SyncScreenTest`, `VoucherDetailsScreenTest`) —
+  the same device-viewport-artifact class, zero overlap with any Connect/Party/XML-export file.
+  One full-suite run also hit a transient ADB disconnect (`device not found` mid-run, device
+  re-enumerated with a new transport id) — recognized as the known transient-disconnect pattern
+  (not a product defect), device re-confirmed present, run retried successfully.
+
+## D12. MVP-1 / MVP-1.1-A / MVP-1.1-B / MVP-1.1-C regression
+
+Every change to previously-existing code this session was additive: `LedgerApi` gained one new
+`@GET` method (existing `getLedgers`/`getLedgerStatement` unchanged), `LedgerRemoteDataSource`
+gained one new method on its existing interface + implementation (existing methods unchanged),
+`LedgerBindModule` gained one new `@Binds` (existing bindings unchanged), `PartyRepository` gained
+four new interface members (existing 26 members unchanged), `AppDatabase`/`DatabaseModule`/
+`DatabaseConstants` gained one new table/DAO/migration (schema version 7→8, `MIGRATION_1_2`
+through `MIGRATION_6_7` untouched), `PartyDetailScreen`/`ViewModel`/`UiState` gained one new
+button/effect/event (existing Part C behavior unchanged, re-proven by the unmodified
+`PartyDetailScreenTest`/`PartyDetailViewModelTest` suites still passing at their original counts).
+No existing method signature was removed or behaviorally changed. All 1,030 MVP-1, 43
+MVP-1.1-A, 32 MVP-1.1-B, and 63 MVP-1.1-C tests remain present and green inside the 1,165 total.
+
+## D13. Mini-hardening audit (before commit, per governance)
+
+Explicit pass over the same dimensions as Part C, focused on what's new:
+
+- **Whitelist/no-invented-semantics:** six real Tally tags only, `addressCity` explicitly excluded
+  rather than faked; GUID included informationally only, `ACTION="Alter"`'s real NAME-based
+  matching disclosed rather than overclaimed (§D5).
+- **No silent clearing:** blank/empty field values rejected before any file is ever written (§D5).
+- **Offline:** XML review/generation confirmed to perform zero network calls, including avoiding
+  the network-backed `readSelectedCompany()` in favor of the local `observeSelectedCompany()`
+  (§D8) — this was caught and corrected during implementation, not left as a latent bug. Re-sync
+  ("Check Tally") is the one, deliberate, clearly-labeled exception that requires connectivity.
+- **Prospect exclusion:** structural (button never shown) + defensive (ViewModel re-checks) —
+  double-layered, not single-point-of-failure (§D7).
+- **Company isolation:** every new repository/DAO method takes an explicit `companyId`;
+  `LedgerLiveDetailPort` has none by design (the paired Connector session is already
+  single-company-scoped, same as the pre-existing `LedgerApi.getLedgers`) — documented, not an
+  oversight.
+- **Edit-after-export staleness:** verified to fall out correctly from 1.1-A's existing
+  `updateBudcomOnlyField` behavior with zero new bookkeeping (§D6).
+- **Partial/field-specific confirmation:** verified independent per-field outcomes in the same
+  re-sync pass (§D6).
+- **Conflict UX:** the change-review screen shows both the last-known Tally value and the current
+  BUDCOM value side by side per field when both exist — no silent choice, no merge engine.
+- **No-Tally-direct-writes / security:** confirmed by design review and by construction — no
+  write-capable Connector call exists anywhere in Part D (§D8).
+- **Performance:** XML generation is one bounded string build; export-candidates read is six fixed
+  lookups; re-sync is one bounded single-ledger live call — no bulk/N+1 pattern anywhere.
+- **Accessibility/light-dark:** `MaterialTheme` tokens only, standard `Checkbox`/`Button`/
+  `AlertDialog` semantics, no hardcoded colors.
+- **Regression:** see §D11/§D12 — zero regressions in either full JVM or full instrumented suite.
+- **A real defect was found and fixed** (§D10) — the audit process itself is validated by having
+  caught something real, not just confirmed a clean bill of health.
+
+## D14. Android version / artifacts
+
+`versionCode = 26`, `versionName = "0.1.1-continuity.25"` (was `25` / `"0.1.1-continuity.24"`) —
+the single coherent bump for the combined C+D session, per explicit instruction (not bumped
+per-sub-milestone; Part C's own build evidence in §C15 used the pre-bump version deliberately).
+
+| Build | Path | SHA-256 | Size |
+|---|---|---|---|
+| Debug APK | `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` | `8619c5652555a56616d78ef8ace58b8be87e74f89568dfba5b9ac5689da915c6` | 14,332,080 bytes |
+| Release APK (unsigned — no release keystore exists) | `apps/budcom_android/app/build/outputs/apk/release/app-release-unsigned.apk` | `c34a05902e150fe5bb4ce22fdd086cc279a9cf1d0bd72ecfe902d90d02bede86` | 2,469,892 bytes |
+
+## D15. ADB device / install result
+
+Connected device: `I2407i` (model `I2407`, serial `10BF44124K000E3`) — the same device used
+throughout Parts A/B/C, present and used for every instrumented test run this session (including
+one transient mid-run ADB disconnect and successful reconnect, §D11). `pm list packages` again
+shows **no BUDCOM package of any kind** on this device at every check this session. Per the
+governing instruction's explicit rule, **no distinct "final candidate" install was performed** —
+consistent with every prior sub-milestone this session and Parts A/B. At the time of this
+checkpoint the device shows as disconnected (`adb devices` empty) — a further instance of the same
+transient USB/session behavior already observed and documented, not treated as requiring any
+corrective action.
+
+## D16. Human check (for whenever this candidate is installed)
+
+1. Open a Customer's Party Detail (via Connect) that has a linked Tally ledger.
+2. Edit a Tally-compatible field (e.g. Email) — confirm it shows "Pending in BUDCOM."
+3. Tap "Export to Tally" — confirm the review screen lists the six eligible fields, with the
+   edited field pre-selected.
+4. Tap "Generate Tally export," choose a save location — confirm a `.xml` file is written and a
+   "saved" confirmation appears.
+5. Open the saved XML file in a text viewer — confirm it is well-formed, contains
+   `<TALLYREQUEST>Import Data</TALLYREQUEST>`, the correct company/ledger name, and only the
+   selected field(s).
+6. **Do not import it into a real Tally company unless the owner explicitly wants to test the
+   round-trip against real data** — this is a genuine external-system action outside this
+   session's autonomy.
+7. Back on Party Detail, confirm the field now shows "Exported, awaiting Tally."
+8. Return to the export screen, tap "Check Tally" — confirm an honest status message appears
+   (confirmed/conflict count, or a connectivity error if offline) and does not fabricate success.
+9. Open a Prospect's row — confirm no "Export to Tally" button appears anywhere.
+
+## D17. Deferred / limitations (explicit)
+
+- No physical Tally round-trip was performed this session (per explicit instruction — BUDCOM must
+  never autonomously write/import into the owner's real Tally). §D16 provides the minimal human
+  test package instead; the owner stays in control of any real import.
+- `addressCity` remains permanently excluded from Tally export/re-sync — not a temporary gap, a
+  disclosed structural limitation of Tally's own ledger-master schema (§D3).
+- Re-sync ("Check Tally") requires connectivity by nature — offline users can still export XML,
+  just not confirm it until they're back online.
+- No bulk/automatic re-sync exists — confirmation is always one explicit user action per Party,
+  matching the spec's own "never automatic" framing for anything Tally-adjacent.
+- `party_export_events` accumulates without automatic pruning — consistent with every other table
+  in this app (no retention/pruning strategy exists anywhere), not a new gap Part D introduces.
+- The `LedgerLiveDetailPort`/`GET /ledgers/{id}` capability reads the Connector's own already-synced
+  local snapshot, not a live Tally query at the moment of the tap — so "Check Tally" reflects the
+  last Ledger sync, not necessarily the current instant. Documented, matching TD-027's own
+  timing-honesty framing.
+
+## D18. Exact NEXT TASK
+
+**Neither MVP-1.1-E nor any further MVP-1.1 work was started, per explicit instruction.** The
+combined MVP-1.1-C+D session is complete. Recommended next items, none started or implied:
+(a) obtain and configure production signing credentials (the sole remaining public-release
+blocker, unrelated to and unchanged by this session's work), (b) decide whether/where to install
+`continuity.25` for a genuine live smoke test against a real paired Tally company, including
+exercising a real Tally XML import by hand, (c) if/when repository evidence locks a next Connect
+milestone (e.g. a Referral Tree, MVP-1.2 CRM-adjacent scope), that work is explicitly out of this
+session's scope and was not evaluated.
