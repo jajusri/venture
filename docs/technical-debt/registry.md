@@ -663,7 +663,7 @@ Engineering-tracked compromises, defects, and deferred work.
 | TD-006 | Durable interrupted sync resume | P2 | **Resolved (controlled pilot)** | 5A-P / Reliability Step 2 |
 | TD-007 | Extraction-phase cancellation | P3 | **Resolved w/ limitation** | 5A-P |
 | TD-008 | Insecure default network binding | P2 | **Resolved** | 5A-P |
-| TD-009 | Authenticated LAN access | P2 | Open | 5B |
+| TD-009 | Authenticated LAN access | P2 | Open — **reviewed (2026-08-17): core gap confirmed still accurate; secure pairing exists but is independent/opt-in, not required by trusted-LAN mode** | 5B |
 | TD-010 | Diagnostic export privacy allowlist | P2 | **Resolved (export surfaces)** | Reliability Step 3 |
 | TD-011 | Ledger name-slug identity / shallow export | P1 | **Resolved (controlled pilot)** | Reliability ledger-identity |
 | TD-012 | Manual private-IP entry required for Trusted-LAN pairing | P0 | **Fixed (automated validation) — physically confirmed once (2026-08-08); not yet re-proven on the current shipping candidate. Non-blocking: not exercised by today's evidence, initial pairing already exists on the pilot device.** | Pre-MVP-1 release hardening |
