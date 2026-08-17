@@ -6,6 +6,7 @@ import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.core.network.RetryPolicy
 import com.budcom.android.core.network.safeApiCall
 import com.budcom.android.core.network.withRetry
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
@@ -16,6 +17,11 @@ import javax.inject.Singleton
 interface LedgerRemoteDataSource {
     suspend fun fetchLedgers(query: LedgerQuery): ApiResult<LedgerPage>
     suspend fun fetchLedgerStatement(ledgerId: String, range: LedgerStatementDateRange): ApiResult<LedgerStatement>
+
+    /** Bounded, single-ledger, on-demand read of the fuller `LedgerDetails` shape (mailing/
+     * contact/gst) — used only by MVP-1.1-D's explicit re-sync action, never by any bulk/automatic
+     * sync path. See [LedgerApi.getLedgerDetail]'s doc comment for exactly what this reads. */
+    suspend fun fetchLedgerContactDetails(ledgerId: String): ApiResult<LedgerContactDetails>
 }
 
 @Singleton
@@ -46,6 +52,13 @@ class DefaultLedgerRemoteDataSource @Inject constructor(
         withRetry(RetryPolicy.None) {
             safeApiCall(errorMapper, connectivityObserver) {
                 api.getLedgerStatement(ledgerId = ledgerId, from = range.from, to = range.to).toDomain()
+            }
+        }
+
+    override suspend fun fetchLedgerContactDetails(ledgerId: String): ApiResult<LedgerContactDetails> =
+        withRetry(RetryPolicy.None) {
+            safeApiCall(errorMapper, connectivityObserver) {
+                api.getLedgerDetail(ledgerId).ledger.toContactDetails()
             }
         }
 }

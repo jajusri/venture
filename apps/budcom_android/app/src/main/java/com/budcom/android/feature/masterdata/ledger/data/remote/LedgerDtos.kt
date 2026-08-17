@@ -45,3 +45,49 @@ data class NormalizedAmountDto(
     val currencyCode: String,
     val side: String,
 )
+
+/**
+ * Response envelope for `GET /ledgers/{id}` — the fuller `LedgerDetails` shape. Only the
+ * contact-compatible fields (mailing/contact/gst) are modeled here; every other `LedgerDetails`
+ * field the Connector returns is intentionally ignored (`ignoreUnknownKeys = true` on the shared
+ * [kotlinx.serialization.json.Json] instance makes this safe).
+ */
+@Serializable
+data class LedgerDetailEnvelopeDto(
+    val schemaVersion: String? = null,
+    val dataFreshnessAt: String? = null,
+    val ledger: LedgerDetailDto,
+)
+
+@Serializable
+data class LedgerDetailDto(
+    val id: String,
+    val name: String,
+    val guid: String? = null,
+    val mailing: LedgerMailingDto? = null,
+    val contact: LedgerContactDto? = null,
+    val gst: LedgerGstDto? = null,
+)
+
+@Serializable
+data class LedgerMailingDto(
+    val mailingName: String? = null,
+    val address: String? = null,
+    val state: String? = null,
+    val country: String? = null,
+    val pincode: String? = null,
+)
+
+@Serializable
+data class LedgerContactDto(
+    val email: String? = null,
+    val phone: String? = null,
+    val mobile: String? = null,
+)
+
+@Serializable
+data class LedgerGstDto(
+    val gstin: String? = null,
+    val registrationType: String? = null,
+    val applicableFrom: String? = null,
+)

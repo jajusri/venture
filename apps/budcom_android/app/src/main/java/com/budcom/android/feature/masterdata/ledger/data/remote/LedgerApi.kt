@@ -24,4 +24,15 @@ interface LedgerApi {
         @Query("from") from: String,
         @Query("to") to: String,
     ): LedgerStatementEnvelopeDto
+
+    /**
+     * Confirmed Connector single-ledger detail endpoint: `GET /ledgers/{id}` — returns the fuller
+     * `LedgerDetails` shape (mailing/contact/gst), unlike the list endpoint above which only ever
+     * returns `LedgerSummary`. A genuine HTTP 404 (`{code: "NOT_FOUND", message}`) is returned when
+     * the ledger id is unknown — Retrofit surfaces this as an `HttpException`, handled the same way
+     * as any other transport error (see `ErrorMapper`). Reads the Connector's already-synced local
+     * SQLite snapshot (not a live Tally query) — see `LedgerSyncServiceImpl.getLedgerById`.
+     */
+    @GET("ledgers/{id}")
+    suspend fun getLedgerDetail(@Path("id") ledgerId: String): LedgerDetailEnvelopeDto
 }

@@ -3,6 +3,7 @@ package com.budcom.android.feature.masterdata.ledger.data.remote
 import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.ledger.domain.model.AmountSide
 import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerDataQuality
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
@@ -68,3 +69,13 @@ internal fun LedgerQuery.toApiSortDirection(): String = when (sortDirection) {
 
 internal fun LedgerQuery.normalizedText(): String? =
     text?.trim()?.takeIf { it.isNotEmpty() }?.take(MasterDataBrowserDefaults.MAX_QUERY_LENGTH)
+
+internal fun LedgerDetailDto.toContactDetails(): LedgerContactDetails = LedgerContactDetails(
+    ledgerId = id,
+    mobile = contact?.mobile?.takeIf { it.isNotBlank() },
+    email = contact?.email?.takeIf { it.isNotBlank() },
+    address = mailing?.address?.takeIf { it.isNotBlank() },
+    state = mailing?.state?.takeIf { it.isNotBlank() },
+    pincode = mailing?.pincode?.takeIf { it.isNotBlank() },
+    gstin = gst?.gstin?.takeIf { it.isNotBlank() },
+)

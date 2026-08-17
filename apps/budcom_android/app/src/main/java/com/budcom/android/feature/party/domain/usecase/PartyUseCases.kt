@@ -10,10 +10,12 @@ import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartyNotePage
+import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyPage
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
+import com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import javax.inject.Inject
 
@@ -164,4 +166,26 @@ class DeleteNoteUseCase @Inject constructor(private val repository: PartyReposit
 class GetNotesForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
     suspend operator fun invoke(companyId: String, partyId: String, page: Int = 1, pageSize: Int = 20): PartyNotePage =
         repository.getNotesForParty(companyId, partyId, page, pageSize)
+}
+
+// ---- MVP-1.1-D: Tally XML enrichment round-trip ----
+
+class GetExportCandidatesUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String): List<TallyFieldExportCandidate> =
+        repository.getExportCandidates(companyId, partyId)
+}
+
+class RecordExportUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, outputFileName: String, fieldNames: List<String>): PartyExportEvent =
+        repository.recordExport(companyId, partyId, outputFileName, fieldNames)
+}
+
+class ReconcileExportedFieldFromTallyUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, fieldName: String, tallyRawValue: String?): FieldProvenanceState =
+        repository.reconcileExportedFieldFromTally(companyId, partyId, fieldName, tallyRawValue)
+}
+
+class GetExportHistoryUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, limit: Int = 20): List<PartyExportEvent> =
+        repository.getExportHistory(companyId, partyId, limit)
 }

@@ -763,4 +763,67 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 7 -> 8 migration (adding the single MVP-1.1-D `party_export_events`
+     * table) preserves every pre-existing row and never falls back to a destructive recreation.
+     */
+    @Test
+    fun migrate7To8_preservesExistingRowsAndAddsPartyExportEventsTableOnly() {
+        val db78DbName = "migration-test-db-7-8"
+
+        var db = helper.createDatabase(db78DbName, 7)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_parties (companyId, partyId, displayName, classification, primaryPhone, " +
+                "primaryPhoneNormalized, primaryEmail, addressLine1, addressCity, addressState, addressPincode, " +
+                "gstin, createdAt, updatedAt) VALUES ('acme-001', 'party-1', 'ABC Traders', 'customer', NULL, " +
+                "NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1736899200000, 1736899200000)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db78DbName, 8, false, DatabaseModule.MIGRATION_7_8)
+
+        db.query("SELECT name FROM cached_companies WHERE id = 'acme-001'").use { cursor ->
+            assertTrue("existing company row must survive the migration", cursor.moveToFirst())
+            assertEquals("Acme Corp", cursor.getString(0))
+        }
+        db.query("SELECT displayName FROM cached_parties WHERE companyId = 'acme-001' AND partyId = 'party-1'").use { cursor ->
+            assertTrue("existing party row must survive the migration", cursor.moveToFirst())
+            assertEquals("ABC Traders", cursor.getString(0))
+        }
+
+        val columns = mutableMapOf<String, String>()
+        db.query("PRAGMA table_info(`party_export_events`)").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val typeIdx = cursor.getColumnIndexOrThrow("type")
+            while (cursor.moveToNext()) {
+                columns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+            }
+        }
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "exportId" to "TEXT", "partyId" to "TEXT", "createdAt" to "INTEGER",
+                "outputFileName" to "TEXT", "fieldNamesCsv" to "TEXT",
+            ),
+            columns,
+        )
+
+        db.execSQL(
+            "INSERT INTO party_export_events (companyId, exportId, partyId, createdAt, outputFileName, " +
+                "fieldNamesCsv) VALUES ('acme-001', 'export-1', 'party-1', 1736899200000, " +
+                "'BUDCOM-Tally-Export-ABC-Traders-1.xml', 'primaryEmail,gstin')",
+        )
+        db.query(
+            "SELECT fieldNamesCsv FROM party_export_events WHERE companyId = 'acme-001' AND partyId = 'party-1'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("primaryEmail,gstin", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

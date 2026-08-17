@@ -7,6 +7,8 @@ import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyDao
 import com.budcom.android.feature.party.data.local.PartyEntity
 import com.budcom.android.feature.party.data.local.PartyContactPersonEntity
+import com.budcom.android.feature.party.data.local.PartyExportEventDao
+import com.budcom.android.feature.party.data.local.PartyExportEventEntity
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceEntity
 import com.budcom.android.feature.party.data.local.PartyNoteDao
@@ -19,12 +21,14 @@ import com.budcom.android.feature.party.data.local.TagDao
 import com.budcom.android.feature.party.data.local.TagEntity
 import com.budcom.android.feature.party.data.local.asColumn
 import com.budcom.android.feature.party.data.local.toDomain
+import com.budcom.android.feature.party.data.local.toFieldProvenanceState
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
 import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
+import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
 import com.budcom.android.feature.party.domain.model.PartyNote
@@ -33,6 +37,8 @@ import com.budcom.android.feature.party.domain.model.PartyPage
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
+import com.budcom.android.feature.party.domain.model.TallyExportFieldMapping
+import com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -50,6 +56,7 @@ class PartyRepositoryImpl @Inject constructor(
     private val contactPersonDao: PartyContactPersonDao,
     private val tagDao: TagDao,
     private val noteDao: PartyNoteDao,
+    private val exportEventDao: PartyExportEventDao,
     private val timeProvider: TimeProvider,
     private val dispatchers: DispatcherProvider,
 ) : PartyRepository {
@@ -443,6 +450,113 @@ class PartyRepositoryImpl @Inject constructor(
             val items = noteDao.pageForParty(companyId, partyId, safeSize, (safePage - 1) * safeSize)
             PartyNotePage(items.map { it.toDomain() }, safePage, safeSize, total)
         }
+
+    // ---- MVP-1.1-D: Tally XML enrichment round-trip ----
+
+    override suspend fun getExportCandidates(companyId: String, partyId: String): List<TallyFieldExportCandidate> =
+        withContext(dispatchers.io) {
+            val provenanceByField = fieldProvenanceDao.findAllForParty(companyId, partyId).associateBy { it.fieldName }
+            TallyExportFieldMapping.ELIGIBLE_FIELDS.map { fieldName ->
+                val row = provenanceByField[fieldName]
+                TallyFieldExportCandidate(
+                    fieldName = fieldName,
+                    label = TallyExportFieldMapping.labelFor(fieldName),
+                    tallyValue = row?.tallyValue,
+                    budcomValue = row?.budcomValue,
+                    state = row?.state?.toFieldProvenanceState() ?: FieldProvenanceState.EmptyUnknown,
+                )
+            }
+        }
+
+    override suspend fun recordExport(
+        companyId: String,
+        partyId: String,
+        outputFileName: String,
+        fieldNames: List<String>,
+    ): PartyExportEvent = withContext(dispatchers.io) {
+        val eligible = fieldNames.filter { TallyExportFieldMapping.isEligible(it) }.distinct()
+        require(eligible.isNotEmpty()) { "At least one Tally-eligible field is required to record an export." }
+        val now = timeProvider.nowEpochMillis()
+
+        eligible.forEach { fieldName ->
+            val existing = fieldProvenanceDao.findField(companyId, partyId, fieldName)
+            fieldProvenanceDao.upsert(
+                baseProvenance(existing, companyId, partyId, fieldName).copy(
+                    state = FieldProvenanceState.Exported.asColumn(),
+                    lastExportedAt = now,
+                    updatedAt = now,
+                ),
+            )
+        }
+
+        val event = PartyExportEventEntity(
+            companyId = companyId,
+            exportId = UUID.randomUUID().toString(),
+            partyId = partyId,
+            createdAt = now,
+            outputFileName = outputFileName,
+            fieldNamesCsv = eligible.joinToString(","),
+        )
+        exportEventDao.insert(event)
+        event.toDomain()
+    }
+
+    override suspend fun reconcileExportedFieldFromTally(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        tallyRawValue: String?,
+    ): FieldProvenanceState = withContext(dispatchers.io) {
+        val existing = fieldProvenanceDao.findField(companyId, partyId, fieldName)
+        val now = timeProvider.nowEpochMillis()
+
+        // TD-027 honesty: no fresh Tally value yet is "not re-synced," not "failed" — never
+        // downgrade an already-tracked field to EmptyUnknown just because this read-back was empty.
+        if (tallyRawValue.isNullOrBlank()) {
+            return@withContext existing?.state?.toFieldProvenanceState() ?: FieldProvenanceState.EmptyUnknown
+        }
+
+        val canonicalTally = canonicalizeForComparison(fieldName, tallyRawValue)
+        val canonicalBudcom = canonicalizeForComparison(fieldName, existing?.budcomValue)
+        val newState = if (canonicalBudcom != null && canonicalBudcom != canonicalTally) {
+            FieldProvenanceState.Conflict
+        } else {
+            FieldProvenanceState.ConfirmedFromTally
+        }
+
+        fieldProvenanceDao.upsert(
+            baseProvenance(existing, companyId, partyId, fieldName).copy(
+                state = newState.asColumn(),
+                tallyValue = tallyRawValue,
+                lastConfirmedAt = if (newState == FieldProvenanceState.ConfirmedFromTally) now else existing?.lastConfirmedAt,
+                updatedAt = now,
+            ),
+        )
+        if (newState == FieldProvenanceState.ConfirmedFromTally) {
+            applyEffectiveFieldValue(companyId, partyId, fieldName, tallyRawValue, now)
+        }
+        newState
+    }
+
+    override suspend fun getExportHistory(companyId: String, partyId: String, limit: Int): List<PartyExportEvent> =
+        withContext(dispatchers.io) {
+            exportEventDao.recentForParty(companyId, partyId, limit.coerceIn(1, 100)).map { it.toDomain() }
+        }
+
+    /** Field-appropriate canonical comparison for re-sync confirmation — never raw string
+     * equality, so a merely-differently-formatted match (e.g. phone spacing, email case) is not
+     * misreported as a conflict. Address is deliberately compared post-trim only, never
+     * over-normalized (architecture §18.7). */
+    private fun canonicalizeForComparison(fieldName: String, value: String?): String? {
+        val trimmed = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return when (fieldName) {
+            PartyFieldNames.PRIMARY_PHONE -> PhoneNumberNormalizer.normalizeForSearch(trimmed) ?: trimmed
+            PartyFieldNames.PRIMARY_EMAIL -> trimmed.lowercase()
+            PartyFieldNames.GSTIN -> trimmed.uppercase()
+            PartyFieldNames.ADDRESS_STATE -> trimmed.lowercase()
+            else -> trimmed
+        }
+    }
 
     private fun baseProvenance(
         existing: PartyFieldProvenanceEntity?,

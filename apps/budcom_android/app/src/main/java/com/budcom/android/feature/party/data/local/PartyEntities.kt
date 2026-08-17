@@ -131,3 +131,22 @@ data class PartyNoteEntity(
     val createdAt: Long,
     val updatedAt: Long,
 )
+
+/**
+ * Lightweight audit trail for one Tally-enrichment XML export (MVP-1.1-D, architecture §18). Never
+ * stores raw field values — only field *names* and output-file metadata — so this table is safe to
+ * read/export without itself becoming a sensitive-data surface.
+ */
+@Entity(
+    tableName = "party_export_events",
+    primaryKeys = ["companyId", "exportId"],
+    indices = [Index(value = ["companyId", "partyId", "createdAt"])],
+)
+data class PartyExportEventEntity(
+    val companyId: String,
+    val exportId: String,
+    val partyId: String,
+    val createdAt: Long,
+    val outputFileName: String,
+    val fieldNamesCsv: String,
+)

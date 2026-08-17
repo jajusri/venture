@@ -69,3 +69,18 @@ data class LedgerPage(
     val totalPages: Int,
     val dataFreshnessAt: String?,
 )
+
+/**
+ * A single ledger's contact-compatible fields (MVP-1.1-D) — reads the Connector's already-synced
+ * local snapshot (`GET /ledgers/{id}`, not a live Tally query), fetched only on-demand for one
+ * ledger at a time, never as part of the bulk [Ledger] list/browse path above.
+ */
+data class LedgerContactDetails(
+    val ledgerId: String,
+    val mobile: String?,
+    val email: String?,
+    val address: String?,
+    val state: String?,
+    val pincode: String?,
+    val gstin: String?,
+)

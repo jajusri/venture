@@ -5,6 +5,7 @@ import com.budcom.android.feature.party.domain.model.FieldProvenanceState
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
+import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartyNotePage
@@ -12,6 +13,7 @@ import com.budcom.android.feature.party.domain.model.PartyPage
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
+import com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate
 
 /**
  * Local-first, bounded/paged Party read+write surface for later Connect UI (MVP-1.1-B+) and for
@@ -123,4 +125,31 @@ interface PartyRepository {
 
     /** Bounded, newest-first, indexed — never a full scan. */
     suspend fun getNotesForParty(companyId: String, partyId: String, page: Int, pageSize: Int): PartyNotePage
+
+    // ---- MVP-1.1-D: Tally XML enrichment round-trip ----
+
+    /** One review row per [com.budcom.android.feature.party.domain.model.TallyExportFieldMapping]-
+     * eligible field, joining its current provenance with a display label. */
+    suspend fun getExportCandidates(companyId: String, partyId: String): List<TallyFieldExportCandidate>
+
+    /**
+     * Records a successful XML export: writes a lightweight audit row (field *names* only, never
+     * values) and transitions every included field's provenance to [FieldProvenanceState.Exported]
+     * with `lastExportedAt` set. Never marks the whole Party confirmed — this only ever touches
+     * the fields actually included in this export.
+     */
+    suspend fun recordExport(companyId: String, partyId: String, outputFileName: String, fieldNames: List<String>): PartyExportEvent
+
+    /**
+     * Reconciles one previously-exported field against a freshly-fetched live Tally value, using
+     * field-appropriate canonical comparison (phone=normalized, email=case/trim-insensitive,
+     * address=exact post-trim, GSTIN=case-insensitive) rather than raw string equality — so a
+     * merely-differently-formatted match is not misreported as a conflict. A blank/unavailable
+     * [tallyRawValue] never downgrades an already-`Exported` field to "unknown" (TD-027 honesty:
+     * "not yet re-synced" is not the same as "failed").
+     */
+    suspend fun reconcileExportedFieldFromTally(companyId: String, partyId: String, fieldName: String, tallyRawValue: String?): FieldProvenanceState
+
+    /** Bounded, newest-first — the lightweight export audit trail for one Party. */
+    suspend fun getExportHistory(companyId: String, partyId: String, limit: Int = 20): List<PartyExportEvent>
 }

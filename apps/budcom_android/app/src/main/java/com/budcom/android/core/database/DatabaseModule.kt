@@ -11,6 +11,7 @@ import com.budcom.android.feature.voucher.data.local.VoucherDao
 import com.budcom.android.core.connection.data.local.PairedConnectorDao
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyDao
+import com.budcom.android.feature.party.data.local.PartyExportEventDao
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
 import com.budcom.android.feature.party.data.local.PartyNoteDao
 import com.budcom.android.feature.party.data.local.PartySourceLinkDao
@@ -39,8 +40,9 @@ object DatabaseModule {
         context,
         AppDatabase::class.java,
         DatabaseConstants.NAME,
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
-        .build()
+    ).addMigrations(
+        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+    ).build()
 
     @Provides
     fun provideCompanyDao(db: AppDatabase): CompanyDao = db.companyDao()
@@ -80,6 +82,9 @@ object DatabaseModule {
 
     @Provides
     fun providePartyNoteDao(db: AppDatabase): PartyNoteDao = db.partyNoteDao()
+
+    @Provides
+    fun providePartyExportEventDao(db: AppDatabase): PartyExportEventDao = db.partyExportEventDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -282,6 +287,26 @@ object DatabaseModule {
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS `index_party_notes_companyId_partyId_createdAt` " +
                     "ON `party_notes` (`companyId`, `partyId`, `createdAt`)",
+            )
+        }
+    }
+
+    /**
+     * Additive-only: adds the single MVP-1.1-D `party_export_events` table — a lightweight audit
+     * trail of Tally-enrichment XML exports (export id, timestamp, output filename, exported field
+     * *names* only, never raw values). No existing table is touched.
+     */
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `party_export_events` (" +
+                    "`companyId` TEXT NOT NULL, `exportId` TEXT NOT NULL, `partyId` TEXT NOT NULL, " +
+                    "`createdAt` INTEGER NOT NULL, `outputFileName` TEXT NOT NULL, `fieldNamesCsv` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `exportId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_party_export_events_companyId_partyId_createdAt` " +
+                    "ON `party_export_events` (`companyId`, `partyId`, `createdAt`)",
             )
         }
     }

@@ -5,6 +5,7 @@ import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
+import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartySourceLink
@@ -110,6 +111,15 @@ internal fun PartyNoteEntity.toDomain(): PartyNote = PartyNote(
     linkedVoucherId = linkedVoucherId,
     createdAt = createdAt,
     updatedAt = updatedAt,
+)
+
+internal fun PartyExportEventEntity.toDomain(): PartyExportEvent = PartyExportEvent(
+    companyId = companyId,
+    exportId = exportId,
+    partyId = partyId,
+    createdAt = createdAt,
+    outputFileName = outputFileName,
+    fieldNames = fieldNamesCsv.split(",").filter { it.isNotBlank() },
 )
 
 internal fun TagEntity.toDomain(): Tag = Tag(

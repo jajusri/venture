@@ -7,9 +7,11 @@ import com.budcom.android.feature.masterdata.ledger.data.remote.DefaultAuthentic
 import com.budcom.android.feature.masterdata.ledger.data.remote.DefaultLedgerRemoteDataSource
 import com.budcom.android.feature.masterdata.ledger.data.remote.LedgerApi
 import com.budcom.android.feature.masterdata.ledger.data.remote.LedgerRemoteDataSource
+import com.budcom.android.feature.masterdata.ledger.data.repository.LedgerLiveDetailPortImpl
 import com.budcom.android.feature.masterdata.ledger.data.repository.LedgerRepositoryImpl
 import com.budcom.android.feature.masterdata.ledger.data.repository.LedgerSnapshotPortImpl
 import com.budcom.android.feature.masterdata.ledger.data.repository.SearchLedgersPortImpl
+import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerLiveDetailPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.SearchLedgersPort
 import com.budcom.android.feature.masterdata.ledger.domain.repository.LedgerRepository
@@ -60,6 +62,12 @@ abstract class LedgerBindModule {
     abstract fun bindLedgerSnapshotPort(
         impl: LedgerSnapshotPortImpl,
     ): LedgerSnapshotPort
+
+    @Binds
+    @Singleton
+    abstract fun bindLedgerLiveDetailPort(
+        impl: LedgerLiveDetailPortImpl,
+    ): LedgerLiveDetailPort
 }
 
 @Module
