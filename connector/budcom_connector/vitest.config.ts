@@ -5,6 +5,7 @@ export default defineConfig({
     globals: false,
     environment: 'node',
     include: ['test/**/*.test.ts'],
+    globalSetup: ['test/helpers/global-teardown.ts'],
     pool: 'forks',
     server: {
       deps: {

@@ -28,7 +28,37 @@ export interface StartTestServicesOptions {
   readonly selectCompanyId?: string;
 }
 
+/**
+ * Where every `createTestContext()` call (across every forked worker process vitest's
+ * `pool: 'forks'` runs test files under) records the default temp directory it minted, one JSON
+ * line per directory. Deliberately a shared on-disk file, not an in-memory array: an in-process
+ * `afterAll` cannot remove these directories reliably — the SQLite file inside is still open in
+ * that same (still-alive) worker process, and Windows (unlike POSIX) refuses to delete an
+ * open file no matter how long a same-process retry waits. `test/helpers/global-teardown.ts`
+ * (wired into `globalTeardown`) runs in the main vitest process only after every worker has fully
+ * exited, so every handle is guaranteed released by then — see that file for the actual removal.
+ * Before this existed, every call leaked its directory outright — ~79 call sites across 20 test
+ * files, the single largest source of the accumulated OS-temp scratch-directory buildup found
+ * during the public-release hygiene audit.
+ */
+const TRACKING_FILE = path.join(os.tmpdir(), 'budcom-connector-test-tracked-dirs.jsonl');
+
+function trackTempDir(dir: string): void {
+  try {
+    fs.appendFileSync(TRACKING_FILE, `${JSON.stringify({ dir })}\n`, 'utf8');
+  } catch {
+    // Best-effort tracking only — worst case this directory is missed by the teardown sweep,
+    // exactly the pre-existing (leaky) behavior; must never fail the test that triggered it.
+  }
+}
+
 export function createTestContext(configOverrides: RegisterServicesOptions = {}): ApplicationContext {
+  const usesDefaultDatabasePath = configOverrides.databasePath === undefined;
+  const databasePath = configOverrides.databasePath
+    ?? fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-connector-test-'));
+  if (usesDefaultDatabasePath) {
+    trackTempDir(databasePath);
+  }
   return registerServices({
     env: 'test',
     logLevel: 'error',
@@ -37,7 +67,7 @@ export function createTestContext(configOverrides: RegisterServicesOptions = {})
     // Each context gets its own on-disk database unless the caller overrides it below. Selected
     // company is now durably persisted (TD-013), so sharing the default './data' path across
     // contexts — harmless while selection was in-memory-only — would leak state between tests.
-    databasePath: fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-connector-test-')),
+    databasePath,
     ...configOverrides,
   });
 }
