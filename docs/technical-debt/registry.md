@@ -156,9 +156,9 @@ Engineering-tracked compromises, defects, and deferred work.
 | **Impact** | Medium — network-exposed connector remains trust-on-LAN |
 | **Priority** | P2 |
 | **Target milestone** | 5B or security hardening |
-| **Status** | Open (future; disabled by default) |
+| **Status** | Open (future; disabled by default). **Reviewed (2026-08-17, pre-signing technical-debt closure):** confirmed the core gap is still accurate today. Since this entry was written, a genuinely authenticated transport subsystem has been built (device pairing, TLS transport identity, per-device credentials — the `secureMobilePairingEnabled` config flag and the whole `ConnectorTransportSelection.AUTHENTICATED` path), but it is an **independent, opt-in setting**, not a requirement of trusted-LAN bind mode: `desktop-config-schema.ts`'s validation never cross-checks `connectorBindMode === 'trusted-lan'` against `secureMobilePairingEnabled`, so an operator can still enable trusted-LAN bind with secure pairing left off, exposing the connector on the LAN under only the existing operator-acknowledgment mitigation, no per-device authentication. Whether trusted-LAN bind mode should *require* secure pairing is a real security-policy decision (not every trusted-LAN scenario may need per-device auth), correctly out of scope for this session — a policy change like that needs product sign-off, not a unilateral tightening. Kept as an accepted limitation, disposition unchanged. |
 | **Introduced** | Milestone 5A-P sign-off (2026-07-23) |
-| **Mitigation today** | Default `127.0.0.1`, reject `0.0.0.0`, readiness check requires `BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED=true` |
+| **Mitigation today** | Default `127.0.0.1`, reject `0.0.0.0`, readiness check requires `BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED=true`, setting is tucked behind an "Advanced Connector Settings" disclosure labeled "change only when instructed by support". Separately, a fully-authenticated transport path now exists for the paired-Android use case (`secureMobilePairingEnabled`), but it is opt-in and not yet a hard requirement of trusted-LAN mode. |
 
 ---
 
