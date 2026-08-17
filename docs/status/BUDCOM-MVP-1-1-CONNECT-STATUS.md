@@ -1,11 +1,11 @@
 # BUDCOM MVP-1.1 — Connect Status
 
-**Status:** MVP-1.1-A (Universal Party Foundation) — technically complete, ready for review.
-MVP-1.1-B (Connect Browser + Customers/Prospects + accounting deep links) — technically complete,
-ready for review. MVP-1.1-C (Party Detail + Prospect creation + Contact Persons + Tags +
-Notes/Activity + voucher-linked notes) — technically complete, ready for review. **MVP-1.1-D
-(Tally XML enrichment round-trip) — technically complete, ready for review.** This closes the
-combined MVP-1.1-C+D session — see Part D below for full 1.1-D detail.
+**Status:** MVP-1.1-A (Universal Party Foundation), MVP-1.1-B (Connect Browser + Customers/
+Prospects + accounting deep links), MVP-1.1-C (Party Detail + Prospect creation + Contact Persons +
+Tags + Notes/Activity + voucher-linked notes), and MVP-1.1-D (Tally XML enrichment round-trip) are
+all technically complete. **MVP-1.1-E (Integrated Hardening, Acceptance & Freeze) is complete —
+MVP-1.1 is FROZEN.** See Part E below for full 1.1-E detail; next milestone is MVP-1.2
+(planning/recovery review only, not started).
 
 # Part A — MVP-1.1-A: Universal Party Foundation
 
@@ -1269,13 +1269,263 @@ corrective action.
   last Ledger sync, not necessarily the current instant. Documented, matching TD-027's own
   timing-honesty framing.
 
-## D18. Exact NEXT TASK
+## D18. Exact NEXT TASK (superseded — see Part E)
 
-**Neither MVP-1.1-E nor any further MVP-1.1 work was started, per explicit instruction.** The
-combined MVP-1.1-C+D session is complete. Recommended next items, none started or implied:
-(a) obtain and configure production signing credentials (the sole remaining public-release
-blocker, unrelated to and unchanged by this session's work), (b) decide whether/where to install
-`continuity.25` for a genuine live smoke test against a real paired Tally company, including
-exercising a real Tally XML import by hand, (c) if/when repository evidence locks a next Connect
-milestone (e.g. a Referral Tree, MVP-1.2 CRM-adjacent scope), that work is explicitly out of this
-session's scope and was not evaluated.
+~~MVP-1.1-E — Integrated hardening, acceptance, freeze~~ — **completed this session**, see Part E
+below for full detail.
+
+---
+
+# Part E — MVP-1.1-E: Integrated Hardening, Acceptance & Freeze
+
+**Status:** Complete. MVP-1.1 is FROZEN as of this session. No new feature surface was added —
+this was an integration audit, defect-fix, full-regression, and release-candidate session across
+the already-implemented A–D scope, per the governing instruction's explicit no-scope-creep rule.
+
+## E1. Recovery and baseline verification
+
+Read `BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`, `BUDCOM-DEVELOPMENT-LEDGER.md`, this file (Parts
+A–D), `POST-MVP-1-DEVELOPMENT-MODUS-OPERANDI.md`, the Universal-Party architecture, and the Master
+Product Execution Plan before touching anything. Verified against repository evidence, not chat
+memory: HEAD `f5cfd47` on `main`, working tree clean, 229 commits ahead of `origin/main` (nothing
+pushed), Android `versionCode = 26` / `versionName = "0.1.1-continuity.25"`, Room schema at
+version 8 (`7.json`/`8.json` present), device `I2407i` (serial `10BF44124K000E3`) connected with
+**no BUDCOM package of any kind installed** — every value matched the expected A–D baseline
+exactly; no drift found.
+
+## E2. Environment note (not a product defect)
+
+The shell's default `java` was 1.8.0_401 (`javapath`), which cannot run AGP 8.8.2/KSP 2.1.10
+(both require JVM 11+) — every Gradle invocation this session used
+`JAVA_HOME="C:\Program Files\Android\Studio\jbr"` (Android Studio's bundled JBR 21) explicitly.
+This is a shell/environment configuration fact, not a code or documentation defect; no repository
+file was changed because of it.
+
+## E3. Integration audit (§6–§13 of the governing instruction)
+
+Traced the full path Connect → Party row tap → Party Detail → field edit → Export-to-Tally review
+→ XML generation → Save-via-SAF → export audit → later "Check Tally" re-sync → confirmation/
+conflict, reading the actual production code (not only prior sessions' documentation) at every
+seam:
+
+- **Navigation graph** (`navigation/Routes.kt`, `navigation/BudcomNavHost.kt`): every route
+  (`CONNECT`, `PARTY_DETAIL`, `PROSPECT_CREATE`, `PARTY_XML_EXPORT`) is correctly wired, every
+  `partyId` argument is `Uri.encode`d before interpolation into the route string (no injection
+  surface), and the `PartyDetail → XmlExport` back-link is conditional on a non-null `partyId` —
+  no dangling or dead route found.
+- **Party identity / company isolation** (`PartyRepositoryImpl.reconcileOne`,
+  `PartySourceLinkDao.findByExternalKey`): the source-link natural key is
+  `(companyId, sourceType, externalEntityId)` — company-scoped by construction, so the same Tally
+  ledger GUID in two different companies cannot collide into one Party. Confirmed by reading the
+  actual query, not only re-trusting the A/B test-count claims.
+- **Provenance gating**: grepped the full `feature/connect` presentation layer for
+  `confirmFieldFromTally` — zero call sites. The only three files that reference it are
+  `PartyRepositoryImpl`, `PartyUseCases`, and the `PartyRepository` interface itself, exactly as
+  Part D §D8 claimed. A BUDCOM edit can still never mark itself Tally-confirmed.
+- **Export audit privacy**: `party_export_events` (via `MIGRATION_7_8`, confirmed in
+  `DatabaseModule.kt`) stores `outputFileName`/`fieldNamesCsv` only — no column exists for a raw
+  field value. `recordExport`/`getExportHistory` never read or write a value into that table.
+- **XML generation/escaping** (`TallyLedgerXmlGenerator`): 5-entity escape (`&` first, avoiding
+  double-escaping), all validation (non-blank names, whitelist-only fields, no blank values)
+  happens before any file write. No defect found.
+- **File/cache boundary** (`PartyXmlExportCacheBoundary`/`PartyXmlExportCachePolicy`,
+  `sanitizedPartyXmlExportFilename`): canonical-path containment against path traversal, filename
+  sanitized to `[A-Za-z0-9._-]` before any file is created, `saveXml` writes through a SAF `Uri`
+  (never a raw filesystem path the user or Party data could influence). `FileProvider` in
+  `AndroidManifest.xml` is `exported="false"`, `grantUriPermissions="true"` — standard-safe.
+- **Migrations** (`MIGRATION_6_7`, `MIGRATION_7_8`): both are pure additive `CREATE TABLE`/
+  `CREATE INDEX`, no existing table touched; both have a real `AppDatabaseMigrationTest` case
+  (`migrate6To7_...`, `migrate7To8_...`) that inserts pre-migration rows, runs the actual
+  production `Migration` object via `MigrationTestHelper`, and asserts every pre-existing row
+  survives — re-run and passing this session (§E5).
+- **Live-read company scoping** (`LedgerLiveDetailPortImpl.fetchContactDetails`): takes no
+  `companyId` parameter by design, since the paired Connector session is already
+  single-company-scoped (same pattern as the pre-existing `LedgerApi.getLedgers`) — documented,
+  not an oversight, matching Part D §D13's own disclosure.
+
+**No integration-level defect was found** in the Connect→Party→Detail→Review→Export→XML→Save→
+re-sync chain. A/B/C/D's own mini-hardening passes already covered this ground thoroughly; this
+session's independent re-read corroborates rather than contradicts that record.
+
+## E4. One genuine defect found and fixed: unlabeled Checkbox controls
+
+Section 16's accessibility audit (interactive controls need useful content descriptions) surfaced
+a real, reproducible gap: two Material3 `Checkbox` composables had no `contentDescription` and no
+merged semantics with their adjacent label text —
+
+- `PartyXmlExportScreen.kt` → `FieldCandidateRow`'s per-field export-selection checkbox (label
+  text sits in a sibling `Column`, not merged into the checkbox's own accessible node).
+- `PartyDetailScreen.kt` → the contact-person editor's "Primary contact" checkbox (same pattern).
+
+A bare Compose `Checkbox` has no default accessible name of its own; TalkBack would announce an
+unlabeled "checkbox" for both controls, without saying which field or that its label was "Primary
+contact." This is a genuine usability defect on already-approved MVP-1.1 functionality (§4/§16 of
+the governing instruction — not aesthetic/cosmetic, not a redesign).
+
+**Fix (both files):** added `.semantics { contentDescription = "..." }` directly on each
+`Checkbox`'s existing modifier — `"Include ${candidate.label} in the Tally export"` for the export
+row, `"Primary contact"` for the contact editor. Purely additive: the `testTag`s and
+`onCheckedChange` wiring are unchanged, so no existing instrumented test needed updating (confirmed
+by re-running the full instrumented suite, §E6 — zero new failures, zero test file touched). No
+Row-level `toggleable`/`mergeDescendants` restructuring was attempted — that would have changed
+click-handling semantics for a marginal additional benefit, out of proportion to a bounded
+hardening fix.
+
+Other `Checkbox`/`AssistChip`/`IconButton` controls across `feature/connect` were reviewed
+(`ConnectScreen`'s Call/WhatsApp chips, the "Add prospect" FAB, `ProspectCreateScreen`'s back
+button) and already carry an explicit `contentDescription` or a `Text` label — no further gap
+found. `PartyDetailScreen`'s own Call/WhatsApp chips reuse the shorter "Call"/"WhatsApp" label
+(no per-party name) consistent with a screen already headed by that Party's own name — a minor
+stylistic difference from `ConnectScreen`'s row-level chips, not a missing label, and left
+unchanged to avoid unrequested polish scope.
+
+## E5. Full JVM/lint/assemble regression (fresh run, this session)
+
+- `testDebugUnitTest`: **1,165/1,165 passing** (unchanged count from Part D — E added no new
+  production code beyond the two-file accessibility fix, so no new tests were required or added).
+- `testReleaseUnitTest`: **1,165/1,165 passing.** One incidental failure
+  (`VoucherRepositoryImplTest > a window with many pages well beyond the old 500-page cap still
+  completes and persists everything`, `UncompletedCoroutinesError`) on the first full run —
+  reproduced the exact same already-documented flake from Parts C/D. Isolated re-run
+  (`--tests "*VoucherRepositoryImplTest*"`) passed cleanly, and a full unfiltered re-run of
+  `testReleaseUnitTest` then passed 1,165/1,165 clean — confirmed unrelated to any file this
+  session touched (Voucher-feature coroutine timing, not Connect/Party/accessibility), consistent
+  with every prior session's account of this same flake.
+- `lintDebug` / `lintRelease`: **0 errors** both.
+- `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`: all `BUILD SUCCESSFUL`.
+
+## E6. Full instrumented regression (real device, this session)
+
+`connectedDebugAndroidTest`, full app suite, device `I2407i`: **229/241 passing.** The 12 failures
+are byte-for-byte the same files documented in Parts B/C/D (`DashboardScreenTest` ×2,
+`DiagnosticsScreenTest` ×1, `LedgerStatementScreenTest` ×2, `SecurePairingScreenTest` ×1,
+`ServerConfigScreenTest` ×2, `SettingsScreenTest` ×2, `SyncScreenTest` ×1,
+`VoucherDetailsScreenTest` ×1) — the same device-viewport/scroll-assertion artifact class on this
+specific device, individual test names shifting slightly run-to-run exactly as previously
+documented. **Zero of the 12 failures touch any Connect/Party/XML-export file; every
+`ConnectScreenTest`, `PartyDetailScreenTest`, `ProspectCreateScreenTest`, `PartyXmlExportScreenTest`,
+and `AppDatabaseMigrationTest` (including both `migrate6To7_...` and `migrate7To8_...`) case
+passed, including the two files this session edited.** Classified, per §18/§26/§27 of the
+governing instruction, as **KNOWN / PRE-EXISTING / NON-REGRESSION** — not investigated further
+(would mean modifying unrelated pre-existing screens outside 1.1-E's authorized scope) and not
+suppressed.
+
+## E7. Multi-company, offline, security/privacy audit — disposition
+
+Re-verified against code (not re-run as a fresh manual device walkthrough, since no second company
+was available this session): company-scoped natural keys throughout `PartyRepositoryImpl`/DAOs
+(§E3); zero Connector calls in any Connect/Party read or write path except the one explicit "Check
+Tally" action (grepped — only `LedgerLiveDetailPort`/`ledgerLiveDetailPort.fetchContactDetails` in
+`PartyXmlExportViewModel` reaches the network; XML generation deliberately uses the local-only
+`companySession.observeSelectedCompany()`, not the network-backed `readSelectedCompany()`, exactly
+as Part D §D8 recorded); no `Log`/`Timber` call anywhere under `feature/party` or `feature/connect`
+that could leak a field value; export audit stores field names only (§E3). No new defect found in
+this area — existing A–D evidence stands, corroborated rather than superseded.
+
+## E8. Performance audit — disposition
+
+Re-read `getExportCandidates` (six fixed single-key lookups), `PartyDetailViewModel`'s load path
+(bounded single-row/paged reads, no full-table scan), and the Connect row-enrichment join
+(`PartySourceLinkDao`/`TagDao` bulk-company reads, §B18) — all remain bounded, no N+1 pattern
+introduced or found. No change made; no regression risk from this session's two-file edit (Compose
+semantics only, zero query/logic change).
+
+## E9. Migration audit — disposition
+
+`MIGRATION_6_7`/`MIGRATION_7_8` re-confirmed additive-only by direct reading (§E3) and by their
+dedicated `AppDatabaseMigrationTest` cases passing again this session (§E6, not in the 12-failure
+list). No new migration was needed — 1.1-E added no new table/column.
+
+## E10. Accepted limitations reconfirmed (not reopened)
+
+Reviewed against current repository evidence, all found still accurate, none escalated to a
+blocker: TD-025 (USB hot-removal, Desktop/Connector-side, unrelated to Android/MVP-1.1), TD-009/
+TD-021/TD-022/TD-027 (open for a documented architectural/product-policy reason, not an MVP-1.1
+gap), the 12 pre-existing instrumented device-viewport failures (§E6), missing production signing
+credentials and undecided public `applicationId` (blocks public release only, unrelated to and
+unchanged by MVP-1.1), the Tally `ACTION="Alter"` NAME-based-match limitation and permanently
+excluded `addressCity` (§D3/§D5), the name-based (not GUID-based) View Vouchers deep link (§B13),
+no Outstanding view (no authoritative data source, §B14), no bulk/automatic re-sync and unbounded
+`party_export_events` growth (§D17), and `LedgerLiveDetailPort` reading the Connector's last-synced
+snapshot rather than an instantaneous live Tally query (§D17). None of these required a code change
+this session; all remain explicitly documented rather than silently accepted.
+
+## E11. No-scope-creep confirmation
+
+Grepped for and found zero code/doc changes toward MVP-1.2, Relationship Timeline, Dincharya,
+Curated Operational Intelligence, Business Profile, Catalogue, Vartalap, CRM pipeline, AI features,
+cloud sync, automatic Tally writing/import, public release signing, Play Store publication, Windows
+public signing, or unrelated Desktop/Connector work. The full session diff is exactly three files:
+`app/build.gradle.kts` (version bump only) and the two accessibility-fix files (§E4).
+
+## E12. Final Android version / artifacts
+
+`versionCode = 27`, `versionName = "0.1.1-continuity.26"` (was `26` / `"0.1.1-continuity.25"`) —
+the single MVP-1.1-E candidate bump, made only after all regression gates (§E5/§E6) passed clean.
+
+| Build | Path | SHA-256 | Size |
+|---|---|---|---|
+| Debug APK | `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` | `8a3413e7b4e4a22254fab7d2cbf05a698e22052ce6ef631e1e6dc6373282c4c3` | 14,348,468 bytes |
+| Release APK (unsigned — no release keystore exists) | `apps/budcom_android/app/build/outputs/apk/release/app-release-unsigned.apk` | `aa0c037cb005757fca66173ff3cb30fdaa8c981acd53488ae4b00105cd219e91` | 2,469,896 bytes |
+
+## E13. ADB device / install result
+
+Device `I2407i` (model `I2407`, serial `10BF44124K000E3`) connected throughout this session (used
+for §E6's instrumented run). `pm list packages | grep budcom` returned **no BUDCOM package of any
+kind**, checked both at session start and again immediately before this final candidate build —
+identical finding to every prior A/B/C/D session on this same device. Per the governing
+instruction's explicit rule (§19/§22: the target must already contain BUDCOM data or be otherwise
+clearly identified as the owner's existing BUDCOM phone; do not install onto an unrelated/unproven
+device even if physically reachable), **no install was performed.** The owner's previously-approved
+`continuity.22` install elsewhere is untouched and unaffected by this session.
+
+## E14. Human acceptance checklist (for whenever this candidate is installed)
+
+Superset of Parts B/C/D's own human-check lists (§B25/§D16), targeting ~10–15 minutes:
+
+1. Confirm Dashboard/company context looks normal after install (no data loss, correct company).
+2. Open Connect → Customers — confirm real synced customers appear with balance/Dr-Cr.
+3. Open a Customer's Party Detail — confirm name/accounting context, Tally-confirmed vs. pending
+   field labels, tags, contact persons, notes/activity all render.
+4. Open Contacts — add/edit a contact person, confirm the Primary checkbox (now with a screen-reader
+   label, §E4) still behaves correctly.
+5. Open Tags — add/remove a tag.
+6. Open Notes — add a note, optionally link a voucher.
+7. Confirm View Ledger / View Vouchers still deep-link correctly.
+8. Switch to Prospects — create one via the FAB, confirm it saves and opens its own Party Detail
+   with no accounting section.
+9. Edit a Tally-compatible field, open "Export to Tally," confirm the review screen lists it,
+   generate and save an XML file for one controlled Party, confirm the saved file is well-formed.
+10. **Do not import the XML into a real Tally company unless the owner explicitly wants to test the
+    round-trip against real data** — same explicit human-control boundary as Part D §D16.
+11. Confirm no regression in any MVP-1 screen (Ledgers, Vouchers, Stock Items, Sync, Settings,
+    Diagnostics, Secure Pairing).
+
+## E15. MVP-1.1 freeze audit (§26 of the governing instruction)
+
+| Area | Verdict | Basis |
+|---|---|---|
+| Party identity stable | YES | §E3 — natural-key company scoping re-verified by reading the actual query |
+| Company isolation | YES | §E3/§E7 |
+| Provenance correctness | YES | §E3 — `confirmFieldFromTally` unreachable from Connect/Party presentation |
+| No accounting-truth corruption | YES | §E3 — export writes a local file only, never Tally directly |
+| No direct Tally mutation | YES | §D8/§E3 — Connector remains 100% read-only; the one new endpoint used is `GET /ledgers/{id}`, already read-only, pre-existing |
+| Connect (Customers/Prospects/Detail/Contacts/Tags/Notes/deep links) | YES | §E3, re-confirmed working in this session's full regression |
+| Tally enrichment (whitelist/review/XML/Save/audit/read-back/confirmation/conflict/stale-export protection) | YES | §E3/§D3–D6 |
+| Migrations | YES | §E9, re-run and passing |
+| Offline behavior | YES | §E7 |
+| Performance | YES | §E8 |
+| Accessibility | YES, after one fix | §E4 — one real gap found and fixed this session |
+| Security | YES | §E3/§E7 |
+| Error states | YES | re-confirmed via the full instrumented suite, no new failure |
+| MVP-1 / 1.1-A / 1.1-B / 1.1-C / 1.1-D regression | YES | §E5/§E6 — identical test counts, identical known-failure set |
+
+All gates pass. **MVP-1.1 is FROZEN as of this session.**
+
+## E16. Exact NEXT TASK
+
+**MVP-1.1 is complete and frozen. MVP-1.2 planning/recovery review is the next milestone — not
+started, per explicit instruction.** Two independent, still-unstarted items from Part D §D18
+remain open and unaffected by this session: (a) production signing credentials (public-release
+blocker, unrelated to MVP-1.1), (b) deciding whether/where to install `continuity.26` for a live
+smoke test against a real paired Tally company. Neither was evaluated further this session.

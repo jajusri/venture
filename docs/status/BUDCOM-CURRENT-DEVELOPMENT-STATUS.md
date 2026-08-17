@@ -8,15 +8,14 @@ governing the three-tier split. Update all three when a work unit changes their 
 
 ## 1. Current phase
 
-**MVP-1.1-D TALLY XML ENRICHMENT ROUND-TRIP — AUTOMATED WORK COMPLETE, READY FOR REVIEW (2026-08-17)**
-**MVP-1.1-C PARTY DETAIL + PROSPECT CREATION + CONTACT PERSONS + TAGS + NOTES/ACTIVITY — READY FOR
-REVIEW (2026-08-17, same session, unchanged since)**
-**MVP-1.1-B / MVP-1.1-A — READY FOR REVIEW (2026-08-17, prior sub-sessions, unchanged)**
-**This closes the combined MVP-1.1-C+D session — MVP-1.1-E was not started, per explicit
-instruction.**
+**MVP-1.1 STATUS: COMPLETE / FROZEN (2026-08-17)** — A through E all technically complete.
+MVP-1.1-E (Integrated Hardening, Acceptance & Freeze) closed this session: full integration audit
+across the A–D chain, one genuine accessibility defect found and fixed, full JVM/lint/assemble +
+full-device-instrumented regression re-run clean, final candidate built and version-bumped.
+**NEXT MILESTONE: MVP-1.2** (planning/recovery review only — not started).
 **PUBLIC RELEASE BLOCKED — SIGNING ONLY** (Windows code-signing + Android release keystore, neither
 exists; Android `applicationId` also undecided — unrelated to and unchanged by MVP-1.1 work)
-**ANDROID `continuity.25` (versionCode 26)** — new candidate this session, built/tested, **not
+**ANDROID `continuity.26` (versionCode 27)** — final MVP-1.1 candidate, built/tested, **not
 installed** (device has no genuine pre-existing BUDCOM install — §5)
 **DESKTOP `0.4.18`** / **CONNECTOR `0.4.6`** — unchanged, not touched this session
 
@@ -24,49 +23,42 @@ installed** (device has no genuine pre-existing BUDCOM install — §5)
 
 - Branch: `main`, not pushed to `origin`.
 - HEAD at end of this session: see `git log -1` (this checkpoint's own commit is necessarily
-  self-referential). This session's commits implement MVP-1.1-C then MVP-1.1-D, bump the Android
-  candidate once for the combined session, then record status/ledger/checkpoint — see the
-  Development Ledger phases 22-23 for the full list.
+  self-referential). This session's commit implements MVP-1.1-E (integration audit, one
+  accessibility fix, version bump, documentation) — see the Development Ledger phase 24 for detail.
 - Android: owner-approved installed candidate remains `0.1.1-continuity.22` (versionCode 23,
-  unchanged/untouched); this session's new `continuity.25` (versionCode 26) exists only as a
-  built, tested, not-yet-installed APK (§5).
+  unchanged/untouched); the final MVP-1.1 candidate `continuity.26` (versionCode 27) exists only
+  as a built, tested, not-yet-installed APK (§5).
 
-## 3. This session's work (MVP-1.1-C + MVP-1.1-D)
+## 3. This session's work (MVP-1.1-E — Integrated Hardening, Acceptance & Freeze)
 
-**Part C** — first slice where a user can edit Party data in BUDCOM: a five-section Party Detail
-screen (identity/Call/WhatsApp; accounting deep links shown only when a real `PartySourceLink`
-exists; Tally-compatible fields with plain-language provenance; tags; contact persons;
-notes/activity), a minimal offline Prospect-creation flow, full contact-person/tag/note CRUD. Every
-edit local-Room-only, zero Connector calls. New `party_notes` table (`MIGRATION_6_7`, schema v7).
+Not new feature work: an integration audit across the already-implemented A–D scope, plus final
+regression and release-candidate production. Traced the full Connect → Party Detail → field edit →
+Export-to-Tally review → XML generation → Save → export audit → "Check Tally" re-sync →
+confirmation/conflict chain directly against production code (navigation graph, Party-identity/
+company-isolation natural keys, provenance gating, export-audit privacy, XML escaping, file/cache
+path-containment, migrations, live-read company scoping, offline/performance/security) — zero
+integration-level defect found; A–D's own mini-hardening evidence corroborated, not contradicted.
 
-**Part D** — closes the combined session. Change-review + Tally-compatible external-IMPORTDATA XML
-generation (six-field whitelist — `addressCity` deliberately excluded, no distinct Tally tag
-exists) + Save-via-SAF + a lightweight field-names-only export audit trail + on-demand re-sync
-confirmation with field-appropriate canonical comparison. BUDCOM never writes to Tally directly.
-Closed a genuine pre-existing gap along the way: Android had never called the Connector's
-already-implemented, read-only `GET /ledgers/{id}` detail endpoint, so there was no local ground
-truth for phone/email/address/GSTIN beyond a phone heuristic — closed with one new read-only
-Retrofit method + a new `LedgerLiveDetailPort`, wired only into the explicit "Check Tally" action.
-Edit-after-export staleness and per-field partial confirmation both verified to fall out correctly
-from 1.1-A's existing `updateBudcomOnlyField` behavior, with zero new bookkeeping. Prospects
-structurally excluded from export (button lives inside the same accounting-link-only block as View
-Ledger/View Vouchers) plus a defensive ViewModel re-check. New `party_export_events` table
-(`MIGRATION_7_8`, schema v8).
+One genuine defect found and fixed: two Material3 `Checkbox` controls (`PartyXmlExportScreen`'s
+field-selection checkbox, `PartyDetailScreen`'s contact-primary checkbox) had no accessible content
+description — fixed additively via `Modifier.semantics { contentDescription = ... }`, zero
+click-handling or test-tag change.
 
-112 new tests this session (77 JVM + 35 instrumented: 63 Part C + 49 Part D, all passing on a
-connected physical device `I2407i`, not simulated) — including one genuine Compose crash (a nested
-`LazyColumn` inside a `verticalScroll` `Column`) found and fixed by the instrumented suite before
-commit. Full regression: `testDebugUnitTest`/`testReleaseUnitTest` 1,165/1,165 (one incidental,
-already-documented `VoucherRepositoryImplTest` flake reproduced again this session, always
-unrelated, always clean on retry); both lints 0 errors; `assembleDebug`/`assembleRelease`/
-`assembleDebugAndroidTest` all green; full-app instrumented suite 229/241 (the same 12-failure
-pre-existing device-viewport-artifact class documented in Parts B/C, zero overlap with any
-Connect/Party file). Zero MVP-1/MVP-1.1-A/MVP-1.1-B behavior change — every edit to existing code
-was additive. Version bumped once for the combined session: `continuity.24`→`continuity.25`
-(versionCode 25→26).
+Fresh full regression this session: `testDebugUnitTest`/`testReleaseUnitTest` 1,165/1,165 (one
+incidental, already-documented `VoucherRepositoryImplTest` flake, confirmed clean on isolated and
+full re-run — unrelated to any file this session touched); both lints 0 errors;
+`assembleDebug`/`assembleRelease`/`assembleDebugAndroidTest` all green; full-app instrumented
+suite 229/241 on device `I2407i`, the identical 12-failure pre-existing device-viewport-artifact
+class documented in Parts B/C/D, zero overlap with any Connect/Party/XML-export file (including
+the two files this session edited — both migration tests and every Connect/Party/XML screen test
+passed). Session diff is exactly three files: `app/build.gradle.kts` (version bump) and the two
+accessibility-fix files — no scope creep into MVP-1.2 or public-release signing. Version bumped
+`continuity.25`→`continuity.26` (versionCode 26→27), the single MVP-1.1-E candidate bump, made
+only after all regression gates passed clean.
 
-Full detail: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Parts C and D.
-Prior milestones (MVP-1.1-A, MVP-1.1-B): same file, Parts A and B.
+Full detail including the freeze-audit table and human-acceptance checklist:
+`docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Part E.
+Prior milestones (MVP-1.1-A through D): same file, Parts A–D.
 Prior sessions (pre-signing technical-debt closure, public-release prep, UI/UX polish): Development
 Ledger phases 17-19, unchanged this session.
 
@@ -79,17 +71,16 @@ repository/environment. Android public Play-Store `applicationId` also undecided
 ## 5. Android install status
 
 Connected device `I2407i` (serial `10BF44124K000E3`) still has **no genuine pre-existing BUDCOM
-installation** at every check this session — only transient `connectedDebugAndroidTest`
-test-harness packages, recreated fresh by each test run. Per explicit governing instruction ("if no
-connected device has BUDCOM installed: do not install"), **no install was performed** (same
-finding as Parts A/B/C). The owner's previously-approved `continuity.22` install elsewhere is
-untouched. The device showed one transient mid-session ADB disconnect during instrumented testing
-(recognized as a known non-defect pattern, reconnected and retried successfully) and shows
-disconnected again at the time of this checkpoint — not treated as requiring any action.
+installation** — checked both at this session's start and again immediately before the final
+candidate build; only transient `connectedDebugAndroidTest` test-harness packages exist, recreated
+fresh by each test run. Per explicit governing instruction ("the target must already contain
+BUDCOM data or otherwise be clearly identified as the owner's existing BUDCOM phone"), **no install
+was performed** (same finding as Parts A/B/C/D — this device has never qualified across the entire
+MVP-1.1 arc). The owner's previously-approved `continuity.22` install elsewhere is untouched.
 
-Built candidate, if the owner wants it installed somewhere specific:
+Final MVP-1.1 candidate, if the owner wants it installed somewhere specific:
 `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk`
-(SHA-256 `8619c5652555a56616d78ef8ace58b8be87e74f89568dfba5b9ac5689da915c6`).
+(SHA-256 `8a3413e7b4e4a22254fab7d2cbf05a698e22052ce6ef631e1e6dc6373282c4c3`).
 
 ## 6. Permanent rules
 
@@ -105,15 +96,21 @@ repository evidence, not session memory.
 
 ## 7. Exact NEXT TASK
 
-**Two independent next items, neither blocking the other — neither started:**
+**MVP-1.1 is complete and frozen (§1). The next development milestone is MVP-1.2 — planning/
+recovery review only, not started this session, per explicit instruction.**
+
+Two independent items from prior sessions remain open and unaffected by this session, neither
+blocking the other and neither blocking the MVP-1.2 planning/recovery review:
 
 1. **Obtain and configure production signing credentials** — the sole remaining blocker to public
    release, unrelated to and unchanged by MVP-1.1 work (see §4 and the gate matrix for exact
    steps). Human/external action; do not perform unilaterally.
-2. **Decide whether/where to install `continuity.25`** for a genuine live smoke test against a
+2. **Decide whether/where to install `continuity.26`** for a genuine live smoke test against a
    real paired Tally company, including exercising a real Tally XML import by hand (see
-   `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Part D §D16 for the human checklist). No device
-   currently qualifies for a standing install (§5).
+   `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Part E §E14 for the human acceptance checklist).
+   No device currently qualifies for a standing install (§5).
 
-**Not started:** MVP-1.1-E; any further MVP-1.1 work; external/public distribution; MVP-1.2+. Do
-not begin distribution before signing exists and the product owner explicitly authorizes it.
+**Not started:** MVP-1.2 substantively; external/public distribution; MVP-1.3+. Do not begin
+distribution before signing exists and the product owner explicitly authorizes it. Do not begin
+MVP-1.2 substantively without an explicit go-ahead — the exact next task is a planning/recovery
+review of MVP-1.2 scope, not implementation.

@@ -38,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -357,7 +359,9 @@ private fun ContactPersonEditorDialog(dialog: PartyDetailDialog.ContactPersonEdi
                     Checkbox(
                         checked = dialog.isPrimary,
                         onCheckedChange = { onEvent(PartyDetailEvent.ContactFieldChanged(isPrimary = it)) },
-                        modifier = Modifier.testTag("party_detail_contact_primary"),
+                        modifier = Modifier
+                            .testTag("party_detail_contact_primary")
+                            .semantics { contentDescription = "Primary contact" },
                     )
                     Text("Primary contact")
                 }

@@ -27,6 +27,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -148,7 +150,9 @@ private fun FieldCandidateRow(candidate: TallyFieldExportCandidate, isSelected: 
             Checkbox(
                 checked = isSelected,
                 onCheckedChange = { onToggle() },
-                modifier = Modifier.testTag("party_xml_export_field_${candidate.fieldName}_checkbox"),
+                modifier = Modifier
+                    .testTag("party_xml_export_field_${candidate.fieldName}_checkbox")
+                    .semantics { contentDescription = "Include ${candidate.label} in the Tally export" },
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(candidate.label, style = MaterialTheme.typography.labelMedium)
