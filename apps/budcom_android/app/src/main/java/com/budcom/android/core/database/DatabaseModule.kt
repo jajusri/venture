@@ -9,6 +9,11 @@ import com.budcom.android.feature.masterdata.ledger.data.local.LedgerStatementDa
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemDao
 import com.budcom.android.feature.voucher.data.local.VoucherDao
 import com.budcom.android.core.connection.data.local.PairedConnectorDao
+import com.budcom.android.feature.party.data.local.PartyContactPersonDao
+import com.budcom.android.feature.party.data.local.PartyDao
+import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
+import com.budcom.android.feature.party.data.local.PartySourceLinkDao
+import com.budcom.android.feature.party.data.local.TagDao
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import dagger.Module
@@ -33,7 +38,7 @@ object DatabaseModule {
         context,
         AppDatabase::class.java,
         DatabaseConstants.NAME,
-    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
         .build()
 
     @Provides
@@ -56,6 +61,21 @@ object DatabaseModule {
 
     @Provides
     fun provideLedgerMovementDao(db: AppDatabase): LedgerMovementDao = db.ledgerMovementDao()
+
+    @Provides
+    fun providePartyDao(db: AppDatabase): PartyDao = db.partyDao()
+
+    @Provides
+    fun providePartySourceLinkDao(db: AppDatabase): PartySourceLinkDao = db.partySourceLinkDao()
+
+    @Provides
+    fun providePartyFieldProvenanceDao(db: AppDatabase): PartyFieldProvenanceDao = db.partyFieldProvenanceDao()
+
+    @Provides
+    fun providePartyContactPersonDao(db: AppDatabase): PartyContactPersonDao = db.partyContactPersonDao()
+
+    @Provides
+    fun provideTagDao(db: AppDatabase): TagDao = db.tagDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -149,6 +169,96 @@ object DatabaseModule {
                 "CREATE INDEX IF NOT EXISTS `index_cached_voucher_ledger_lines_companyId_ledgerName` " +
                     "ON `cached_voucher_ledger_lines` (`companyId`, `ledgerName`)",
             )
+        }
+    }
+
+    /**
+     * Additive-only: adds the six MVP-1.1-A Universal Party Identity tables (Party, its Tally
+     * source link, field provenance, contact persons, tags, tag assignments). No existing table
+     * is touched, dropped, or destructively recreated — every pre-existing Company/Ledger/
+     * StockItem/Voucher/PairedConnector/LedgerStatement row survives unchanged. Party rows
+     * themselves are seeded separately by [com.budcom.android.feature.party.domain.usecase.ReconcilePartiesFromLedgersUseCase]
+     * (application logic, not migration SQL) — this migration only creates empty structure.
+     */
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `cached_parties` (" +
+                    "`companyId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `displayName` TEXT NOT NULL, " +
+                    "`classification` TEXT NOT NULL, `primaryPhone` TEXT, `primaryPhoneNormalized` TEXT, " +
+                    "`primaryEmail` TEXT, `addressLine1` TEXT, `addressCity` TEXT, `addressState` TEXT, " +
+                    "`addressPincode` TEXT, `gstin` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `partyId`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_cached_parties_companyId` ON `cached_parties` (`companyId`)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_cached_parties_companyId_displayName` " +
+                    "ON `cached_parties` (`companyId`, `displayName`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_cached_parties_companyId_classification` " +
+                    "ON `cached_parties` (`companyId`, `classification`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_cached_parties_companyId_primaryPhoneNormalized` " +
+                    "ON `cached_parties` (`companyId`, `primaryPhoneNormalized`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `party_source_links` (" +
+                    "`companyId` TEXT NOT NULL, `sourceType` TEXT NOT NULL, `externalEntityId` TEXT NOT NULL, " +
+                    "`partyId` TEXT NOT NULL, `sourceInstanceId` TEXT NOT NULL, `externalDisplayName` TEXT NOT NULL, " +
+                    "`identitySource` TEXT NOT NULL, `lastConfirmedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `sourceType`, `externalEntityId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_party_source_links_companyId_partyId` " +
+                    "ON `party_source_links` (`companyId`, `partyId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `party_field_provenance` (" +
+                    "`companyId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `fieldName` TEXT NOT NULL, " +
+                    "`state` TEXT NOT NULL, `tallyValue` TEXT, `budcomValue` TEXT, `lastConfirmedAt` INTEGER, " +
+                    "`lastExportedAt` INTEGER, `updatedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `partyId`, `fieldName`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_party_field_provenance_companyId_partyId` " +
+                    "ON `party_field_provenance` (`companyId`, `partyId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `party_contact_persons` (" +
+                    "`companyId` TEXT NOT NULL, `contactPersonId` TEXT NOT NULL, `partyId` TEXT NOT NULL, " +
+                    "`name` TEXT NOT NULL, `designation` TEXT, `mobile` TEXT, `mobileNormalized` TEXT, " +
+                    "`whatsappNumber` TEXT, `email` TEXT, `isPrimary` INTEGER NOT NULL, `provenance` TEXT NOT NULL, " +
+                    "`createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `contactPersonId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_party_contact_persons_companyId_partyId` " +
+                    "ON `party_contact_persons` (`companyId`, `partyId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `party_tags` (" +
+                    "`tagId` TEXT NOT NULL, `parentTagId` TEXT, `name` TEXT NOT NULL, `path` TEXT NOT NULL, " +
+                    "`createdAt` INTEGER NOT NULL, PRIMARY KEY(`tagId`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_party_tags_parentTagId` ON `party_tags` (`parentTagId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_party_tags_name` ON `party_tags` (`name`)")
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `party_tag_assignments` (" +
+                    "`companyId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `tagId` TEXT NOT NULL, " +
+                    "`assignedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `partyId`, `tagId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_party_tag_assignments_companyId_tagId` " +
+                    "ON `party_tag_assignments` (`companyId`, `tagId`)",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_party_tag_assignments_tagId` ON `party_tag_assignments` (`tagId`)")
         }
     }
 }

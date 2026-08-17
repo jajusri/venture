@@ -16,6 +16,17 @@ import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemEntit
 import com.budcom.android.feature.voucher.data.local.*
 import com.budcom.android.core.connection.data.local.PairedConnectorDao
 import com.budcom.android.core.connection.data.local.PairedConnectorEntity
+import com.budcom.android.feature.party.data.local.PartyContactPersonDao
+import com.budcom.android.feature.party.data.local.PartyContactPersonEntity
+import com.budcom.android.feature.party.data.local.PartyDao
+import com.budcom.android.feature.party.data.local.PartyEntity
+import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
+import com.budcom.android.feature.party.data.local.PartyFieldProvenanceEntity
+import com.budcom.android.feature.party.data.local.PartySourceLinkDao
+import com.budcom.android.feature.party.data.local.PartySourceLinkEntity
+import com.budcom.android.feature.party.data.local.PartyTagCrossRefEntity
+import com.budcom.android.feature.party.data.local.TagDao
+import com.budcom.android.feature.party.data.local.TagEntity
 
 @Database(
     entities = [
@@ -31,6 +42,12 @@ import com.budcom.android.core.connection.data.local.PairedConnectorEntity
         PairedConnectorEntity::class,
         LedgerStatementEntity::class,
         LedgerStatementTransactionEntity::class,
+        PartyEntity::class,
+        PartySourceLinkEntity::class,
+        PartyFieldProvenanceEntity::class,
+        PartyContactPersonEntity::class,
+        TagEntity::class,
+        PartyTagCrossRefEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -43,4 +60,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pairedConnectorDao(): PairedConnectorDao
     abstract fun ledgerStatementDao(): LedgerStatementDao
     abstract fun ledgerMovementDao(): LedgerMovementDao
+    abstract fun partyDao(): PartyDao
+    abstract fun partySourceLinkDao(): PartySourceLinkDao
+    abstract fun partyFieldProvenanceDao(): PartyFieldProvenanceDao
+    abstract fun partyContactPersonDao(): PartyContactPersonDao
+    abstract fun tagDao(): TagDao
 }

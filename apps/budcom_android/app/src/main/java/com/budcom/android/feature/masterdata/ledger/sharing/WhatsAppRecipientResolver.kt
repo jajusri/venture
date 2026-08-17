@@ -1,5 +1,7 @@
 package com.budcom.android.feature.masterdata.ledger.sharing
 
+import com.budcom.android.core.util.PhoneNumberNormalizer
+
 /**
  * Where [RecipientResolution.normalizedNumber] came from, preserved for traceability (never
  * surfaced as technical detail in the normal sharing flow — see
@@ -22,21 +24,9 @@ data class RecipientResolution(
  * correct once that field exists, without needing to change the priority logic later.
  */
 fun resolveWhatsAppRecipient(explicitMobile: String?, alias: String?): RecipientResolution {
-    normalizeIndianMobile(explicitMobile)?.let { return RecipientResolution(it, RecipientResolutionSource.ExplicitMobile) }
-    normalizeIndianMobile(alias)?.let { return RecipientResolution(it, RecipientResolutionSource.AliasFallback) }
+    PhoneNumberNormalizer.normalizeIndianMobile(explicitMobile)
+        ?.let { return RecipientResolution(it, RecipientResolutionSource.ExplicitMobile) }
+    PhoneNumberNormalizer.normalizeIndianMobile(alias)
+        ?.let { return RecipientResolution(it, RecipientResolutionSource.AliasFallback) }
     return RecipientResolution(null, RecipientResolutionSource.None)
-}
-
-/**
- * Accepts only an unambiguous 10-digit Indian mobile number: numeric only after trimming leading
- * and trailing whitespace (never internal whitespace, punctuation, or ledger-code formatting),
- * exactly 10 digits, leading digit 6-9 (the standard Indian mobile number series). Returns the
- * normalized `+91XXXXXXXXXX` form, or null if the input is not confidently a mobile number.
- */
-private fun normalizeIndianMobile(raw: String?): String? {
-    val trimmed = raw?.trim().orEmpty()
-    if (trimmed.length != 10) return null
-    if (!trimmed.all(Char::isDigit)) return null
-    if (trimmed[0] !in '6'..'9') return null
-    return "+91$trimmed"
 }

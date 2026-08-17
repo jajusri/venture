@@ -14,6 +14,12 @@ interface LedgerDao {
     @Query("SELECT * FROM cached_ledgers WHERE companyId = :companyId AND id = :ledgerId")
     suspend fun findById(companyId: String, ledgerId: String): LedgerEntity?
 
+    /** Every cached ledger for a company, unpaged — used only by local-only reconciliation
+     * (see [com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort]), never
+     * by the paged/searched Ledger Browser UI path. */
+    @Query("SELECT * FROM cached_ledgers WHERE companyId = :companyId")
+    suspend fun getAllForCompany(companyId: String): List<LedgerEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<LedgerEntity>)
 

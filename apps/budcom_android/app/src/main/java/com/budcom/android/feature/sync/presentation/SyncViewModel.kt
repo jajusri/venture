@@ -16,7 +16,9 @@ import com.budcom.android.feature.sync.domain.usecase.ObserveSyncProgressUseCase
 import com.budcom.android.feature.sync.domain.usecase.RefreshSyncOverviewUseCase
 import com.budcom.android.feature.sync.domain.usecase.RunAvailableSyncsUseCase
 import com.budcom.android.feature.sync.domain.usecase.StartTargetSyncUseCase
+import com.budcom.android.feature.party.domain.usecase.ReconcilePartiesFromLedgersUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import timber.log.Timber
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,6 +40,7 @@ class SyncViewModel @Inject constructor(
     private val syncStatusPort: ObserveSyncStatusPort,
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
+    private val reconcilePartiesFromLedgers: ReconcilePartiesFromLedgersUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SyncUiState())
@@ -248,6 +251,7 @@ class SyncViewModel @Inject constructor(
 
     private fun applyOutcome(outcome: SyncOutcome) {
         pollJob?.cancel()
+        maybeReconcilePartiesFromLedgers(outcome)
         _uiState.update {
             it.copy(
                 isBusy = false,
@@ -274,6 +278,23 @@ class SyncViewModel @Inject constructor(
                     else -> it.aggregateMessage
                 },
             )
+        }
+    }
+
+    /**
+     * MVP-1.1-A: after a Ledgers sync brings back fresh data, best-effort reconcile Universal
+     * Party Identity from whatever ledgers are now cached. Fire-and-forget and failure-isolated
+     * by design — a Party-reconciliation defect must never be able to make the proven MVP-1 Sync
+     * screen appear to fail, and this screen's own UI state is never touched by this step.
+     */
+    private fun maybeReconcilePartiesFromLedgers(outcome: SyncOutcome) {
+        if (outcome.target != SyncTarget.Ledgers) return
+        val succeeded = outcome is SyncOutcome.Succeeded || outcome is SyncOutcome.PartiallySucceeded
+        if (!succeeded) return
+        val companyId = _uiState.value.companyId ?: return
+        viewModelScope.launch {
+            runCatching { reconcilePartiesFromLedgers(companyId) }
+                .onFailure { Timber.w(it, "Party reconciliation from ledgers failed; sync outcome is unaffected.") }
         }
     }
 

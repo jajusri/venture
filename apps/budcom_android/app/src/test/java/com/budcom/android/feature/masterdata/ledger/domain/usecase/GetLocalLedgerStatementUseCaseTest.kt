@@ -455,6 +455,7 @@ private class FakeLedgerDao : LedgerDao {
         lastLookup = companyId to ledgerId
         return entity?.takeIf { it.companyId == companyId && it.id == ledgerId }
     }
+    override suspend fun getAllForCompany(companyId: String): List<LedgerEntity> = error("not used")
     override suspend fun upsertAll(entities: List<LedgerEntity>) = error("not used")
     override suspend fun deleteForCompany(companyId: String) = error("not used")
     override suspend fun queryPage(

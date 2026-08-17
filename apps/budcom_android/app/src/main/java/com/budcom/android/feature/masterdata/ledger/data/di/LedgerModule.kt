@@ -8,7 +8,9 @@ import com.budcom.android.feature.masterdata.ledger.data.remote.DefaultLedgerRem
 import com.budcom.android.feature.masterdata.ledger.data.remote.LedgerApi
 import com.budcom.android.feature.masterdata.ledger.data.remote.LedgerRemoteDataSource
 import com.budcom.android.feature.masterdata.ledger.data.repository.LedgerRepositoryImpl
+import com.budcom.android.feature.masterdata.ledger.data.repository.LedgerSnapshotPortImpl
 import com.budcom.android.feature.masterdata.ledger.data.repository.SearchLedgersPortImpl
+import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.SearchLedgersPort
 import com.budcom.android.feature.masterdata.ledger.domain.repository.LedgerRepository
 import dagger.Binds
@@ -52,6 +54,12 @@ abstract class LedgerBindModule {
     abstract fun bindSearchLedgersPort(
         impl: SearchLedgersPortImpl,
     ): SearchLedgersPort
+
+    @Binds
+    @Singleton
+    abstract fun bindLedgerSnapshotPort(
+        impl: LedgerSnapshotPortImpl,
+    ): LedgerSnapshotPort
 }
 
 @Module

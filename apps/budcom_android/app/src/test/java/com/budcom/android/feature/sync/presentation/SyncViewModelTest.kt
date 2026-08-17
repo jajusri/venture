@@ -5,6 +5,18 @@ import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
+import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
+import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
+import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
+import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.Party
+import com.budcom.android.feature.party.domain.model.PartyClassification
+import com.budcom.android.feature.party.domain.model.PartyContactPerson
+import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyPage
+import com.budcom.android.feature.party.domain.model.Tag
+import com.budcom.android.feature.party.domain.repository.PartyRepository
+import com.budcom.android.feature.party.domain.usecase.ReconcilePartiesFromLedgersUseCase
 import com.budcom.android.feature.sync.domain.model.SyncCounts
 import com.budcom.android.feature.sync.domain.model.SyncMode
 import com.budcom.android.feature.sync.domain.model.SyncOutcome
@@ -53,6 +65,8 @@ class SyncViewModelTest {
     private lateinit var connectivity: SyncVmFakeConnectivity
     private lateinit var statusPort: FakeObserveSyncStatus
     private lateinit var voucherRepository: SyncVmFakeVoucherRepository
+    private lateinit var ledgerSnapshotPort: SyncVmFakeLedgerSnapshotPort
+    private lateinit var partyRepository: SyncVmFakePartyRepository
 
     @Before
     fun setUp() {
@@ -62,6 +76,21 @@ class SyncViewModelTest {
         connectivity = SyncVmFakeConnectivity(true)
         statusPort = FakeObserveSyncStatus()
         voucherRepository = SyncVmFakeVoucherRepository()
+        ledgerSnapshotPort = SyncVmFakeLedgerSnapshotPort(
+            listOf(
+                Ledger(
+                    id = "guid:eligible",
+                    name = "ABC Traders",
+                    alias = null,
+                    parentGroup = "Sundry Debtors",
+                    status = com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatus.Active,
+                    closingBalance = null,
+                    dataQuality = com.budcom.android.feature.masterdata.ledger.domain.model.LedgerDataQuality.Complete,
+                    syncedAt = "t",
+                ),
+            ),
+        )
+        partyRepository = SyncVmFakePartyRepository()
     }
 
     @After
@@ -81,6 +110,7 @@ class SyncViewModelTest {
         syncStatusPort = statusPort,
         companySession = company,
         connectivityObserver = connectivity,
+        reconcilePartiesFromLedgers = ReconcilePartiesFromLedgersUseCase(ledgerSnapshotPort, partyRepository),
     )
 
     @Test
@@ -151,6 +181,36 @@ class SyncViewModelTest {
         val vm = createVm()
         advanceUntilIdle()
         assertFalse(vm.uiState.value.canStart)
+    }
+
+    @Test
+    fun `ledgers sync success triggers party reconciliation`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(SyncEvent.StartTarget(SyncTarget.Ledgers))
+        advanceUntilIdle()
+        assertEquals(1, partyRepository.reconcileCalls)
+    }
+
+    @Test
+    fun `voucher sync success does not trigger party reconciliation`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(SyncEvent.StartTarget(SyncTarget.Vouchers))
+        advanceUntilIdle()
+        assertEquals(0, partyRepository.reconcileCalls)
+    }
+
+    @Test
+    fun `party reconciliation failure never affects the surfaced sync outcome`() = runTest(dispatcher) {
+        partyRepository.shouldThrow = true
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(SyncEvent.StartTarget(SyncTarget.Ledgers))
+        advanceUntilIdle()
+        assertEquals(SyncPhase.Success, vm.uiState.value.phase)
+        assertFalse(vm.uiState.value.isBusy)
+        assertEquals(1, partyRepository.reconcileCalls)
     }
 }
 
@@ -252,4 +312,49 @@ private class SyncVmFakeConnectivity(initial: Boolean) : NetworkConnectivityObse
     val online = MutableStateFlow(initial)
     override val isOnline: Flow<Boolean> = online
     override fun current(): Boolean = online.value
+}
+
+private class SyncVmFakeLedgerSnapshotPort(private val ledgers: List<Ledger> = emptyList()) : LedgerSnapshotPort {
+    override suspend fun getCachedLedgers(companyId: String): List<Ledger> = ledgers
+}
+
+/** Only [reconcilePartiesFromEligibleLedgers] is exercised by [SyncViewModel] — every other
+ * member exists solely to satisfy [PartyRepository] and is unused here. */
+private class SyncVmFakePartyRepository : PartyRepository {
+    var reconcileCalls = 0
+    var shouldThrow = false
+
+    override suspend fun getPartyById(companyId: String, partyId: String): Party? = error("unused")
+    override suspend fun getPartyForLedger(companyId: String, ledgerId: String): Party? = error("unused")
+    override suspend fun listByClassification(
+        companyId: String,
+        classification: PartyClassification,
+        page: Int,
+        pageSize: Int,
+    ): PartyPage = error("unused")
+    override suspend fun searchParties(companyId: String, query: String, page: Int, pageSize: Int): PartyPage = error("unused")
+    override suspend fun getContactPersons(companyId: String, partyId: String): List<PartyContactPerson> = error("unused")
+    override suspend fun getTagsForParty(companyId: String, partyId: String): List<Tag> = error("unused")
+    override suspend fun getFieldProvenance(companyId: String, partyId: String): List<PartyFieldProvenance> = error("unused")
+    override suspend fun updateBudcomOnlyField(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        value: String?,
+    ): FieldProvenanceState = error("unused")
+    override suspend fun confirmFieldFromTally(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        tallyValue: String?,
+    ): FieldProvenanceState = error("unused")
+
+    override suspend fun reconcilePartiesFromEligibleLedgers(
+        companyId: String,
+        seeds: List<EligibleLedgerSeed>,
+    ): List<Party> {
+        reconcileCalls++
+        if (shouldThrow) error("boom")
+        return emptyList()
+    }
 }

@@ -1,0 +1,85 @@
+package com.budcom.android.feature.party.domain.usecase
+
+import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
+import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
+import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.LedgerPartyEligibilityPolicy
+import com.budcom.android.feature.party.domain.model.Party
+import com.budcom.android.feature.party.domain.model.PartyClassification
+import com.budcom.android.feature.party.domain.model.PartyContactPerson
+import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyPage
+import com.budcom.android.feature.party.domain.model.Tag
+import com.budcom.android.feature.party.domain.repository.PartyRepository
+import javax.inject.Inject
+
+class GetPartyByIdUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String): Party? = repository.getPartyById(companyId, partyId)
+}
+
+class GetPartyForLedgerUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, ledgerId: String): Party? = repository.getPartyForLedger(companyId, ledgerId)
+}
+
+class ListPartiesByClassificationUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(
+        companyId: String,
+        classification: PartyClassification,
+        page: Int = 1,
+        pageSize: Int = 50,
+    ): PartyPage = repository.listByClassification(companyId, classification, page, pageSize)
+}
+
+class SearchPartiesUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, query: String, page: Int = 1, pageSize: Int = 50): PartyPage =
+        repository.searchParties(companyId, query, page, pageSize)
+}
+
+class GetContactPersonsUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String): List<PartyContactPerson> =
+        repository.getContactPersons(companyId, partyId)
+}
+
+class GetTagsForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String): List<Tag> = repository.getTagsForParty(companyId, partyId)
+}
+
+class GetFieldProvenanceUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String): List<PartyFieldProvenance> =
+        repository.getFieldProvenance(companyId, partyId)
+}
+
+class UpdateBudcomOnlyFieldUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, fieldName: String, value: String?): FieldProvenanceState =
+        repository.updateBudcomOnlyField(companyId, partyId, fieldName, value)
+}
+
+class ConfirmFieldFromTallyUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, fieldName: String, tallyValue: String?): FieldProvenanceState =
+        repository.confirmFieldFromTally(companyId, partyId, fieldName, tallyValue)
+}
+
+/**
+ * Orchestrates MVP-1.1-A Party seeding: reads whatever ledgers are already locally cached for the
+ * company (no network call of its own — [LedgerSnapshotPort] is local-only), filters to those
+ * eligible per [LedgerPartyEligibilityPolicy], and reconciles them into Parties. Idempotent and
+ * safe to call repeatedly, e.g. after every successful Ledger sync.
+ */
+class ReconcilePartiesFromLedgersUseCase @Inject constructor(
+    private val ledgerSnapshotPort: LedgerSnapshotPort,
+    private val repository: PartyRepository,
+) {
+    suspend operator fun invoke(companyId: String): List<Party> {
+        val eligible = ledgerSnapshotPort.getCachedLedgers(companyId).mapNotNull { ledger ->
+            val classification = LedgerPartyEligibilityPolicy.classify(ledger.parentGroup) ?: return@mapNotNull null
+            EligibleLedgerSeed(
+                ledgerId = ledger.id,
+                ledgerName = ledger.name,
+                alias = ledger.alias,
+                classification = classification,
+            )
+        }
+        if (eligible.isEmpty()) return emptyList()
+        return repository.reconcilePartiesFromEligibleLedgers(companyId, eligible)
+    }
+}

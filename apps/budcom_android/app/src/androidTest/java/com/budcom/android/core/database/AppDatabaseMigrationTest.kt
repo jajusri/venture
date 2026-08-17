@@ -533,4 +533,171 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 5 -> 6 migration (adding the six MVP-1.1-A Universal Party Identity
+     * tables) preserves every pre-existing row and never falls back to a destructive recreation
+     * — the same class of proof as every migration test above, now for Party/PartySourceLink/
+     * PartyFieldProvenance/PartyContactPerson/Tag/PartyTagAssignment. Party rows themselves are
+     * never created by the migration (seeding is application logic, not SQL) — this test proves
+     * only that the structure exists and is genuinely usable.
+     */
+    @Test
+    fun migrate5To6_preservesExistingRowsAndAddsPartyTablesOnly() {
+        val db56DbName = "migration-test-db-5-6"
+
+        var db = helper.createDatabase(db56DbName, 5)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_ledgers (companyId, id, name, alias, parentGroup, status, closingAmount, " +
+                "closingCurrencyCode, closingSide, dataQuality, syncedAt, dataFreshnessAt) " +
+                "VALUES ('acme-001', 'guid:cash', 'Cash', NULL, 'Current Assets', 'ACTIVE', '1000.00', 'INR', " +
+                "'DEBIT', 'GOOD', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_vouchers (companyId, voucherId, date, type, number, partyName, " +
+                "referenceNumber, amountValue, amountSide, status, dataQuality, lastSyncedAt) VALUES " +
+                "('acme-001', 'v-1', '2026-01-15', 'Sales', 'S-1', 'Beta Traders', 'PO-99', '500.00', " +
+                "'DEBIT', 'Active', 'Complete', 1736899200000)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db56DbName, 6, false, DatabaseModule.MIGRATION_5_6)
+
+        db.query("SELECT name FROM cached_companies WHERE id = 'acme-001'").use { cursor ->
+            assertTrue("existing company row must survive the migration", cursor.moveToFirst())
+            assertEquals("Acme Corp", cursor.getString(0))
+        }
+        db.query("SELECT name FROM cached_ledgers WHERE companyId = 'acme-001' AND id = 'guid:cash'").use { cursor ->
+            assertTrue("existing ledger row must survive the migration", cursor.moveToFirst())
+            assertEquals("Cash", cursor.getString(0))
+        }
+        db.query("SELECT partyName FROM cached_vouchers WHERE companyId = 'acme-001' AND voucherId = 'v-1'").use { cursor ->
+            assertTrue("existing voucher row must survive the migration", cursor.moveToFirst())
+            assertEquals("Beta Traders", cursor.getString(0))
+        }
+
+        fun columnsOf(table: String): Map<String, String> {
+            val columns = mutableMapOf<String, String>()
+            db.query("PRAGMA table_info(`$table`)").use { cursor ->
+                val nameIdx = cursor.getColumnIndexOrThrow("name")
+                val typeIdx = cursor.getColumnIndexOrThrow("type")
+                while (cursor.moveToNext()) {
+                    columns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+                }
+            }
+            return columns
+        }
+
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "partyId" to "TEXT", "displayName" to "TEXT", "classification" to "TEXT",
+                "primaryPhone" to "TEXT", "primaryPhoneNormalized" to "TEXT", "primaryEmail" to "TEXT",
+                "addressLine1" to "TEXT", "addressCity" to "TEXT", "addressState" to "TEXT",
+                "addressPincode" to "TEXT", "gstin" to "TEXT", "createdAt" to "INTEGER", "updatedAt" to "INTEGER",
+            ),
+            columnsOf("cached_parties"),
+        )
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "sourceType" to "TEXT", "externalEntityId" to "TEXT", "partyId" to "TEXT",
+                "sourceInstanceId" to "TEXT", "externalDisplayName" to "TEXT", "identitySource" to "TEXT",
+                "lastConfirmedAt" to "INTEGER",
+            ),
+            columnsOf("party_source_links"),
+        )
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "partyId" to "TEXT", "fieldName" to "TEXT", "state" to "TEXT",
+                "tallyValue" to "TEXT", "budcomValue" to "TEXT", "lastConfirmedAt" to "INTEGER",
+                "lastExportedAt" to "INTEGER", "updatedAt" to "INTEGER",
+            ),
+            columnsOf("party_field_provenance"),
+        )
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "contactPersonId" to "TEXT", "partyId" to "TEXT", "name" to "TEXT",
+                "designation" to "TEXT", "mobile" to "TEXT", "mobileNormalized" to "TEXT", "whatsappNumber" to "TEXT",
+                "email" to "TEXT", "isPrimary" to "INTEGER", "provenance" to "TEXT", "createdAt" to "INTEGER",
+                "updatedAt" to "INTEGER",
+            ),
+            columnsOf("party_contact_persons"),
+        )
+        assertEquals(
+            mapOf("tagId" to "TEXT", "parentTagId" to "TEXT", "name" to "TEXT", "path" to "TEXT", "createdAt" to "INTEGER"),
+            columnsOf("party_tags"),
+        )
+        assertEquals(
+            mapOf("companyId" to "TEXT", "partyId" to "TEXT", "tagId" to "TEXT", "assignedAt" to "INTEGER"),
+            columnsOf("party_tag_assignments"),
+        )
+
+        // Assert: every new table is genuinely usable -- insert and read back a real row, and
+        // prove the source-link natural key is what resolves a ledger to its Party.
+        db.execSQL(
+            "INSERT INTO cached_parties (companyId, partyId, displayName, classification, primaryPhone, " +
+                "primaryPhoneNormalized, primaryEmail, addressLine1, addressCity, addressState, addressPincode, " +
+                "gstin, createdAt, updatedAt) VALUES ('acme-001', 'party-1', 'Cash', 'customer', NULL, NULL, " +
+                "NULL, NULL, NULL, NULL, NULL, NULL, 1736899200000, 1736899200000)",
+        )
+        db.execSQL(
+            "INSERT INTO party_source_links (companyId, sourceType, externalEntityId, partyId, sourceInstanceId, " +
+                "externalDisplayName, identitySource, lastConfirmedAt) VALUES ('acme-001', 'tally_ledger', " +
+                "'guid:cash', 'party-1', 'acme-001', 'Cash', 'guid', 1736899200000)",
+        )
+        db.query(
+            "SELECT partyId FROM party_source_links WHERE companyId = 'acme-001' AND sourceType = 'tally_ledger' " +
+                "AND externalEntityId = 'guid:cash'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("party-1", cursor.getString(0))
+        }
+
+        db.execSQL(
+            "INSERT INTO party_field_provenance (companyId, partyId, fieldName, state, tallyValue, budcomValue, " +
+                "lastConfirmedAt, lastExportedAt, updatedAt) VALUES ('acme-001', 'party-1', 'primaryPhone', " +
+                "'confirmed_from_tally', '+919876543210', NULL, 1736899200000, NULL, 1736899200000)",
+        )
+        db.query(
+            "SELECT state FROM party_field_provenance WHERE companyId = 'acme-001' AND partyId = 'party-1' " +
+                "AND fieldName = 'primaryPhone'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("confirmed_from_tally", cursor.getString(0))
+        }
+
+        db.execSQL(
+            "INSERT INTO party_contact_persons (companyId, contactPersonId, partyId, name, designation, mobile, " +
+                "mobileNormalized, whatsappNumber, email, isPrimary, provenance, createdAt, updatedAt) VALUES " +
+                "('acme-001', 'cp-1', 'party-1', 'Owner Name', 'Owner', '9876543210', '9876543210', NULL, NULL, " +
+                "1, 'budcom_only', 1736899200000, 1736899200000)",
+        )
+        db.query(
+            "SELECT name FROM party_contact_persons WHERE companyId = 'acme-001' AND partyId = 'party-1'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Owner Name", cursor.getString(0))
+        }
+
+        db.execSQL(
+            "INSERT INTO party_tags (tagId, parentTagId, name, path, createdAt) VALUES " +
+                "('tag-1', NULL, 'Dealer', 'Dealer', 1736899200000)",
+        )
+        db.execSQL(
+            "INSERT INTO party_tag_assignments (companyId, partyId, tagId, assignedAt) VALUES " +
+                "('acme-001', 'party-1', 'tag-1', 1736899200000)",
+        )
+        db.query(
+            "SELECT t.name FROM party_tags t INNER JOIN party_tag_assignments a ON a.tagId = t.tagId " +
+                "WHERE a.companyId = 'acme-001' AND a.partyId = 'party-1'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Dealer", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

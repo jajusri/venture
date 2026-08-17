@@ -569,6 +569,7 @@ private class FakeLedgerDao : LedgerDao {
     override suspend fun countForCompany(companyId: String): Int = if (entity != null) 1 else 0
     override suspend fun findById(companyId: String, ledgerId: String): LedgerEntity? =
         entity?.takeIf { it.companyId == companyId && it.id == ledgerId }
+    override suspend fun getAllForCompany(companyId: String): List<LedgerEntity> = error("not used by this test")
     override suspend fun upsertAll(entities: List<LedgerEntity>) = error("not used by this test")
     override suspend fun deleteForCompany(companyId: String) = error("not used by this test")
     override suspend fun queryPage(
