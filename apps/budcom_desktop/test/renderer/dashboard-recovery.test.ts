@@ -535,3 +535,126 @@ describe('TD-014 bounded dashboard/company auto-recovery', () => {
     expect(() => reconcileBoundedRecovery()).not.toThrow();
   });
 });
+
+// TD-025: mid-session private-storage loss must show the purpose-built storage-unavailable screen
+// (via the same renderStorageGate() flow already used at startup), not degrade to the ordinary
+// dashboard's generic "Disconnected" status — and must never let the ordinary refresh run while
+// storage is unavailable, so no misleading Connector/network message can appear underneath it.
+describe('TD-025 mid-session private-storage loss', () => {
+  const STORAGE_GATE_MARKUP = `
+    <div id="storage-gate-overlay" class="hidden">
+      <div id="storage-gate-setup" class="hidden">
+        <input type="radio" name="storage-gate-mode" id="storage-gate-mode-standard" value="standard" checked />
+        <input type="radio" name="storage-gate-mode" id="storage-gate-mode-private" value="private-removable" />
+        <div id="storage-gate-drive-picker" class="hidden">
+          <div id="storage-gate-drive-list"></div>
+          <button type="button" id="storage-gate-rescan"></button>
+          <p id="storage-gate-no-drives" class="hidden"></p>
+        </div>
+        <p id="storage-gate-setup-error" class="hidden"></p>
+        <button type="button" id="storage-gate-continue"></button>
+      </div>
+      <div id="storage-gate-unavailable" class="hidden">
+        <p id="storage-gate-unavailable-detail"></p>
+        <button type="button" id="storage-gate-retry"></button>
+        <button type="button" id="storage-gate-locate"></button>
+        <button type="button" id="storage-gate-exit"></button>
+      </div>
+      <div id="storage-gate-timeout" class="hidden">
+        <p class="storage-gate-unavailable-message"></p>
+        <button type="button" id="storage-gate-timeout-retry"></button>
+        <button type="button" id="storage-gate-timeout-exit"></button>
+      </div>
+    </div>
+  `;
+
+  function mutableStorageStatus(initial: { kind: string; [k: string]: unknown }) {
+    let current = initial;
+    return {
+      fn: vi.fn(async () => current),
+      set: (next: typeof initial) => {
+        current = next;
+      },
+    };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    document.body.innerHTML = DASHBOARD_MARKUP + STORAGE_GATE_MARKUP;
+  });
+
+  afterEach(() => {
+    stopBoundedRecovery();
+    vi.useRealTimers();
+  });
+
+  it('shows the dedicated storage-unavailable screen instead of an ordinary refresh, and blocks refresh until storage returns', async () => {
+    const bridge = baseBridge();
+    const storageStatus = mutableStorageStatus({ kind: 'ready', mode: 'standard' });
+    const dashboard = mutableDashboardState(dashboardState());
+    const getCompanies = vi.fn(ok(SUCCESS_COMPANIES));
+    window.budcomDesktop = {
+      ...bridge,
+      getDashboardState: dashboard.fn,
+      getCompanies,
+      getStorageStatus: storageStatus.fn,
+      // Mirrors the real desktop:retry-storage-connection handler: re-resolves and returns
+      // whatever the (now updated) storage state is.
+      retryStorageConnection: vi.fn(() => storageStatus.fn()),
+    } as unknown as typeof window.budcomDesktop;
+
+    await startDesktopShell();
+    const refreshCallsBeforeLoss = dashboard.fn.mock.calls.length;
+    expect(document.getElementById('storage-gate-overlay')?.classList.contains('hidden')).toBe(true);
+
+    // The watchdog in main.ts stops the Connector and marks storage unavailable BEFORE it fires
+    // notifyRenderer() — by the time this renderer event arrives, getStorageStatus() already
+    // reflects the loss.
+    storageStatus.set({ kind: 'unavailable', reason: 'missing' });
+    void bridge.__fireStatusUpdated();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // G: dedicated storage-loss screen shown, not a generic dashboard refresh.
+    expect(document.getElementById('storage-gate-overlay')?.classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('storage-gate-unavailable')?.classList.contains('hidden')).toBe(false);
+    // M: the detail text names storage specifically, never implying a network/Connector problem.
+    expect(document.getElementById('storage-gate-unavailable-detail')?.textContent).toContain('storage');
+    // E/F/L: refresh is blocked while unavailable — no additional dashboard poll, no tight loop.
+    expect(dashboard.fn.mock.calls.length).toBe(refreshCallsBeforeLoss);
+
+    // H: the same vault reconnects — Retry resolves it, and normal refresh resumes.
+    storageStatus.set({ kind: 'ready', mode: 'private-removable', driveLetter: 'E:\\', volumeLabel: 'BUDCOM-USB' });
+    document.getElementById('storage-gate-retry')!.dispatchEvent(new Event('click', { bubbles: true }));
+    for (let tick = 0; tick < 10; tick += 1) {
+      await Promise.resolve();
+    }
+
+    expect(document.getElementById('storage-gate-overlay')?.classList.contains('hidden')).toBe(true);
+    expect(dashboard.fn.mock.calls.length).toBeGreaterThan(refreshCallsBeforeLoss);
+  });
+
+  it('a status update that is unrelated to storage (storage already ready) never shows the overlay', async () => {
+    const bridge = baseBridge();
+    const storageStatus = mutableStorageStatus({ kind: 'ready', mode: 'standard' });
+    const dashboard = mutableDashboardState(dashboardState());
+    const getCompanies = vi.fn(ok(SUCCESS_COMPANIES));
+    window.budcomDesktop = {
+      ...bridge,
+      getDashboardState: dashboard.fn,
+      getCompanies,
+      getStorageStatus: storageStatus.fn,
+    } as unknown as typeof window.budcomDesktop;
+
+    await startDesktopShell();
+    const callsBefore = dashboard.fn.mock.calls.length;
+
+    // An ordinary lifecycle transition (e.g. a company change) — storage was never affected.
+    void bridge.__fireStatusUpdated();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(document.getElementById('storage-gate-overlay')?.classList.contains('hidden')).toBe(true);
+    expect(dashboard.fn.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+});

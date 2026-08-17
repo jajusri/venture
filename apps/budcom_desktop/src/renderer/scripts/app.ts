@@ -2134,6 +2134,26 @@ export function bindNavigation(): void {
   });
 }
 
+// TD-025: guards against a theoretical re-entrant renderStorageGate() call — e.g. a second
+// desktop:status-updated event arriving while an earlier one is still awaiting the user's response
+// to the storage-unavailable overlay. Real-world loss/recovery is a single transition edge (the
+// watchdog stops itself before firing once), so this is a narrow safety net, not a fix for an
+// observed double-invocation.
+let storageGateCheckInFlight = false;
+
+async function ensureStorageGateReady(): Promise<void> {
+  if (storageGateCheckInFlight) return;
+  storageGateCheckInFlight = true;
+  try {
+    const status = await window.budcomDesktop.getStorageStatus();
+    if (status.kind !== 'ready') {
+      await renderStorageGate();
+    }
+  } finally {
+    storageGateCheckInFlight = false;
+  }
+}
+
 export async function startDesktopShell(): Promise<void> {
   // Storage-mode decision (first run) or "storage not connected" must be resolved before the
   // normal dashboard flow queries the Connector — otherwise the very first thing a first-run
@@ -2165,6 +2185,18 @@ export async function startDesktopShell(): Promise<void> {
     // (never just the Connection card), then reconciles — a fresh transition always takes
     // priority over whatever bounded-recovery cycle (if any) was already in flight.
     void (async () => {
+      // TD-025: this event also fires when the main-process private-storage watchdog detects
+      // mid-session loss (it stops the Connector and marks storageGateState 'unavailable' before
+      // calling notifyRenderer()) — previously this branch went straight to the ordinary
+      // refreshUi()/loadCompanies() path, which only ever showed a generic "Disconnected" status
+      // built from the now-stopped Connector's health, indistinguishable from an unrelated
+      // network/Connector problem. Re-running the exact same blocking renderStorageGate() flow
+      // used at startup reuses the purpose-built "Private BUDCOM storage is not connected" screen
+      // (Retry re-resolves the vault, including at a new drive letter; Locate reopens the guarded
+      // TD-033 setup flow) instead of a misleading generic message — and blocks the ordinary
+      // refresh from running at all until storage is genuinely ready again, so no stale/misleading
+      // Connector status is ever shown underneath it.
+      await ensureStorageGateReady();
       await refreshUi({ showLoading: false });
       await loadCompanies();
       reconcileBoundedRecovery();
