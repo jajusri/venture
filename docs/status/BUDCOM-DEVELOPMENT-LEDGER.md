@@ -4,7 +4,7 @@
 
 **Reconstructed:** 2026-08-17 from repository and Git evidence
 
-**Product-code baseline:** `96a7a55` (`main`)
+**Product-code baseline:** `e20053f` (`main`)
 
 **Current-state companion:** `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 
@@ -33,7 +33,7 @@ changes their conclusion.
 |---|---|
 | MVP-1 | **CONTROLLED-PILOT VALIDATED** and Controlled-Pilot **GO**; bounded MVP-1 UI/UX polish implemented. Public release is not yet authorized. |
 | Android | **IMPLEMENTED / AUTOMATED-VALIDATED / PHYSICALLY VALIDATED / HUMAN VISUALLY APPROVED**. Owner-approved installed candidate: `0.1.1-continuity.22`, versionCode 23. |
-| Desktop | **IMPLEMENTED / AUTOMATED-VALIDATED / CONTROLLED-PILOT VALIDATED**. Visual candidate `0.4.17` is packaged; UAC installation and final human visual approval remain. |
+| Desktop | `0.4.17` **INSTALLED-RUNTIME FAILED / APPROVAL BLOCKED**. Corrected `0.4.18` is **IMPLEMENTED / AUTOMATED-VALIDATED / PACKAGED**; UAC installation and final human visual approval remain. |
 | Connector | **IMPLEMENTED / AUTOMATED-VALIDATED / CONTROLLED-PILOT VALIDATED**. Version `0.4.6`; read-only Tally boundary, SQLite snapshots, trust/discovery and private-storage participation are in place. |
 | Controlled Pilot | **CLOSED / GO** on 2026-08-16 under the documented stable-router, fixed-Private-storage and signing constraints. Documentation does not reopen it. |
 | UI/UX polish | Android pass **HUMAN VISUALLY APPROVED** by owner on 2026-08-17 after installation. Desktop functional polish is automated-clean; Desktop visual approval remains pending. |
@@ -58,6 +58,7 @@ changes their conclusion.
 | 13. Owner Android visual review (2026-08-17) | Owner-supplied review recorded in checkpoint/UI status | Installed `continuity.21` Android candidate **HUMAN VISUALLY APPROVED**. Desktop visual approval is not implied. |
 | 14. Approved Android visual implementation (2026-08-17) | `9b29abf`; three approved archive masters plus approved Voucher references | **IMPLEMENTED / AUTOMATED-VALIDATED / INSTALLED.** Replaced additive generic-card presentation with master-led Home, Ledger and Voucher Detail composition while preserving MVP-1 behavior. Debug/release JVM suites (1030 each), both lint variants and both APK assemblies pass. Candidate `continuity.22` was installed in place on device `10BF44124K000E3` with company/pairing state preserved; final human visual approval pending. |
 | 15. Owner Android approval + Desktop visual implementation (2026-08-17) | Owner approval; `96a7a55`; Android continuity.22 visual language | **ANDROID HUMAN VISUALLY APPROVED; DESKTOP IMPLEMENTED / AUTOMATED-VALIDATED / PACKAGED.** Desktop `0.4.17` adopts the approved BUDCOM hierarchy through a Windows sidebar, compact status band, restrained surfaces and consistent controls without changing behavior. 696 tests and all TS/build/package gates pass. Per-machine installation requires UAC; final human Desktop visual approval pending. |
+| 16. Desktop installed-runtime regression (2026-08-17) | Owner physical failure; installed CDP evidence; `e20053f` | **0.4.17 FAILED / 0.4.18 CORRECTED.** Packaged Chromium rejected a renderer ESM named import from CommonJS application output, so initialization aborted before binding clicks/loading data. `0.4.18` localizes the display mapping to the renderer, adds a module-boundary regression test, passes 697 tests and packaged real-state click/navigation/Refresh/resize validation, and is packaged for UAC installation. |
 
 ## 4. Android development
 
@@ -324,9 +325,9 @@ Untracked planning/design artifacts do not make features implemented. MVP-1.1 ha
 | **ACCEPTABLE FOR INITIAL LIMITED RELEASE** | Stable-router requirement; literal two-router residual; no USB hot removal; TD-022/023. Unsigned/debug signing only if distribution remains explicitly limited and warnings are accepted. |
 | **POST-RELEASE / DEFERRED** | TD-026 if usage warrants; TD-027 observation; UI theme/scaffold/localization, Desktop tray/navigation; MVP-1.1+. |
 
-**Exact NEXT TASK:** install Desktop `0.4.17` through the packaged per-machine installer, then
-perform and record FINAL HUMAN DESKTOP VISUAL APPROVAL using
-`docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §12, without starting public-release work or
+**Exact NEXT TASK:** install corrected Desktop `0.4.18` through the packaged per-machine installer,
+then repeat and record FINAL HUMAN DESKTOP VISUAL APPROVAL using
+`docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §13, without starting public-release work or
 MVP-1.1.
 
 ## 21. Development and automation governance

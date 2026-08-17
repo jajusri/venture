@@ -7,14 +7,15 @@
 
 **MVP-1 CONTROLLED PILOT — GO / CLOSED**
 **ANDROID `continuity.22` — FINAL HUMAN VISUAL APPROVAL COMPLETE**
-**DESKTOP `0.4.17` VISUAL IMPLEMENTATION — AUTOMATED WORK COMPLETE**
-**FINAL HUMAN DESKTOP VISUAL APPROVAL PENDING**
+**DESKTOP `0.4.17` INSTALLED-RUNTIME VALIDATION — FAILED / BLOCKED**
+**DESKTOP `0.4.18` RUNTIME CORRECTION — AUTOMATED-VALIDATED / PACKAGED**
+**FINAL HUMAN DESKTOP VISUAL APPROVAL BLOCKED PENDING 0.4.18 INSTALL**
 
 ## 2. Branch / HEAD
 
 - Branch: `main`
-- Product-code baseline: `96a7a55`
-- Versions: Desktop candidate `0.4.17`; Connector `0.4.6`; Android
+- Product-code baseline: `e20053f`
+- Versions: Desktop corrected candidate `0.4.18`; Connector `0.4.6`; Android
   `0.1.1-continuity.22` (versionCode 23).
 - The documentation-only ledger/checkpoint commit follows this product-code baseline; use
   `git log -1` for the self-referential documentation tip.
@@ -23,6 +24,7 @@
 ## 3. Current evidence
 
 ```
+e20053f fix(desktop): restore packaged renderer interactivity
 96a7a55 feat(desktop): apply approved BUDCOM visual language
 9b29abf feat(android): implement approved MVP-1 visual masters
 bc9cd55 chore: bump desktop 0.4.15->0.4.16, android continuity.20->continuity.21 for UI/UX polish candidate packaging
@@ -39,8 +41,9 @@ Full detail for the UI/UX work: `docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md
 - Controlled Pilot: **GO / CLOSED** under the constraints in
   `docs/planning/BUDCOM-MVP-1-CONTROLLED-PILOT-CLOSURE-STATUS.md` and the Quality Scorecard.
 - Android: owner FINAL HUMAN VISUAL APPROVAL recorded for installed `continuity.22` on 2026-08-17.
-- Desktop: `0.4.17` visual implementation, automated validation, screenshot review and installer
-  packaging complete; installation and final human visual approval remain.
+- Desktop: installed `0.4.17` physically failed because packaged renderer ESM initialization
+  aborted on a CommonJS named import, leaving all controls unbound. `0.4.18` corrects that module
+  boundary and passes packaged interaction validation; UAC installation and human approval remain.
 
 ## 4. Approved Stitch reference
 
@@ -102,8 +105,8 @@ instruction.
 
 ## 9. Exact NEXT TASK
 
-**Install Desktop `0.4.17` via the packaged per-machine installer, then obtain FINAL HUMAN DESKTOP
-VISUAL APPROVAL** using `docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §12.
+**Install Desktop `0.4.18` via the corrected per-machine installer, then repeat FINAL HUMAN DESKTOP
+VISUAL APPROVAL** using `docs/design/BUDCOM-MVP-1-UI-UX-POLISH-STATUS.md` §13.
 
 **Not started:** public-release packaging and MVP-1.1. Do not begin either before Desktop visual
 approval.

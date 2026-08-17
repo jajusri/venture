@@ -382,3 +382,39 @@ accounting screens, Insights, Connect or Vartalap. No animation, framework or de
 - Automatic in-place installation stopped at the required Windows UAC boundary: the per-machine
   installation is under `C:\Program Files`, and this session is not elevated. No uninstall, AppData
   reset or configuration change was attempted.
+
+## 13. Desktop 0.4.17 installed-runtime regression and 0.4.18 correction (2026-08-17)
+
+**Physical result:** owner installation of `0.4.17` failed human validation: the window opened but
+did not load data and no control was interactive. Desktop visual approval is **FAILED / BLOCKED**;
+the earlier screenshot/build evidence was insufficient.
+
+Live Chrome DevTools Protocol inspection of the installed renderer reproduced the first failing
+layer. Electron main was alive, preload exposed `window.budcomDesktop`, the private-storage overlay
+was hidden (`display:none`), and the packaged Connector reached healthy. Chromium aborted module
+linking before `startDesktopShell()` with:
+
+`SyntaxError: ... connector-error.js does not provide an export named mapDiscoveryUserMessage`
+
+The renderer is browser ESM, while `src/application` is emitted as CommonJS. A value import added
+before the visual pass type-checked under the existing mixed compilation but could not link in the
+packaged Chromium runtime. The screenshot helper manually populated DOM values and never asserted
+module initialization or clicks, so it masked the failure.
+
+Candidate `0.4.18` keeps the visual implementation and moves the presentation-only discovery
+message mapping inside the renderer boundary. A focused regression test now prohibits renderer
+runtime imports from CommonJS application output. Full suite result: 697/697 passing. Main,
+preload and renderer TypeScript checks, build, Connector bundle and NSIS packaging pass.
+
+Actual packaged-candidate interaction was exercised against the preserved real configuration:
+all nine destinations opened, Refresh entered busy state immediately, company `ESTIMATION` loaded,
+Settings and Diagnostics opened, resize remained interactive, no overlay intercepted input and no
+renderer exception occurred. Packaged Connector `0.4.6` `/health` returned `status: ok`,
+`tallyReachable: true` and the existing selected company. No Connector, Tally, pairing, storage or
+Android source/state was changed.
+
+Corrected installer:
+`release/controlled-pilot/0.4.18/artifacts/BudcomDesktop-0.4.18-x64-setup.exe` — 106,073,592 bytes,
+SHA-256 `F41718E3B4314BC7C6F06A482F5BC26B899F4ACDD5A82F1B407E2B2A1356B0B9`, produced by `e20053f`.
+Installation remains at the Windows UAC boundary; final human Desktop approval remains blocked
+until this candidate is installed and physically checked.
