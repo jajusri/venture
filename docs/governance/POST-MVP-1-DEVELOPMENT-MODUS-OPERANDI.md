@@ -219,6 +219,48 @@ batch → integrated hardening → real-world validation → release.**
 
 Evidence before expansion.
 
+## 13A. Durable Development Record — Permanent Rule
+
+No consequential completed development work may exist only in Claude chat,
+Codex chat, terminal output, temporary notes, or AI memory. Every completed
+development task must leave durable repository evidence.
+
+For every meaningful implementation/hardening/release task, before final
+completion the agent must:
+
+1.  update the relevant specialist status document;
+2.  update `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`;
+3.  update `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`;
+4.  update architecture/specification documents if an approved
+    architecture decision changed;
+5.  update the technical-debt registry when a TD is opened, changed, or
+    closed;
+6.  record: what was requested; what was implemented; important
+    architecture decisions; files/subsystems materially changed; tests/
+    builds performed; test counts/results; performance evidence where
+    relevant; version/versionCode; artifact path/hash where relevant;
+    physical-device/install evidence where relevant; limitations/deferred
+    items; commits; final HEAD; and the exact next task;
+7.  commit the durable record;
+8.  finish with an explained clean-tree audit.
+
+Keep a strict separation of concerns across the three tiers so the same
+fact is never duplicated verbatim across all three documents:
+
+-   **Specialist status document** — detailed milestone evidence (the one
+    place exhaustive detail belongs).
+-   **Development Ledger** — the durable chronological/consequential
+    historical record (a concise entry per milestone, pointing at the
+    specialist document for detail).
+-   **Current Development Status** — a concise current-state/handoff
+    checkpoint (must stay short; links out rather than repeats).
+
+At the start of every AI development session: read these three records
+(plus the relevant specialist document) before coding. At the end of every
+AI development session: update these records before claiming completion.
+A work unit that ends without matching `git log`/`git status` evidence is
+not finished, regardless of what was accomplished in the conversation.
+
 ## 14. Two permanent planning documents
 
 This file governs **how BUDCOM is developed**.
