@@ -1,10 +1,11 @@
 # BUDCOM MVP-1.1 — Connect Status
 
 **Status:** MVP-1.1-A (Universal Party Foundation) — technically complete, ready for review.
-**MVP-1.1-B (Connect Browser + Customers/Prospects + accounting deep links) — technically
-complete, ready for review.** MVP-1.1-C (Party Detail + Contact Persons + Tags + Notes/Activity +
-voucher-linked notes) is the next planned slice and has **not** been started — see Part B below
-for full 1.1-B detail.
+MVP-1.1-B (Connect Browser + Customers/Prospects + accounting deep links) — technically complete,
+ready for review. **MVP-1.1-C (Party Detail + Prospect creation + Contact Persons + Tags +
+Notes/Activity + voucher-linked notes) — technically complete, ready for review.** MVP-1.1-D
+(Tally XML enrichment round-trip) is the next planned slice and has **not** been started — see
+Part C below for full 1.1-C detail.
 
 # Part A — MVP-1.1-A: Universal Party Foundation
 
@@ -599,12 +600,329 @@ state on this device to preserve or risk in the first place (see B23).
   against real Room/SQLite with synthetic and 1.1-A-reconciled fixtures, not a live-synced company.
   Code-proven and instrumented-device-proven, not field-proven with real business data.
 
-## B27. Exact NEXT TASK
+## B27. Exact NEXT TASK (superseded — see Part C)
 
-**MVP-1.1-C — Party Detail + Contact Persons + Tags + Notes/Activity + voucher-linked notes**, per
-the architecture file's own milestone sequencing. **Do not begin without explicit go-ahead** (per
-the governing instruction's Part 43). Before that, the user may want to: (a) decide whether/where
-to install the `continuity.24` candidate for a genuine live smoke test against a real paired Tally
-company (no device currently qualifies per B23), and (b) confirm the View-Vouchers name-based
-deep-link disposition (B13) is acceptable, or commission a focused Voucher-schema slice to add a
-real stable ledger-id filter first.
+~~MVP-1.1-C — Party Detail + Contact Persons + Tags + Notes/Activity + voucher-linked notes~~ —
+**completed this session**, see Part C below for full detail.
+
+---
+
+# Part C — MVP-1.1-C: Party Detail + Prospect Creation + Contact Persons + Tags + Notes/Activity
+
+**Status:** Technically complete, ready for review. Adds a full Party Detail screen (reachable by
+tapping any Connect row), a minimal offline Prospect-creation flow, and read/write management of
+contact persons, tags, and BUDCOM-only notes (including voucher-linked notes) — the first slice
+where a user can *edit* Party data in BUDCOM, not just browse it.
+
+## C1. Scope recovery and continuity check
+
+Verified against repository evidence before implementing: `PartyRepository`/`PartyEntities`/
+`MIGRATION_5_6` (schema version 6) matched Part A/B's own description exactly; `ConnectScreen`'s
+row `Card` had no `onClick` and no FAB yet, confirming Party Detail/Prospect-creation genuinely
+did not exist before this session. No drift between the prior sessions' record and actual code.
+
+## C2. Schema — `party_notes` table, `MIGRATION_6_7`
+
+New `PartyNoteEntity` (`party_notes`: `companyId`, `noteId`, `partyId`, `body`, `linkedVoucherId`,
+`createdAt`, `updatedAt`; primary key `(companyId, noteId)`; index `(companyId, partyId,
+createdAt)` for bounded newest-first paging) and `PartyNoteDao` (`pageForParty`, `countForParty`,
+`findById`, `upsert`, `delete`). `DatabaseConstants.VERSION` bumped 6→7; `MIGRATION_6_7` is pure
+schema (one `CREATE TABLE`, one `CREATE INDEX`, no data backfill in SQL — same convention as
+`MIGRATION_5_6`), verified byte-for-byte against Room's own KSP-generated `7.json` before being
+written. `AppDatabaseMigrationTest.migrate6To7_preservesExistingRowsAndAddsPartyNotesTableOnly`
+runs the real production migration object against a populated v6 database (real `MigrationTestHelper`
+on a connected physical device): every pre-existing row survives, the new table's exact schema
+matches, and it is genuinely insert/query-usable.
+
+No other write path needed a schema change: contact persons, tags, and tag assignments already had
+full storage from 1.1-A (read-only until now); this session added the write methods on top of the
+existing tables.
+
+## C3. Domain model additions
+
+`PartyNote`/`PartyNotePage` (paged, `canLoadMore` computed from `page`/`pageSize`/`totalItems` —
+same shape as `PartyPage`) and `ProspectDraft` (`displayName` required, every other field optional
+— `phone`/`email`/`addressLine1`/`addressCity`/`addressState`/`addressPincode`/`tagIds`/`note`).
+
+## C4. Repository / use-case API (12 new members)
+
+`PartyRepository` gained, under an explicit `// ---- MVP-1.1-C ----` section: `createProspect`,
+`getSourceLinkForParty`, `upsertContactPerson` (9-param, create-or-edit by nullable
+`contactPersonId`), `deleteContactPerson`, `getAllTags`, `createOrGetTag`, `assignTag`,
+`unassignTag`, `addNote`, `editNote`, `deleteNote`, `getNotesForParty`. Twelve matching thin
+use-case wrappers added to `PartyUseCases.kt`. Every existing `PartyRepository` fake/test-double
+(`SyncViewModelTest`, `ReconcilePartiesFromLedgersUseCaseTest`, `ConnectViewModelTest`) needed the
+new members added — mechanical, zero behavior change to the tests those files already covered.
+
+**Prospect creation** (`createProspect`): generates a fresh UUID `partyId`, creates **no**
+`PartySourceLink` at all (a Prospect has no Tally linkage by construction, matching the locked
+spec's own definition), seeds a `PartyFieldProvenance` row at `BudcomOnlyPending` for every
+non-null Tally-compatible field supplied, assigns any given tags, and creates an optional note —
+all in one local, offline-capable call. Duplicate-looking names/phones are never auto-merged: two
+calls with identical input always produce two independent Parties with their own stable ids
+(architecture §5.4/§5.5).
+
+**Contact-person primary-uniqueness invariant** lives in the repository, not the ViewModel:
+`upsertContactPerson` first demotes every other primary contact for that Party (`isPrimary =
+false`) before upserting the target whenever the new/edited contact is primary — a party can never
+end up with two primary contacts regardless of call order, and deleting the current primary
+contact leaves the party with zero primary contacts rather than promoting another one silently.
+
+**Tag creation** (`createOrGetTag`): looks up by exact `(name, parentTagId)` first — never creates
+a duplicate tag definition; builds `path` from the parent's own path when nesting, or just `name`
+at the root, preserving the hierarchical-path convention from 1.1-A's tag foundation.
+
+**Notes** (`addNote`/`editNote`/`deleteNote`/`getNotesForParty`): bounded/paged
+(`page.coerceAtLeast(1)`, `pageSize.coerceIn(1,100)`), newest-first via the new index. A note's
+`linkedVoucherId` is a stable id-only reference — the repository never copies or duplicates any
+Voucher data into the note row.
+
+## C5. Party Detail screen
+
+New `feature/connect/presentation/PartyDetailScreen.kt` / `PartyDetailViewModel.kt` /
+`PartyDetailUiState.kt`, reached by tapping any Connect row (`Routes.PARTY_DETAIL =
+"connect/party/{partyId}"`). Five sections, matching the locked spec's progressive-disclosure
+requirement (never a flat CRM form):
+
+- **A. Identity header** — name, classification, Call/WhatsApp actions (same `ACTION_DIAL`/`wa.me`
+  actions as the Connect row, reused via `ConnectContactActions`, not reimplemented).
+- **D. Accounting context** — balance and "View Ledger"/"View Vouchers" deep links, shown **only**
+  when `state.hasAccountingLink` (a real `PartySourceLink` exists) — a Prospect never shows a
+  fabricated balance or a dead deep link, proven by
+  `PartyDetailViewModelTest.\`a Prospect shows no balance and no accounting link\`` and the
+  matching Screen test.
+- **B/C. Contact fields with provenance** — each Tally-compatible field (`Phone`/`Email`/
+  `Address`/`City`/`State`/`Pincode`/`GSTIN`) shown with a plain-language provenance label via
+  `FieldProvenanceState.toUiLabel()`: "Confirmed from Tally" / "Pending in BUDCOM" / "Ready to
+  export" / "Exported, awaiting Tally" / "Needs review" / "Not set" — never the raw enum name, and
+  a `Conflict` row is additionally marked (`isConflict`) so the UI can flag it beyond color alone.
+  Tapping a field opens an edit dialog; saving always calls `updateBudcomOnlyField` (1.1-A), which
+  always lands as `BudcomOnlyPending` — a user typing a value can never mark it confirmed by
+  itself, preserving the "only a real Tally re-sync confirms a field" invariant end to end.
+- **Tags** — assigned-tag chips (tap to remove), "Add tag" opens a dialog listing every
+  not-yet-assigned tag plus a create-new field; creating reuses `createOrGetTag` (no duplicate
+  definitions possible from the UI).
+- **Contact persons** — cards with Edit/Delete; the editor dialog has a Primary checkbox wired
+  straight to the repository-level uniqueness invariant in C4.
+- **E. Notes/Activity** — newest-first list with "Load more notes" (bounded page-by-page, never a
+  full load), "Add note" (body + an optional voucher-picker), Delete per note. A note's linked
+  voucher, when present, is a `TextButton` that either opens the existing unmodified Voucher
+  Details screen (if the note's own already-loaded voucher list still contains that id) or shows
+  an honest "Linked voucher is not available." message — never a crash or a silent no-op — proven
+  by `\`tapping an unavailable linked voucher shows a message, not a crash\``.
+
+**Note-voucher picker**: reuses the existing `LoadVouchersUseCase` (no new Voucher-search
+screen/mechanism), querying the last 365 days by the Party's current linked ledger name
+(`VoucherQuery(partyName = ledgerName, pageSize = 20)`) — the same name-based association the
+Voucher schema has always used (per Part B §B13's documented limitation; not revisited here). For
+a Prospect (no linked ledger), the picker is skipped entirely and the note is still creatable with
+just a body — Prospects can have notes too, just never voucher-linked ones, since there is no
+ledger name to search by.
+
+**Company resolution**: `companySession.observeSelectedCompanyId().first()` — resolved **once, at
+load time** (same convention as the existing `LedgerStatementViewModel` DETAIL-screen pattern,
+deliberately distinct from `ConnectViewModel`'s continuous-observe BROWSER-screen convention). If
+the active company changes while Party Detail is open, in-flight edits still target the
+company/party the screen was opened for — matches the pre-existing, unmodified
+Ledger-Statement/Voucher-Details behavior inherited from MVP-1, not a new risk this session
+introduced.
+
+## C6. Prospect creation
+
+New `feature/connect/presentation/ProspectCreateScreen.kt` / `ProspectCreateViewModel.kt` /
+`ProspectCreateUiState.kt`, reached via a new FloatingActionButton on Connect's Prospects tab only
+(`testTag "connect_add_prospect"`, `ConnectEvent.AddProspectTapped` →
+`ConnectEffect.OpenProspectCreate` → `Routes.PROSPECT_CREATE`). Built as a fully separate
+screen/ViewModel rather than a dual-mode Party Detail, for simplicity and testability — a
+deliberate scope-discipline choice, not an oversight.
+
+Every field is optional except `displayName` (`canSave = displayName.isNotBlank() && !isSaving`).
+No accounting field, no CRM pipeline/stage field, no auto-linking to any existing Ledger or Party —
+exactly the "minimal, offline-capable" flow the locked spec calls for. Saving calls
+`createProspect` (C4) and navigates straight to the new Prospect's own Party Detail screen
+(`popUpTo(PROSPECT_CREATE){inclusive=true}`, so Back from the new Party Detail returns to Connect,
+not to an empty creation form).
+
+## C7. Navigation wiring
+
+`Routes.PARTY_DETAIL = "connect/party/{partyId}"`, `Routes.PROSPECT_CREATE =
+"connect/prospect/new"`, both registered in `BudcomNavHost`. `ConnectScreen`'s row `Card` gained
+`onClick` (emits `ConnectEvent.RowTapped(partyId)` → `ConnectEffect.OpenPartyDetail`); the new FAB
+is scoped to the Prospects tab only (`state.selectedTab == ConnectTab.Prospects`) since Customers
+already exist via Tally seeding and are never BUDCOM-created.
+
+## C8. Field-editing safety (no accidental Tally writes)
+
+`updateBudcomOnlyField` is the **only** write path a Party Detail edit can reach — it never touches
+`confirmFieldFromTally` (the only path that can promote a field to `ConfirmedFromTally`, and the
+only one the eventual 1.1-D XML-review/re-sync flow will call). Grepped: no code added this
+session calls `confirmFieldFromTally` from anywhere in the Connect/Party-presentation layer. No
+direct Tally/Connector write of any kind exists in Part C — everything is a local Room write,
+consistent with the offline-by-construction architecture.
+
+## C9. Offline behavior
+
+Every C5/C6 read and write is Room-only — `PartyRepository`'s 12 new methods perform zero
+Connector calls, and the one exception that *could* reach the network (the note-voucher picker's
+`LoadVouchersUseCase`) explicitly calls `listVouchers` (the local-cache-only variant), never
+`refreshVouchers` — a note can always be created, and the voucher list gracefully degrades to
+empty (not an error) if nothing is cached yet, proven by `PartyDetailViewModelTest`'s Prospect
+cases and the "unavailable linked voucher" case above.
+
+## C10. Company isolation
+
+Party Detail/Prospect creation operate on an already-resolved single `(companyId, partyId)` pair
+by construction — no cross-company query surface exists in the new code. `createProspect` requires
+an explicit `companyId` argument (never inferred), and the "no company selected" honest-error path
+is proven by `\`a missing party shows an honest error, not a crash\`` and
+`ProspectCreateViewModelTest.\`no company selected shows an honest error, not a crash\``.
+
+## C11. New tests
+
+- **JVM (40 new):** `PartyRepositoryImplTest` (+18 — Prospect creation offline/minimal/duplicate-
+  name-no-merge, contact-person add/edit/multiple/primary-demotion/safe-primary-deletion/
+  duplicate-phone-allowed, tag create/reuse/hierarchy/duplicate-prevention, note create/edit/
+  delete/ordering/company-scoping/voucher-linking), `ConnectViewModelTest` (+2 — row tap emits
+  `OpenPartyDetail`, FAB tap emits `OpenProspectCreate`), `PartyDetailViewModelTest` (14, new file
+  — Tally-backed load with balance/deep-links, Prospect load with neither, pending/confirmed/
+  conflict provenance display, field-edit save flow, contact add/primary-demotion/delete, tag
+  create-and-assign/remove, note add/delete, unavailable-linked-voucher handling, missing-party
+  honest error), `ProspectCreateViewModelTest` (6, new file — save-gating, offline minimal
+  creation, full-field creation, effect emission, no-company-selected honest error, blank-Save
+  no-op).
+- **Instrumented, real device (23 new):** `PartyDetailScreenTest` (15 — loading/error/retry,
+  Tally-backed deep links, Prospect hides deep links, field-row tap→edit dialog→save, conflict
+  provenance display, tag chip remove, add-tag dialog create-and-assign, contact row edit/delete,
+  contact-editor primary checkbox, note row linked-voucher/delete, note-with-no-voucher hides the
+  action, add-note dialog, notice dialog dismiss), `ProspectCreateScreenTest` (7 — Save
+  disabled/enabled, name-field typing, every optional field present, Save tap, saving-progress
+  label, Back button), `AppDatabaseMigrationTest.migrate6To7_...` (1, C2).
+
+## C12. Full Android regression results
+
+- `testDebugUnitTest`: **1,128/1,128 passing** (was 1,088 after 1.1-B).
+- `testReleaseUnitTest`: **1,128/1,128 passing** (full re-run; one incidental flake in an unrelated
+  pre-existing `VoucherRepositoryImplTest` case reproduced as flaky in isolation too — passed
+  cleanly on immediate re-run both in isolation and as part of the full suite; not related to any
+  file this session touched).
+- `lintDebug` / `lintRelease`: **0 errors** both; zero lint findings of any severity against any
+  new Part C file.
+- `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`: all `BUILD SUCCESSFUL`.
+- `connectedDebugAndroidTest`, scoped to new/changed classes (`PartyDetailScreenTest`,
+  `ProspectCreateScreenTest`, `ConnectScreenTest` regression, `AppDatabaseMigrationTest`): **40/40
+  passing** on the connected physical device (`I2407i`).
+- `connectedDebugAndroidTest`, full app suite: **217/229 passing.** The 12 failures are **all** in
+  files this session never touched (`DashboardScreenTest`, `DiagnosticsScreenTest`,
+  `LedgerStatementScreenTest`, `SecurePairingScreenTest`, `ServerConfigScreenTest`,
+  `SettingsScreenTest`, `SyncScreenTest`, `VoucherDetailsScreenTest`) — the same device-viewport
+  assertion-flakiness category documented in Part B §B20 (206 total then, 12 failing then too,
+  same file set, exact individual test names shift slightly between runs — consistent with
+  viewport/scroll-assertion flakiness, not a deterministic break). Zero of the 12 failing tests
+  exercise any Connect/Party file; every new Part C instrumented test passed cleanly, including
+  ones that also use `LazyColumn`/scroll assertions (the note list, the tag picker, the voucher
+  picker). Not investigated further (pre-existing, out of Part C's scope) or suppressed (reported
+  exactly as observed).
+
+## C13. MVP-1 / MVP-1.1-A / MVP-1.1-B regression
+
+Every change to previously-existing code this session was additive: `PartyRepository` gained 12
+new interface members (existing members unchanged), `ConnectUiState`/`ConnectViewModel`/
+`ConnectScreen` gained new effect/event cases and a row `onClick`/FAB (existing Customers/Prospects
+list/search/deep-link/offline behavior from Part B is untouched and re-proven by the unmodified
+`ConnectScreenTest`/`ConnectViewModelTest` suites still passing at their original counts plus the 2
+new cases). `AppDatabase`/`DatabaseModule`/`DatabaseConstants` gained one new table/DAO/migration,
+strictly additive (schema version 6→7, `MIGRATION_5_6` untouched). No existing method signature was
+removed or behaviorally changed. All 1,030 MVP-1 tests, 43 MVP-1.1-A tests, and 32 MVP-1.1-B tests
+remain present and green inside the 1,128 total.
+
+## C14. Mini-hardening audit (before commit, per governance)
+
+Explicit pass over identity, offline, duplicates, null/empty values, long names/notes,
+contact-person lifecycle, tags, voucher links, company switching, provenance, no-Tally-direct-
+writes, performance, accessibility, light/dark, regression:
+
+- **Identity/duplicates:** Prospect creation never auto-merges on name/phone match (C4); tag
+  creation never duplicates a `(name, parentTagId)` pair (C4). Both proven by dedicated tests.
+- **Offline:** confirmed zero Connector calls anywhere in the new code path (C9); the one call that
+  touches Voucher data explicitly uses the local-cache-only method.
+- **Null/empty values:** every Prospect field beyond `displayName` accepts `null`/blank and is
+  trimmed-to-`null` before storage (`ifEmpty { null }`); a field row with no value renders "Not
+  set", never a crash or blank space with ambiguous meaning.
+- **Long names/notes:** no length cap was added — matches the existing app-wide convention (no
+  other text field in the app enforces a max length either); a very long note or Party name wraps
+  rather than crashing (`verticalScroll` container, no fixed-height clipping). Flagged as
+  UI-polish-deferred territory (ellipsis-on-overflow for the Party Detail header), not a
+  correctness defect — consistent with the already-recorded voucher-list-UI-polish deferral
+  pattern from a prior session; not implemented here to avoid unrequested scope growth.
+- **Contact-person lifecycle:** primary-uniqueness and safe-primary-deletion both proven (C4).
+- **Tags:** hierarchy path construction and duplicate-prevention proven (C4).
+- **Voucher links:** unavailable-linked-voucher handled honestly (C5); no Voucher data is ever
+  duplicated into a note row (C4).
+- **Company switching:** Party Detail resolves company once at load, matching the pre-existing
+  Ledger-Statement/Voucher-Details DETAIL-screen convention exactly — not a new risk (C5).
+- **Provenance:** an edited field always lands `BudcomOnlyPending`, never silently confirmed (C5/
+  C8); `confirmFieldFromTally` is unreachable from any Part C code path (C8).
+- **No-Tally-direct-writes:** confirmed by grep — no Connector/Tally write call exists anywhere in
+  Part C (C8).
+- **Performance:** every Party Detail load is a fixed, bounded set of reads (single-row party/
+  source-link lookups, bounded field-provenance/contact-person/tag lists, one page of 20 notes,
+  one cached-ledger lookup by id) — no full-table scan, no N+1, no per-keystroke reload (field/tag/
+  note edits reload the whole detail once per save, not per keystroke).
+- **Accessibility:** every interactive element carries a text label (`TextButton`/`AssistChip`
+  text, not icon-only); the notice/edit/contact/tag/note dialogs use standard `AlertDialog`
+  semantics, inheriting TalkBack focus-trapping for free.
+- **Light/dark:** every new composable uses `MaterialTheme.colorScheme`/`typography` tokens only —
+  no hardcoded color was introduced; inherits `BudcomTheme`'s existing light/dark support.
+- **Regression:** see C12/C13 — zero regressions found in either the full JVM or full instrumented
+  suite.
+
+No hardening fix required a code change beyond what was already correctly implemented and tested
+during C4–C7 — the audit surfaced one documented, deliberately-deferred UI-polish item (long-name
+ellipsis on the Party Detail header) and confirmed everything else already met the bar.
+
+## C15. Android version / artifacts
+
+**Not bumped this session** — per explicit instruction, the version bump happens once after both
+Part C and Part D stabilize, not per-sub-milestone. Current `versionCode = 25`, `versionName =
+"0.1.1-continuity.24"` (unchanged from Part B) remains the last-bumped value; Part C's own
+build/test artifacts below are evidence of a working build at the current version, not a new
+release candidate yet.
+
+| Build | Path | SHA-256 | Size |
+|---|---|---|---|
+| Debug APK | `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` | `6a4a40616662e2a2240a105ec65f5c17d7542e6cc06f0a1ebc6a2a648650b470` | 14,690,298 bytes |
+| Release APK (unsigned — no release keystore exists) | `apps/budcom_android/app/build/outputs/apk/release/app-release-unsigned.apk` | `4e42598b39f970be62e7ebcacc5974b7f2b07669116de0d83ce8b70158b8fe53` | 2,437,076 bytes |
+
+## C16. ADB device / install result
+
+Connected device: `I2407i` (model `I2407`, serial `10BF44124K000E3`) — the same device used in
+Parts A/B. `pm list packages` again shows **no BUDCOM package of any kind** on this device (the
+Part B `.debug`/`.debug.test` test-harness packages left behind by prior `connectedDebugAndroidTest`
+runs are recreated fresh by each test run and are not a genuine standing install). Per the
+governing instruction's explicit rule, **no distinct "final candidate" install was performed** —
+only the transient debug/androidTest APKs Gradle installs and manages itself for
+`connectedDebugAndroidTest`, which is standard test infrastructure, not a product install. Nothing
+elsewhere is touched or implied by this.
+
+## C17. Deferred / limitations (explicit)
+
+- Long Party name/note text has no ellipsis/truncation in the Party Detail header — wraps rather
+  than overflowing, not a defect, but flagged as UI-polish-deferred, matching the already-recorded
+  voucher-list polish deferral pattern (not implemented here to avoid unrequested scope growth).
+- No device-phonebook integration for contact persons — explicitly out of scope per the governing
+  instruction, not attempted.
+- No elaborate tag-taxonomy editor (bulk rename/merge/reparent) — explicitly out of scope; only
+  create/assign/unassign exist, per instruction.
+- No broad cross-Party notes search — Party-scoped only, per instruction.
+- The note-voucher picker inherits Part B §B13's name-based Voucher association limitation
+  (searches by the Party's current ledger name, not a stable ledger-id filter) — not revisited
+  here, since fixing it would mean a Voucher-schema change outside Part C's scope.
+- `EXPORT_READY`/`EXPORTED` field-provenance states still have no production writer — that is
+  1.1-D's own scope, not deferred by omission here.
+- No live Tally/Connector pairing was exercised this session for Part C — proven against real
+  Room/SQLite with synthetic fixtures and instrumented-device tests, not a live-synced company.
+
+## C18. Exact NEXT TASK
+
+**MVP-1.1-D — Tally XML enrichment round-trip**, per the same session's own combined C+D
+specification. Begins from a clean, committed Part C. Not yet started.
