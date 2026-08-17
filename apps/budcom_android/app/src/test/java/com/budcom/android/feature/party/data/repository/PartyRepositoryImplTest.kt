@@ -39,9 +39,10 @@ class PartyRepositoryImplTest {
     private val fieldProvenanceDao = FakePartyFieldProvenanceDao()
     private val contactPersonDao = FakePartyContactPersonDao()
     private val tagDao = FakeTagDao()
+    private val noteDao = FakePartyNoteDao()
 
     private fun repository() = PartyRepositoryImpl(
-        partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, time, dispatchers,
+        partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, noteDao, time, dispatchers,
     )
 
     private fun seed(
@@ -327,6 +328,216 @@ class PartyRepositoryImplTest {
         assertEquals("Owner", contacts.first().name)
     }
 
+    // ============================== PROSPECT CREATION ==============================
+
+    @Test
+    fun `createProspect creates a BUDCOM-native Party with no source link`() = runTest(dispatcher) {
+        val repo = repository()
+        val prospect = repo.createProspect(
+            "co-1",
+            com.budcom.android.feature.party.domain.model.ProspectDraft(
+                displayName = "New Bakery",
+                phone = "9876543210",
+                email = "hello@newbakery.example",
+            ),
+        )
+
+        assertEquals(PartyClassification.Prospect, prospect.classification)
+        assertEquals("New Bakery", prospect.displayName)
+        assertEquals("9876543210", prospect.primaryPhone)
+        assertNull(repo.getSourceLinkForParty("co-1", prospect.partyId))
+    }
+
+    @Test
+    fun `Prospect provided fields are tracked as pending, never confirmed`() = runTest(dispatcher) {
+        val repo = repository()
+        val prospect = repo.createProspect(
+            "co-1",
+            com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "New Bakery", email = "hello@newbakery.example"),
+        )
+        val provenance = repo.getFieldProvenance("co-1", prospect.partyId).single { it.fieldName == PartyFieldNames.PRIMARY_EMAIL }
+        assertEquals(FieldProvenanceState.BudcomOnlyPending, provenance.state)
+    }
+
+    @Test
+    fun `two Prospects with duplicate-looking names and phones are never auto-merged`() = runTest(dispatcher) {
+        val repo = repository()
+        val a = repo.createProspect("co-1", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "ABC Traders", phone = "9876543210"))
+        val b = repo.createProspect("co-1", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "ABC Traders", phone = "9876543210"))
+
+        assertNotEquals(a.partyId, b.partyId)
+        assertEquals(2, partyDao.countForCompany("co-1"))
+    }
+
+    @Test
+    fun `Prospect creation with only a display name works, no accounting information required`() = runTest(dispatcher) {
+        val prospect = repository().createProspect("co-1", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "Just A Name"))
+        assertEquals("Just A Name", prospect.displayName)
+        assertNull(prospect.primaryPhone)
+    }
+
+    @Test
+    fun `Prospect optional tags and note are created alongside the Party`() = runTest(dispatcher) {
+        val repo = repository()
+        val tag = repo.createOrGetTag("Dealer", null)
+        val prospect = repo.createProspect(
+            "co-1",
+            com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "New Bakery", tagIds = listOf(tag.tagId), note = "Met at expo"),
+        )
+
+        assertEquals(listOf("Dealer"), repo.getTagsForParty("co-1", prospect.partyId).map { it.name })
+        val notes = repo.getNotesForParty("co-1", prospect.partyId, 1, 20)
+        assertEquals("Met at expo", notes.items.single().body)
+    }
+
+    // ============================== CONTACT PERSON MANAGEMENT ==============================
+
+    @Test
+    fun `upsertContactPerson creates a new contact when contactPersonId is null`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val created = repo.upsertContactPerson("co-1", partyId, null, "Owner Name", "Owner", "9876543210", null, null, true)
+
+        assertTrue(created.contactPersonId.isNotBlank())
+        assertEquals(1, repo.getContactPersons("co-1", partyId).size)
+    }
+
+    @Test
+    fun `upsertContactPerson with an existing id edits in place, not creating a duplicate`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val created = repo.upsertContactPerson("co-1", partyId, null, "Owner", null, null, null, null, false)
+        repo.upsertContactPerson("co-1", partyId, created.contactPersonId, "Owner Renamed", "Owner", "9111111111", null, null, false)
+
+        val contacts = repo.getContactPersons("co-1", partyId)
+        assertEquals(1, contacts.size)
+        assertEquals("Owner Renamed", contacts.single().name)
+    }
+
+    @Test
+    fun `only one contact person can be primary at a time`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val first = repo.upsertContactPerson("co-1", partyId, null, "Owner", null, null, null, null, true)
+        repo.upsertContactPerson("co-1", partyId, null, "Accounts", null, null, null, null, true)
+
+        val contacts = repo.getContactPersons("co-1", partyId)
+        assertEquals(1, contacts.count { it.isPrimary })
+        assertEquals("Accounts", contacts.first { it.isPrimary }.name)
+        assertEquals(false, contacts.single { it.contactPersonId == first.contactPersonId }.isPrimary)
+    }
+
+    @Test
+    fun `deleting the current primary contact leaves no primary, does not crash`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val primary = repo.upsertContactPerson("co-1", partyId, null, "Owner", null, null, null, null, true)
+        repo.upsertContactPerson("co-1", partyId, null, "Accounts", null, null, null, null, false)
+
+        repo.deleteContactPerson("co-1", primary.contactPersonId)
+
+        val remaining = repo.getContactPersons("co-1", partyId)
+        assertEquals(1, remaining.size)
+        assertEquals("Accounts", remaining.single().name)
+        assertEquals(0, remaining.count { it.isPrimary })
+    }
+
+    @Test
+    fun `multiple contact persons with duplicate phone numbers are allowed`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.upsertContactPerson("co-1", partyId, null, "Owner", null, "9876543210", null, null, false)
+        repo.upsertContactPerson("co-1", partyId, null, "Manager", null, "9876543210", null, null, false)
+
+        assertEquals(2, repo.getContactPersons("co-1", partyId).size)
+    }
+
+    // ============================== TAG MANAGEMENT ==============================
+
+    @Test
+    fun `createOrGetTag never creates a duplicate for the same name and parent`() = runTest(dispatcher) {
+        val repo = repository()
+        val first = repo.createOrGetTag("Dealer", null)
+        val second = repo.createOrGetTag("Dealer", null)
+        assertEquals(first.tagId, second.tagId)
+    }
+
+    @Test
+    fun `createOrGetTag builds a hierarchical path from its parent`() = runTest(dispatcher) {
+        val repo = repository()
+        val ap = repo.createOrGetTag("AP", null)
+        val chittoor = repo.createOrGetTag("Chittoor", ap.tagId)
+        assertEquals("AP/Chittoor", chittoor.path)
+        assertEquals(ap.tagId, chittoor.parentTagId)
+    }
+
+    @Test
+    fun `assign and unassign tags on a Party`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val tag = repo.createOrGetTag("Dealer", null)
+
+        repo.assignTag("co-1", partyId, tag.tagId)
+        assertEquals(listOf("Dealer"), repo.getTagsForParty("co-1", partyId).map { it.name })
+
+        repo.unassignTag("co-1", partyId, tag.tagId)
+        assertTrue(repo.getTagsForParty("co-1", partyId).isEmpty())
+    }
+
+    // ============================== NOTES ==============================
+
+    @Test
+    fun `notes are ordered newest first`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        time.now = 1_000L
+        repo.addNote("co-1", partyId, "First note", null)
+        time.now = 2_000L
+        repo.addNote("co-1", partyId, "Second note", null)
+
+        val notes = repo.getNotesForParty("co-1", partyId, 1, 20)
+        assertEquals(listOf("Second note", "First note"), notes.items.map { it.body })
+    }
+
+    @Test
+    fun `a note can link to a voucher by stable id`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val note = repo.addNote("co-1", partyId, "2 pieces short", "v-1842")
+        assertEquals("v-1842", note.linkedVoucherId)
+    }
+
+    @Test
+    fun `editing a note updates its body and updatedAt`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val note = repo.addNote("co-1", partyId, "Original", null)
+        time.now = 5_000L
+        val edited = repo.editNote("co-1", note.noteId, "Edited body")
+
+        assertEquals("Edited body", edited?.body)
+        assertEquals(5_000L, edited?.updatedAt)
+    }
+
+    @Test
+    fun `deleting a note removes it from the party's list`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val note = repo.addNote("co-1", partyId, "To be deleted", null)
+        repo.deleteNote("co-1", note.noteId)
+
+        assertTrue(repo.getNotesForParty("co-1", partyId, 1, 20).items.isEmpty())
+    }
+
+    @Test
+    fun `notes are company isolated`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyIdA = repo.createProspect("co-A", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "A Party")).partyId
+        repo.addNote("co-A", partyIdA, "Note in company A", null)
+
+        assertTrue(repo.getNotesForParty("co-B", partyIdA, 1, 20).items.isEmpty())
+    }
+
     // ============================== helpers ==============================
 
     private suspend fun partyIdFor(repo: com.budcom.android.feature.party.domain.repository.PartyRepository, ledgerId: String): String =
@@ -424,6 +635,9 @@ private class FakePartyContactPersonDao : PartyContactPersonDao {
     override suspend fun upsert(entity: PartyContactPersonEntity) {
         store[key(entity.companyId, entity.contactPersonId)] = entity
     }
+    override suspend fun delete(companyId: String, contactPersonId: String) {
+        store.remove(key(companyId, contactPersonId))
+    }
 }
 
 private class FakeTagDao : TagDao {
@@ -431,6 +645,7 @@ private class FakeTagDao : TagDao {
     val assignments = mutableSetOf<Triple<String, String, String>>()
 
     override suspend fun findById(tagId: String): TagEntity? = tags[tagId]
+    override suspend fun findAll(): List<TagEntity> = tags.values.sortedBy { it.path.lowercase() }
     override suspend fun findByNameUnderParent(name: String, parentTagId: String?): TagEntity? =
         tags.values.firstOrNull { it.name == name && it.parentTagId == parentTagId }
     override suspend fun findChildren(parentTagId: String?): List<TagEntity> = tags.values.filter { it.parentTagId == parentTagId }
@@ -459,4 +674,28 @@ private class FakeTagDao : TagDao {
                 createdAt = tag.createdAt,
             )
         }
+}
+
+private class FakePartyNoteDao : com.budcom.android.feature.party.data.local.PartyNoteDao {
+    val store = mutableMapOf<Pair<String, String>, com.budcom.android.feature.party.data.local.PartyNoteEntity>()
+    private fun key(companyId: String, noteId: String) = companyId to noteId
+
+    override suspend fun pageForParty(
+        companyId: String,
+        partyId: String,
+        limit: Int,
+        offset: Int,
+    ): List<com.budcom.android.feature.party.data.local.PartyNoteEntity> =
+        store.values.filter { it.companyId == companyId && it.partyId == partyId }
+            .sortedByDescending { it.createdAt }.drop(offset).take(limit)
+    override suspend fun countForParty(companyId: String, partyId: String): Int =
+        store.values.count { it.companyId == companyId && it.partyId == partyId }
+    override suspend fun findById(companyId: String, noteId: String): com.budcom.android.feature.party.data.local.PartyNoteEntity? =
+        store[key(companyId, noteId)]
+    override suspend fun upsert(entity: com.budcom.android.feature.party.data.local.PartyNoteEntity) {
+        store[key(entity.companyId, entity.noteId)] = entity
+    }
+    override suspend fun delete(companyId: String, noteId: String) {
+        store.remove(key(companyId, noteId))
+    }
 }

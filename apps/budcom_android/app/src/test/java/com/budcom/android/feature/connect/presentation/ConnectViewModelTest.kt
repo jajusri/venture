@@ -277,6 +277,32 @@ class ConnectViewModelTest {
     }
 
     @Test
+    fun `tapping a row emits OpenPartyDetail with its partyId`() = runTest(dispatcher) {
+        val vm = createViewModel()
+        advanceUntilIdle()
+        var emitted: ConnectEffect? = null
+        val job = launch { vm.effects.collect { emitted = it } }
+        advanceUntilIdle()
+        vm.onEvent(ConnectEvent.RowTapped("party-123"))
+        advanceUntilIdle()
+        assertEquals(ConnectEffect.OpenPartyDetail("party-123"), emitted)
+        job.cancel()
+    }
+
+    @Test
+    fun `add prospect tap emits OpenProspectCreate`() = runTest(dispatcher) {
+        val vm = createViewModel()
+        advanceUntilIdle()
+        var emitted: ConnectEffect? = null
+        val job = launch { vm.effects.collect { emitted = it } }
+        advanceUntilIdle()
+        vm.onEvent(ConnectEvent.AddProspectTapped)
+        advanceUntilIdle()
+        assertEquals(ConnectEffect.OpenProspectCreate, emitted)
+        job.cancel()
+    }
+
+    @Test
     fun `offline flag reflects connectivity observer`() = runTest(dispatcher) {
         val connectivity = FakeConnectivity(false)
         val vm = createViewModel(connectivity = connectivity)
@@ -336,6 +362,42 @@ private class FakePartyRepository : PartyRepository {
     override suspend fun confirmFieldFromTally(companyId: String, partyId: String, fieldName: String, tallyValue: String?) =
         FieldProvenanceState.ConfirmedFromTally
     override suspend fun reconcilePartiesFromEligibleLedgers(companyId: String, seeds: List<EligibleLedgerSeed>): List<Party> = emptyList()
+
+    override suspend fun createProspect(
+        companyId: String,
+        draft: com.budcom.android.feature.party.domain.model.ProspectDraft,
+    ): Party = error("unused")
+    override suspend fun getSourceLinkForParty(companyId: String, partyId: String): PartySourceLink? = error("unused")
+    override suspend fun upsertContactPerson(
+        companyId: String,
+        partyId: String,
+        contactPersonId: String?,
+        name: String,
+        designation: String?,
+        mobile: String?,
+        whatsappNumber: String?,
+        email: String?,
+        isPrimary: Boolean,
+    ): PartyContactPerson = error("unused")
+    override suspend fun deleteContactPerson(companyId: String, contactPersonId: String): Unit = error("unused")
+    override suspend fun getAllTags(): List<Tag> = error("unused")
+    override suspend fun createOrGetTag(name: String, parentTagId: String?): Tag = error("unused")
+    override suspend fun assignTag(companyId: String, partyId: String, tagId: String): Unit = error("unused")
+    override suspend fun unassignTag(companyId: String, partyId: String, tagId: String): Unit = error("unused")
+    override suspend fun addNote(
+        companyId: String,
+        partyId: String,
+        body: String,
+        linkedVoucherId: String?,
+    ): com.budcom.android.feature.party.domain.model.PartyNote = error("unused")
+    override suspend fun editNote(companyId: String, noteId: String, body: String): com.budcom.android.feature.party.domain.model.PartyNote? = error("unused")
+    override suspend fun deleteNote(companyId: String, noteId: String): Unit = error("unused")
+    override suspend fun getNotesForParty(
+        companyId: String,
+        partyId: String,
+        page: Int,
+        pageSize: Int,
+    ): com.budcom.android.feature.party.domain.model.PartyNotePage = error("unused")
 }
 
 private class FakeLedgerSnapshotPort(private val byCompany: Map<String, List<Ledger>> = emptyMap()) : LedgerSnapshotPort {
