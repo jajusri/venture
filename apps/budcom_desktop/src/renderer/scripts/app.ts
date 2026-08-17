@@ -21,8 +21,28 @@ import type { ConnectorLifecycleStatus } from '../../application/connector-lifec
 import type { MobileAccessStatus } from '../../application/mobile-access-status-service.js';
 import type { RemovableVolumeInfo } from '../../application/private-storage/removable-volume-enumerator.js';
 import type { ChooseStorageModeResult, StorageGateState } from '../../application/private-storage/private-storage-types.js';
-import { mapDiscoveryUserMessage } from '../../application/connector-error.js';
 import { renderStorageGate } from './storage-gate.js';
+
+// Renderer code is emitted as browser ESM, while application services are emitted as CommonJS.
+// Importing a runtime value from application/connector-error.js therefore passes TypeScript but
+// fails when Chromium links the packaged module. Keep this presentation-only mapping inside the
+// renderer boundary. Type-only application imports remain safe because they are erased.
+function mapDiscoveryUserMessage(status: string, reason?: string): string {
+  if (reason) return reason;
+  switch (status) {
+    case 'EMPTY':
+      return 'No companies were found in Tally.';
+    case 'UNAVAILABLE':
+    case 'TIMEOUT':
+      return 'Tally is unavailable for company discovery.';
+    case 'DENIED':
+      return 'Company discovery is not permitted by connector policy.';
+    case 'MALFORMED':
+      return 'Company discovery returned unexpected data.';
+    default:
+      return 'Unable to load companies from the connector.';
+  }
+}
 
 export interface DesktopBridge {
   getDashboardState(): Promise<DashboardState>;
