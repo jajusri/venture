@@ -14,6 +14,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.budcom.android.feature.company.presentation.CompanyRoute
 import com.budcom.android.feature.connect.presentation.ConnectRoute
+import com.budcom.android.feature.connect.presentation.PartyDetailRoute
+import com.budcom.android.feature.connect.presentation.PartyDetailViewModel
+import com.budcom.android.feature.connect.presentation.ProspectCreateRoute
 import com.budcom.android.feature.dashboard.presentation.DashboardRoute
 import com.budcom.android.feature.diagnostics.presentation.DiagnosticsRoute
 import com.budcom.android.feature.discovery.presentation.ConnectorDiscoveryRoute
@@ -225,6 +228,42 @@ fun BudcomNavHost(
                 },
                 onOpenVouchers = { query ->
                     navController.navigate(Routes.vouchers(query))
+                },
+                onOpenPartyDetail = { partyId ->
+                    navController.navigate(Routes.partyDetail(partyId))
+                },
+                onOpenProspectCreate = {
+                    navController.navigate(Routes.PROSPECT_CREATE)
+                },
+            )
+        }
+        composable(
+            route = Routes.PARTY_DETAIL,
+            arguments = listOf(
+                navArgument(PartyDetailViewModel.PARTY_ID_ARG) {
+                    type = NavType.StringType
+                },
+            ),
+        ) {
+            PartyDetailRoute(
+                onOpenLedgerStatement = { ledgerId ->
+                    navController.navigate(Routes.ledgerStatement(ledgerId))
+                },
+                onOpenVouchers = { query ->
+                    navController.navigate(Routes.vouchers(query))
+                },
+                onOpenVoucherDetails = { voucherId ->
+                    navController.navigate(Routes.voucherDetails(voucherId))
+                },
+            )
+        }
+        composable(route = Routes.PROSPECT_CREATE) {
+            ProspectCreateRoute(
+                onBack = { navController.popBackStack() },
+                onCreated = { partyId ->
+                    navController.navigate(Routes.partyDetail(partyId)) {
+                        popUpTo(Routes.PROSPECT_CREATE) { inclusive = true }
+                    }
                 },
             )
         }

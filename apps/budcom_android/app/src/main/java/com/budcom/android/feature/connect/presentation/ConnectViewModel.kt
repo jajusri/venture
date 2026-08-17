@@ -120,6 +120,8 @@ class ConnectViewModel @Inject constructor(
                     load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = false)
                 }
             }
+            is ConnectEvent.RowTapped -> _effects.tryEmit(ConnectEffect.OpenPartyDetail(event.partyId))
+            ConnectEvent.AddProspectTapped -> _effects.tryEmit(ConnectEffect.OpenProspectCreate)
             is ConnectEvent.ViewLedgerTapped -> {
                 val ledgerId = event.ledgerId
                 if (ledgerId.isNullOrBlank()) {

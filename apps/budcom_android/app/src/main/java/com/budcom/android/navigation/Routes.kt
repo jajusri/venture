@@ -22,11 +22,16 @@ object Routes {
     const val VOUCHER_DETAILS = "vouchers/detail/{voucherId}"
     const val LEDGER_STATEMENT = "ledgers/statement/{ledgerId}"
     const val CONNECT = "connect?q={q}"
+    const val PARTY_DETAIL = "connect/party/{partyId}"
+    const val PROSPECT_CREATE = "connect/prospect/new"
 
     const val QUERY_ARG = "q"
 
     fun connect(query: String = ""): String =
         "connect?q=${Uri.encode(query)}"
+
+    fun partyDetail(partyId: String): String =
+        "connect/party/${Uri.encode(partyId)}"
 
     fun ledgers(query: String = ""): String =
         "ledgers?q=${Uri.encode(query)}"

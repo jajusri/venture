@@ -15,11 +15,15 @@ import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -58,6 +62,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun ConnectRoute(
     onOpenLedgerStatement: (String) -> Unit,
     onOpenVouchers: (String) -> Unit,
+    onOpenPartyDetail: (String) -> Unit,
+    onOpenProspectCreate: () -> Unit,
     viewModel: ConnectViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -69,6 +75,8 @@ fun ConnectRoute(
             when (effect) {
                 is ConnectEffect.OpenLedgerStatement -> onOpenLedgerStatement(effect.ledgerId)
                 is ConnectEffect.OpenVouchers -> onOpenVouchers(effect.query)
+                is ConnectEffect.OpenPartyDetail -> onOpenPartyDetail(effect.partyId)
+                ConnectEffect.OpenProspectCreate -> onOpenProspectCreate()
                 is ConnectEffect.LaunchCall -> {
                     runCatching { context.startActivity(ConnectContactActions.callIntent(effect.phoneE164)) }
                         .onFailure { noticeMessage = "No dialer app is available." }
@@ -129,6 +137,16 @@ fun ConnectScreen(
         modifier = modifier.fillMaxSize().testTag("connect_screen"),
         topBar = {
             TopAppBar(title = { Text(stringResource(R.string.connect_title)) })
+        },
+        floatingActionButton = {
+            if (state.selectedTab == ConnectTab.Prospects) {
+                FloatingActionButton(
+                    onClick = { onEvent(ConnectEvent.AddProspectTapped) },
+                    modifier = Modifier.testTag("connect_add_prospect"),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add prospect")
+                }
+            }
         },
     ) { innerPadding ->
         Box(
@@ -245,6 +263,7 @@ fun ConnectScreen(
 @Composable
 private fun ConnectRowCard(row: ConnectRowUi, onEvent: (ConnectEvent) -> Unit) {
     Card(
+        onClick = { onEvent(ConnectEvent.RowTapped(row.partyId)) },
         modifier = Modifier
             .fillMaxWidth()
             .testTag("connect_row_${row.partyId}")

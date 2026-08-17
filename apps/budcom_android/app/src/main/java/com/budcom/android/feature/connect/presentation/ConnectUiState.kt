@@ -58,6 +58,8 @@ data class ConnectRowUi(
 sealed interface ConnectEffect {
     data class OpenLedgerStatement(val ledgerId: String) : ConnectEffect
     data class OpenVouchers(val query: String) : ConnectEffect
+    data class OpenPartyDetail(val partyId: String) : ConnectEffect
+    data object OpenProspectCreate : ConnectEffect
     data class LaunchCall(val phoneE164: String) : ConnectEffect
     data class LaunchWhatsApp(val phoneE164: String) : ConnectEffect
     data class ShowMessage(val message: String) : ConnectEffect
@@ -70,6 +72,8 @@ sealed interface ConnectEvent {
     data object LoadNextPage : ConnectEvent
     data class TabChanged(val tab: ConnectTab) : ConnectEvent
     data class SearchChanged(val query: String) : ConnectEvent
+    data class RowTapped(val partyId: String) : ConnectEvent
+    data object AddProspectTapped : ConnectEvent
     data class ViewLedgerTapped(val ledgerId: String?) : ConnectEvent
     data class ViewVouchersTapped(val ledgerName: String) : ConnectEvent
     data class CallTapped(val phoneE164: String?) : ConnectEvent
