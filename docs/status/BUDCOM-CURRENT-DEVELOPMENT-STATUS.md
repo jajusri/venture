@@ -5,23 +5,27 @@
 
 ## 1. Current phase
 
-**MVP-1 PRE-SIGNING TECHNICAL-DEBT CLOSURE — AUTOMATED WORK COMPLETE (2026-08-17)**
+**MVP-1.1-A UNIVERSAL PARTY FOUNDATION — AUTOMATED WORK COMPLETE, READY FOR REVIEW (2026-08-17)**
+**MVP-1 PRE-SIGNING TECHNICAL-DEBT CLOSURE — AUTOMATED WORK COMPLETE (2026-08-17, prior session, unchanged this session)**
 **PUBLIC RELEASE BLOCKED — SIGNING ONLY (Windows code-signing + Android release keystore, neither exists; Android `applicationId` also undecided)**
-**ANDROID `continuity.22` — HUMAN VISUAL APPROVAL COMPLETE (unchanged this session)**
-**DESKTOP `0.4.18` — HUMAN VISUAL/RUNTIME APPROVAL COMPLETE (owner-reported, 2026-08-17, unchanged this session)**
-**TD-004 / TD-023 / TD-025 — FIXED (2026-08-17). TD-026 — CORRECTED (already implemented). TD-009 / TD-021 / TD-022 / TD-027 — REVIEWED, REFINED, NOT UNILATERALLY ACTIONED (each needs architectural scoping or a product/security-policy decision)**
+**ANDROID `continuity.23` — new candidate this session (schema/domain/repository work only, no UI/visual change; supersedes owner-approved `continuity.22`, NOT yet installed over it — see §11)**
+**DESKTOP `0.4.18` — HUMAN VISUAL/RUNTIME APPROVAL COMPLETE (owner-reported, 2026-08-17, unchanged this session — Desktop was not touched)**
+**TD-004 / TD-023 / TD-025 — FIXED (2026-08-17, prior session). TD-026 — CORRECTED (already implemented). TD-009 / TD-021 / TD-022 / TD-027 — REVIEWED, REFINED, NOT UNILATERALLY ACTIONED (each needs architectural scoping or a product/security-policy decision)**
 
 ## 2. Branch / HEAD
 
 - Branch: `main`
-- HEAD at end of this session: `f248cbd` (chore: bump desktop 0.4.19->0.4.20 for pre-signing
-  technical-debt closure candidate). One documentation-only commit follows this to record the
-  checkpoint itself — use `git log -1` for the self-referential tip.
-- Versions: Desktop installed/owner-approved `0.4.18`; Desktop packaged pre-signing candidate
-  `0.4.20` (unsigned, not installed over `0.4.18`) supersedes the `0.4.19` TD-033/034 candidate
-  from earlier the same day; Connector `0.4.6` (unchanged); Android `0.1.1-continuity.22`
-  (versionCode 23, installed/owner-approved) — Android source unchanged this session, confirmed via
-  a full regression re-run.
+- HEAD at end of this session: see `git log -1` — this session's commits (in order) adopt the
+  MVP-1.1 Connect/Universal-Party planning references, implement the MVP-1.1-A Party foundation,
+  bump the Android candidate, then record status/ledger/checkpoint. One documentation-only commit
+  records the checkpoint itself, so it is necessarily self-referential — use `git log -1`/
+  `git log --oneline -6` for the exact tip rather than a hash quoted here.
+- Versions: Desktop installed/owner-approved `0.4.18` (**unchanged this session — Desktop was not
+  touched**); Connector `0.4.6` (**unchanged this session**); Android owner-approved installed
+  candidate remains `0.1.1-continuity.22` (versionCode 23) — this session's new
+  `0.1.1-continuity.23` (versionCode 24) candidate exists as a built, tested, **not-yet-installed**
+  APK (see §11) since MVP-1.1-A added Room schema/domain/repository code with zero UI/visual
+  change to verify against.
 - Not pushed to `origin`.
 
 ## 3. Current evidence
@@ -97,7 +101,26 @@ Full technical-debt detail: `docs/technical-debt/registry.md`.
 (external to the repo — see `D:\BUDCOM-Design-Archive\00_README_AND_DECISIONS\BUDCOM-UI-MASTER-STORAGE-PLAN.txt`
 for the archive's own governance of this file).
 
-## 5. This session's work (pre-signing technical-debt closure)
+## 5. This session's work (MVP-1.1-A Universal Party Foundation)
+
+Reconciled the frozen `docs/architecture/BUDCOM-MVP-1-1-CONNECT-UNIVERSAL-PARTY-ARCHITECTURE.md`
+and locked `docs/planning/BUDCOM-CONNECT-CONTACTS-UNIVERSAL-PARTY-REFERRAL-TREE-SPEC.md` against
+repository evidence — no genuine conflict found; both previously-untracked files (plus
+`docs/product-design/`, `docs/product/`) are now tracked in git, per the architecture file's own
+first instruction to adopt it into the canonical repository location. Implemented MVP-1.1-A end to
+end: six new Room tables/DAOs under `feature/party/` (Party, PartySourceLink,
+PartyFieldProvenance, PartyContactPerson, Tag, PartyTagAssignment), a schema-verified
+`MIGRATION_5_6`, full repository/use-case layer, the exact-10-digit Alias-phone rule (new shared
+`core/util/PhoneNumberNormalizer`, also now used by `WhatsAppRecipientResolver`), a conservative
+documented ledger-group eligibility policy for Party seeding, and a fire-and-forget/
+failure-isolated reconciliation hook in `SyncViewModel`. Zero Connect UI built (deliberately —
+1.1-A scope). 43 new tests (20 JVM + 23 instrumented, the latter run and passing on a connected
+physical device, not simulated); full regression clean (§10). Android candidate bumped to
+`continuity.23`; **not installed** — the connected device has no existing BUDCOM install and its
+authorization for a standing install is unconfirmed in this session's context (§11). Full detail:
+`docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`.
+
+## 6. Prior session's work (pre-signing technical-debt closure)
 
 Built a complete non-signing gap inventory across the full technical-debt registry (not limited to
 a fixed list) and actioned every safe FIX NOW/IMPROVE NOW item found. Full detail in
@@ -109,9 +132,9 @@ unilateral action: TD-009, TD-021, TD-022, TD-027 — each documented with the s
 (architectural scoping, or a product/security-policy decision) it wasn't actioned this session.
 Packaged one coherent final pre-signing Desktop candidate (`0.4.20`) after all changes stabilized,
 superseding the `0.4.19` candidate from earlier the same day. Full four-component regression
-re-run clean at session end (§9).
+re-run clean at that session's end (see the "prior session" subsection under §10 below).
 
-## 6. Prior session's work (MVP-1 public-release preparation, part 1)
+## 7. Prior-prior session's work (MVP-1 public-release preparation, part 1)
 
 - Produced `docs/planning/BUDCOM-MVP-1-PUBLIC-RELEASE-GATE-MATRIX.md` — the canonical gate-by-gate
   public-release readiness view (26 gates evaluated).
@@ -143,9 +166,9 @@ re-run clean at session end (§9).
   `assembleDebugAndroidTest`, and `tests/contract` (5/5) all green. Desktop `tsc` (3 configs) and
   `vitest` (706/706) green.
 
-See prior UI/UX work in §7 below (unchanged, carried forward from the prior phase).
+See prior UI/UX work in §8 below (unchanged, carried forward from the prior phase).
 
-## 7. Major UI/UX work (prior phase, unchanged this session)
+## 8. Major UI/UX work (prior phase, unchanged this session)
 
 - Android Home (`DashboardScreen.kt`) reconciled against the approved Stitch master: permanent
   Universal Search entry, compact Fresh/last-sync/Tally-connected status row, Vouchers/Ledgers as
@@ -156,7 +179,7 @@ See prior UI/UX work in §7 below (unchanged, carried forward from the prior pha
 - Approved Android visual masters implemented (`9b29abf`); approved BUDCOM visual language applied
   to Desktop (`96a7a55`, corrected in `e20053f` after the `0.4.17` runtime regression).
 
-## 8. Permanent rule — checkpoint discipline
+## 9. Permanent rule — checkpoint discipline
 
 **Every future meaningful BUDCOM AI development work unit must end with:**
 
@@ -170,44 +193,76 @@ At the start of a new AI development session: read this checkpoint; inspect `git
 Git history; read the relevant domain status and Development Ledger; reconstruct state from
 repository evidence; continue rather than redo completed work.
 
-## 9. Test/build status (this session, final)
+## 10. Test/build status (this session — MVP-1.1-A)
 
-- **Android:** `testDebugUnitTest` 1,030/1,030, `testReleaseUnitTest` 1,030/1,030, `lintDebug`
-  0 errors, `lintRelease` 0 errors, `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`
-  — all BUILD SUCCESSFUL. Source unchanged this session — confirmation run, not expected to surface
-  anything new; it didn't. `connectedAndroidTest` — not run (only reachable device is the owner's
-  real paired physical phone; judged too invasive to run autonomously without explicit go-ahead).
-- **Desktop:** `tsc --noEmit` clean across all three configs (main/preload/renderer); full
-  `npm run build` clean. `vitest run` — 711/711 passing (up from 708 at session start — 3 new: 2
-  TD-004 regression tests, 1 startup-diagnostics redaction test).
-- **Contract:** `tests/contract` — 5/5 passing, unchanged.
-- **Connector:** independently re-run in full this session (touched by TD-023/026 and the
-  temp-directory-leak fix) — 159 files/1,423 tests passing, ESLint clean, `tsc`/`npm run build`
-  clean.
+- **Android:** `testDebugUnitTest` **1,073/1,073** (up from 1,030 — 43 new JVM/instrumented
+  tests), `testReleaseUnitTest` passing (full re-run), `lintDebug` 0 errors, `lintRelease` 0
+  errors, `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest` — all BUILD SUCCESSFUL.
+  `connectedDebugAndroidTest`, scoped to the new/changed instrumented classes (Room migration +
+  4 new DAO test files): **23/23 passing on a connected physical device** (`I2407i`) — installed to
+  the debug-suffixed `com.budcom.android.debug` package, which cannot collide with any production
+  install; this device has no existing BUDCOM install at all, unlike the prior session's situation
+  below.
+- **Desktop / Connector / Contract:** not touched this session — see the "prior session" subsection
+  immediately below for their last verified state (unchanged).
 
-## 10. Known out-of-scope untracked files (leave alone)
+### Test/build status (prior session, pre-signing technical-debt closure, for reference)
+
+- Android: `testDebugUnitTest`/`testReleaseUnitTest` 1,030/1,030, both lints 0 errors, all three
+  assembles green. `connectedAndroidTest` not run that session — the only reachable device was the
+  owner's real paired physical phone, judged too invasive without explicit go-ahead.
+- Desktop: `tsc --noEmit` clean across all three configs; `vitest run` 711/711.
+- Contract: `tests/contract` 5/5 passing.
+- Connector: 159 files/1,423 tests passing, ESLint clean, `tsc`/`npm run build` clean.
+
+## 11. Android install status (this session)
+
+Tests passed and ADB was available (device `I2407i`), but **no `adb install` was performed** — see
+`docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` §19 for the full reasoning: this device has no
+existing BUDCOM install (so there is nothing to preserve, but also nothing confirming it's the
+right device for a standing install), and this session has no context establishing its ownership/
+authorization. The owner's previously-approved `continuity.22` install is untouched. A tested,
+built `continuity.23` debug APK is available at
+`apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk`
+(SHA-256 `3bdbdc3e74ad246514488f928a066b3407ae592b912394b7d81e0a0d2ba40f48`) if the owner wants it
+installed somewhere specific.
+
+## 12. Known previously-untracked files — now adopted (this session)
 
 ```
+docs/architecture/BUDCOM-MVP-1-1-CONNECT-UNIVERSAL-PARTY-ARCHITECTURE.md
 docs/planning/BUDCOM-CONNECT-CONTACTS-UNIVERSAL-PARTY-REFERRAL-TREE-SPEC.md
 docs/product-design/
 docs/product/
 ```
 
-Pre-existing Connect/Universal-Party/post-MVP product-planning artifacts. Out of every pass's hard
-boundaries — do not track, edit, or delete without explicit instruction.
+Previously flagged by a prior session (pre-MVP-1.1) as "out of every pass's hard boundaries — do
+not track... without explicit instruction." This session's explicit governing instruction was to
+treat the architecture file as authoritative and implement MVP-1.1-A from it — that supersedes the
+prior caution note (a scope boundary from unrelated work, not a conflicting product decision, see
+`docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` §1). All four paths are now tracked in git, per the
+architecture file's own first instruction to adopt it into the canonical repository location.
 
-## 11. Exact NEXT TASK
+## 13. Exact NEXT TASK
 
-**Obtain and configure production signing credentials — the sole remaining blocker to public
-release, confirmed unchanged by this session's full non-signing gap-inventory pass:**
-1. Windows code-signing certificate (see gate matrix §6 for the exact `electron-builder.yml` /
-   `CSC_LINK` setup steps).
-2. Android release keystore, plus an explicit product-owner decision on the public Play-Store
-   `applicationId` (currently undecided — gate matrix §7) before generating/attaching it.
+**Two independent next tasks, neither blocking the other:**
 
-Both are human/external actions (obtaining a certificate, generating and safeguarding a keystore,
-deciding a permanent public package identity) that this or any autonomous session should not
-perform unilaterally. Once available, re-run `npm run dist:win` (Desktop) and
+1. **MVP-1.1-B — Connect Browser + Customers/Prospects + deep links** (per the architecture file's
+   own §29/§39 sequencing) — **do not begin without explicit go-ahead** (Part 23 of this session's
+   governing instruction). Before starting: review the conservative ledger-eligibility default
+   (`docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` §11) against real accounting data, and decide
+   whether/where to install the `continuity.23` candidate for a live smoke test with a real paired
+   Tally company (§11 above).
+2. **Obtain and configure production signing credentials** — the sole remaining blocker to public
+   release, unchanged by this session (MVP-1.1-A did not touch signing/release plumbing):
+   1. Windows code-signing certificate (see gate matrix §6 for the exact `electron-builder.yml` /
+      `CSC_LINK` setup steps).
+   2. Android release keystore, plus an explicit product-owner decision on the public Play-Store
+      `applicationId` (currently undecided — gate matrix §7) before generating/attaching it.
+
+Both signing items are human/external actions (obtaining a certificate, generating and
+safeguarding a keystore, deciding a permanent public package identity) that this or any autonomous
+session should not perform unilaterally. Once available, re-run `npm run dist:win` (Desktop) and
 `./gradlew assembleRelease`/`bundleRelease` (Android) to produce genuinely signed public artifacts,
 then complete artifact-level regression against the signed builds specifically.
 
@@ -216,6 +271,7 @@ then complete artifact-level regression against the signed builds specifically.
 whether trusted-LAN bind mode should require secure pairing (TD-009); TD-025's remaining
 `desktop:restart-connector` stale-config sub-item, reasonably Post-MVP-1.
 
-**Not started:** external/public distribution (no push, no store submission, nothing published),
-MVP-1.1. Do not begin either before signing exists and the product owner explicitly authorizes
-distribution.
+**Not started:** external/public distribution (no push, no store submission, nothing published);
+MVP-1.1-B onward (Connect Browser UI and everything after it — MVP-1.1-A itself is now technically
+complete, see §1/§5). Do not begin distribution before signing exists and the product owner
+explicitly authorizes it; do not begin MVP-1.1-B without explicit go-ahead.
