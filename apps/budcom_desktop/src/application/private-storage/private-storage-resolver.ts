@@ -30,16 +30,52 @@ export function privateConnectorDataDir(driveLetter: string, vaultId: string): s
 }
 
 /**
+ * TD-034: a marker file that exists but fails to parse (e.g. a BOM-prefixed write from a tool
+ * other than BUDCOM's own `JSON.stringify`, or partial/corrupt content) must never be silently
+ * treated the same as "no marker here" — that previously fell through to `createPrivateVault()`
+ * minting a brand-new vault right next to the unreadable one, orphaning it. Distinguishing this
+ * from a genuinely absent marker only matters on the adoption path (`readExistingVaultOnDrive`,
+ * below) — the ongoing resolve/watchdog paths already fail closed correctly by treating any
+ * non-matching marker as "not present," which is the desired behavior there.
+ */
+export class UnreadablePrivateVaultMarkerError extends Error {
+  constructor(driveLetter: string, cause: unknown) {
+    super(
+      `A BUDCOM private-storage marker already exists on ${driveLetter} but could not be read` +
+        `${cause instanceof Error ? ` (${cause.message})` : ''}. To avoid orphaning whatever data ` +
+        'it points to, BUDCOM will not create a new vault here. Choose a different drive, or ' +
+        'restore this drive\'s marker file if it was corrupted.',
+    );
+    this.name = 'UnreadablePrivateVaultMarkerError';
+  }
+}
+
+/**
  * Reads whatever BUDCOM vault marker already exists on [driveLetter], if any — used when the
  * user picks a drive at setup time so an existing vault (e.g. from a prior interrupted setup, or
  * a Desktop reinstall pointed at the same USB) is adopted rather than a second vault being
- * created alongside it.
+ * created alongside it. Throws [UnreadablePrivateVaultMarkerError] when a marker file is present
+ * but cannot be parsed — the caller must not treat that the same as "no marker" (see TD-034).
  */
 export function readExistingVaultOnDrive(
   driveLetter: string,
   fsImpl: PrivateStorageResolverFsPort = fs,
 ): PrivateStorageVaultMarker | null {
-  return readMarker(driveLetter, fsImpl);
+  const markerPath = markerPathOf(driveLetter);
+  if (!fsImpl.existsSync(markerPath)) return null;
+  try {
+    const parsed = JSON.parse(fsImpl.readFileSync(markerPath, 'utf8')) as Partial<PrivateStorageVaultMarker>;
+    if (typeof parsed.vaultId !== 'string' || !parsed.vaultId) {
+      throw new Error('marker file has no valid vaultId');
+    }
+    return {
+      schemaVersion: 1,
+      vaultId: parsed.vaultId,
+      createdAt: typeof parsed.createdAt === 'string' ? parsed.createdAt : '',
+    };
+  } catch (error) {
+    throw new UnreadablePrivateVaultMarkerError(driveLetter, error);
+  }
 }
 
 function readMarker(driveLetter: string, fsImpl: PrivateStorageResolverFsPort): PrivateStorageVaultMarker | null {

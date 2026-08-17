@@ -78,6 +78,102 @@ describe('storage-gate retry button — concurrency guard', () => {
   });
 });
 
+// TD-033 regression: choose-storage-mode must never silently switch an already-configured
+// installation to a different storage mode — the setup picker reopens for an existing install via
+// the "storage not connected" screen's Locate button, not only at genuine first-run.
+describe('storage-gate setup flow — TD-033 switch confirmation', () => {
+  it('requires a second Continue click before an existing installation is switched, and passes confirmSwitch on the retry', async () => {
+    document.body.innerHTML = STORAGE_GATE_MARKUP;
+    const chooseStorageMode = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        requiresConfirmation: true,
+        message: 'This will stop using your current private removable storage.',
+      })
+      .mockResolvedValueOnce({ ok: true, state: { kind: 'ready', mode: 'standard' } });
+    window.budcomDesktop = {
+      getStorageStatus: vi.fn(async () => ({ kind: 'first-run' as const })),
+      chooseStorageMode,
+    } as unknown as typeof window.budcomDesktop;
+
+    const resultPromise = renderStorageGate();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const continueButton = document.getElementById('storage-gate-continue') as HTMLButtonElement;
+    const errorEl = document.getElementById('storage-gate-setup-error') as HTMLElement;
+
+    // Standard radio is checked by default in STORAGE_GATE_MARKUP.
+    continueButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(chooseStorageMode).toHaveBeenCalledTimes(1);
+    expect(chooseStorageMode).toHaveBeenNthCalledWith(1, { mode: 'standard', confirmSwitch: false });
+    expect(errorEl.classList.contains('hidden')).toBe(false);
+    expect(errorEl.textContent).toContain('current private removable storage');
+    expect(errorEl.textContent).toContain('Click Continue again to confirm');
+    expect(document.getElementById('storage-gate-overlay')?.classList.contains('hidden')).toBe(false);
+
+    continueButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(chooseStorageMode).toHaveBeenCalledTimes(2);
+    expect(chooseStorageMode).toHaveBeenNthCalledWith(2, { mode: 'standard', confirmSwitch: true });
+    await resultPromise;
+    expect(document.getElementById('storage-gate-overlay')?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('changing the selection between clicks starts over unconfirmed rather than confirming the new choice', async () => {
+    document.body.innerHTML = STORAGE_GATE_MARKUP;
+    const chooseStorageMode = vi.fn().mockResolvedValue({
+      ok: false,
+      requiresConfirmation: true,
+      message: 'This will switch storage modes.',
+    });
+    window.budcomDesktop = {
+      getStorageStatus: vi.fn(async () => ({ kind: 'first-run' as const })),
+      listRemovableVolumes: vi.fn(async () => [
+        { driveLetter: 'E:\\', label: 'BUDCOM-USB', fileSystem: 'NTFS', sizeBytes: 1000, freeBytes: 500 },
+      ]),
+      chooseStorageMode,
+    } as unknown as typeof window.budcomDesktop;
+
+    void renderStorageGate();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const continueButton = document.getElementById('storage-gate-continue') as HTMLButtonElement;
+    const standardRadio = document.getElementById('storage-gate-mode-standard') as HTMLInputElement;
+    const privateRadio = document.getElementById('storage-gate-mode-private') as HTMLInputElement;
+
+    continueButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(chooseStorageMode).toHaveBeenNthCalledWith(1, { mode: 'standard', confirmSwitch: false });
+
+    // User switches the radio selection instead of confirming the original warned-about choice.
+    standardRadio.checked = false;
+    privateRadio.checked = true;
+    privateRadio.dispatchEvent(new Event('change', { bubbles: true }));
+    // Lets the async refreshDriveList() populate the (real, non-mocked) drive-letter radio list.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    continueButton.dispatchEvent(new Event('click', { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Still unconfirmed: the newly-selected choice was never itself warned about and confirmed.
+    expect(chooseStorageMode).toHaveBeenLastCalledWith(
+      expect.objectContaining({ mode: 'private-removable', confirmSwitch: false }),
+    );
+  });
+});
+
 describe('storage-gate resolving state — bounded re-poll (P1: false "storage not connected")', () => {
   beforeEach(() => {
     vi.useFakeTimers();

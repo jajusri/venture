@@ -69,7 +69,11 @@ export interface DesktopBridge {
   revokeTrustedPairingDevice(credentialId: string): Promise<{ ok: boolean; message: string }>;
   getStorageStatus(): Promise<StorageGateState>;
   listRemovableVolumes(): Promise<readonly RemovableVolumeInfo[]>;
-  chooseStorageMode(input: { mode: 'standard' } | { mode: 'private-removable'; driveLetter: string }): Promise<ChooseStorageModeResult>;
+  chooseStorageMode(
+    input:
+      | { mode: 'standard'; confirmSwitch?: boolean }
+      | { mode: 'private-removable'; driveLetter: string; confirmSwitch?: boolean },
+  ): Promise<ChooseStorageModeResult>;
   retryStorageConnection(): Promise<StorageGateState>;
   onStatusUpdated(listener: () => void): () => void;
 }

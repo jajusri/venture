@@ -48,4 +48,11 @@ export interface ChooseStorageModeResult {
   readonly ok: boolean;
   readonly message?: string;
   readonly state?: StorageGateState;
+  /**
+   * TD-033: true when this choice would switch away from an already-configured storage mode
+   * (not first-run) and the caller did not set `confirmSwitch`. `ok` is false in this case — no
+   * locator/vault state has been written. The caller must show `message` to the user and resubmit
+   * the identical choice with `confirmSwitch: true` to proceed.
+   */
+  readonly requiresConfirmation?: boolean;
 }

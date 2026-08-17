@@ -1103,8 +1103,27 @@ function registerIpcHandlers(): void {
   registerIpcHandler('desktop:choose-storage-mode', async (input: unknown) => {
     const choice = validateChooseStorageModeInput(input);
     const now = new Date().toISOString();
+    // TD-033: this handler is reachable both at genuine first-run (no prior locator record — any
+    // choice is safe) and from the "storage not connected" recovery screen's Locate button, which
+    // reopens the full Standard/Private picker even for an already-configured installation. A
+    // record here means real data may already exist under a different mode/vault; switching away
+    // from it must never happen silently (accounting cache is recoverable via Tally re-sync, but
+    // paired-device trust living in the same store is not recoverable without re-pairing).
+    const existingLocator = privateStorageLocatorStore.load();
 
     if (choice.mode === 'standard') {
+      const isSwitch = existingLocator !== null && existingLocator.mode !== 'standard';
+      if (isSwitch && !choice.confirmSwitch) {
+        return {
+          ok: false,
+          requiresConfirmation: true,
+          message:
+            'This will stop using your current private removable storage. BUDCOM will not delete ' +
+            'that vault, but any paired phones will need to be re-paired, and ledger/voucher data ' +
+            'will be re-synced from Tally instead of using the local cache on that drive. ' +
+            'Click Continue again to proceed.',
+        };
+      }
       const saveResult = privateStorageLocatorStore.save({
         schemaVersion: 1,
         mode: 'standard',
@@ -1135,6 +1154,23 @@ function registerIpcHandlers(): void {
       vaultId = existing ? existing.vaultId : createPrivateVault(choice.driveLetter).vaultId;
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+
+    const isSwitch = existingLocator !== null && (
+      existingLocator.mode !== 'private-removable' || existingLocator.vaultId !== vaultId
+    );
+    if (isSwitch && !choice.confirmSwitch) {
+      return {
+        ok: false,
+        requiresConfirmation: true,
+        message: existingLocator?.mode === 'standard'
+          ? 'This will stop using BUDCOM\'s built-in storage and switch to this removable drive. ' +
+            'Ledger/voucher data will be re-synced from Tally onto the new drive. Click Continue ' +
+            'again to proceed.'
+          : 'This points to a different private vault than the one currently configured. Any ' +
+            'paired phones will need to be re-paired, and ledger/voucher data will be re-synced ' +
+            'from Tally. Your previous vault is not deleted. Click Continue again to proceed.',
+      };
     }
 
     const saveResult = privateStorageLocatorStore.save({

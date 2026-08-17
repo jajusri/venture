@@ -155,8 +155,8 @@ export function validateStockItemQuery(value: unknown): { query: string; page: n
 }
 
 export type ChooseStorageModeInput =
-  | { readonly mode: 'standard' }
-  | { readonly mode: 'private-removable'; readonly driveLetter: string };
+  | { readonly mode: 'standard'; readonly confirmSwitch: boolean }
+  | { readonly mode: 'private-removable'; readonly driveLetter: string; readonly confirmSwitch: boolean };
 
 const DRIVE_LETTER_PATTERN = /^[A-Za-z]:\\?$/;
 
@@ -165,15 +165,16 @@ export function validateChooseStorageModeInput(value: unknown): ChooseStorageMod
     throw new Error('Storage mode selection payload must be an object.');
   }
   const input = value as Record<string, unknown>;
+  const confirmSwitch = input.confirmSwitch === true;
   if (input.mode === 'standard') {
-    return { mode: 'standard' };
+    return { mode: 'standard', confirmSwitch };
   }
   if (input.mode === 'private-removable') {
     if (typeof input.driveLetter !== 'string' || !DRIVE_LETTER_PATTERN.test(input.driveLetter.trim())) {
       throw new Error('driveLetter must look like "E:\\".');
     }
     const normalized = input.driveLetter.trim().replace(/\\?$/, '\\');
-    return { mode: 'private-removable', driveLetter: normalized };
+    return { mode: 'private-removable', driveLetter: normalized, confirmSwitch };
   }
   throw new Error('mode must be "standard" or "private-removable".');
 }

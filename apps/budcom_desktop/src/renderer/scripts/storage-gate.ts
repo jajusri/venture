@@ -81,7 +81,21 @@ async function runSetupFlow(overlay: HTMLElement): Promise<void> {
   const continueButton = byId<HTMLButtonElement>('storage-gate-continue');
   const errorEl = byId<HTMLElement>('storage-gate-setup-error');
 
+  // TD-033: a prior Continue click can come back needing confirmation (this picker reopens for an
+  // already-configured installation via the "storage not connected" screen's Locate button, not
+  // only at genuine first-run). Tracks exactly which choice was warned about, so only resubmitting
+  // that same choice counts as confirming it — changing the selection starts over as a fresh,
+  // unconfirmed choice.
+  type PendingChoice = { mode: 'standard' } | { mode: 'private-removable'; driveLetter: string };
+  let pendingConfirmation: PendingChoice | null = null;
+  const sameChoice = (a: PendingChoice, b: PendingChoice): boolean =>
+    a.mode === b.mode && (a.mode !== 'private-removable' || (b.mode === 'private-removable' && a.driveLetter === b.driveLetter));
+  const clearPendingConfirmation = (): void => {
+    pendingConfirmation = null;
+  };
+
   const syncDrivePickerVisibility = (): void => {
+    clearPendingConfirmation();
     if (privateRadio.checked) {
       show(drivePicker);
       void refreshDriveList(driveList, noDrivesHint);
@@ -91,36 +105,53 @@ async function runSetupFlow(overlay: HTMLElement): Promise<void> {
   };
   standardRadio.addEventListener('change', syncDrivePickerVisibility);
   privateRadio.addEventListener('change', syncDrivePickerVisibility);
+  driveList.addEventListener('change', clearPendingConfirmation);
   rescanButton.addEventListener('click', () => void refreshDriveList(driveList, noDrivesHint));
   syncDrivePickerVisibility();
 
   await new Promise<void>((resolve) => {
-    continueButton.addEventListener('click', () => {
+    // Deliberately NOT { once: true }: TD-033's confirmation flow requires the user to click
+    // Continue a second time after seeing the warning, and every pre-existing error path (missing
+    // drive selection, save failure) must also remain retryable without a page reload. The
+    // listener is only ever removed once, explicitly, on genuine success below.
+    const onContinue = (): void => {
+      if (continueButton.disabled) return;
       void (async () => {
         hide(errorEl);
         continueButton.disabled = true;
         try {
-          const input = privateRadio.checked
-            ? { mode: 'private-removable' as const, driveLetter: selectedDriveLetter(driveList) ?? '' }
-            : { mode: 'standard' as const };
-          if (input.mode === 'private-removable' && !input.driveLetter) {
+          const choice: PendingChoice = privateRadio.checked
+            ? { mode: 'private-removable', driveLetter: selectedDriveLetter(driveList) ?? '' }
+            : { mode: 'standard' };
+          if (choice.mode === 'private-removable' && !choice.driveLetter) {
+            clearPendingConfirmation();
             errorEl.textContent = 'Select a removable drive first.';
             show(errorEl);
             return;
           }
-          const result = await window.budcomDesktop.chooseStorageMode(input);
+          const confirmSwitch = pendingConfirmation !== null && sameChoice(pendingConfirmation, choice);
+          const result = await window.budcomDesktop.chooseStorageMode({ ...choice, confirmSwitch });
+          if (result.requiresConfirmation) {
+            pendingConfirmation = choice;
+            errorEl.textContent = `${result.message ?? 'This will switch storage modes.'} Click Continue again to confirm.`;
+            show(errorEl);
+            return;
+          }
           if (!result.ok) {
+            clearPendingConfirmation();
             errorEl.textContent = result.message ?? 'Could not apply that storage choice. Try again.';
             show(errorEl);
             return;
           }
+          continueButton.removeEventListener('click', onContinue);
           hide(overlay);
           resolve();
         } finally {
           continueButton.disabled = false;
         }
       })();
-    }, { once: true });
+    };
+    continueButton.addEventListener('click', onContinue);
   });
 }
 

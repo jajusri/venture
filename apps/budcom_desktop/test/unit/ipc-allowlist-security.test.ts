@@ -11,6 +11,7 @@ import {
   isPathContainedInRoot,
   MAX_IPC_PAYLOAD_BYTES,
   MAX_IPC_QUERY_LENGTH,
+  validateChooseStorageModeInput,
   validateCompanyId,
   validateExportDirectory,
   validateLedgerQuery,
@@ -105,5 +106,38 @@ describe('renderer preload boundary characterization', () => {
     expect(mainSource).toContain('nodeIntegration: false');
     expect(mainSource).toContain('sandbox: true');
     expect(mainSource).toContain('assertBoundedIpcPayload');
+  });
+});
+
+// TD-033: confirmSwitch defaults false unless the caller explicitly sets true, so a legacy/stale
+// renderer payload (or any payload that simply omits the field) can never accidentally bypass the
+// switch-confirmation gate in desktop:choose-storage-mode.
+describe('validateChooseStorageModeInput — TD-033 confirmSwitch parsing', () => {
+  it('defaults confirmSwitch to false when omitted', () => {
+    expect(validateChooseStorageModeInput({ mode: 'standard' })).toEqual({
+      mode: 'standard',
+      confirmSwitch: false,
+    });
+  });
+
+  it('only a literal boolean true sets confirmSwitch — a truthy non-boolean does not', () => {
+    expect(validateChooseStorageModeInput({ mode: 'standard', confirmSwitch: true })).toEqual({
+      mode: 'standard',
+      confirmSwitch: true,
+    });
+    expect(validateChooseStorageModeInput({ mode: 'standard', confirmSwitch: 'true' })).toEqual({
+      mode: 'standard',
+      confirmSwitch: false,
+    });
+    expect(validateChooseStorageModeInput({ mode: 'standard', confirmSwitch: 1 })).toEqual({
+      mode: 'standard',
+      confirmSwitch: false,
+    });
+  });
+
+  it('carries confirmSwitch through the private-removable branch alongside the validated drive letter', () => {
+    expect(
+      validateChooseStorageModeInput({ mode: 'private-removable', driveLetter: 'E:\\', confirmSwitch: true }),
+    ).toEqual({ mode: 'private-removable', driveLetter: 'E:\\', confirmSwitch: true });
   });
 });

@@ -6,7 +6,9 @@ import {
   isEnumeratedRemovableDrive,
   isPrivateVaultStillPresent,
   privateConnectorDataDir,
+  readExistingVaultOnDrive,
   resolvePrivateVault,
+  UnreadablePrivateVaultMarkerError,
 } from '../../src/application/private-storage/private-storage-resolver.js';
 import { FakeRemovableVolumeEnumerator } from '../../src/application/private-storage/removable-volume-enumerator.js';
 
@@ -146,6 +148,33 @@ describe('isEnumeratedRemovableDrive', () => {
   it('compares drive letters case-insensitively', () => {
     const volumes = [{ driveLetter: 'e:\\', label: null, fileSystem: null, sizeBytes: null, freeBytes: null }];
     expect(isEnumeratedRemovableDrive('E:\\', volumes)).toBe(true);
+  });
+});
+
+describe('readExistingVaultOnDrive', () => {
+  it('returns null when no marker exists at all — the genuine "adopt vs create" absent case', () => {
+    const fs = fakeFs();
+    expect(readExistingVaultOnDrive('E:\\', fs)).toBeNull();
+  });
+
+  it('returns the marker when it exists and parses correctly — the normal adopt case', () => {
+    const fs = fakeFs({ [markerPath('E:\\')]: JSON.stringify({ schemaVersion: 1, vaultId: 'vault-1', createdAt: 't' }) });
+    expect(readExistingVaultOnDrive('E:\\', fs)).toMatchObject({ vaultId: 'vault-1' });
+  });
+
+  // TD-034 regression: a marker file that exists but cannot be parsed (e.g. a BOM-prefixed write
+  // from a tool other than BUDCOM's own JSON.stringify, or truncated/corrupt content) must throw
+  // distinctly, not be silently treated the same as "no marker" — the caller
+  // (desktop:choose-storage-mode) would otherwise fall through to createPrivateVault() and mint a
+  // brand-new vault right next to the unreadable one, orphaning it.
+  it('throws UnreadablePrivateVaultMarkerError, not null, when the marker exists but fails to parse', () => {
+    const fs = fakeFs({ [markerPath('E:\\')]: '\uFEFF{ not valid json' });
+    expect(() => readExistingVaultOnDrive('E:\\', fs)).toThrow(UnreadablePrivateVaultMarkerError);
+  });
+
+  it('throws when the marker parses as JSON but is missing a valid vaultId', () => {
+    const fs = fakeFs({ [markerPath('E:\\')]: JSON.stringify({ schemaVersion: 1, createdAt: 't' }) });
+    expect(() => readExistingVaultOnDrive('E:\\', fs)).toThrow(UnreadablePrivateVaultMarkerError);
   });
 });
 
