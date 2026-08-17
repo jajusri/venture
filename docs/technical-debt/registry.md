@@ -168,12 +168,14 @@ Engineering-tracked compromises, defects, and deferred work.
 |-------|-------|
 | **ID** | TD-004 |
 | **Description** | Desktop settings store Tally host/port but do not yet pass them to connector process environment on spawn |
-| **Impact** | Low — Tally connection still configured in connector/Tally directly |
+| **Impact** | Was higher than the original "Low" note suggested: confirmed during 2026-08-17 investigation that the Settings screen's "Tally host"/"Tally port" fields (`renderer/index.html` `#input-tally-host`/`#input-tally-port`) persist successfully via `DesktopConfigStore` but had **zero effect** on the actually-spawned Connector — `resolveConnectorLifecycleConfig()` never received them, and even the Connector's own `BUDCOM_TALLY_HOST`/`BUDCOM_TALLY_PORT` env vars it already reads (`connector/src/config/index.ts`) were never in the spawn env allowlist. Any pilot user whose Tally instance isn't on the connector's built-in default host/port had a Settings field that silently did nothing. |
 | **Priority** | P3 |
 | **Estimated fix** | 2 hours |
 | **Target milestone** | 5A |
-| **Status** | Open |
+| **Status** | **Fixed (2026-08-17, pre-signing technical-debt closure).** |
 | **Introduced** | Milestone 4D (2026-07-23) |
+| **Fix implemented** | `connector-lifecycle-config.ts`'s `resolveConnectorLifecycleConfig()` now accepts `tallyHost`/`tallyPort` in its resolution context and forwards them into the spawned Connector's child env as `BUDCOM_TALLY_HOST`/`BUDCOM_TALLY_PORT`, mirroring the existing pattern already used for `BUDCOM_DATABASE_PATH`/`BUDCOM_TRANSPORT_IDENTITY_DIR`/etc in the same function. `connector-packaged-paths.ts`'s `CONNECTOR_CHILD_ENV_ALLOWLIST` (which silently drops any override key not explicitly listed) was extended with both new keys — without this, the override would have been silently dropped even after the resolver change. `desktop-config-resolver.ts` passes `effective.tallyHost`/`effective.tallyPort` through at the call site. |
+| **Regression tests** | 2 new tests in `connector-lifecycle-config.test.ts`: configured Tally host/port reach `childEnv` as the expected env var names/values; absent when not supplied. Full desktop suite re-run clean: 710/710 (708 baseline + 2 new), `tsc -p tsconfig.main.json --noEmit` clean. |
 
 ---
 
@@ -485,6 +487,7 @@ Engineering-tracked compromises, defects, and deferred work.
 | **Evidence** | `docs/planning/BUDCOM-MVP-1-CONTROLLED-PILOT-CLOSURE-STATUS.md` §32 — full investigation trail including the working-date test result (no change) and the voucher-creation test result (94→98, GUID-for-GUID confirmed against the promoted BUDCOM snapshot). |
 | **Relationship to TD-026** | **Distinct and not to be conflated.** TD-026 is about BUDCOM's own carry-forward mechanism not re-verifying out-of-window records against Tally. TD-027 is about Tally's own Export interface temporarily not exposing records that its UI/reports already show, independent of anything BUDCOM's carry-forward logic does — confirmed here because 0 of the newly-visible records were carry-forwarded; they were freshly (and correctly) extracted the moment Tally's Export interface started returning them. |
 | **Do not action without** | Further physical evidence of a reproducible, isolatable trigger, or a specific pilot-operator complaint about count mismatches in practice. No speculative production workaround during MVP-1 closure. |
+| **Reviewed (2026-08-17, pre-signing technical-debt closure)** | Re-examined for a possible observability/UX-only improvement (never a fabricated/inferred voucher record). Conclusion: no change made. This entry already records a deliberate decision not to add UI-facing messaging about the count-mismatch behavior during MVP-1 closure, and no new evidence or pilot-operator complaint has surfaced since that decision was recorded — adding new copy now would reverse a considered decision without a new trigger to justify it. Remains OBSERVATION ONLY / KEEP AS ACCEPTED LIMITATION; the existing "Do not action without" gate stands unchanged. |
 
 ---
 
@@ -655,7 +658,7 @@ Engineering-tracked compromises, defects, and deferred work.
 | TD-001 | Tally Voucher sync `parser_failure` — root cause confirmed (`amount-sign-conflict`: IsDeemedPositive and signed Amount are independent Tally fields, wrongly asserted equal since the multi-phase rewrite) and fixed: disagreement now tolerated and counted, never fatal; physically confirmed on Desktop 0.4.12 + Android continuity.15, 94 vouchers, 0 incomplete | **P0** | **CLOSED — physically confirmed fixed (2026-08-16)** | Pre-MVP-1 release hardening |
 | TD-002 | Desktop company selection UI | P2 | **Resolved** | 4B |
 | TD-003 | Connector process supervision | P2 | **Resolved** | 4C |
-| TD-004 | Tally host/port not forwarded to connector spawn | P3 | Open | 5A |
+| TD-004 | Tally host/port not forwarded to connector spawn | P3 | **Fixed (2026-08-17)** — now forwarded via `resolveConnectorLifecycleConfig()` + child-env allowlist | Closed |
 | TD-005 | JSON ledger repository | P2 | **Resolved** | 5A-P |
 | TD-006 | Durable interrupted sync resume | P2 | **Resolved (controlled pilot)** | 5A-P / Reliability Step 2 |
 | TD-007 | Extraction-phase cancellation | P3 | **Resolved w/ limitation** | 5A-P |
