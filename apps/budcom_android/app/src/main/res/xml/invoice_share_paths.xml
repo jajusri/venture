@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="invoice_share" path="invoice-share/" />
     <cache-path name="ledger_statement_share" path="ledger-statement-share/" />
+    <cache-path name="party_xml_export" path="party-xml-export/" />
 </paths>

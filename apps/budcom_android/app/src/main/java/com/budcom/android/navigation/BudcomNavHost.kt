@@ -16,6 +16,8 @@ import com.budcom.android.feature.company.presentation.CompanyRoute
 import com.budcom.android.feature.connect.presentation.ConnectRoute
 import com.budcom.android.feature.connect.presentation.PartyDetailRoute
 import com.budcom.android.feature.connect.presentation.PartyDetailViewModel
+import com.budcom.android.feature.connect.presentation.PartyXmlExportRoute
+import com.budcom.android.feature.connect.presentation.PartyXmlExportViewModel
 import com.budcom.android.feature.connect.presentation.ProspectCreateRoute
 import com.budcom.android.feature.dashboard.presentation.DashboardRoute
 import com.budcom.android.feature.diagnostics.presentation.DiagnosticsRoute
@@ -244,7 +246,8 @@ fun BudcomNavHost(
                     type = NavType.StringType
                 },
             ),
-        ) {
+        ) { backStackEntry ->
+            val partyId = backStackEntry.arguments?.getString(PartyDetailViewModel.PARTY_ID_ARG)
             PartyDetailRoute(
                 onOpenLedgerStatement = { ledgerId ->
                     navController.navigate(Routes.ledgerStatement(ledgerId))
@@ -254,6 +257,9 @@ fun BudcomNavHost(
                 },
                 onOpenVoucherDetails = { voucherId ->
                     navController.navigate(Routes.voucherDetails(voucherId))
+                },
+                onOpenXmlExport = {
+                    if (partyId != null) navController.navigate(Routes.partyXmlExport(partyId))
                 },
             )
         }
@@ -266,6 +272,16 @@ fun BudcomNavHost(
                     }
                 },
             )
+        }
+        composable(
+            route = Routes.PARTY_XML_EXPORT,
+            arguments = listOf(
+                navArgument(PartyXmlExportViewModel.PARTY_ID_ARG) {
+                    type = NavType.StringType
+                },
+            ),
+        ) {
+            PartyXmlExportRoute()
         }
     }
 }

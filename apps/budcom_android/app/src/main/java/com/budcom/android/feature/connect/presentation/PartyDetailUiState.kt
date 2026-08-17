@@ -72,6 +72,7 @@ sealed interface PartyDetailEffect {
     data class OpenVoucherDetails(val voucherId: String) : PartyDetailEffect
     data class LaunchCall(val phoneE164: String) : PartyDetailEffect
     data class LaunchWhatsApp(val phoneE164: String) : PartyDetailEffect
+    data object OpenXmlExport : PartyDetailEffect
 }
 
 sealed interface PartyDetailEvent {
@@ -80,6 +81,7 @@ sealed interface PartyDetailEvent {
     data object LoadMoreNotes : PartyDetailEvent
     data class ViewLedgerTapped(val ledgerId: String?) : PartyDetailEvent
     data class ViewVouchersTapped(val ledgerName: String) : PartyDetailEvent
+    data object ExportToTallyTapped : PartyDetailEvent
     data class CallTapped(val phoneE164: String?) : PartyDetailEvent
     data class WhatsAppTapped(val phoneE164: String?) : PartyDetailEvent
 

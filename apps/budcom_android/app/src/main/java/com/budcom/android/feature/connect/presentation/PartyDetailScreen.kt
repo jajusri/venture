@@ -52,6 +52,7 @@ fun PartyDetailRoute(
     onOpenLedgerStatement: (String) -> Unit,
     onOpenVouchers: (String) -> Unit,
     onOpenVoucherDetails: (String) -> Unit,
+    onOpenXmlExport: () -> Unit,
     viewModel: PartyDetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -66,6 +67,7 @@ fun PartyDetailRoute(
                     runCatching { context.startActivity(com.budcom.android.feature.connect.presentation.ConnectContactActions.callIntent(effect.phoneE164)) }
                 is PartyDetailEffect.LaunchWhatsApp ->
                     runCatching { context.startActivity(com.budcom.android.feature.connect.presentation.ConnectContactActions.whatsAppChatIntent(effect.phoneE164)) }
+                PartyDetailEffect.OpenXmlExport -> onOpenXmlExport()
             }
         }
     }
@@ -166,6 +168,10 @@ private fun PartyDetailContent(state: PartyDetailUiState, onEvent: (PartyDetailE
                     onClick = { onEvent(PartyDetailEvent.ViewVouchersTapped(party.displayName)) },
                     modifier = Modifier.testTag("party_detail_view_vouchers"),
                 ) { Text("View Vouchers") }
+                OutlinedButton(
+                    onClick = { onEvent(PartyDetailEvent.ExportToTallyTapped) },
+                    modifier = Modifier.testTag("party_detail_export_to_tally"),
+                ) { Text("Export to Tally") }
             }
         }
 

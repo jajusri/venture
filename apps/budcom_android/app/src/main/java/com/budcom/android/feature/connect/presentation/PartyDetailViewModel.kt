@@ -90,6 +90,7 @@ class PartyDetailViewModel @Inject constructor(
                 if (ledgerId.isNullOrBlank()) showNotice("No linked Ledger for this party.") else _effects.tryEmit(PartyDetailEffect.OpenLedgerStatement(ledgerId))
             }
             is PartyDetailEvent.ViewVouchersTapped -> _effects.tryEmit(PartyDetailEffect.OpenVouchers(event.ledgerName))
+            PartyDetailEvent.ExportToTallyTapped -> _effects.tryEmit(PartyDetailEffect.OpenXmlExport)
             is PartyDetailEvent.CallTapped -> {
                 val phone = event.phoneE164
                 if (phone.isNullOrBlank()) showNotice("No phone number available.") else _effects.tryEmit(PartyDetailEffect.LaunchCall(phone))
