@@ -503,6 +503,45 @@ describe('VoucherSnapshotSyncServiceImpl', () => {
     expect(active.map((voucher) => voucher.voucherId)).toEqual([vouchers[0]!.voucherId]);
   });
 
+  // TD-026: proves the carry-forward mechanism never "bakes in" permanence for an older voucher —
+  // even after it has already been carried forward at least once by an unrelated intervening sync,
+  // resyncing its own specific window still tombstones it the moment Tally stops returning it
+  // there. Distinct from the "removes a deleted voucher" test above, which only ever resyncs the
+  // SAME window twice in a row and never exercises an intervening carry-forward in between.
+  // Carry-forward eligibility is keyed on each voucher's own embedded `date` field, not on which
+  // period a stub happened to return it under — so this uses two synthetic clones explicitly dated
+  // inside OLDER_PERIOD, distinct from the shared `vouchers` fixture (which is dated to match
+  // PERIOD, matched by every other test in this file that syncs it under PERIOD).
+  it('tombstones an older voucher once its own window is reconciled, even after an intervening carry-forward left it untouched', async () => {
+    const repo = repository();
+    const olderVoucherA: VoucherDetails = { ...vouchers[0]!, voucherId: 'older-voucher-a', date: OLDER_PERIOD.dateFrom };
+    const olderVoucherB: VoucherDetails = { ...vouchers[1]!, voucherId: 'older-voucher-b', date: OLDER_PERIOD.dateFrom };
+
+    const sync = service(repo, async (_company, period) =>
+      period.dateFrom === OLDER_PERIOD.dateFrom
+        ? extractionResult([olderVoucherA, olderVoucherB])
+        : extractionResult([]),
+    );
+    // 1. The older window is synced fresh: both vouchers present, correctly dated within it.
+    await sync.synchronize({ companyId: 'company-a', ...OLDER_PERIOD }, observer, notCancelled);
+    // 2. An unrelated, more recent window is synced (nothing new there) — this carries the older
+    //    window's two vouchers forward untouched, exactly the intervening step this test targets.
+    await sync.synchronize({ companyId: 'company-a', ...PERIOD }, observer, notCancelled);
+    let active = await repo.querySnapshot('company-a');
+    expect(active.map((voucher) => voucher.voucherId).sort()).toEqual(
+      ['older-voucher-a', 'older-voucher-b'].sort(),
+    );
+
+    // 3. The older window is reconciled again — Tally no longer returns olderVoucherB there (it
+    //    was cancelled/deleted in Tally). Carry-forward for everything OUTSIDE the older window
+    //    still applies, but nothing else exists outside it in this scenario.
+    const resync = service(repo, async () => extractionResult([olderVoucherA]));
+    await resync.synchronize({ companyId: 'company-a', ...OLDER_PERIOD }, observer, notCancelled);
+
+    active = await repo.querySnapshot('company-a');
+    expect(active.map((voucher) => voucher.voucherId)).toEqual(['older-voucher-a']);
+  });
+
   it('never carries forward or otherwise touches another company\'s vouchers', async () => {
     const repo = repository();
     await service(repo, async () => extractionResult([vouchers[0]!]))
