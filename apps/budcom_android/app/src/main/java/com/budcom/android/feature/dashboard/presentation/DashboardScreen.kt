@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -73,6 +74,7 @@ fun DashboardRoute(
     onOpenMasterData: () -> Unit,
     onOpenVouchers: () -> Unit,
     onOpenLedgers: () -> Unit,
+    onOpenConnect: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSync: () -> Unit,
     onOpenDiagnostics: () -> Unit,
@@ -88,6 +90,7 @@ fun DashboardRoute(
                 DashboardNavigation.MasterData -> onOpenMasterData()
                 DashboardNavigation.Vouchers -> onOpenVouchers()
                 DashboardNavigation.Ledgers -> onOpenLedgers()
+                DashboardNavigation.Connect -> onOpenConnect()
                 DashboardNavigation.Search -> onOpenSearch()
                 DashboardNavigation.Sync -> onOpenSync()
                 DashboardNavigation.Diagnostics -> onOpenDiagnostics()
@@ -376,6 +379,13 @@ private fun HomePrimaryEntries(onEvent: (DashboardEvent) -> Unit) {
             subtitle = stringResource(R.string.dashboard_primary_ledgers_subtitle),
             testTag = "dashboard_primary_ledgers",
             onClick = { onEvent(DashboardEvent.OpenLedgers) },
+        )
+        HomePrimaryEntryRow(
+            icon = Icons.Filled.Person,
+            title = stringResource(R.string.dashboard_action_connect),
+            subtitle = stringResource(R.string.dashboard_primary_connect_subtitle),
+            testTag = "dashboard_primary_connect",
+            onClick = { onEvent(DashboardEvent.OpenConnect) },
         )
     }
 }

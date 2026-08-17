@@ -21,8 +21,12 @@ object Routes {
     const val VOUCHERS = "vouchers?q={q}"
     const val VOUCHER_DETAILS = "vouchers/detail/{voucherId}"
     const val LEDGER_STATEMENT = "ledgers/statement/{ledgerId}"
+    const val CONNECT = "connect?q={q}"
 
     const val QUERY_ARG = "q"
+
+    fun connect(query: String = ""): String =
+        "connect?q=${Uri.encode(query)}"
 
     fun ledgers(query: String = ""): String =
         "ledgers?q=${Uri.encode(query)}"

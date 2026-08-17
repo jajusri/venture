@@ -164,6 +164,23 @@
     <string name="ledger_status_label">Status: %1$s</string>
     <string name="ledger_balance_label">Closing: %1$s</string>
 
+    <string name="connect_title">Connect</string>
+    <string name="connect_tab_customers">Customers</string>
+    <string name="connect_tab_prospects">Prospects</string>
+    <string name="connect_search_hint">Search name or phone</string>
+    <string name="connect_empty_customers">No customers found yet. They appear once eligible Tally ledgers have synced.</string>
+    <string name="connect_empty_prospects">No prospects yet. Prospects you create in BUDCOM will appear here.</string>
+    <string name="connect_empty_search">No matches for this search.</string>
+    <string name="connect_offline_banner">Device is offline. Showing the most recently synced Connect data.</string>
+    <string name="connect_call_description">Call %1$s</string>
+    <string name="connect_whatsapp_description">Message %1$s on WhatsApp</string>
+    <string name="connect_view_ledger">View Ledger</string>
+    <string name="connect_view_vouchers">View Vouchers</string>
+    <string name="connect_retry">Retry</string>
+
+    <string name="dashboard_action_connect">Connect</string>
+    <string name="dashboard_primary_connect_subtitle">Customers and prospects</string>
+
     <string name="stock_item_browser_title">Stock items</string>
     <string name="stock_item_search_hint">Search stock items</string>
     <string name="stock_item_empty">No stock items found. Sync stock items on the Connector if the list is empty.</string>

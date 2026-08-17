@@ -13,6 +13,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.budcom.android.feature.company.presentation.CompanyRoute
+import com.budcom.android.feature.connect.presentation.ConnectRoute
 import com.budcom.android.feature.dashboard.presentation.DashboardRoute
 import com.budcom.android.feature.diagnostics.presentation.DiagnosticsRoute
 import com.budcom.android.feature.discovery.presentation.ConnectorDiscoveryRoute
@@ -87,6 +88,7 @@ fun BudcomNavHost(
                 onOpenMasterData = { navController.navigate(Routes.MASTER_DATA) },
                 onOpenVouchers = { navController.navigate(Routes.vouchers()) },
                 onOpenLedgers = { navController.navigate(Routes.ledgers()) },
+                onOpenConnect = { navController.navigate(Routes.connect()) },
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenSync = { navController.navigate(Routes.SYNC) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
@@ -207,6 +209,24 @@ fun BudcomNavHost(
             ),
         ) {
             VoucherDetailsRoute(onBack = { navController.popBackStack() })
+        }
+        composable(
+            route = Routes.CONNECT,
+            arguments = listOf(
+                navArgument(Routes.QUERY_ARG) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) {
+            ConnectRoute(
+                onOpenLedgerStatement = { ledgerId ->
+                    navController.navigate(Routes.ledgerStatement(ledgerId))
+                },
+                onOpenVouchers = { query ->
+                    navController.navigate(Routes.vouchers(query))
+                },
+            )
         }
     }
 }
