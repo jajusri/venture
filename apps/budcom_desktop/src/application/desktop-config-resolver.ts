@@ -219,6 +219,8 @@ export function resolveDesktopConfig(
     connectorId: options.connectorId,
     privateStorageExpectedVaultId: options.privateStorageExpectedVaultId,
     privateStorageMarkerPath: options.privateStorageMarkerPath,
+    tallyHost: effective.tallyHost,
+    tallyPort: effective.tallyPort,
   });
 
   return {

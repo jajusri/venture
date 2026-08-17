@@ -62,6 +62,14 @@ export interface ConnectorLifecycleResolutionContext {
    */
   readonly privateStorageExpectedVaultId?: string;
   readonly privateStorageMarkerPath?: string;
+  /**
+   * Desktop's configured Tally connection (Settings screen "Tally host"/"Tally port"), passed to
+   * the spawned Connector as BUDCOM_TALLY_HOST/BUDCOM_TALLY_PORT (TD-004) so it never silently
+   * falls back to its own built-in default when a user has configured a non-default Tally
+   * host/port through the Desktop UI.
+   */
+  readonly tallyHost?: string;
+  readonly tallyPort?: number;
 }
 
 export function resolveConnectorLifecycleConfig(
@@ -161,6 +169,12 @@ export function resolveConnectorLifecycleConfig(
   }
   if (context.privateStorageMarkerPath) {
     childEnvOverrides.BUDCOM_PRIVATE_STORAGE_MARKER_PATH = context.privateStorageMarkerPath;
+  }
+  if (context.tallyHost) {
+    childEnvOverrides.BUDCOM_TALLY_HOST = context.tallyHost;
+  }
+  if (context.tallyPort !== undefined) {
+    childEnvOverrides.BUDCOM_TALLY_PORT = String(context.tallyPort);
   }
   if (shouldSpawnConnectorViaElectronNode(connectorExecutable)) {
     childEnvOverrides.ELECTRON_RUN_AS_NODE = '1';

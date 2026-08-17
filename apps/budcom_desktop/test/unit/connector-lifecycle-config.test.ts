@@ -51,6 +51,32 @@ describe('connector-lifecycle-config', () => {
     expect(config.childEnv?.ELECTRON_RUN_AS_NODE).toBeUndefined();
   });
 
+  it('passes the configured Tally host/port to child env as BUDCOM_TALLY_HOST/BUDCOM_TALLY_PORT (TD-004)', () => {
+    const config = resolveConnectorLifecycleConfig({
+      connectorExecutable: process.execPath,
+    }, {
+      isPackaged: true,
+      resourcesPath: 'C:/Apps/Budcom Desktop/resources',
+      tallyHost: '192.168.1.50',
+      tallyPort: 9999,
+    });
+
+    expect(config.childEnv?.BUDCOM_TALLY_HOST).toBe('192.168.1.50');
+    expect(config.childEnv?.BUDCOM_TALLY_PORT).toBe('9999');
+  });
+
+  it('omits BUDCOM_TALLY_HOST/BUDCOM_TALLY_PORT from child env when no Tally host/port is supplied', () => {
+    const config = resolveConnectorLifecycleConfig({
+      connectorExecutable: process.execPath,
+    }, {
+      isPackaged: true,
+      resourcesPath: 'C:/Apps/Budcom Desktop/resources',
+    });
+
+    expect(config.childEnv?.BUDCOM_TALLY_HOST).toBeUndefined();
+    expect(config.childEnv?.BUDCOM_TALLY_PORT).toBeUndefined();
+  });
+
   it('passes the Tally request audit path under persistent app data, never packaged CWD', () => {
     const auditPath = 'C:/Users/Tester/AppData/Roaming/@budcom/desktop/connector-diagnostics/tally-request-audit.jsonl';
     const config = resolveConnectorLifecycleConfig({ connectorExecutable: process.execPath }, {
