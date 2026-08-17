@@ -68,6 +68,19 @@ class TagDaoTest {
     }
 
     @Test
+    fun findTagsForCompany_bulkReadStaysFastAndBoundedWithALargeFixture() = runBlocking {
+        dao.upsert(tag("dealer", null, "Dealer", "Dealer"))
+        (1..500).forEach { i -> dao.assign(assignment("co-perf", "party-$i", "dealer")) }
+
+        var result: List<PartyTagAssignmentRow>
+        val elapsed = kotlin.system.measureTimeMillis {
+            result = dao.findTagsForCompany("co-perf")
+        }
+        assertEquals(500, result.size)
+        assertTrue("bulk company-wide tag read (used once per Connect list load, never per row) should stay well under 2s even with 500 assignments, took ${elapsed}ms", elapsed < 2000)
+    }
+
+    @Test
     fun unassign_removesOnlyTheTargetedAssignment() = runBlocking {
         dao.upsert(tag("dealer", null, "Dealer", "Dealer"))
         dao.upsert(tag("retailer", null, "Retailer", "Retailer"))

@@ -39,4 +39,26 @@ interface TagDao {
         "SELECT partyId FROM party_tag_assignments WHERE companyId = :companyId AND tagId = :tagId",
     )
     suspend fun findPartyIdsForTag(companyId: String, tagId: String): List<String>
+
+    /** Every tag assignment for a company, joined to its tag, in one bounded query — used only by
+     * Connect's list-enrichment join (grouping by partyId in Kotlin), never per-row per party. */
+    @Query(
+        """
+        SELECT a.partyId as partyId, t.tagId as tagId, t.parentTagId as parentTagId, t.name as name, t.path as path, t.createdAt as createdAt
+        FROM party_tag_assignments a
+        INNER JOIN party_tags t ON t.tagId = a.tagId
+        WHERE a.companyId = :companyId
+        ORDER BY t.path COLLATE NOCASE ASC
+        """,
+    )
+    suspend fun findTagsForCompany(companyId: String): List<PartyTagAssignmentRow>
 }
+
+data class PartyTagAssignmentRow(
+    val partyId: String,
+    val tagId: String,
+    val parentTagId: String?,
+    val name: String,
+    val path: String,
+    val createdAt: Long,
+)

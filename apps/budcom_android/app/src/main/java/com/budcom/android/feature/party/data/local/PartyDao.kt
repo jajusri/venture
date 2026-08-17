@@ -41,6 +41,7 @@ interface PartyDao {
         """
         SELECT * FROM cached_parties
         WHERE companyId = :companyId
+          AND (:classification IS NULL OR classification = :classification)
           AND (
             displayName LIKE '%' || :query || '%' COLLATE NOCASE
             OR IFNULL(primaryPhoneNormalized, '') LIKE '%' || :query || '%'
@@ -49,17 +50,18 @@ interface PartyDao {
         LIMIT :limit OFFSET :offset
         """,
     )
-    suspend fun search(companyId: String, query: String, limit: Int, offset: Int): List<PartyEntity>
+    suspend fun search(companyId: String, query: String, classification: String?, limit: Int, offset: Int): List<PartyEntity>
 
     @Query(
         """
         SELECT COUNT(*) FROM cached_parties
         WHERE companyId = :companyId
+          AND (:classification IS NULL OR classification = :classification)
           AND (
             displayName LIKE '%' || :query || '%' COLLATE NOCASE
             OR IFNULL(primaryPhoneNormalized, '') LIKE '%' || :query || '%'
           )
         """,
     )
-    suspend fun countSearch(companyId: String, query: String): Int
+    suspend fun countSearch(companyId: String, query: String, classification: String?): Int
 }

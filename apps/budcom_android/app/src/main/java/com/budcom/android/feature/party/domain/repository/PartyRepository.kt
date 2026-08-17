@@ -7,6 +7,7 @@ import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
 import com.budcom.android.feature.party.domain.model.PartyPage
+import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.Tag
 
 /**
@@ -28,12 +29,27 @@ interface PartyRepository {
         pageSize: Int,
     ): PartyPage
 
-    /** Matches on display name or normalized phone. */
-    suspend fun searchParties(companyId: String, query: String, page: Int, pageSize: Int): PartyPage
+    /** Matches on display name or normalized phone. [classification] narrows to one section
+     * (e.g. Customers-tab search never surfaces a Prospect) — null searches every classification. */
+    suspend fun searchParties(
+        companyId: String,
+        query: String,
+        classification: PartyClassification?,
+        page: Int,
+        pageSize: Int,
+    ): PartyPage
 
     suspend fun getContactPersons(companyId: String, partyId: String): List<PartyContactPerson>
 
     suspend fun getTagsForParty(companyId: String, partyId: String): List<Tag>
+
+    /** Every source link for a company in one bounded read — for Connect's list-enrichment join
+     * (resolving each row's linked ledger for balance/deep-link display), never per-row. */
+    suspend fun getSourceLinksForCompany(companyId: String): List<PartySourceLink>
+
+    /** Every Party's tags for a company, grouped by partyId, in one bounded read — for Connect's
+     * list-enrichment join, never per-row per party. */
+    suspend fun getTagsForCompany(companyId: String): Map<String, List<Tag>>
 
     suspend fun getFieldProvenance(companyId: String, partyId: String): List<PartyFieldProvenance>
 

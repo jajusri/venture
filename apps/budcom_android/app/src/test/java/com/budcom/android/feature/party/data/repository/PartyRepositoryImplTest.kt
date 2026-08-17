@@ -142,6 +142,51 @@ class PartyRepositoryImplTest {
         assertNotEquals(a.partyId, b.partyId)
     }
 
+    // ============================== CONNECT LIST-ENRICHMENT BULK READS ==============================
+
+    @Test
+    fun `getSourceLinksForCompany returns every link scoped to that company only`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers("co-A", listOf(seed(ledgerId = "guid:1", name = "A Traders")))
+        repo.reconcilePartiesFromEligibleLedgers("co-B", listOf(seed(ledgerId = "guid:2", name = "B Traders")))
+
+        val linksA = repo.getSourceLinksForCompany("co-A")
+        assertEquals(1, linksA.size)
+        assertEquals("guid:1", linksA.single().externalEntityId)
+    }
+
+    @Test
+    fun `searchParties with a classification filter never returns another classification`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers(
+            "co-1",
+            listOf(
+                seed(ledgerId = "guid:cust", name = "ABC Traders", classification = PartyClassification.Customer),
+                seed(ledgerId = "guid:supp", name = "ABC Supplies", classification = PartyClassification.Supplier),
+            ),
+        )
+
+        val customerMatches = repo.searchParties("co-1", "ABC", PartyClassification.Customer, 1, 50)
+        assertEquals(1, customerMatches.items.size)
+        assertEquals(PartyClassification.Customer, customerMatches.items.single().classification)
+
+        val allMatches = repo.searchParties("co-1", "ABC", null, 1, 50)
+        assertEquals(2, allMatches.items.size)
+    }
+
+    @Test
+    fun `getTagsForCompany groups tag assignments by partyId`() = runTest(dispatcher) {
+        val repo = repository()
+        val party = repo.reconcilePartiesFromEligibleLedgers("co-1", listOf(seed())).single()
+        tagDao.upsert(com.budcom.android.feature.party.data.local.TagEntity("tag-1", null, "Dealer", "Dealer", time.now))
+        tagDao.assign(
+            com.budcom.android.feature.party.data.local.PartyTagCrossRefEntity("co-1", party.partyId, "tag-1", time.now),
+        )
+
+        val tagsByParty = repo.getTagsForCompany("co-1")
+        assertEquals(listOf("Dealer"), tagsByParty[party.partyId]?.map { it.name })
+    }
+
     // ============================== PHONE / ALIAS SEEDING ==============================
 
     @Test
@@ -325,14 +370,16 @@ private class FakePartyDao : PartyDao {
             .sortedBy { it.displayName.lowercase() }.drop(offset).take(limit)
     override suspend fun countByClassification(companyId: String, classification: String): Int =
         store.values.count { it.companyId == companyId && it.classification == classification }
-    override suspend fun search(companyId: String, query: String, limit: Int, offset: Int): List<PartyEntity> =
+    override suspend fun search(companyId: String, query: String, classification: String?, limit: Int, offset: Int): List<PartyEntity> =
         store.values.filter {
             it.companyId == companyId &&
+                (classification == null || it.classification == classification) &&
                 (it.displayName.contains(query, ignoreCase = true) || it.primaryPhoneNormalized?.contains(query) == true)
         }.sortedBy { it.displayName.lowercase() }.drop(offset).take(limit)
-    override suspend fun countSearch(companyId: String, query: String): Int =
+    override suspend fun countSearch(companyId: String, query: String, classification: String?): Int =
         store.values.count {
             it.companyId == companyId &&
+                (classification == null || it.classification == classification) &&
                 (it.displayName.contains(query, ignoreCase = true) || it.primaryPhoneNormalized?.contains(query) == true)
         }
 }
@@ -345,6 +392,8 @@ private class FakePartySourceLinkDao : PartySourceLinkDao {
         store[key(companyId, sourceType, externalEntityId)]
     override suspend fun findByPartyId(companyId: String, partyId: String): List<PartySourceLinkEntity> =
         store.values.filter { it.companyId == companyId && it.partyId == partyId }
+    override suspend fun findAllForCompany(companyId: String): List<PartySourceLinkEntity> =
+        store.values.filter { it.companyId == companyId }
     override suspend fun upsert(entity: PartySourceLinkEntity) {
         store[key(entity.companyId, entity.sourceType, entity.externalEntityId)] = entity
     }
@@ -398,4 +447,16 @@ private class FakeTagDao : TagDao {
         assignments.filter { it.first == companyId && it.second == partyId }.mapNotNull { tags[it.third] }
     override suspend fun findPartyIdsForTag(companyId: String, tagId: String): List<String> =
         assignments.filter { it.first == companyId && it.third == tagId }.map { it.second }
+    override suspend fun findTagsForCompany(companyId: String): List<com.budcom.android.feature.party.data.local.PartyTagAssignmentRow> =
+        assignments.filter { it.first == companyId }.mapNotNull { (company, partyId, tagId) ->
+            val tag = tags[tagId] ?: return@mapNotNull null
+            com.budcom.android.feature.party.data.local.PartyTagAssignmentRow(
+                partyId = partyId,
+                tagId = tag.tagId,
+                parentTagId = tag.parentTagId,
+                name = tag.name,
+                path = tag.path,
+                createdAt = tag.createdAt,
+            )
+        }
 }

@@ -332,9 +332,17 @@ private class SyncVmFakePartyRepository : PartyRepository {
         page: Int,
         pageSize: Int,
     ): PartyPage = error("unused")
-    override suspend fun searchParties(companyId: String, query: String, page: Int, pageSize: Int): PartyPage = error("unused")
+    override suspend fun searchParties(
+        companyId: String,
+        query: String,
+        classification: PartyClassification?,
+        page: Int,
+        pageSize: Int,
+    ): PartyPage = error("unused")
     override suspend fun getContactPersons(companyId: String, partyId: String): List<PartyContactPerson> = error("unused")
     override suspend fun getTagsForParty(companyId: String, partyId: String): List<Tag> = error("unused")
+    override suspend fun getSourceLinksForCompany(companyId: String): List<com.budcom.android.feature.party.domain.model.PartySourceLink> = error("unused")
+    override suspend fun getTagsForCompany(companyId: String): Map<String, List<Tag>> = error("unused")
     override suspend fun getFieldProvenance(companyId: String, partyId: String): List<PartyFieldProvenance> = error("unused")
     override suspend fun updateBudcomOnlyField(
         companyId: String,

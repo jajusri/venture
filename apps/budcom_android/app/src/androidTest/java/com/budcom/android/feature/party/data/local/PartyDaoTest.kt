@@ -74,10 +74,25 @@ class PartyDaoTest {
                 party("co-a", "p2", "XYZ Suppliers", phone = null, phoneNormalized = null),
             ),
         )
-        assertEquals(1, dao.search("co-a", "ABC", 10, 0).size)
-        assertEquals(1, dao.search("co-a", "9876543210", 10, 0).size)
-        assertEquals(0, dao.search("co-a", "no-match", 10, 0).size)
-        assertEquals(1, dao.countSearch("co-a", "ABC"))
+        assertEquals(1, dao.search("co-a", "ABC", null, 10, 0).size)
+        assertEquals(1, dao.search("co-a", "9876543210", null, 10, 0).size)
+        assertEquals(0, dao.search("co-a", "no-match", null, 10, 0).size)
+        assertEquals(1, dao.countSearch("co-a", "ABC", null))
+    }
+
+    @Test
+    fun search_classificationFilterNarrowsToOneSection() = runBlocking {
+        dao.upsertAll(
+            listOf(
+                party("co-a", "p1", "ABC Traders", classification = "customer"),
+                party("co-a", "p2", "ABC Supplies", classification = "supplier"),
+            ),
+        )
+        val customerMatches = dao.search("co-a", "ABC", "customer", 10, 0)
+        assertEquals(1, customerMatches.size)
+        assertEquals("ABC Traders", customerMatches.single().displayName)
+        assertEquals(2, dao.search("co-a", "ABC", null, 10, 0).size)
+        assertEquals(1, dao.countSearch("co-a", "ABC", "supplier"))
     }
 
     @Test

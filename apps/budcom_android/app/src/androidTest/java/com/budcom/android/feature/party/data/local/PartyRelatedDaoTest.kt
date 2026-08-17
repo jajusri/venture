@@ -68,6 +68,19 @@ class PartyRelatedDaoTest {
         assertNull(sourceLinkDao.findByExternalKey("co-a", "tally_ledger", "guid:missing"))
     }
 
+    @Test
+    fun sourceLink_bulkCompanyReadStaysFastAndBoundedWithALargeFixture() = runBlocking {
+        val large = (1..500).map { i -> link("co-perf", "guid:$i", "party-$i", "Party $i") }
+        large.forEach { sourceLinkDao.upsert(it) }
+
+        var result: List<PartySourceLinkEntity>
+        val elapsed = kotlin.system.measureTimeMillis {
+            result = sourceLinkDao.findAllForCompany("co-perf")
+        }
+        assertEquals(500, result.size)
+        assertTrue("bulk company-wide source-link read (used once per Connect list load, never per row) should stay well under 2s even with 500 rows, took ${elapsed}ms", elapsed < 2000)
+    }
+
     private fun link(companyId: String, externalId: String, partyId: String, displayName: String) = PartySourceLinkEntity(
         companyId = companyId,
         sourceType = "tally_ledger",

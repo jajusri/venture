@@ -10,6 +10,7 @@ import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceEntity
 import com.budcom.android.feature.party.data.local.PartySourceLinkDao
 import com.budcom.android.feature.party.data.local.PartySourceLinkEntity
+import com.budcom.android.feature.party.data.local.PartyTagAssignmentRow
 import com.budcom.android.feature.party.data.local.TagDao
 import com.budcom.android.feature.party.data.local.asColumn
 import com.budcom.android.feature.party.data.local.toDomain
@@ -22,6 +23,7 @@ import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
 import com.budcom.android.feature.party.domain.model.PartyPage
+import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import kotlinx.coroutines.withContext
@@ -66,21 +68,36 @@ class PartyRepositoryImpl @Inject constructor(
         PartyPage(items.map { it.toDomain() }, safePage, safeSize, total)
     }
 
-    override suspend fun searchParties(companyId: String, query: String, page: Int, pageSize: Int): PartyPage =
-        withContext(dispatchers.io) {
-            val safePage = page.coerceAtLeast(1)
-            val safeSize = pageSize.coerceIn(1, 200)
-            val normalized = query.trim()
-            val total = partyDao.countSearch(companyId, normalized)
-            val items = partyDao.search(companyId, normalized, safeSize, (safePage - 1) * safeSize)
-            PartyPage(items.map { it.toDomain() }, safePage, safeSize, total)
-        }
+    override suspend fun searchParties(
+        companyId: String,
+        query: String,
+        classification: PartyClassification?,
+        page: Int,
+        pageSize: Int,
+    ): PartyPage = withContext(dispatchers.io) {
+        val safePage = page.coerceAtLeast(1)
+        val safeSize = pageSize.coerceIn(1, 200)
+        val normalized = query.trim()
+        val column = classification?.asColumn()
+        val total = partyDao.countSearch(companyId, normalized, column)
+        val items = partyDao.search(companyId, normalized, column, safeSize, (safePage - 1) * safeSize)
+        PartyPage(items.map { it.toDomain() }, safePage, safeSize, total)
+    }
 
     override suspend fun getContactPersons(companyId: String, partyId: String): List<PartyContactPerson> =
         withContext(dispatchers.io) { contactPersonDao.findAllForParty(companyId, partyId).map { it.toDomain() } }
 
     override suspend fun getTagsForParty(companyId: String, partyId: String): List<Tag> =
         withContext(dispatchers.io) { tagDao.findTagsForParty(companyId, partyId).map { it.toDomain() } }
+
+    override suspend fun getSourceLinksForCompany(companyId: String): List<PartySourceLink> =
+        withContext(dispatchers.io) { sourceLinkDao.findAllForCompany(companyId).map { it.toDomain() } }
+
+    override suspend fun getTagsForCompany(companyId: String): Map<String, List<Tag>> =
+        withContext(dispatchers.io) {
+            tagDao.findTagsForCompany(companyId)
+                .groupBy(keySelector = { it.partyId }, valueTransform = { it.toTagDomain() })
+        }
 
     override suspend fun getFieldProvenance(companyId: String, partyId: String): List<PartyFieldProvenance> =
         withContext(dispatchers.io) { fieldProvenanceDao.findAllForParty(companyId, partyId).map { it.toDomain() } }
@@ -273,3 +290,11 @@ class PartyRepositoryImpl @Inject constructor(
 }
 
 private fun PartyClassification.asColumn(): String = name.lowercase()
+
+private fun PartyTagAssignmentRow.toTagDomain(): Tag = Tag(
+    tagId = tagId,
+    parentTagId = parentTagId,
+    name = name,
+    path = path,
+    createdAt = createdAt,
+)

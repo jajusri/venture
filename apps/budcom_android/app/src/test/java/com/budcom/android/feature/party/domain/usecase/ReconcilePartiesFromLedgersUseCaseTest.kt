@@ -88,10 +88,17 @@ private class FakePartyRepository : PartyRepository {
     override suspend fun getPartyForLedger(companyId: String, ledgerId: String): Party? = null
     override suspend fun listByClassification(companyId: String, classification: PartyClassification, page: Int, pageSize: Int) =
         PartyPage(emptyList(), page, pageSize, 0)
-    override suspend fun searchParties(companyId: String, query: String, page: Int, pageSize: Int) =
-        PartyPage(emptyList(), page, pageSize, 0)
+    override suspend fun searchParties(
+        companyId: String,
+        query: String,
+        classification: PartyClassification?,
+        page: Int,
+        pageSize: Int,
+    ) = PartyPage(emptyList(), page, pageSize, 0)
     override suspend fun getContactPersons(companyId: String, partyId: String): List<PartyContactPerson> = emptyList()
     override suspend fun getTagsForParty(companyId: String, partyId: String): List<Tag> = emptyList()
+    override suspend fun getSourceLinksForCompany(companyId: String): List<com.budcom.android.feature.party.domain.model.PartySourceLink> = emptyList()
+    override suspend fun getTagsForCompany(companyId: String): Map<String, List<Tag>> = emptyMap()
     override suspend fun getFieldProvenance(companyId: String, partyId: String): List<PartyFieldProvenance> = emptyList()
     override suspend fun updateBudcomOnlyField(companyId: String, partyId: String, fieldName: String, value: String?) =
         FieldProvenanceState.BudcomOnlyPending

@@ -9,6 +9,7 @@ import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
 import com.budcom.android.feature.party.domain.model.PartyPage
+import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import javax.inject.Inject
@@ -31,8 +32,13 @@ class ListPartiesByClassificationUseCase @Inject constructor(private val reposit
 }
 
 class SearchPartiesUseCase @Inject constructor(private val repository: PartyRepository) {
-    suspend operator fun invoke(companyId: String, query: String, page: Int = 1, pageSize: Int = 50): PartyPage =
-        repository.searchParties(companyId, query, page, pageSize)
+    suspend operator fun invoke(
+        companyId: String,
+        query: String,
+        classification: PartyClassification? = null,
+        page: Int = 1,
+        pageSize: Int = 50,
+    ): PartyPage = repository.searchParties(companyId, query, classification, page, pageSize)
 }
 
 class GetContactPersonsUseCase @Inject constructor(private val repository: PartyRepository) {
@@ -42,6 +48,14 @@ class GetContactPersonsUseCase @Inject constructor(private val repository: Party
 
 class GetTagsForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
     suspend operator fun invoke(companyId: String, partyId: String): List<Tag> = repository.getTagsForParty(companyId, partyId)
+}
+
+class GetPartySourceLinksForCompanyUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String): List<PartySourceLink> = repository.getSourceLinksForCompany(companyId)
+}
+
+class GetPartyTagsForCompanyUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String): Map<String, List<Tag>> = repository.getTagsForCompany(companyId)
 }
 
 class GetFieldProvenanceUseCase @Inject constructor(private val repository: PartyRepository) {

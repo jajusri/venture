@@ -22,6 +22,11 @@ interface PartySourceLinkDao {
     @Query("SELECT * FROM party_source_links WHERE companyId = :companyId AND partyId = :partyId")
     suspend fun findByPartyId(companyId: String, partyId: String): List<PartySourceLinkEntity>
 
+    /** Every source link for a company, unpaged — used only by Connect's list-enrichment join
+     * (resolving each row's linked ledger for balance/deep-link display), never per-row. */
+    @Query("SELECT * FROM party_source_links WHERE companyId = :companyId")
+    suspend fun findAllForCompany(companyId: String): List<PartySourceLinkEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: PartySourceLinkEntity)
 }
