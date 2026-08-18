@@ -9,8 +9,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueStatus
 import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
 import com.budcom.android.feature.party.domain.model.Party
+import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyExportEvent
@@ -67,6 +69,12 @@ class PartyDetailScreenTest {
 
     private fun timelineOf(vararg notes: PartyNote): List<com.budcom.android.feature.party.domain.model.TimelineEntry> =
         notes.map { com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent(it) }
+
+    private fun issue(id: String = "i1", title: String = "Short shipment", status: IssueStatus = IssueStatus.Open) =
+        PartyIssue(companyId = "co-1", issueId = id, partyId = "p1", title = title, status = status, createdAt = 0L, resolvedAt = null, updatedAt = 0L)
+
+    private fun issueCard(issue: PartyIssue = issue(), noteCount: Int = 1, lastActivityAt: Long = 0L) =
+        IssueCardUi(issue = issue, noteCount = noteCount, lastActivityAt = lastActivityAt)
 
     @Test
     fun loadingState() {
@@ -338,6 +346,135 @@ class PartyDetailScreenTest {
         }
         composeRule.onNodeWithTag("party_detail_load_more_timeline").performClick()
         assertEquals(PartyDetailEvent.LoadMoreTimeline, lastEvent)
+    }
+
+    @Test
+    fun aPartyWithNoIssuesShowsNoIssuesSection() {
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(state = PartyDetailUiState(isLoading = false, party = party(), issues = emptyList()), onEvent = {})
+            }
+        }
+        assertEquals(0, composeRule.onAllNodesForTag("party_detail_issues_toggle").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun tappingTheIssuesToggleEmitsToggleIssuesExpanded() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(isLoading = false, party = party(), issues = listOf(issueCard())),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_issues_toggle").performClick()
+        assertEquals(PartyDetailEvent.ToggleIssuesExpanded, lastEvent)
+    }
+
+    @Test
+    fun expandedIssueCardShowsResolveActionForAnOpenIssue() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false, party = party(),
+                        issues = listOf(issueCard(issue(status = IssueStatus.Open))), issuesExpanded = true,
+                    ),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_issue_i1_resolve").performClick()
+        assertEquals(PartyDetailEvent.ResolveIssueTapped("i1"), lastEvent)
+    }
+
+    @Test
+    fun expandedIssueCardShowsReopenActionForAResolvedIssue() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false, party = party(),
+                        issues = listOf(issueCard(issue(status = IssueStatus.Resolved))), issuesExpanded = true, resolvedIssuesExpanded = true,
+                    ),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_issue_i1_reopen").performClick()
+        assertEquals(PartyDetailEvent.ReopenIssueTapped("i1"), lastEvent)
+    }
+
+    @Test
+    fun tappingViewInTimelineEmitsIssueFilterTapped() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(isLoading = false, party = party(), issues = listOf(issueCard()), issuesExpanded = true),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_issue_i1_filter").performClick()
+        assertEquals(PartyDetailEvent.IssueFilterTapped("i1"), lastEvent)
+    }
+
+    @Test
+    fun aSelectedIssueFilterShowsTheBannerAndClearingItEmitsClearIssueFilterTapped() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false, party = party(),
+                        issues = listOf(issueCard()), selectedIssueFilterId = "i1",
+                    ),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_timeline_filter_banner").assertIsDisplayed()
+        composeRule.onNodeWithTag("party_detail_timeline_clear_filter").performClick()
+        assertEquals(PartyDetailEvent.ClearIssueFilterTapped, lastEvent)
+    }
+
+    @Test
+    fun resolvedIssuesStayCollapsedUntilTheirOwnToggleIsTapped() {
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false, party = party(),
+                        issues = listOf(issueCard(issue(id = "i1", status = IssueStatus.Resolved))),
+                        issuesExpanded = true, resolvedIssuesExpanded = false,
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_resolved_issues_toggle").assertIsDisplayed()
+        assertEquals(0, composeRule.onAllNodesForTag("party_detail_issue_i1").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun issueOpenedTimelineEntryRenders() {
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false, party = party(),
+                        timeline = listOf(com.budcom.android.feature.party.domain.model.TimelineEntry.IssueOpenedEvent("i1", "Short shipment", 0L)),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_issue_event_i1_opened").assertIsDisplayed()
     }
 
     @Test

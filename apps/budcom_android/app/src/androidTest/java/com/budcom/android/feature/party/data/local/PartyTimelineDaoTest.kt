@@ -12,7 +12,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Real-Room instrumented coverage for [PartyTimelineDao] — the MVP-1.2-B Relationship Timeline
+/** Real-Room instrumented coverage for [PartyTimelineDao] — the MVP-1.2-B/C Relationship Timeline
  * merge query. Follows the same real-in-memory-Room setup as [PartyRelatedDaoTest]. */
 @RunWith(AndroidJUnit4::class)
 class PartyTimelineDaoTest {
@@ -20,6 +20,7 @@ class PartyTimelineDaoTest {
     private lateinit var timelineDao: PartyTimelineDao
     private lateinit var noteDao: PartyNoteDao
     private lateinit var exportEventDao: PartyExportEventDao
+    private lateinit var issueDao: PartyIssueDao
 
     @Before
     fun setUp() {
@@ -30,6 +31,7 @@ class PartyTimelineDaoTest {
         timelineDao = db.partyTimelineDao()
         noteDao = db.partyNoteDao()
         exportEventDao = db.partyExportEventDao()
+        issueDao = db.partyIssueDao()
     }
 
     @After
@@ -58,6 +60,17 @@ class PartyTimelineDaoTest {
         companyId = companyId, exportId = exportId, partyId = partyId, createdAt = createdAt,
         outputFileName = "export.xml", fieldNamesCsv = "primaryEmail",
     )
+
+    private fun issue(
+        companyId: String = "co-a",
+        issueId: String,
+        partyId: String = "party-1",
+        title: String = "Short shipment",
+        status: String = "open",
+        createdAt: Long,
+        resolvedAt: Long? = null,
+        updatedAt: Long = createdAt,
+    ) = PartyIssueEntity(companyId, issueId, partyId, title, status, createdAt, resolvedAt, updatedAt)
 
     @Test
     fun mergesNotesAndExportEventsNewestFirst() = runBlocking {
@@ -163,5 +176,75 @@ class PartyTimelineDaoTest {
         assertTrue("bounded page read over 350 rows took ${elapsedMs}ms, expected well under 2000ms", elapsedMs < 2_000)
         // Newest overall is export-49 (createdAt 50000) vs note-299 (createdAt 300000) — the note wins.
         assertEquals("note-299", page.first().id)
+    }
+
+    // ============================== ISSUE LIFECYCLE (MVP-1.2-C) ==============================
+
+    @Test
+    fun anOpenIssueProducesExactlyOneIssueOpenedRow() = runBlocking {
+        issueDao.upsert(issue(issueId = "issue-1", createdAt = 1_000L, status = "open"))
+
+        val page = timelineDao.pageTimelineForParty("co-a", "party-1", issueId = null, limit = 20, offset = 0)
+
+        assertEquals(listOf("issue_opened"), page.map { it.kind })
+        assertEquals("issue-1", page.single().id)
+        assertEquals(1_000L, page.single().timestamp)
+    }
+
+    @Test
+    fun aResolvedIssueProducesBothOpenedAndResolvedRows() = runBlocking {
+        issueDao.upsert(issue(issueId = "issue-1", createdAt = 1_000L, status = "resolved", resolvedAt = 5_000L))
+
+        val page = timelineDao.pageTimelineForParty("co-a", "party-1", issueId = null, limit = 20, offset = 0)
+
+        assertEquals(2, page.size)
+        assertEquals(setOf("issue_opened", "issue_resolved"), page.map { it.kind }.toSet())
+        val resolvedRow = page.single { it.kind == "issue_resolved" }
+        assertEquals(5_000L, resolvedRow.timestamp)
+    }
+
+    @Test
+    fun countIncludesIssueLifecycleRows() = runBlocking {
+        issueDao.upsert(issue(issueId = "issue-1", createdAt = 1_000L, status = "resolved", resolvedAt = 2_000L))
+        noteDao.upsert(note(noteId = "note-1", createdAt = 3_000L))
+
+        // 1 note + 1 issue-opened + 1 issue-resolved = 3.
+        assertEquals(3, timelineDao.countTimelineForParty("co-a", "party-1", issueId = null))
+    }
+
+    @Test
+    fun issueFilteredTimelineExcludesTheIssuesOwnLifecycleRows() = runBlocking {
+        issueDao.upsert(issue(issueId = "issue-1", createdAt = 1_000L, status = "resolved", resolvedAt = 2_000L))
+        noteDao.upsert(note(noteId = "note-1", createdAt = 3_000L, issueId = "issue-1"))
+
+        val filtered = timelineDao.pageTimelineForParty("co-a", "party-1", issueId = "issue-1", limit = 20, offset = 0)
+
+        assertEquals(listOf("note-1"), filtered.map { it.id })
+        assertEquals(listOf("note"), filtered.map { it.kind })
+    }
+
+    @Test
+    fun issueLifecycleRowsNeverLeakAcrossCompanies() = runBlocking {
+        issueDao.upsert(issue(companyId = "co-a", issueId = "issue-1", partyId = "party-1", createdAt = 1_000L))
+        issueDao.upsert(issue(companyId = "co-b", issueId = "issue-2", partyId = "party-1", createdAt = 2_000L))
+
+        val timelineA = timelineDao.pageTimelineForParty("co-a", "party-1", issueId = null, limit = 20, offset = 0)
+        val timelineB = timelineDao.pageTimelineForParty("co-b", "party-1", issueId = null, limit = 20, offset = 0)
+
+        assertEquals(listOf("issue-1"), timelineA.map { it.id })
+        assertEquals(listOf("issue-2"), timelineB.map { it.id })
+    }
+
+    @Test
+    fun sameIssueIdOpenedAndResolvedRowsGetADeterministicTieBreakWhenTimestampsCollide() = runBlocking {
+        // An issue resolved in the exact same millisecond it was created is an edge case worth
+        // proving explicitly, since both rows would otherwise share id AND timestamp.
+        issueDao.upsert(issue(issueId = "issue-1", createdAt = 5_000L, status = "resolved", resolvedAt = 5_000L))
+
+        val firstRead = timelineDao.pageTimelineForParty("co-a", "party-1", issueId = null, limit = 20, offset = 0)
+        val secondRead = timelineDao.pageTimelineForParty("co-a", "party-1", issueId = null, limit = 20, offset = 0)
+
+        assertEquals(2, firstRead.size)
+        assertEquals(firstRead.map { it.kind }, secondRead.map { it.kind })
     }
 }

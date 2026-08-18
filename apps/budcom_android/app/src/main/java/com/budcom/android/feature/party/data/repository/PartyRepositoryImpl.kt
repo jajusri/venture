@@ -27,6 +27,7 @@ import com.budcom.android.feature.party.data.local.toDomain
 import com.budcom.android.feature.party.data.local.toFieldProvenanceState
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueActivitySummary
 import com.budcom.android.feature.party.domain.model.IssueStatus
 import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
 import com.budcom.android.feature.party.domain.model.NoteType
@@ -543,6 +544,14 @@ class PartyRepositoryImpl @Inject constructor(
 
     override suspend fun getIssuesForParty(companyId: String, partyId: String): List<PartyIssue> =
         withContext(dispatchers.io) { issueDao.findAllForParty(companyId, partyId).map { it.toDomain() } }
+
+    // ---- MVP-1.2-C: Issue History ----
+
+    override suspend fun getIssueActivitySummary(companyId: String, partyId: String): Map<String, IssueActivitySummary> =
+        withContext(dispatchers.io) {
+            noteDao.issueActivitySummary(companyId, partyId)
+                .associate { it.issueId to IssueActivitySummary(noteCount = it.noteCount, latestNoteAt = it.latestNoteAt) }
+        }
 
     // ---- MVP-1.1-D: Tally XML enrichment round-trip ----
 

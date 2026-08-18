@@ -174,6 +174,10 @@ private class FakePartyRepository : PartyRepository {
     override suspend fun reopenIssue(companyId: String, issueId: String): com.budcom.android.feature.party.domain.model.PartyIssue? = error("unused")
     override suspend fun getIssuesForParty(companyId: String, partyId: String): List<com.budcom.android.feature.party.domain.model.PartyIssue> =
         error("unused")
+    override suspend fun getIssueActivitySummary(
+        companyId: String,
+        partyId: String,
+    ): Map<String, com.budcom.android.feature.party.domain.model.IssueActivitySummary> = error("unused")
     override suspend fun getNotesForParty(
         companyId: String,
         partyId: String,

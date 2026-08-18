@@ -2,6 +2,7 @@ package com.budcom.android.feature.party.domain.repository
 
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueActivitySummary
 import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
@@ -186,6 +187,12 @@ interface PartyRepository {
      * to stay small, exactly like this feature's existing unpaged per-party tag/contact-person
      * reads (architecture §16). */
     suspend fun getIssuesForParty(companyId: String, partyId: String): List<PartyIssue>
+
+    // ---- MVP-1.2-C: Issue History ----
+
+    /** Note-count/last-activity rollup per issue, keyed by `issueId` — for the Issues section's
+     * card summary. A single bounded, party-scoped aggregate read, never one query per issue. */
+    suspend fun getIssueActivitySummary(companyId: String, partyId: String): Map<String, IssueActivitySummary>
 
     // ---- MVP-1.1-D: Tally XML enrichment round-trip ----
 

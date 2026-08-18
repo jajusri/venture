@@ -45,7 +45,7 @@ class PartyRepositoryImplTest {
     private val noteDao = FakePartyNoteDao()
     private val exportEventDao = FakePartyExportEventDao()
     private val issueDao = FakePartyIssueDao()
-    private val timelineDao = FakePartyTimelineDao(noteDao, exportEventDao)
+    private val timelineDao = FakePartyTimelineDao(noteDao, exportEventDao, issueDao)
 
     private fun repository() = PartyRepositoryImpl(
         partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, noteDao, exportEventDao, issueDao, timelineDao, time, dispatchers,
@@ -746,6 +746,107 @@ class PartyRepositoryImplTest {
         assertTrue("company A's partyId must not resolve any data under company B's scope", crossCompanyLookup.items.isEmpty())
     }
 
+    // ============================== ISSUE HISTORY (MVP-1.2-C) ==============================
+
+    @Test
+    fun `creating an issue produces an Issue opened timeline entry using the issue's own createdAt`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        time.now = 5_000L
+        val issue = repo.createIssue("co-1", partyId, "Short shipment")
+
+        val timeline = repo.getTimelineForParty("co-1", partyId, 1, 20, null)
+
+        val opened = timeline.items.single() as com.budcom.android.feature.party.domain.model.TimelineEntry.IssueOpenedEvent
+        assertEquals(issue.issueId, opened.issueId)
+        assertEquals("Short shipment", opened.title)
+        assertEquals(5_000L, opened.openedAt)
+    }
+
+    @Test
+    fun `resolving an issue adds an Issue resolved entry without removing the opened entry`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val issue = repo.createIssue("co-1", partyId, "Short shipment")
+        time.now = 9_000L
+        repo.resolveIssue("co-1", issue.issueId)
+
+        val timeline = repo.getTimelineForParty("co-1", partyId, 1, 20, null)
+
+        assertEquals(2, timeline.items.size)
+        assertTrue(timeline.items.any { it is com.budcom.android.feature.party.domain.model.TimelineEntry.IssueOpenedEvent })
+        val resolved = timeline.items.filterIsInstance<com.budcom.android.feature.party.domain.model.TimelineEntry.IssueResolvedEvent>().single()
+        assertEquals(9_000L, resolved.resolvedAt)
+    }
+
+    @Test
+    fun `reopening a resolved issue removes its Issue resolved entry from the timeline, keeps opened`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val issue = repo.createIssue("co-1", partyId, "Short shipment")
+        repo.resolveIssue("co-1", issue.issueId)
+        repo.reopenIssue("co-1", issue.issueId)
+
+        val timeline = repo.getTimelineForParty("co-1", partyId, 1, 20, null)
+
+        assertEquals(1, timeline.items.size)
+        assertTrue(timeline.items.single() is com.budcom.android.feature.party.domain.model.TimelineEntry.IssueOpenedEvent)
+    }
+
+    @Test
+    fun `issue-filtered timeline shows only that issue's notes, never its own lifecycle rows`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val issue = repo.createIssue("co-1", partyId, "Short shipment")
+        repo.addNote("co-1", partyId, "2 pieces short", null, NoteType.Complaint, null, issue.issueId)
+        repo.resolveIssue("co-1", issue.issueId)
+
+        val filtered = repo.getTimelineForParty("co-1", partyId, 1, 20, issue.issueId)
+
+        assertEquals(1, filtered.items.size)
+        assertTrue(filtered.items.single() is com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent)
+    }
+
+    @Test
+    fun `issue activity summary reports note count and latest note timestamp per issue`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val issue = repo.createIssue("co-1", partyId, "Short shipment")
+        time.now = 1_000L
+        repo.addNote("co-1", partyId, "First", null, NoteType.Complaint, null, issue.issueId)
+        time.now = 2_000L
+        repo.addNote("co-1", partyId, "Second", null, NoteType.Complaint, null, issue.issueId)
+
+        val summary = repo.getIssueActivitySummary("co-1", partyId)
+
+        assertEquals(2, summary.getValue(issue.issueId).noteCount)
+        assertEquals(2_000L, summary.getValue(issue.issueId).latestNoteAt)
+    }
+
+    @Test
+    fun `an issue with no notes has no entry in the activity summary`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repo.createIssue("co-1", partyId, "Short shipment")
+
+        assertTrue(repo.getIssueActivitySummary("co-1", partyId).isEmpty())
+    }
+
+    @Test
+    fun `issue lifecycle timeline entries and activity summaries never leak across companies`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyIdA = repo.createProspect("co-A", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "ABC Traders")).partyId
+        val partyIdB = repo.createProspect("co-B", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "ABC Traders")).partyId
+        val issueA = repo.createIssue("co-A", partyIdA, "Short shipment")
+        repo.addNote("co-A", partyIdA, "2 pieces short", null, NoteType.Complaint, null, issueA.issueId)
+
+        val timelineB = repo.getTimelineForParty("co-B", partyIdB, 1, 20, null)
+        val summaryB = repo.getIssueActivitySummary("co-B", partyIdB)
+
+        assertTrue("company B must never see company A's issue-lifecycle timeline entries", timelineB.items.isEmpty())
+        assertTrue("company B must never see company A's issue activity summary", summaryB.isEmpty())
+    }
+
     // ============================== TALLY XML EXPORT (MVP-1.1-D) ==============================
 
     @Test
@@ -1064,6 +1165,10 @@ private class FakePartyNoteDao : com.budcom.android.feature.party.data.local.Par
     override suspend fun delete(companyId: String, noteId: String) {
         store.remove(key(companyId, noteId))
     }
+    override suspend fun issueActivitySummary(companyId: String, partyId: String): List<com.budcom.android.feature.party.data.local.IssueActivityRow> =
+        store.values.filter { it.companyId == companyId && it.partyId == partyId && it.issueId != null }
+            .groupBy { it.issueId!! }
+            .map { (issueId, notes) -> com.budcom.android.feature.party.data.local.IssueActivityRow(issueId, notes.size, notes.maxOf { it.createdAt }) }
 }
 
 private class FakePartyExportEventDao : com.budcom.android.feature.party.data.local.PartyExportEventDao {
@@ -1104,6 +1209,7 @@ private class FakePartyIssueDao : com.budcom.android.feature.party.data.local.Pa
 private class FakePartyTimelineDao(
     private val noteDao: FakePartyNoteDao,
     private val exportEventDao: FakePartyExportEventDao,
+    private val issueDao: FakePartyIssueDao,
 ) : com.budcom.android.feature.party.data.local.PartyTimelineDao {
 
     private fun merged(companyId: String, partyId: String, issueId: String?): List<com.budcom.android.feature.party.data.local.TimelineRowEntity> {
@@ -1129,8 +1235,28 @@ private class FakePartyTimelineDao(
         } else {
             emptyList()
         }
-        return (notes + exports).sortedWith(
-            compareByDescending<com.budcom.android.feature.party.data.local.TimelineRowEntity> { it.timestamp }.thenBy { it.id },
+        val issueEvents = if (issueId == null) {
+            issueDao.store.values.filter { it.companyId == companyId && it.partyId == partyId }.flatMap { issue ->
+                val opened = com.budcom.android.feature.party.data.local.TimelineRowEntity(
+                    kind = "issue_opened", id = issue.issueId, companyId = issue.companyId, partyId = issue.partyId,
+                    timestamp = issue.createdAt, updatedAt = issue.updatedAt, body = issue.title, linkedVoucherId = null,
+                    type = null, dueAt = null, completedAt = null, issueId = null, outputFileName = null, fieldNamesCsv = null,
+                )
+                val resolved = issue.resolvedAt?.let { resolvedAt ->
+                    com.budcom.android.feature.party.data.local.TimelineRowEntity(
+                        kind = "issue_resolved", id = issue.issueId, companyId = issue.companyId, partyId = issue.partyId,
+                        timestamp = resolvedAt, updatedAt = issue.updatedAt, body = issue.title, linkedVoucherId = null,
+                        type = null, dueAt = null, completedAt = null, issueId = null, outputFileName = null, fieldNamesCsv = null,
+                    )
+                }
+                listOfNotNull(opened, resolved)
+            }
+        } else {
+            emptyList()
+        }
+        return (notes + exports + issueEvents).sortedWith(
+            compareByDescending<com.budcom.android.feature.party.data.local.TimelineRowEntity> { it.timestamp }
+                .thenBy { it.id }.thenBy { it.kind },
         )
     }
 

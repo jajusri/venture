@@ -24,4 +24,15 @@ interface PartyNoteDao {
 
     @Query("DELETE FROM party_notes WHERE companyId = :companyId AND noteId = :noteId")
     suspend fun delete(companyId: String, noteId: String)
+
+    /** One row per issue this party has at least one note under — note count + latest note
+     * timestamp, for the Issues section's card summary (MVP-1.2-C). A single bounded, indexed
+     * (`companyId`, `partyId` prefix of the existing index) aggregate query — never N+1. */
+    @Query(
+        "SELECT issueId, COUNT(*) AS noteCount, MAX(createdAt) AS latestNoteAt FROM party_notes " +
+            "WHERE companyId = :companyId AND partyId = :partyId AND issueId IS NOT NULL GROUP BY issueId",
+    )
+    suspend fun issueActivitySummary(companyId: String, partyId: String): List<IssueActivityRow>
 }
+
+data class IssueActivityRow(val issueId: String, val noteCount: Int, val latestNoteAt: Long)

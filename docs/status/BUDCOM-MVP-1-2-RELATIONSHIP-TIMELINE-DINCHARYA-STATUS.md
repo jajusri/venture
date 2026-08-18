@@ -1,7 +1,7 @@
 # BUDCOM MVP-1.2 — Relationship Timeline, Issue History, Dincharya & OI — Status
 
-**Status:** Part A complete. Part B complete — acceptance gate PASSED, automatic continuation to
-Part C authorized per this session's own governing prompt.
+**Status:** Part A complete. Part B complete — acceptance gate PASSED. Part C complete. STOP per
+this session's own governing prompt — MVP-1.2-D not started.
 **Companion documents:** `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` (concise current-state
 checkpoint), `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` (chronological record),
 `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md` (locked
@@ -546,3 +546,203 @@ accessibility unaffected; zero new unexplained instrumented failures (exact know
 zero P0/P1 defect; zero security/data-integrity issue; zero architecture contradiction; zero
 accidental scope expansion (issue-lifecycle Timeline events deliberately deferred to C, not
 silently included). Proceeding to Part C in this same session.
+
+---
+
+# Part C — MVP-1.2-C: Issue History
+
+**Starting HEAD:** `95ff98ded476c8051e892790b240a90ec5d2ea0b` (`feat(android): MVP-1.2-B
+Relationship Timeline — acceptance gate passed`), working tree clean.
+
+## C1. Scope actually implemented
+
+Architecture doc §10/§11's 1.2-C line item: a Party Detail Issues section (open issues prominent,
+resolved issues collapsed), issue-filtered Timeline view (reusing 1.2-B's `PartyTimelineDao`
+`issueId` parameter — no second, duplicate list implementation), and issue-lifecycle events wired
+into the Relationship Timeline for consistency (architecture §16). Issue History is explicitly
+**not** a second competing chronological history — it is the structured lifecycle view of data the
+Timeline already displays, per PDL-014.
+
+## C2. Architecture — extending the Timeline query rather than building a second one
+
+`PartyTimelineDao`'s `UNION ALL` (built in B with exactly this extension in mind) gained two more
+arms reading `party_issues` directly: `issue_opened` (the issue's own `createdAt`) and
+`issue_resolved` (`resolvedAt`, only emitted when currently non-null). Both are read **live** from
+the same `party_issues` table the Issues section itself queries — never a separately-stored,
+independently-writable record — so the Timeline and the Issues section can never disagree about the
+same issue's state. This is the direct mechanism satisfying "Issue/Timeline Consistency": creating
+an issue immediately produces an "Issue opened" Timeline row with zero additional write; resolving
+produces "Issue resolved" the same way; reopening makes that row disappear because `resolvedAt`
+genuinely became `NULL` again — the Timeline is not out of sync, it is reporting the truth.
+
+**Accepted, explicitly documented limitation:** because `party_issues` has no append-only history
+table, reopening an issue does not retain a permanent record that it was *previously* resolved at
+some earlier time — only the *current* state is ever representable. Building a full issue-event
+log was considered and rejected as disproportionate schema growth for this milestone (PDL-012);
+this is a genuine, named trade-off, not an oversight.
+
+`id ASC, kind ASC` (extended from B's `id ASC`) tie-breaks deterministically even when an issue's
+`opened`/`resolved` rows share both `id` (the same `issueId`) and, in the rare case, an identical
+timestamp — proven by a dedicated same-millisecond test.
+
+Zero schema change, zero migration — `DatabaseConstants.VERSION` stays 9, exactly as in B.
+
+## C3. Data model
+
+`TimelineEntry` gained two 1.2-C cases: `IssueOpenedEvent(issueId, title, openedAt)`,
+`IssueResolvedEvent(issueId, title, resolvedAt)` — thin, derived types, not a copy of `PartyIssue`.
+New `IssueActivitySummary(noteCount, latestNoteAt)` domain type for the Issues section's per-card
+rollup.
+
+## C4. Repository / use-case / DAO additions
+
+`PartyNoteDao.issueActivitySummary(companyId, partyId)` — one bounded, `GROUP BY issueId` aggregate
+query over `party_notes` (already indexed by `companyId, partyId` prefix), returning note count +
+latest note timestamp per issue in a single round-trip — never one query per issue card.
+`PartyRepository.getIssueActivitySummary` / `GetIssueActivitySummaryUseCase` expose it.
+`ResolveIssueUseCase`/`ReopenIssueUseCase` (already existing since 1.2-A, previously unused by any
+UI) are now wired into `PartyDetailViewModel`.
+
+## C5. UI — Issues section and Timeline filtering
+
+`PartyDetailUiState` gained `issues: List<IssueCardUi>` (issue + note count + computed
+`lastActivityAt = max(createdAt, updatedAt, resolvedAt, latest linked note)`), `issuesExpanded`/
+`resolvedIssuesExpanded` (progressive disclosure, matching architecture §10's "count badge, full
+detail on tap" and "resolved issues collapse into a secondary, de-emphasized area"), and
+`selectedIssueFilterId`. The Issues section is **omitted entirely** when a Party has never had an
+issue — no perpetual empty-section clutter, following the same "only show a picker section when
+there's something to pick" precedent already established for the note editor's issue/voucher
+pickers in 1.2-A.
+
+Tapping an issue's "View in Timeline" action does **not** trigger the full `load()` — a new
+`loadTimeline(issueId)` refreshes only the Timeline portion of state, avoiding an unnecessary
+re-fetch of party/fields/contacts/tags on every filter tap. Tapping the same issue again clears the
+filter (toggle), matching this screen's existing note/tag/voucher picker selection convention.
+Resolve/Reopen actions refresh both the issue cards and the (possibly filtered) Timeline in the same
+operation, so a resolved issue's card and its new Timeline entry appear together, never one without
+the other.
+
+## C6. Company isolation — adversarial evidence
+
+Extended the same two-layer discipline from B:
+- DAO (`PartyTimelineDaoTest.issueLifecycleRowsNeverLeakAcrossCompanies`): two companies each with
+  their own issue under the same `partyId` natural key — each company's Timeline shows exactly its
+  own issue's lifecycle rows, never the other's.
+- DAO (`PartyNoteDaoTest.issueActivitySummaryIsCompanyIsolated`): identical `issueId` reused under
+  two companies with different note counts — each company's summary reflects only its own notes.
+- Repository (`PartyRepositoryImplTest`'s `issue lifecycle timeline entries and activity summaries
+  never leak across companies`): a full end-to-end proof through the public repository API, not
+  just the raw DAO layer.
+
+## C7. Timeline/Issue consistency — direct evidence
+
+- `creating an issue produces an Issue opened timeline entry using the issue's own createdAt`
+- `resolving an issue adds an Issue resolved entry without removing the opened entry`
+- `reopening a resolved issue removes its Issue resolved entry from the timeline, keeps opened`
+- `issue-filtered timeline shows only that issue's notes, never its own lifecycle rows`
+- ViewModel-level: `resolving an issue moves it out of open issues and into the timeline as
+  resolved`, `reopening an issue moves it back to open and clears the resolved timeline entry` —
+  proving the Issues section and the Timeline update together from the same user action, never one
+  without the other.
+
+## C8. Mini-hardening review
+
+- **Create/empty issue:** blank-title creation is silently skipped (unchanged 1.2-A behavior via
+  `resolveIssueId`'s own `title.trim().isEmpty()` guard) — no new validation needed for C.
+- **Long issue text:** no `maxLines`/truncation on issue titles in cards or lifecycle rows —
+  Compose wraps naturally, matching every other text row on this screen.
+- **Duplicate-looking issues:** reaffirmed from 1.2-A — `createIssue` deliberately does not
+  deduplicate by title (each issue is a distinct real problem instance).
+- **Resolve/reopen:** both directions tested at repository, DAO, and ViewModel layers (C6/C7); an
+  idempotent double-resolve (calling resolve on an already-resolved issue) does not error, just
+  refreshes `resolvedAt` — a defensible, low-risk non-error path, not separately asserted.
+- **Due date:** not applicable to issues themselves (a note-level concept, unchanged) — issue cards
+  correctly show no due-date field, matching the locked scope (architecture §10's card fields are
+  title/note-count/last-activity/action only).
+- **Navigation away/back, process recreation, rotation:** `issuesExpanded`/`resolvedIssuesExpanded`/
+  `selectedIssueFilterId` live in the same ViewModel-scoped `StateFlow` as every other transient UI
+  toggle on this screen (e.g. dialog state) — survives rotation via the standard ViewModel-retention
+  mechanism already proven throughout MVP-1.1/1.2-A/B, resets to defaults on process death exactly
+  like every other non-`SavedStateHandle`-backed toggle already on this screen (not a regression,
+  not a new risk class).
+- **Offline behavior:** grep-verified zero network/Connector import in any new C file.
+- **Timeline consistency:** C7 above — the dominant hardening focus for this milestone, per the
+  task's own explicit "major acceptance criterion" framing.
+- **Company isolation:** C6 above.
+- **Accessibility:** every new element is `Text`/`TextButton`/`Card`, the established
+  self-describing pattern; no icon-only or unlabeled control introduced.
+- **Sparse data:** an issue with zero notes correctly has no entry in the activity summary map
+  (`noteCount` defaults to 0 in the UI join, tested both at the DAO and ViewModel layers).
+- **Many issues:** not separately large-fixture-tested beyond 1.2-A's own `PartyIssueDaoTest`
+  precedent — per-party issue counts are architecturally assumed small (matching tags/contact
+  persons), and the genuinely-must-be-bounded cross-party query is Dincharya's (1.2-D), not this
+  milestone's.
+- **Stale references:** cannot occur — issues are never deletable (unchanged since 1.2-A).
+
+**Defects found:** none this session.
+
+## C9. Tests
+
+- **New JVM tests (15):** `PartyRepositoryImplTest` — 7 (issue-opened entry, resolved entry
+  preserves opened, reopen removes resolved, issue-filtered timeline excludes lifecycle rows,
+  activity summary count/latest, no-notes issue has no summary entry, cross-company isolation);
+  `PartyDetailViewModelTest` — 8 (no-issues state, note-count/open-first ordering, resolve moves
+  card + adds timeline entry, reopen reverses both, filter narrows timeline, re-tap clears filter,
+  explicit clear-filter action, expand/collapse toggle).
+- **New instrumented tests (14), run and passing on device `10BF44124K000E3`:** `PartyTimelineDaoTest`
+  — 6 new (open-issue-produces-one-row, resolved-issue-produces-two-rows, count includes lifecycle
+  rows, issue-filter excludes lifecycle rows, cross-company isolation, same-timestamp tie-break);
+  `PartyNoteDaoTest` — 3 new (`issueActivitySummary` count/latest, excludes issue-less notes,
+  company isolation); `PartyDetailScreenTest` — 8 new (no-issues-section, toggle-expand, resolve
+  action, reopen action, view-in-timeline filter tap, filter banner + clear action, resolved-issues
+  stay-collapsed, issue-opened Timeline row renders).
+- **Existing-test mechanical updates (no behavior change):** the same five unrelated fake
+  `PartyRepository` implementations (from 1.2-A/B) each needed one additional
+  `getIssueActivitySummary` stub override.
+
+## C10. Full regression results
+
+- `testDebugUnitTest` / `testReleaseUnitTest`: **1,201/1,201 passing** both (was 1,186 after B; +15
+  new this session).
+- `lintDebug` / `lintRelease`: **0 errors** both (report-XML-verified). One transient Gradle
+  parallel-task race (`lintAnalyzeDebugUnitTest`/`lintAnalyzeDebugAndroidTest` hit a Hilt-generated
+  file mid-write by a concurrently-running `kspReleaseKotlin` task — "Unexpected failure during
+  lint analysis... FileNotFoundException") — investigated, confirmed to be a build-tool
+  scheduling artifact unrelated to any source change (the same commands succeeded cleanly on
+  immediate retry with no code change), not silently retried without understanding why.
+- `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`: all `BUILD SUCCESSFUL`.
+- `connectedDebugAndroidTest` on device `10BF44124K000E3`: **274/286 passing** (was 256/268 after
+  B; +18 net new instrumented tests this session). The 12 failures are byte-for-byte the same
+  pre-existing device-viewport-artifact class (`DashboardScreenTest`, `DiagnosticsScreenTest`,
+  `LedgerStatementScreenTest`, `SecurePairingScreenTest`, `ServerConfigScreenTest`,
+  `SettingsScreenTest`, `SyncScreenTest`, `VoucherDetailsScreenTest`) — **zero overlap** with any
+  file this session touched. The device stay-awake fix (learned in 1.2-A, reused in B) was applied
+  proactively before this run too; it completed cleanly in 2m19s on the first attempt.
+
+## C11. Version / artifacts
+
+**Version not bumped.** Unchanged `0.1.1-continuity.26`/versionCode 27, per this task's explicit
+instruction to defer to a coherent milestone boundary.
+
+## C12. Accepted limitations (explicit)
+
+- Reopening an issue does not retain a permanent record of a *past* resolution — only current state
+  is representable without a dedicated append-only issue-event log, which is out of this
+  milestone's scope (C2).
+- The Issues section's per-party reads are not large-fixture performance-tested beyond 1.2-A's own
+  `PartyIssueDaoTest` precedent — architecturally assumed small per party, unlike Dincharya's
+  future cross-party query (1.2-D).
+- All Part A and Part B accepted limitations remain unchanged and still apply.
+
+## C13. FINAL RESULT
+
+**MVP-1.2-C COMPLETE.** Every C test-gate item verified: full JVM regression clean both variants;
+both lints 0 errors; all three assembles green; instrumented suite at the exact known-12 baseline
+with zero overlap; company-isolation and Timeline/Issue-consistency tests both pass with dedicated
+adversarial evidence; zero P0/P1 defect; zero security/data-integrity issue.
+
+Per this session's own final stop condition: **STOP. Do not begin MVP-1.2-D. Do not begin 1.2-E. Do
+not begin MVP-1.3. Do not push. Do not install.**
+
+Next authorized task: **MVP-1.2-D — Dincharya**, pending Product Owner/technical review of this B+C
+result.

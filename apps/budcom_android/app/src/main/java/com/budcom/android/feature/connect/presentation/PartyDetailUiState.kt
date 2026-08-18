@@ -2,6 +2,7 @@ package com.budcom.android.feature.connect.presentation
 
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueStatus
 import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
@@ -11,6 +12,16 @@ import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.model.TimelineEntry
+
+/** One Issues-section card (MVP-1.2-C) — the issue plus its computed note-count/last-activity
+ * rollup, exactly like [PartyFieldRowUi] reads pre-joined data rather than the raw model +
+ * provenance map. [lastActivityAt] is the most recent of the issue's own timestamps and its
+ * latest linked note, so "last activity" never understates real activity. */
+data class IssueCardUi(
+    val issue: PartyIssue,
+    val noteCount: Int,
+    val lastActivityAt: Long,
+)
 
 /** One editable Tally-compatible field row, with its current effective value and provenance —
  * the UI reads this instead of poking at [Party] + a raw provenance map directly. */
@@ -42,6 +53,10 @@ data class PartyDetailUiState(
     val timelinePage: Int = 1,
     val timelineCanLoadMore: Boolean = false,
     val isLoadingMoreTimeline: Boolean = false,
+    val issues: List<IssueCardUi> = emptyList(),
+    val issuesExpanded: Boolean = false,
+    val resolvedIssuesExpanded: Boolean = false,
+    val selectedIssueFilterId: String? = null,
     val error: MasterDataUiError? = null,
     val notice: String? = null,
     val activeDialog: PartyDetailDialog? = null,
@@ -53,6 +68,13 @@ data class PartyDetailUiState(
      * Timeline is the single presentation of this data, so notes are read from it, not from a
      * second, separately-fetched list — see [com.budcom.android.feature.connect.presentation.PartyDetailViewModel]). */
     val notesInTimeline: List<PartyNote> get() = timeline.filterIsInstance<TimelineEntry.NoteEvent>().map { it.note }
+
+    val openIssues: List<IssueCardUi> get() = issues.filter { it.issue.status == IssueStatus.Open }
+    val resolvedIssues: List<IssueCardUi> get() = issues.filter { it.issue.status == IssueStatus.Resolved }
+
+    /** The currently-selected filter issue, if any — resolved from [issues] rather than stored
+     * separately, so the filter banner can never show stale title text. */
+    val selectedIssueFilter: IssueCardUi? get() = issues.firstOrNull { it.issue.issueId == selectedIssueFilterId }
 }
 
 sealed interface PartyDetailDialog {
@@ -138,6 +160,15 @@ sealed interface PartyDetailEvent {
     data class DeleteNoteTapped(val noteId: String) : PartyDetailEvent
     data class LinkedVoucherTapped(val voucherId: String) : PartyDetailEvent
 
+    data object ToggleIssuesExpanded : PartyDetailEvent
+    data object ToggleResolvedIssuesExpanded : PartyDetailEvent
+    data class ResolveIssueTapped(val issueId: String) : PartyDetailEvent
+    data class ReopenIssueTapped(val issueId: String) : PartyDetailEvent
+    /** Tapping the already-selected issue again clears the filter (toggle), matching the note/tag
+     * pickers' own toggle-selection convention elsewhere on this screen. */
+    data class IssueFilterTapped(val issueId: String) : PartyDetailEvent
+    data object ClearIssueFilterTapped : PartyDetailEvent
+
     data object DismissDialog : PartyDetailEvent
     data object DismissNotice : PartyDetailEvent
 }
@@ -164,6 +195,11 @@ internal fun NoteType.toUiLabel(): String = when (this) {
 
 /** Only [NoteType.Commitment]/[NoteType.FollowUp] carry a meaningful due date (architecture §9.1). */
 internal fun NoteType.showsDueDate(): Boolean = this == NoteType.Commitment || this == NoteType.FollowUp
+
+internal fun IssueStatus.toUiLabel(): String = when (this) {
+    IssueStatus.Open -> "Open"
+    IssueStatus.Resolved -> "Resolved"
+}
 
 internal val PARTY_DETAIL_FIELD_LABELS: List<Pair<String, String>> = listOf(
     PartyFieldNames.PRIMARY_PHONE to "Phone",

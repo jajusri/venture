@@ -3,6 +3,7 @@ package com.budcom.android.feature.party.domain.usecase
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueActivitySummary
 import com.budcom.android.feature.party.domain.model.LedgerPartyEligibilityPolicy
 import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
@@ -221,6 +222,11 @@ class ReopenIssueUseCase @Inject constructor(private val repository: PartyReposi
 
 class GetIssuesForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
     suspend operator fun invoke(companyId: String, partyId: String): List<PartyIssue> = repository.getIssuesForParty(companyId, partyId)
+}
+
+class GetIssueActivitySummaryUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String): Map<String, IssueActivitySummary> =
+        repository.getIssueActivitySummary(companyId, partyId)
 }
 
 // ---- MVP-1.1-D: Tally XML enrichment round-trip ----

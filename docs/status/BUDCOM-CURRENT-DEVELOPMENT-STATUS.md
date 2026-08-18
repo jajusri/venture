@@ -10,18 +10,18 @@ governing the three-tier split. Update all three when a work unit changes their 
 
 **MVP-1.1 STATUS: COMPLETE / FROZEN (2026-08-17)** — A through E all technically complete, and the
 final `continuity.26` candidate is now installed on the owner's device (§5).
-**MVP-1.2 STATUS: PRODUCT DECISIONS LOCKED (2026-08-18); PART A COMPLETE; PART B COMPLETE —
-ACCEPTANCE GATE PASSED (2026-08-18); PART C IN PROGRESS (same session, automatic continuation).**
+**MVP-1.2 STATUS: PRODUCT DECISIONS LOCKED (2026-08-18); PARTS A, B, C ALL COMPLETE (2026-08-18).**
 The four open product questions from the 2026-08-17 architecture session were explicitly answered
 by the Product Owner and recorded permanently as `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md`
 PDL-014–PDL-017 (Relationship Timeline is the unified history surface; Referral Tree deferred;
 Home Insights/OI deferred; OS notifications deferred, Dincharya v1 is in-app only). Part A
-(Structured Party Activity Foundation — typed notes, due-date/completion, `party_issues`,
-`MIGRATION_8_9`) and Part B (Relationship Timeline — merged notes/export-events chronological feed
-replacing the flat Notes list) are both technically complete and mini-hardened. Part B's own
-acceptance gate passed on every mandatory criterion, explicitly authorizing automatic continuation
-to Part C (Issue History) within the same session, per this session's own governing prompt. See §3.
-Full detail: `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts A–B;
+(Structured Party Activity Foundation), Part B (Relationship Timeline — merged notes/export-events
+feed replacing the flat Notes list), and Part C (Issue History — Issues section + issue-lifecycle
+Timeline entries + issue-filtered Timeline view) are all technically complete and mini-hardened. B's
+acceptance gate passed explicitly, authorizing automatic continuation to C per this session's own
+governing prompt; C's own test gate then passed, triggering this session's **final stop condition**
+— MVP-1.2-D is not started, awaiting Product Owner/technical review of the full A+B+C result. See
+§3. Full detail: `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts A–C;
 architecture: `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`.
 **PUBLIC RELEASE BLOCKED — SIGNING ONLY** (Windows code-signing + Android release keystore, neither
 exists; Android `applicationId` also undecided — unrelated to and unchanged by MVP-1.1/1.2 work)
@@ -37,9 +37,10 @@ exists; Android `applicationId` also undecided — unrelated to and unchanged by
   (`feat(android): lock MVP-1.2 product decisions, implement MVP-1.2-A Party Activity foundation`),
   working tree clean. Prior session (product decisions + Part A): Development Ledger phase 27.
 - HEAD at end of this session: see `git log -1`. This session implements MVP-1.2-B (Relationship
-  Timeline) — see Development Ledger phase 28 — and then MVP-1.2-C (Issue History) in the same
+  Timeline, Development Ledger phase 28) and then MVP-1.2-C (Issue History, phase 29) in one
   autonomous run, per explicit instruction to continue automatically once B's acceptance gate
-  passed.
+  passed — which it did, and C's own test gate then passed too, triggering the session's final stop
+  condition.
 - Android: the final MVP-1.1 candidate `0.1.1-continuity.26` (versionCode 27) remains installed on
   device `I2407i` (§5) — unchanged this session; version bump deliberately deferred (per explicit
   instruction not to bump after B, and only at a coherent milestone boundary thereafter).
@@ -60,8 +61,26 @@ all three assembles green; instrumented suite 256/268, the unchanged 12-failure 
 device-viewport class, zero overlap. Applied the device stay-awake power-setting fix *proactively*
 this time (learned directly from Part A's own documented lesson), so the instrumented run completed
 cleanly on the first attempt. **B's acceptance gate passed on every mandatory criterion — automatic
-continuation to Part C explicitly authorized and begun in this same session.** Full detail:
-`docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Part B.
+continuation to Part C explicitly authorized and begun in this same session.**
+
+**Part C — Issue History, implemented and complete.** Extended (not duplicated) B's
+`PartyTimelineDao` `UNION ALL` with two more arms reading `party_issues` live
+(`issue_opened`/`issue_resolved`) — the direct mechanism for "Issue/Timeline Consistency": the
+Timeline and the new Issues section read the exact same table, so they can never disagree. Added a
+Party Detail Issues section (open issues compact-then-expandable, resolved issues collapsed into a
+secondary disclosure) with Resolve/Reopen actions (wiring 1.2-A's already-existing but
+previously-unused use cases) and a "View in Timeline" issue filter reusing B's `issueId` parameter.
+New `PartyNoteDao.issueActivitySummary` bounded aggregate gives each issue card its note-count/
+last-activity rollup in one query. Accepted, explicitly documented limitation: reopening an issue
+does not retain a record of a *past* resolution (no append-only issue-event log; building one was
+assessed and rejected as disproportionate for this milestone). 29 new tests (15 JVM + 14
+instrumented) with dedicated adversarial company-isolation and direct Timeline/Issue-consistency
+proofs. Full regression clean: `testDebugUnitTest`/`testReleaseUnitTest` 1,201/1,201 both; both
+lints 0 errors (one transient Gradle parallel-task lint-analysis race investigated and confirmed a
+build-tool scheduling artifact, clean on immediate retry); all three assembles green; instrumented
+suite 274/286, the unchanged 12-failure baseline, zero overlap. **C's test gate passed — this
+session's final stop condition now applies.** Full detail (both parts):
+`docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts B–C.
 
 Full architecture detail: `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`.
 Prior milestone (MVP-1.1-A through E): `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Parts A–E.
@@ -104,18 +123,21 @@ repository evidence, not session memory.
 ## 7. Exact NEXT TASK
 
 **MVP-1.1 is complete/frozen and installed (§1/§5). MVP-1.2's four product decisions are locked
-(§1/§3, PDL-014–PDL-017). MVP-1.2-A and MVP-1.2-B are both technically complete, mini-hardened, and
-documented; B's acceptance gate passed explicitly (§3; full evidence in
-`docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts A–B).**
+(§1/§3, PDL-014–PDL-017). MVP-1.2-A, MVP-1.2-B, and MVP-1.2-C are all technically complete,
+mini-hardened, and documented; B's acceptance gate and C's test gate both passed explicitly (§3;
+full evidence in `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts A–C).**
 
-**MVP-1.2-C — Issue History is authorized and in progress in this same autonomous session**, per
-explicit instruction to continue automatically from B to C once B's gate passed (this document will
-be updated again once C itself completes or if it hits its own STOP condition). Scope: the
-structured issue lifecycle (create/resolve/reopen, already built in 1.2-A) surfaced as a Party
-Detail Issues section, issue-filtered Timeline view (reusing 1.2-B's `PartyTimelineDao` `issueId`
-parameter), and issue-lifecycle events wired into the Timeline for consistency — never a second,
-competing chronological history (architecture §10, PDL-014). Explicitly not yet in scope: Dincharya
-screen (1.2-D), integrated hardening/freeze (1.2-E).
+Per this session's own final stop condition (now reached): **STOP. Do not begin MVP-1.2-D. Do not
+begin 1.2-E. Do not begin MVP-1.3. Do not push. Do not install.**
+
+**Next authorized task once reviewed: MVP-1.2-D — Dincharya** (architecture doc §10/§11) — a new
+`feature/dincharya/` top-level package (mirrors `feature/connect/`'s module boundary), the first
+genuinely cross-party bounded query in this feature area (grouped by three deterministic item
+types: follow-ups/callbacks, pending Tally confirmation, pending contact info), a new Dashboard
+entry, and OI framing copy. Company-isolation on the new cross-party query is architecture doc
+§13/§20's own identified single highest risk for the whole MVP-1.2 arc — the adversarial
+two-company test for it must be a named, explicit, blocking test, not incidental. Explicitly not
+yet in scope: integrated hardening/freeze (1.2-E).
 
 Two independent items from prior sessions also remain open, unaffected by and not blocking the
 above:
@@ -128,6 +150,6 @@ above:
    `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Part E §E14 — device pairing was deliberately not
    attempted during installation (out of that task's scope).
 
-**Not started:** MVP-1.2-B through 1.2-E; external/public distribution; MVP-1.3+. Do not begin
+**Not started:** MVP-1.2-D, MVP-1.2-E; external/public distribution; MVP-1.3+. Do not begin
 distribution before signing exists and the product owner explicitly authorizes it. Do not begin
-MVP-1.2-B without product/technical review of the 1.2-A result first.
+MVP-1.2-D without product/technical review of the A+B+C result first.

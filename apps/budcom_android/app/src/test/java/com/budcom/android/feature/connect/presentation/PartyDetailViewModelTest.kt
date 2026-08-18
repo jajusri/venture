@@ -9,6 +9,7 @@ import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueActivitySummary
 import com.budcom.android.feature.party.domain.model.IssueStatus
 import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
 import com.budcom.android.feature.party.domain.model.NoteType
@@ -38,11 +39,14 @@ import com.budcom.android.feature.party.domain.usecase.EditNoteUseCase
 import com.budcom.android.feature.party.domain.usecase.GetAllTagsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetContactPersonsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetFieldProvenanceUseCase
+import com.budcom.android.feature.party.domain.usecase.GetIssueActivitySummaryUseCase
 import com.budcom.android.feature.party.domain.usecase.GetIssuesForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetTimelineForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartyByIdUseCase
 import com.budcom.android.feature.party.domain.usecase.GetSourceLinkForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetTagsForPartyUseCase
+import com.budcom.android.feature.party.domain.usecase.ReopenIssueUseCase
+import com.budcom.android.feature.party.domain.usecase.ResolveIssueUseCase
 import com.budcom.android.feature.party.domain.usecase.UnassignTagUseCase
 import com.budcom.android.feature.party.domain.usecase.UpdateBudcomOnlyFieldUseCase
 import com.budcom.android.feature.party.domain.usecase.UpsertContactPersonUseCase
@@ -110,6 +114,9 @@ class PartyDetailViewModelTest {
         deleteNote = DeleteNoteUseCase(repository),
         getIssuesForParty = GetIssuesForPartyUseCase(repository),
         createIssue = CreateIssueUseCase(repository),
+        getIssueActivitySummary = GetIssueActivitySummaryUseCase(repository),
+        resolveIssue = ResolveIssueUseCase(repository),
+        reopenIssue = ReopenIssueUseCase(repository),
         loadVouchers = LoadVouchersUseCase(voucherRepository),
         ledgerSnapshotPort = PartyDetailTestFakeLedgerSnapshotPort(ledgers),
         companySession = PartyDetailTestFakeCompanySession("co-1"),
@@ -449,6 +456,132 @@ class PartyDetailViewModelTest {
         assertEquals(25, vm.uiState.value.timeline.distinctBy { (it as com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent).note.noteId }.size)
     }
 
+    // ============================== ISSUE HISTORY (MVP-1.2-C) ==============================
+
+    @Test
+    fun `a party with no issues shows no Issues section state`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.issues.isEmpty())
+    }
+
+    @Test
+    fun `issue cards carry note count and are open-first`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val resolvedIssue = repository.createIssue("co-1", party.partyId, "Already fixed")
+        repository.resolveIssue("co-1", resolvedIssue.issueId)
+        val openIssue = repository.createIssue("co-1", party.partyId, "Still open")
+        repository.addNote("co-1", party.partyId, "2 pieces short", null, NoteType.Complaint, null, openIssue.issueId)
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+
+        assertEquals(listOf(openIssue.issueId, resolvedIssue.issueId), vm.uiState.value.issues.map { it.issue.issueId })
+        assertEquals(1, vm.uiState.value.openIssues.single().noteCount)
+        assertEquals(1, vm.uiState.value.resolvedIssues.size)
+    }
+
+    @Test
+    fun `resolving an issue moves it out of open issues and into the timeline as resolved`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val issue = repository.createIssue("co-1", party.partyId, "Short shipment")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+
+        vm.onEvent(PartyDetailEvent.ResolveIssueTapped(issue.issueId))
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.openIssues.isEmpty())
+        assertEquals(IssueStatus.Resolved, vm.uiState.value.resolvedIssues.single().issue.status)
+        assertTrue(vm.uiState.value.timeline.any { it is com.budcom.android.feature.party.domain.model.TimelineEntry.IssueResolvedEvent })
+    }
+
+    @Test
+    fun `reopening an issue moves it back to open and clears the resolved timeline entry`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val issue = repository.createIssue("co-1", party.partyId, "Short shipment")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.ResolveIssueTapped(issue.issueId))
+        advanceUntilIdle()
+
+        vm.onEvent(PartyDetailEvent.ReopenIssueTapped(issue.issueId))
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.resolvedIssues.isEmpty())
+        assertEquals(IssueStatus.Open, vm.uiState.value.openIssues.single().issue.status)
+        assertFalse(vm.uiState.value.timeline.any { it is com.budcom.android.feature.party.domain.model.TimelineEntry.IssueResolvedEvent })
+    }
+
+    @Test
+    fun `tapping an issue filters the timeline to only that issue's notes`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val issue = repository.createIssue("co-1", party.partyId, "Short shipment")
+        repository.addNote("co-1", party.partyId, "In the issue", null, NoteType.Complaint, null, issue.issueId)
+        repository.addNote("co-1", party.partyId, "Unrelated", null, NoteType.General, null, null)
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+
+        vm.onEvent(PartyDetailEvent.IssueFilterTapped(issue.issueId))
+        advanceUntilIdle()
+
+        assertEquals(issue.issueId, vm.uiState.value.selectedIssueFilterId)
+        val notes = vm.uiState.value.timeline.filterIsInstance<com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent>()
+        assertEquals(listOf("In the issue"), notes.map { it.note.body })
+    }
+
+    @Test
+    fun `tapping the same issue filter again clears it and restores the full timeline`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val issue = repository.createIssue("co-1", party.partyId, "Short shipment")
+        repository.addNote("co-1", party.partyId, "In the issue", null, NoteType.Complaint, null, issue.issueId)
+        repository.addNote("co-1", party.partyId, "Unrelated", null, NoteType.General, null, null)
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.IssueFilterTapped(issue.issueId))
+        advanceUntilIdle()
+
+        vm.onEvent(PartyDetailEvent.IssueFilterTapped(issue.issueId))
+        advanceUntilIdle()
+
+        assertNull(vm.uiState.value.selectedIssueFilterId)
+        val notes = vm.uiState.value.timeline.filterIsInstance<com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent>()
+        assertEquals(2, notes.size)
+    }
+
+    @Test
+    fun `clearing the issue filter restores the full timeline`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val issue = repository.createIssue("co-1", party.partyId, "Short shipment")
+        repository.addNote("co-1", party.partyId, "Unrelated", null, NoteType.General, null, null)
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.IssueFilterTapped(issue.issueId))
+        advanceUntilIdle()
+
+        vm.onEvent(PartyDetailEvent.ClearIssueFilterTapped)
+        advanceUntilIdle()
+
+        assertNull(vm.uiState.value.selectedIssueFilterId)
+        assertTrue(vm.uiState.value.timeline.any { it is com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent })
+    }
+
+    @Test
+    fun `toggling the issues section expanded state flips it`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        repository.createIssue("co-1", party.partyId, "Short shipment")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+        assertFalse(vm.uiState.value.issuesExpanded)
+
+        vm.onEvent(PartyDetailEvent.ToggleIssuesExpanded)
+        assertTrue(vm.uiState.value.issuesExpanded)
+
+        vm.onEvent(PartyDetailEvent.ToggleIssuesExpanded)
+        assertFalse(vm.uiState.value.issuesExpanded)
+    }
+
     private fun ledger(id: String, amount: String, side: String) = Ledger(
         id = id,
         name = id,
@@ -655,10 +788,20 @@ private class InMemoryPartyRepository : PartyRepository {
     }
 
     override suspend fun getTimelineForParty(companyId: String, partyId: String, page: Int, pageSize: Int, issueId: String?): TimelineEntryPage {
-        val all = notes.values
+        val noteEntries: List<TimelineEntry> = notes.values
             .filter { it.companyId == companyId && it.partyId == partyId && (issueId == null || it.issueId == issueId) }
-            .sortedByDescending { it.createdAt }
             .map { TimelineEntry.NoteEvent(it) }
+        val issueEntries: List<TimelineEntry> = if (issueId == null) {
+            issues.values.filter { it.companyId == companyId && it.partyId == partyId }.flatMap { issue ->
+                listOfNotNull(
+                    TimelineEntry.IssueOpenedEvent(issue.issueId, issue.title, issue.createdAt),
+                    issue.resolvedAt?.let { TimelineEntry.IssueResolvedEvent(issue.issueId, issue.title, it) },
+                )
+            }
+        } else {
+            emptyList()
+        }
+        val all = (noteEntries + issueEntries).sortedByDescending { it.timestamp }
         val safePage = page.coerceAtLeast(1)
         val safeSize = pageSize.coerceAtLeast(1)
         val paged = all.drop((safePage - 1) * safeSize).take(safeSize)
@@ -689,6 +832,11 @@ private class InMemoryPartyRepository : PartyRepository {
     override suspend fun getIssuesForParty(companyId: String, partyId: String): List<PartyIssue> =
         issues.values.filter { it.companyId == companyId && it.partyId == partyId }
             .sortedWith(compareBy<PartyIssue> { it.status }.thenByDescending { it.createdAt })
+
+    override suspend fun getIssueActivitySummary(companyId: String, partyId: String): Map<String, IssueActivitySummary> =
+        notes.values.filter { it.companyId == companyId && it.partyId == partyId && it.issueId != null }
+            .groupBy { it.issueId!! }
+            .mapValues { (_, notesForIssue) -> IssueActivitySummary(notesForIssue.size, notesForIssue.maxOf { it.createdAt }) }
 
     override suspend fun getExportCandidates(
         companyId: String,

@@ -110,4 +110,35 @@ class PartyNoteDaoTest {
         assertTrue(page.isNotEmpty())
         assertEquals("payment_issue", page.first().type)
     }
+
+    // ============================== ISSUE ACTIVITY SUMMARY (MVP-1.2-C) ==============================
+
+    @Test
+    fun issueActivitySummaryReportsCountAndLatestTimestampPerIssue() = runBlocking {
+        noteDao.upsert(note(noteId = "note-1", issueId = "issue-1").copy(createdAt = 1_000L, updatedAt = 1_000L))
+        noteDao.upsert(note(noteId = "note-2", issueId = "issue-1").copy(createdAt = 2_000L, updatedAt = 2_000L))
+        noteDao.upsert(note(noteId = "note-3", issueId = "issue-2").copy(createdAt = 3_000L, updatedAt = 3_000L))
+
+        val summary = noteDao.issueActivitySummary("co-a", "party-1").associateBy { it.issueId }
+
+        assertEquals(2, summary.getValue("issue-1").noteCount)
+        assertEquals(2_000L, summary.getValue("issue-1").latestNoteAt)
+        assertEquals(1, summary.getValue("issue-2").noteCount)
+    }
+
+    @Test
+    fun issueActivitySummaryExcludesNotesWithNoIssue() = runBlocking {
+        noteDao.upsert(note(noteId = "note-1", issueId = null))
+
+        assertTrue(noteDao.issueActivitySummary("co-a", "party-1").isEmpty())
+    }
+
+    @Test
+    fun issueActivitySummaryIsCompanyIsolated() = runBlocking {
+        noteDao.upsert(note(companyId = "co-a", noteId = "note-1", issueId = "issue-1"))
+        noteDao.upsert(note(companyId = "co-b", noteId = "note-1", issueId = "issue-1"))
+
+        assertEquals(1, noteDao.issueActivitySummary("co-a", "party-1").single().noteCount)
+        assertEquals(1, noteDao.issueActivitySummary("co-b", "party-1").single().noteCount)
+    }
 }

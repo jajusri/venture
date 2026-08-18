@@ -22,12 +22,15 @@ import com.budcom.android.feature.party.domain.usecase.EditNoteUseCase
 import com.budcom.android.feature.party.domain.usecase.GetAllTagsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetContactPersonsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetFieldProvenanceUseCase
+import com.budcom.android.feature.party.domain.usecase.GetIssueActivitySummaryUseCase
 import com.budcom.android.feature.party.domain.usecase.GetIssuesForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetTimelineForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartyByIdUseCase
 import com.budcom.android.feature.party.domain.usecase.GetSourceLinkForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetTagsForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.AddNoteUseCase
+import com.budcom.android.feature.party.domain.usecase.ReopenIssueUseCase
+import com.budcom.android.feature.party.domain.usecase.ResolveIssueUseCase
 import com.budcom.android.feature.party.domain.usecase.UnassignTagUseCase
 import com.budcom.android.feature.party.domain.usecase.UpdateBudcomOnlyFieldUseCase
 import com.budcom.android.feature.party.domain.usecase.UpsertContactPersonUseCase
@@ -70,6 +73,9 @@ class PartyDetailViewModel @Inject constructor(
     private val deleteNote: DeleteNoteUseCase,
     private val getIssuesForParty: GetIssuesForPartyUseCase,
     private val createIssue: CreateIssueUseCase,
+    private val getIssueActivitySummary: GetIssueActivitySummaryUseCase,
+    private val resolveIssue: ResolveIssueUseCase,
+    private val reopenIssue: ReopenIssueUseCase,
     private val loadVouchers: LoadVouchersUseCase,
     private val ledgerSnapshotPort: LedgerSnapshotPort,
     private val companySession: CompanySessionPort,
@@ -191,6 +197,20 @@ class PartyDetailViewModel @Inject constructor(
                 else showNotice("Linked voucher is not available.")
             }
 
+            PartyDetailEvent.ToggleIssuesExpanded -> _uiState.update { it.copy(issuesExpanded = !it.issuesExpanded) }
+            PartyDetailEvent.ToggleResolvedIssuesExpanded -> _uiState.update { it.copy(resolvedIssuesExpanded = !it.resolvedIssuesExpanded) }
+            is PartyDetailEvent.ResolveIssueTapped -> resolveIssueTapped(event.issueId)
+            is PartyDetailEvent.ReopenIssueTapped -> reopenIssueTapped(event.issueId)
+            is PartyDetailEvent.IssueFilterTapped -> {
+                val next = if (_uiState.value.selectedIssueFilterId == event.issueId) null else event.issueId
+                _uiState.update { it.copy(selectedIssueFilterId = next) }
+                loadTimeline(next)
+            }
+            PartyDetailEvent.ClearIssueFilterTapped -> {
+                _uiState.update { it.copy(selectedIssueFilterId = null) }
+                loadTimeline(null)
+            }
+
             PartyDetailEvent.DismissDialog -> _uiState.update { it.copy(activeDialog = null) }
             PartyDetailEvent.DismissNotice -> _uiState.update { it.copy(notice = null) }
         }
@@ -239,7 +259,8 @@ class PartyDetailViewModel @Inject constructor(
             val contactPersons = getContactPersons(companyId, partyId)
             val tags = getTagsForParty(companyId, partyId)
             val allTags = getAllTags()
-            val timelinePage = getTimelineForParty(companyId, partyId, page = 1, pageSize = 20)
+            val timelinePage = getTimelineForParty(companyId, partyId, page = 1, pageSize = 20, issueId = null)
+            val issueCards = loadIssueCards(companyId)
 
             _uiState.update {
                 it.copy(
@@ -255,9 +276,24 @@ class PartyDetailViewModel @Inject constructor(
                     timeline = timelinePage.items,
                     timelinePage = timelinePage.page,
                     timelineCanLoadMore = timelinePage.canLoadMore,
+                    issues = issueCards,
+                    selectedIssueFilterId = null,
                     error = null,
                 )
             }
+        }
+    }
+
+    /** Open issues first, then resolved — [PartyIssue]'s own DAO ordering (1.2-A) preserved
+     * verbatim; note-count/last-activity joined in from a single bounded aggregate read, never
+     * one query per issue. */
+    private suspend fun loadIssueCards(companyId: String): List<IssueCardUi> {
+        val issues = getIssuesForParty(companyId, partyId)
+        val activity = getIssueActivitySummary(companyId, partyId)
+        return issues.map { issue ->
+            val summary = activity[issue.issueId]
+            val lastActivityAt = maxOf(issue.createdAt, issue.updatedAt, issue.resolvedAt ?: 0L, summary?.latestNoteAt ?: 0L)
+            IssueCardUi(issue = issue, noteCount = summary?.noteCount ?: 0, lastActivityAt = lastActivityAt)
         }
     }
 
@@ -267,7 +303,7 @@ class PartyDetailViewModel @Inject constructor(
         if (!state.timelineCanLoadMore || state.isLoadingMoreTimeline) return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingMoreTimeline = true) }
-            val nextPage = getTimelineForParty(companyId, partyId, page = state.timelinePage + 1, pageSize = 20)
+            val nextPage = getTimelineForParty(companyId, partyId, page = state.timelinePage + 1, pageSize = 20, issueId = state.selectedIssueFilterId)
             _uiState.update {
                 it.copy(
                     isLoadingMoreTimeline = false,
@@ -276,6 +312,36 @@ class PartyDetailViewModel @Inject constructor(
                     timelineCanLoadMore = nextPage.canLoadMore,
                 )
             }
+        }
+    }
+
+    /** Partial refresh of just the Timeline section (e.g. tapping an issue to filter it) — never
+     * re-fetches party/fields/contacts/tags, unlike the full [load]. */
+    private fun loadTimeline(issueId: String?) {
+        val companyId = _uiState.value.companyId ?: return
+        viewModelScope.launch {
+            val timelinePage = getTimelineForParty(companyId, partyId, page = 1, pageSize = 20, issueId = issueId)
+            _uiState.update {
+                it.copy(timeline = timelinePage.items, timelinePage = timelinePage.page, timelineCanLoadMore = timelinePage.canLoadMore)
+            }
+        }
+    }
+
+    private fun resolveIssueTapped(issueId: String) {
+        val companyId = _uiState.value.companyId ?: return
+        viewModelScope.launch {
+            resolveIssue(companyId, issueId)
+            _uiState.update { it.copy(issues = loadIssueCards(companyId)) }
+            loadTimeline(_uiState.value.selectedIssueFilterId)
+        }
+    }
+
+    private fun reopenIssueTapped(issueId: String) {
+        val companyId = _uiState.value.companyId ?: return
+        viewModelScope.launch {
+            reopenIssue(companyId, issueId)
+            _uiState.update { it.copy(issues = loadIssueCards(companyId)) }
+            loadTimeline(_uiState.value.selectedIssueFilterId)
         }
     }
 

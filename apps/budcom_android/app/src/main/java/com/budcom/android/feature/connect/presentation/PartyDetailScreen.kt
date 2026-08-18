@@ -46,6 +46,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budcom.android.feature.masterdata.presentation.MasterDataErrorBlock
 import com.budcom.android.feature.masterdata.presentation.MasterDataLoadingIndicator
+import com.budcom.android.feature.party.domain.model.IssueStatus
 import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyExportEvent
@@ -214,10 +215,28 @@ private fun PartyDetailContent(state: PartyDetailUiState, onEvent: (PartyDetailE
             Text("Add contact person")
         }
 
-        // E. Relationship Timeline (PDL-014: the unified historical presentation for this Party —
-        // notes and Tally-export events merged into one chronological feed, never two competing
-        // histories).
+        // E. Issues (MVP-1.2-C) — open issues prominent but compact, resolved issues collapsed and
+        // de-emphasized. Never a second chronological history: tapping an issue filters the same
+        // Relationship Timeline below, it does not open a separate list (architecture §10).
+        IssuesSection(state, onEvent)
+
+        // F. Relationship Timeline (PDL-014: the unified historical presentation for this Party —
+        // notes, Tally-export events, and issue-lifecycle events merged into one chronological
+        // feed, never two competing histories).
         SectionHeader("Relationship Timeline")
+        state.selectedIssueFilter?.let { filtered ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    "Showing: ${filtered.issue.title}",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.testTag("party_detail_timeline_filter_banner"),
+                )
+                TextButton(
+                    onClick = { onEvent(PartyDetailEvent.ClearIssueFilterTapped) },
+                    modifier = Modifier.testTag("party_detail_timeline_clear_filter"),
+                ) { Text("Show full timeline") }
+            }
+        }
         if (state.timeline.isEmpty()) {
             Text(
                 "No activity yet",
@@ -296,14 +315,100 @@ private fun ContactPersonRow(contact: PartyContactPerson, onEvent: (PartyDetailE
     }
 }
 
-/** MVP-1.2-B Relationship Timeline dispatch — one row per truthful, locally-sourced event
- * (architecture §10, PDL-014). Reuses [NoteRow] verbatim for note-kind entries rather than a
- * second rendering path. */
+/** MVP-1.2-C Issues section — omitted entirely when the Party has never had an issue (nothing to
+ * show, no perpetual empty clutter). Open issues shown first, compactly (a count is enough at a
+ * glance, full cards on tap); resolved issues collapse into their own secondary, de-emphasized
+ * disclosure (architecture §10). */
+@Composable
+private fun IssuesSection(state: PartyDetailUiState, onEvent: (PartyDetailEvent) -> Unit) {
+    if (state.issues.isEmpty()) return
+    SectionHeader("Issues")
+    val openCount = state.openIssues.size
+    TextButton(
+        onClick = { onEvent(PartyDetailEvent.ToggleIssuesExpanded) },
+        modifier = Modifier.testTag("party_detail_issues_toggle"),
+    ) { Text(if (openCount == 0) "No open issues" else "$openCount open ${if (openCount == 1) "issue" else "issues"}") }
+
+    if (state.issuesExpanded) {
+        state.openIssues.forEach { card -> IssueCard(card, state.selectedIssueFilterId, onEvent) }
+
+        if (state.resolvedIssues.isNotEmpty()) {
+            TextButton(
+                onClick = { onEvent(PartyDetailEvent.ToggleResolvedIssuesExpanded) },
+                modifier = Modifier.testTag("party_detail_resolved_issues_toggle"),
+            ) { Text("${state.resolvedIssues.size} resolved ${if (state.resolvedIssues.size == 1) "issue" else "issues"}") }
+
+            if (state.resolvedIssuesExpanded) {
+                state.resolvedIssues.forEach { card -> IssueCard(card, state.selectedIssueFilterId, onEvent) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IssueCard(card: IssueCardUi, selectedFilterId: String?, onEvent: (PartyDetailEvent) -> Unit) {
+    val issue = card.issue
+    Card(modifier = Modifier.fillMaxWidth().testTag("party_detail_issue_${issue.issueId}")) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(issue.title, modifier = Modifier.weight(1f))
+                Text(
+                    issue.status.toUiLabel(),
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.testTag("party_detail_issue_${issue.issueId}_status"),
+                )
+            }
+            Text(
+                "${card.noteCount} ${if (card.noteCount == 1) "note" else "notes"} · ${formatTimelineDate(card.lastActivityAt)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row {
+                val filtered = selectedFilterId == issue.issueId
+                TextButton(
+                    onClick = { onEvent(PartyDetailEvent.IssueFilterTapped(issue.issueId)) },
+                    modifier = Modifier.testTag("party_detail_issue_${issue.issueId}_filter"),
+                ) { Text(if (filtered) "✓ Filtered" else "View in Timeline") }
+                if (issue.status == IssueStatus.Open) {
+                    TextButton(
+                        onClick = { onEvent(PartyDetailEvent.ResolveIssueTapped(issue.issueId)) },
+                        modifier = Modifier.testTag("party_detail_issue_${issue.issueId}_resolve"),
+                    ) { Text("Resolve") }
+                } else {
+                    TextButton(
+                        onClick = { onEvent(PartyDetailEvent.ReopenIssueTapped(issue.issueId)) },
+                        modifier = Modifier.testTag("party_detail_issue_${issue.issueId}_reopen"),
+                    ) { Text("Reopen") }
+                }
+            }
+        }
+    }
+}
+
+/** MVP-1.2-B/C Relationship Timeline dispatch — one row per truthful, locally-sourced event
+ * (architecture §10/§16, PDL-014). Reuses [NoteRow] verbatim for note-kind entries rather than a
+ * second rendering path. Issue-lifecycle rows are read live from [TimelineEntry.IssueOpenedEvent]/
+ * [TimelineEntry.IssueResolvedEvent], which the repository derives directly from `party_issues` —
+ * never a separately-stored record — so this can never disagree with the Issues section above. */
 @Composable
 private fun TimelineRow(entry: TimelineEntry, onEvent: (PartyDetailEvent) -> Unit) {
     when (entry) {
         is TimelineEntry.NoteEvent -> NoteRow(entry.note, onEvent)
         is TimelineEntry.ExportEvent -> ExportEventRow(entry.event)
+        is TimelineEntry.IssueOpenedEvent ->
+            IssueLifecycleRow(testTag = "party_detail_issue_event_${entry.issueId}_opened", text = "Issue opened: ${entry.title}", timestamp = entry.openedAt)
+        is TimelineEntry.IssueResolvedEvent ->
+            IssueLifecycleRow(testTag = "party_detail_issue_event_${entry.issueId}_resolved", text = "Issue resolved: ${entry.title}", timestamp = entry.resolvedAt)
+    }
+}
+
+@Composable
+private fun IssueLifecycleRow(testTag: String, text: String, timestamp: Long) {
+    Card(modifier = Modifier.fillMaxWidth().testTag(testTag)) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(text)
+            Text(formatTimelineDate(timestamp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

@@ -184,6 +184,8 @@ internal fun TimelineRowEntity.toDomain(): TimelineEntry = when (kind) {
             fieldNames = fieldNamesCsv?.split(",")?.filter { it.isNotBlank() }.orEmpty(),
         ),
     )
+    "issue_opened" -> TimelineEntry.IssueOpenedEvent(issueId = id, title = body.orEmpty(), openedAt = timestamp)
+    "issue_resolved" -> TimelineEntry.IssueResolvedEvent(issueId = id, title = body.orEmpty(), resolvedAt = timestamp)
     else -> TimelineEntry.NoteEvent(
         PartyNote(
             companyId = companyId,

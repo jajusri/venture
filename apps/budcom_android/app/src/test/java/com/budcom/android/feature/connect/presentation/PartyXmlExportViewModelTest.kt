@@ -20,6 +20,7 @@ import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.IssueActivitySummary
 import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartyNotePage
@@ -343,6 +344,7 @@ private class InMemoryExportPartyRepository : PartyRepository {
     override suspend fun resolveIssue(companyId: String, issueId: String): PartyIssue? = error("unused")
     override suspend fun reopenIssue(companyId: String, issueId: String): PartyIssue? = error("unused")
     override suspend fun getIssuesForParty(companyId: String, partyId: String): List<PartyIssue> = error("unused")
+    override suspend fun getIssueActivitySummary(companyId: String, partyId: String): Map<String, IssueActivitySummary> = error("unused")
 
     override suspend fun getExportCandidates(companyId: String, partyId: String): List<TallyFieldExportCandidate> =
         TallyExportFieldMapping.ELIGIBLE_FIELDS.map { fieldName ->
