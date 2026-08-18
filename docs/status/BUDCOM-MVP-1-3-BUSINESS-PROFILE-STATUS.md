@@ -1,7 +1,7 @@
 # BUDCOM MVP-1.3 — Business Profile — Status
 
-**Status:** Part A complete — acceptance gate PASSED. Continuing automatically to Part B per this
-task's own explicit instruction.
+**Status:** Part A complete — acceptance gate PASSED. Part B complete — acceptance gate PASSED.
+Continuing automatically to Part C per this task's own explicit instruction.
 **Companion documents:** `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` (concise current-state
 checkpoint), `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` (chronological record),
 `docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md` (planning/recovery review this
@@ -357,3 +357,240 @@ expansion (logo UI deliberately deferred to B, not silently included).
 
 **MVP-1.3-A ACCEPTANCE GATE PASSED — AUTOMATIC CONTINUATION TO MVP-1.3-B AUTHORIZED**, per this
 task's own explicit "continue A → B → C automatically when the preceding gate passes" instruction.
+
+---
+
+# Part B — MVP-1.3-B: Profile Presentation & Sharing Foundation
+
+**Starting HEAD:** same working tree as Part A's own final commits (`6731d38`, `ae54647`,
+`52ac893`, `3f08c56`), continued in the same session with no intervening state change.
+
+## B1. Scope actually implemented
+
+Exactly this task's own MVP-1.3-B line item:
+
+1. Logo picker UI — `ActivityResultContracts.PickVisualMedia()` (the system Photo Picker; no
+   runtime permission needed on any supported Android version) wired via a one-shot
+   `BusinessProfileEffect.RequestLogoPick` (the established `MutableSharedFlow<Effect>
+   (extraBufferCapacity = 1)` pattern already used by `PartyXmlExportViewModel`), since launching
+   an `ActivityResultLauncher` is an Activity-scoped action a ViewModel cannot perform directly.
+2. Logo display — `BitmapFactory.decodeFile` off the main thread (the same pattern already
+   established by `PdfPreviewScreen`'s page rendering; no Coil/Glide dependency exists in this
+   codebase and none was added), converted to `ImageBitmap` for Compose's `Image`.
+3. Replace/Remove logo actions, wired through A's already-built (but previously unused-by-UI)
+   `UpdateBusinessProfileLogoUseCase`/`ClearBusinessProfileLogoUseCase`/
+   `ResolveBusinessProfileLogoFileUseCase` (the last one newly added this session, see B2).
+4. Presentation polish: the logo now appears prominently above the trading name in both view and
+   edit modes; a busy indicator during logo updates; plain-language failure messages for every
+   `BusinessProfileLogoFailureReason`.
+5. The internal "sharing foundation" data boundary — `BusinessProfileShareSnapshot` (B7).
+6. A genuine cross-company data-race defect found and fixed during this session's own hardening
+   review, not shipped and discovered later (B5).
+7. Full test coverage per this task's own test-strategy requirements (B6).
+8. Mini-hardening review (B5) and full regression (B8).
+
+**Explicitly not built** (C scope or beyond, confirmed untouched): any actual Share/Export
+action for the business-card snapshot (B7's own boundary), image cropping/editing (no locked
+document asks for one, and this codebase has no cropping-UI precedent to reuse), any Catalogue or
+Vartalap code, any public/cloud transport.
+
+## B2. New repository surface — `resolveLogoFile`
+
+`BusinessProfileRepository.resolveLogoFile(logoAssetPath: String?): File?` — a thin delegation to
+`BusinessProfileLogoStore.resolveLogoFile`, added because A's UI never needed to *read* a logo
+file, only store one. Re-validates via the same path-traversal-defended containment check on every
+read (A7), even though the path originates from this app's own database — so a corrupted/tampered
+row can never resolve outside the logo directory. Exposed via a new
+`ResolveBusinessProfileLogoFileUseCase`. The ViewModel resolves and caches the `File` in
+`BusinessProfileUiState.logoFile` whenever the profile loads or the logo changes, so the Compose
+layer only ever decodes an already-validated `File`, never a raw path string.
+
+## B3. UI — logo picker, display, and controls
+
+`BusinessProfileLogo` (new private composable, shared by both view and edit content): a 72dp
+circular avatar; decodes off `Dispatchers.IO` inside a `LaunchedEffect(logoFile)`, falling back to
+a plain placeholder icon (`Icons.Filled.AccountCircle` — confirmed present in the core
+`material-icons-core` jar this codebase already depends on; `Icons.Filled.Business` was tried
+first and confirmed **absent** from that jar via direct inspection, so a different, verified icon
+was used instead) when there is no logo or decoding fails — `BitmapFactory.decodeFile` returns
+`null` on a missing/corrupt file rather than throwing, so this path can never crash.
+
+Edit mode gained an "Add Logo"/"Replace Logo" button (label depends on whether a logo already
+exists) plus a "Remove Logo" button shown only when a logo exists, plus a small
+`CircularProgressIndicator` while `isUpdatingLogo` is true (both buttons disabled during this
+window, preventing a double-submit race). View mode shows the same logo read-only, above the
+trading name headline.
+
+## B4. ViewModel — new events, plain-language failure messages
+
+Three new `BusinessProfileEvent`s: `ChangeLogoTapped` (emits the `RequestLogoPick` effect),
+`LogoPicked(uri)` (calls `updateBusinessProfileLogo`; `null` result — no profile saved yet — shows
+"Save the Business Profile before adding a logo."; `Failure` maps each
+`BusinessProfileLogoFailureReason` to a specific, honest, non-technical message, e.g. "That image
+is too large (max 5 MB)." for `FileTooLarge`), `ClearLogoTapped`.
+
+## B5. Self-caught defect — a cross-company data race in async save/logo operations
+
+**Found during this session's own hardening review, before any external report:** `save()`,
+`updateLogo()`, and `clearLogo()` each launch a `viewModelScope.launch { ... }` coroutine that ends
+by unconditionally calling `_uiState.update { it.copy(...) }` with the operation's result. If the
+user switched companies *while* one of these was still in flight (e.g., tapped Save, then
+immediately switched to a different company before the write finished), the `init` block's
+company-change collector would correctly load the new company's fresh state — but once the
+stale save/logo operation for the *previous* company finally completed, its `_uiState.update`
+call would unconditionally overwrite whatever was currently showing, silently corrupting the new
+company's on-screen state with the old company's result. This is exactly the class of defect this
+task's own §10 company-switching acceptance criteria exist to catch, just in the async-completion
+path rather than the synchronous-load path (which `loadJob?.cancel()` already guarded correctly).
+
+**Fix:** a new `updateIfStillOnCompany(requestedCompanyId) { ... }` helper wraps every async
+completion (`save()`'s success/failure branches, `updateLogo()`'s three outcome branches,
+`clearLogo()`'s completion) — the state update is applied only if `state.companyId` still equals
+the company the operation was actually performed for; otherwise it is silently discarded (the
+underlying write itself still completes and persists correctly — the guard only prevents the
+*stale UI update*, never the data). Locked in by two dedicated JVM tests using a controllable
+`CompletableDeferred` gate in the fake repository to force the exact interleaving: `a save that
+completes after switching companies never overwrites the new company's state`, `a logo update that
+completes after switching companies never overwrites the new company's state`. Both assert the new
+company's state survives untouched and separately assert the stale write still landed correctly on
+disk for the original company — the fix silences the *symptom* without silently dropping the
+*write*.
+
+**No other genuine defect found** during this session's review of the new B code (logo
+picker/display/store wiring, share-snapshot mapper).
+
+## B6. Tests
+
+- **New JVM tests (11):** `BusinessProfileShareSnapshotTest` (new file, 3 — full field mapping
+  with the companyId/timestamps/raw-path exclusion verified by the type shape itself, a fully
+  blank address produces `null` not an empty string of commas, a partial address omits only the
+  missing components); `BusinessProfileViewModelTest` — 7 new (change-logo-tapped emits the
+  effect, picking a logo before any profile exists shows the correct notice and never calls the
+  repository, picking a logo for an existing profile resolves and stores the file, a rejected logo
+  shows its specific reason and never touches the stored path, clearing a logo removes it and
+  shows a confirmation, plus the two B5 race-condition regression tests);
+  `BusinessProfileRepositoryImplTest` — 1 new (`resolveLogoFile` delegates to the logo store and
+  returns `null` for a blank path).
+- **New instrumented tests (4), run and passing on device `10BF44124K000E3`:**
+  `BusinessProfileScreenTest` — edit mode with no logo shows only "Add Logo" and emits
+  `ChangeLogoTapped`; edit mode with an existing logo shows "Replace"/"Remove" and renders the
+  actual decoded image (a real tiny PNG fixture written to the test app's cache dir, proving the
+  `BitmapFactory.decodeFile` path genuinely works end-to-end, not just that the button exists);
+  the busy indicator shows and disables the change button while `isUpdatingLogo`; view mode shows
+  the logo above the trading name.
+
+## B7. The internal "sharing foundation" data boundary
+
+Per PDL-019's own conceptual chain (Business Profile → future Catalogue → future Vartalap) and
+this task's explicit "internal data boundary only, no public transport" requirement:
+`BusinessProfile.toShareSnapshot(): BusinessProfileShareSnapshot` — a pure, side-effect-free
+mapping to a plain "business card" shape (trading name, legal name, one formatted address string,
+phone, email, GSTIN, website, description). Deliberately excludes `companyId`, `createdAt`/
+`updatedAt`, and the raw `logoAssetPath` file-system path — not by convention but by the type's
+own shape, so a future caller cannot accidentally leak an internal path or identifier through this
+surface.
+
+**Deliberately not built, and not a gap:** no Android `Intent`, no `Intent.ACTION_SEND`, no file
+export, no network call, no UI button anywhere invokes this type. It exists purely as the stable
+data shape a later, explicitly-authorized Vartalap milestone can build a real share feature on top
+of — building the actual share mechanism now would be premature integration into product territory
+this milestone's own governing decisions (PDL-019 §5) explicitly reserve for later. Covered by
+3 pure-function JVM tests (B6); no instrumented coverage needed since nothing here touches Android
+APIs.
+
+## B8. Mini-hardening review
+
+Cross-checked against this task's own checklist, focused on what's new in B:
+
+- **Company isolation:** unaffected by B's changes at the data layer (logo storage/resolution were
+  already company-keyed in A); the one genuine new risk (B5) was found and fixed.
+- **Save/logo race:** B5 above — the dominant finding this part.
+- **Missing/corrupt logo:** `BitmapFactory.decodeFile` returning `null` is handled by falling back
+  to the placeholder icon, verified by the instrumented "no logo" test and reasoned through for the
+  corrupt-file case (same code path, same fallback).
+- **Oversized/wrong-type logo:** already defended at the storage layer (A7); B's new failure
+  messages surface each specific reason to the user rather than a generic "something went wrong."
+- **Accessibility:** the logo `Box` carries a `contentDescription` via `Modifier.semantics {}`
+  (the child `Image` is marked `contentDescription = null` to avoid double-announcing the same
+  element — the established pattern for a decorative-inside-a-described-container composable);
+  every button remains a labelled `OutlinedButton`/`Button` with visible text, matching this
+  codebase's established self-describing-control convention; plain hardcoded content-description
+  strings match the existing `PdfPreviewScreen`/`Icon` precedent in this codebase (not
+  string-resourced — confirmed this is the established pattern, not an oversight).
+- **Sensitive logging:** grep-verified zero `Log`/`Timber` call anywhere in the new B code.
+- **No accidental Tally/network/Connector/public-exposure surface:** grep-verified zero new
+  network/Connector import; the Photo Picker is a local, OS-level, offline mechanism — no
+  permission dialog, no network call, no data leaves the device.
+- **No accidental scope expansion:** the share-snapshot type has zero UI entry point anywhere
+  (B7) — verified by grep, no composable references `toShareSnapshot`.
+
+**Defects found and fixed:** one — the cross-company async-completion race (B5), caught during
+this session's own review before any test was run against it, not by an external report.
+
+## B9. Full regression results
+
+- `testDebugUnitTest` / `testReleaseUnitTest`: **1,266/1,266 passing** both (1,255 prior + 11 new
+  this session).
+- `lintDebug` / `lintRelease`: **0 errors** both (confirmed via report XML `severity="Error"`
+  count). Both lint runs took unusually long this session (the first genuinely-cold, non-cached
+  full lint analysis since MVP-1.2's freeze) — traced via a JVM thread dump to a known, external,
+  Windows-specific performance characteristic of the JetBrains Kotlin Analysis API's
+  `GlobalSearchScope` union-scope containment check (slow `WindowsPathParser` path normalization
+  called once per library root per file analyzed), not a code defect or a genuine hang — confirmed
+  by the thread dump showing continuous, legitimate CPU-bound work (not a deadlock/blocked state)
+  before the run completed successfully with 0 errors.
+- `assembleDebug`, `assembleDebugAndroidTest`: `BUILD SUCCESSFUL` (unchanged from A, no new
+  compilation needed for these two).
+- `assembleRelease`: `BUILD SUCCESSFUL` in 3m17s (R8-minified, confirming the Hilt DI graph for
+  the new `BusinessProfileModule` additions resolves correctly under minification — same
+  discipline as A/MVP-1.2-E's own precedent). Also hit the JIT-compilation pathology (B9's own
+  lint note) on the first attempt — the same `-XX:TieredStopAtLevel=1` workaround resolved it.
+- `connectedDebugAndroidTest` (`BusinessProfileScreenTest` only, isolated): **12/12 passing** on
+  device `10BF44124K000E3` — the 8 tests from A plus 4 new logo-UI tests, all clean on the first
+  attempt with no off-screen/scroll issue this time (the new logo controls sit above the
+  already-scroll-fixed Save/Cancel buttons, not below any new content that would push them further
+  down).
+
+## B10. Accepted limitations (explicit)
+
+- No image cropping/editing tool — deliberate (B1), matches this task's own "no locked document
+  asks for one" boundary.
+- The share-snapshot type has no consumer yet — deliberate (B7), the correct scope boundary for
+  this milestone.
+- All Part A accepted limitations (§A15) remain unchanged and still apply, minus the "no logo
+  picker/display UI yet" item, which B resolves.
+
+## B11. ACCEPTANCE GATE RESULT
+
+Every mandatory gate item verified with evidence above: compiles; JVM regression clean both
+variants (1,266/1,266); both lints 0 errors; instrumented logo-UI tests 12/12 clean;
+company-isolation preserved and a genuine async-race defect found and fixed with dedicated
+regression tests (B5); accessibility maintained; zero P0/P1 defect remaining; zero
+security/data-integrity issue; zero accidental scope expansion into Catalogue/Vartalap/public
+infrastructure (B7's boundary explicitly enforced and tested).
+
+**MVP-1.3-B ACCEPTANCE GATE PASSED — AUTOMATIC CONTINUATION TO MVP-1.3-C AUTHORIZED**, per this
+task's own explicit "continue A → B → C automatically when the preceding gate passes" instruction.
+All three assembles (including R8-minified `assembleRelease`) confirmed green in the same session
+(B9).
+
+## B12. Tooling note — a JIT-compilation pathology encountered and worked around this session
+
+Both `lintDebug`/`lintRelease` and `assembleRelease` (via its `lintVitalAnalyzeRelease`/
+`minifyReleaseWithR8` steps) hit an unusually long stall on first attempt this session — up to
+15+ minutes with zero visible progress. Investigated with a JVM thread dump (`jcmd <pid>
+Thread.print`) rather than assumed to be a hang: found the daemon's C2 JIT compiler thread
+spending 70-80%+ of elapsed wall-clock time continuously compiling a single small method inside
+the JetBrains Kotlin Analysis API's Lint/UAST bridge
+(`KotlinStaticPsiDeclarationFromBinaryModuleProvider::getProperties`) — a known class of JIT
+pathology on this JDK/tooling combination, compounded by a genuinely slow
+`GlobalSearchScope`-union containment check that calls `WindowsPathParser` once per library root
+per analyzed file (Windows-specific path-resolution overhead). **Not a code defect, not a
+deadlock** — confirmed by the thread dump showing real, continuous CPU-bound work throughout, and
+by every affected build eventually completing successfully with 0 lint errors once given enough
+time or once C2 was disabled. **Workaround applied:** `JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1`
+(disables C2, keeps C1) for the specific `lintDebug`/`lintRelease`/`assembleRelease` invocations
+that hit this — a session-local environment variable, never written into any tracked project file
+(`gradle.properties` was deliberately left unchanged, since this is a local-machine/JDK-version
+tooling characteristic, not a project-wide fix). Recorded here so a future session on this same
+machine recognizes the symptom immediately rather than re-diagnosing it from scratch.
