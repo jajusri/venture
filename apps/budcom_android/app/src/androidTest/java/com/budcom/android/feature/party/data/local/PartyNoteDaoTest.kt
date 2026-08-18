@@ -141,4 +141,104 @@ class PartyNoteDaoTest {
         assertEquals(1, noteDao.issueActivitySummary("co-a", "party-1").single().noteCount)
         assertEquals(1, noteDao.issueActivitySummary("co-b", "party-1").single().noteCount)
     }
+
+    // ============================== DINCHARYA FOLLOW-UPS (MVP-1.2-D) ==============================
+
+    @Test
+    fun pageFollowUpsForCompanyReturnsOnlyEligibleFollowUpAndCommitmentNotes() = runBlocking {
+        noteDao.upsert(note(noteId = "note-followup", type = "follow_up", dueAt = 5_000L))
+        noteDao.upsert(note(noteId = "note-commitment", type = "commitment", dueAt = 6_000L))
+        noteDao.upsert(note(noteId = "note-general", type = "general", dueAt = 7_000L)) // wrong type
+        noteDao.upsert(note(noteId = "note-no-due", type = "follow_up", dueAt = null)) // no due date
+        noteDao.upsert(note(noteId = "note-completed", type = "follow_up", dueAt = 8_000L, completedAt = 9_000L)) // completed
+
+        val page = noteDao.pageFollowUpsForCompany("co-a", limit = 20, offset = 0)
+
+        assertEquals(2, page.size)
+        assertEquals(setOf("note-followup", "note-commitment"), page.map { it.noteId }.toSet())
+        assertEquals(2, noteDao.countFollowUpsForCompany("co-a"))
+    }
+
+    @Test
+    fun followUpsOrderByDueDateAscendingSoOverdueSurfacesBeforeUpcoming() = runBlocking {
+        noteDao.upsert(note(noteId = "note-upcoming", type = "follow_up", dueAt = 9_000L))
+        noteDao.upsert(note(noteId = "note-overdue", type = "follow_up", dueAt = 1_000L))
+        noteDao.upsert(note(noteId = "note-due-today", type = "follow_up", dueAt = 5_000L))
+
+        val page = noteDao.pageFollowUpsForCompany("co-a", limit = 20, offset = 0)
+
+        assertEquals(listOf("note-overdue", "note-due-today", "note-upcoming"), page.map { it.noteId })
+    }
+
+    @Test
+    fun followUpsWithASharedDueDateTieBreakDeterministicallyByNoteId() = runBlocking {
+        noteDao.upsert(note(noteId = "note-b", type = "follow_up", dueAt = 5_000L))
+        noteDao.upsert(note(noteId = "note-a", type = "follow_up", dueAt = 5_000L))
+
+        val page = noteDao.pageFollowUpsForCompany("co-a", limit = 20, offset = 0)
+
+        assertEquals(listOf("note-a", "note-b"), page.map { it.noteId })
+    }
+
+    @Test
+    fun aVeryOldOverdueFollowUpNeverAutoExpiresFromTheQuery() = runBlocking {
+        // No lower bound on dueAt: a follow-up overdue by years must remain eligible until
+        // completed or rescheduled (PDL-018 — no automatic expiry).
+        noteDao.upsert(note(noteId = "note-ancient", type = "follow_up", dueAt = 1L))
+
+        val page = noteDao.pageFollowUpsForCompany("co-a", limit = 20, offset = 0)
+
+        assertEquals(1, page.size)
+        assertEquals("note-ancient", page.single().noteId)
+    }
+
+    @Test
+    fun followUpsForCompanyReturnsEmptyWhenThereAreNoEligibleNotes() = runBlocking {
+        noteDao.upsert(note(noteId = "note-general", type = "general"))
+
+        assertTrue(noteDao.pageFollowUpsForCompany("co-a", limit = 20, offset = 0).isEmpty())
+        assertEquals(0, noteDao.countFollowUpsForCompany("co-a"))
+    }
+
+    @Test
+    fun followUpsForCompanyAreCompanyIsolatedEvenWithIdenticalNoteIdsAndDueDates() = runBlocking {
+        noteDao.upsert(note(companyId = "co-a", noteId = "note-1", partyId = "party-1", type = "follow_up", dueAt = 5_000L, body = "Company A follow-up"))
+        noteDao.upsert(note(companyId = "co-b", noteId = "note-1", partyId = "party-1", type = "follow_up", dueAt = 5_000L, body = "Company B follow-up"))
+
+        val pageA = noteDao.pageFollowUpsForCompany("co-a", limit = 20, offset = 0)
+        val pageB = noteDao.pageFollowUpsForCompany("co-b", limit = 20, offset = 0)
+
+        assertEquals(1, pageA.size)
+        assertEquals("Company A follow-up", pageA.single().body)
+        assertEquals(1, pageB.size)
+        assertEquals("Company B follow-up", pageB.single().body)
+        assertEquals(1, noteDao.countFollowUpsForCompany("co-a"))
+        assertEquals(1, noteDao.countFollowUpsForCompany("co-b"))
+    }
+
+    @Test
+    fun pageFollowUpsForCompanyStaysBoundedAndFastWithALargeFixture() = runBlocking {
+        // Mirrors PartyDaoTest's own 500-row precedent (architecture §16's performance-proof bar).
+        repeat(500) { i ->
+            noteDao.upsert(
+                note(
+                    noteId = "note-$i",
+                    partyId = "party-${i % 50}",
+                    type = if (i % 2 == 0) "follow_up" else "commitment",
+                    dueAt = (i + 1) * 1_000L,
+                ),
+            )
+        }
+
+        var page: List<PartyNoteEntity>
+        val elapsed = kotlin.system.measureTimeMillis {
+            page = noteDao.pageFollowUpsForCompany("co-a", limit = 20, offset = 0)
+        }
+
+        assertEquals(20, page.size)
+        assertEquals(500, noteDao.countFollowUpsForCompany("co-a"))
+        assertTrue("bounded company-wide follow-up query should stay well under 2s even with 500 rows, took ${elapsed}ms", elapsed < 2000)
+        // Lowest dueAt (note-0, 1_000L) must sort first.
+        assertEquals("note-0", page.first().noteId)
+    }
 }

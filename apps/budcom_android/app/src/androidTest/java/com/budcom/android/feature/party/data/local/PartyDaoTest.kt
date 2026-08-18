@@ -116,6 +116,110 @@ class PartyDaoTest {
         assertTrue("bounded paged query should stay well under 2s even with 500 rows, took ${elapsed}ms", elapsed < 2000)
     }
 
+    // ============================== DINCHARYA CONTACT COMPLETION (MVP-1.2-D) ==============================
+
+    @Test
+    fun pageMissingContactInfoReturnsOnlyPartiesMissingBothValidPhoneAndValidEmail() = runBlocking {
+        dao.upsertAll(
+            listOf(
+                party("co-a", "p-neither", "Neither", phone = null, phoneNormalized = null, email = null),
+                party("co-a", "p-phone-only", "Phone Only", phone = "9876543210", phoneNormalized = "9876543210", email = null),
+                party("co-a", "p-email-only", "Email Only", phone = null, phoneNormalized = null, email = "a@b.com"),
+                party("co-a", "p-both", "Both", phone = "9876543210", phoneNormalized = "9876543210", email = "a@b.com"),
+                party("co-a", "p-blank-email", "Blank Email", phone = null, phoneNormalized = null, email = "   "),
+            ),
+        )
+
+        val missing = dao.pageMissingContactInfo("co-a", limit = 20, offset = 0)
+
+        assertEquals(setOf("p-neither", "p-blank-email"), missing.map { it.partyId }.toSet())
+        assertEquals(2, dao.countMissingContactInfo("co-a"))
+    }
+
+    @Test
+    fun pageMissingContactInfoExcludesProspects() = runBlocking {
+        dao.upsertAll(
+            listOf(
+                party("co-a", "p-customer", "Customer With No Contact", classification = "customer"),
+                party("co-a", "p-prospect", "Prospect With No Contact", classification = "prospect"),
+            ),
+        )
+
+        val missing = dao.pageMissingContactInfo("co-a", limit = 20, offset = 0)
+
+        assertEquals(listOf("p-customer"), missing.map { it.partyId })
+        assertEquals(1, dao.countMissingContactInfo("co-a"))
+    }
+
+    @Test
+    fun pageMissingContactInfoOrdersByDisplayNameThenPartyIdForDeterminism() = runBlocking {
+        dao.upsertAll(
+            listOf(
+                party("co-a", "p2", "Beta"),
+                party("co-a", "p1", "Alpha"),
+            ),
+        )
+
+        assertEquals(listOf("p1", "p2"), dao.pageMissingContactInfo("co-a", limit = 20, offset = 0).map { it.partyId })
+    }
+
+    @Test
+    fun pageMissingContactInfoIsCompanyIsolatedEvenWithIdenticalNamesAndPhones() = runBlocking {
+        dao.upsert(party("co-a", "p1", "ABC Traders", phone = null, phoneNormalized = null, email = null))
+        dao.upsert(party("co-b", "p1", "ABC Traders", phone = "9876543210", phoneNormalized = "9876543210", email = "a@b.com"))
+
+        val missingA = dao.pageMissingContactInfo("co-a", limit = 20, offset = 0)
+        val missingB = dao.pageMissingContactInfo("co-b", limit = 20, offset = 0)
+
+        assertEquals(1, missingA.size)
+        assertTrue(missingB.isEmpty())
+        assertEquals(1, dao.countMissingContactInfo("co-a"))
+        assertEquals(0, dao.countMissingContactInfo("co-b"))
+    }
+
+    @Test
+    fun pageMissingContactInfoStaysBoundedAndFastWithALargeFixture() = runBlocking {
+        // Mirrors pageByClassification_staysFastAndBoundedWithALargeFixture's own 500-row precedent.
+        val large = (1..500).map { i ->
+            party(
+                "co-perf",
+                "p$i",
+                "Party $i",
+                classification = if (i % 2 == 0) "customer" else "prospect",
+                phone = null,
+                phoneNormalized = null,
+                email = null,
+            )
+        }
+        dao.upsertAll(large)
+
+        var page: List<PartyEntity>
+        val elapsed = measureTimeMillis {
+            page = dao.pageMissingContactInfo("co-perf", limit = 20, offset = 0)
+        }
+        assertEquals(20, page.size)
+        // Only the 250 non-prospect (customer) rows are eligible.
+        assertEquals(250, dao.countMissingContactInfo("co-perf"))
+        assertTrue("bounded company-wide contact-completion query should stay well under 2s even with 500 rows, took ${elapsed}ms", elapsed < 2000)
+    }
+
+    @Test
+    fun findByIdsReturnsOnlyTheRequestedIdsWithinTheGivenCompany() = runBlocking {
+        dao.upsertAll(
+            listOf(
+                party("co-a", "p1", "Alpha"),
+                party("co-a", "p2", "Beta"),
+                party("co-a", "p3", "Gamma"),
+                party("co-b", "p1", "Different Company Alpha"),
+            ),
+        )
+
+        val found = dao.findByIds("co-a", listOf("p1", "p3", "does-not-exist"))
+
+        assertEquals(setOf("p1", "p3"), found.map { it.partyId }.toSet())
+        assertTrue(found.none { it.companyId == "co-b" })
+    }
+
     private fun party(
         companyId: String,
         partyId: String,
@@ -123,6 +227,7 @@ class PartyDaoTest {
         classification: String = "customer",
         phone: String? = null,
         phoneNormalized: String? = null,
+        email: String? = null,
     ) = PartyEntity(
         companyId = companyId,
         partyId = partyId,
@@ -130,7 +235,7 @@ class PartyDaoTest {
         classification = classification,
         primaryPhone = phone,
         primaryPhoneNormalized = phoneNormalized,
-        primaryEmail = null,
+        primaryEmail = email,
         addressLine1 = null,
         addressCity = null,
         addressState = null,

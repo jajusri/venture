@@ -136,6 +136,22 @@ class DashboardScreenTest {
     }
 
     @Test
+    fun dincharyaPrimaryEntryIsShownAndNavigable() {
+        val events = mutableListOf<DashboardEvent>()
+        composeRule.setContent {
+            BudcomTheme {
+                DashboardScreen(
+                    state = operationalState(),
+                    onEvent = { events.add(it) },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("dashboard_primary_dincharya").assertIsDisplayed()
+        composeRule.onNodeWithTag("dashboard_primary_dincharya").performClick()
+        assertTrue(events.contains(DashboardEvent.OpenDincharya))
+    }
+
+    @Test
     fun refreshAndTestConnectionActionsEmitEvents() {
         val events = mutableListOf<DashboardEvent>()
         composeRule.setContent {

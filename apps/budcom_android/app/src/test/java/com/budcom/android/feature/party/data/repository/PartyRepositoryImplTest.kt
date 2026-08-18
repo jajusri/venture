@@ -1060,6 +1060,9 @@ private class FakePartyDao : PartyDao {
                 (classification == null || it.classification == classification) &&
                 (it.displayName.contains(query, ignoreCase = true) || it.primaryPhoneNormalized?.contains(query) == true)
         }
+    override suspend fun pageMissingContactInfo(companyId: String, limit: Int, offset: Int): List<PartyEntity> = error("unused")
+    override suspend fun countMissingContactInfo(companyId: String): Int = error("unused")
+    override suspend fun findByIds(companyId: String, partyIds: List<String>): List<PartyEntity> = error("unused")
 }
 
 private class FakePartySourceLinkDao : PartySourceLinkDao {
@@ -1088,6 +1091,9 @@ private class FakePartyFieldProvenanceDao : PartyFieldProvenanceDao {
     override suspend fun upsert(entity: PartyFieldProvenanceEntity) {
         store[key(entity.companyId, entity.partyId, entity.fieldName)] = entity
     }
+    override suspend fun pagePendingConfirmationForCompany(companyId: String, limit: Int, offset: Int): List<com.budcom.android.feature.party.data.local.PendingConfirmationRow> =
+        error("unused")
+    override suspend fun countPendingConfirmationForCompany(companyId: String): Int = error("unused")
 }
 
 private class FakePartyContactPersonDao : PartyContactPersonDao {
@@ -1169,6 +1175,9 @@ private class FakePartyNoteDao : com.budcom.android.feature.party.data.local.Par
         store.values.filter { it.companyId == companyId && it.partyId == partyId && it.issueId != null }
             .groupBy { it.issueId!! }
             .map { (issueId, notes) -> com.budcom.android.feature.party.data.local.IssueActivityRow(issueId, notes.size, notes.maxOf { it.createdAt }) }
+    override suspend fun pageFollowUpsForCompany(companyId: String, limit: Int, offset: Int): List<com.budcom.android.feature.party.data.local.PartyNoteEntity> =
+        error("unused")
+    override suspend fun countFollowUpsForCompany(companyId: String): Int = error("unused")
 }
 
 private class FakePartyExportEventDao : com.budcom.android.feature.party.data.local.PartyExportEventDao {

@@ -278,6 +278,7 @@ class DashboardViewModelTest {
         viewModel.onEvent(DashboardEvent.OpenVouchers)
         viewModel.onEvent(DashboardEvent.OpenLedgers)
         viewModel.onEvent(DashboardEvent.OpenConnect)
+        viewModel.onEvent(DashboardEvent.OpenDincharya)
         viewModel.onEvent(DashboardEvent.OpenSearch)
         viewModel.onEvent(DashboardEvent.OpenSync)
         viewModel.onEvent(DashboardEvent.OpenDiagnostics)
@@ -291,6 +292,7 @@ class DashboardViewModelTest {
                 DashboardNavigation.Vouchers,
                 DashboardNavigation.Ledgers,
                 DashboardNavigation.Connect,
+                DashboardNavigation.Dincharya,
                 DashboardNavigation.Search,
                 DashboardNavigation.Sync,
                 DashboardNavigation.Diagnostics,
