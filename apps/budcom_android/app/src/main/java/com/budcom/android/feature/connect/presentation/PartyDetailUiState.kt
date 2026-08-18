@@ -159,6 +159,14 @@ sealed interface PartyDetailEvent {
     data object SaveNote : PartyDetailEvent
     data class DeleteNoteTapped(val noteId: String) : PartyDetailEvent
     data class LinkedVoucherTapped(val voucherId: String) : PartyDetailEvent
+    /** Marks a `commitment`/`follow_up` note done ([PartyNote.completedAt] set to now) or reopens
+     * it (cleared) — mirrors [ResolveIssueTapped]/[ReopenIssueTapped]'s exact split-event shape.
+     * The only UI path to [com.budcom.android.feature.party.domain.usecase.SetNoteCompletionUseCase],
+     * which existed at the repository/use-case layer since MVP-1.2-A but had no caller until now
+     * (MVP-1.2-E) — without this, a Dincharya follow-up had no honest "done" action anywhere in the
+     * app, only the indirect side effect of editing away its type/due-date. */
+    data class MarkNoteDoneTapped(val noteId: String) : PartyDetailEvent
+    data class ReopenNoteTapped(val noteId: String) : PartyDetailEvent
 
     data object ToggleIssuesExpanded : PartyDetailEvent
     data object ToggleResolvedIssuesExpanded : PartyDetailEvent

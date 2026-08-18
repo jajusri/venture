@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.util.PhoneNumberNormalizer
+import com.budcom.android.core.util.TimeProvider
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
@@ -31,6 +32,7 @@ import com.budcom.android.feature.party.domain.usecase.GetTagsForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.AddNoteUseCase
 import com.budcom.android.feature.party.domain.usecase.ReopenIssueUseCase
 import com.budcom.android.feature.party.domain.usecase.ResolveIssueUseCase
+import com.budcom.android.feature.party.domain.usecase.SetNoteCompletionUseCase
 import com.budcom.android.feature.party.domain.usecase.UnassignTagUseCase
 import com.budcom.android.feature.party.domain.usecase.UpdateBudcomOnlyFieldUseCase
 import com.budcom.android.feature.party.domain.usecase.UpsertContactPersonUseCase
@@ -71,6 +73,7 @@ class PartyDetailViewModel @Inject constructor(
     private val addNote: AddNoteUseCase,
     private val editNote: EditNoteUseCase,
     private val deleteNote: DeleteNoteUseCase,
+    private val setNoteCompletion: SetNoteCompletionUseCase,
     private val getIssuesForParty: GetIssuesForPartyUseCase,
     private val createIssue: CreateIssueUseCase,
     private val getIssueActivitySummary: GetIssueActivitySummaryUseCase,
@@ -79,6 +82,7 @@ class PartyDetailViewModel @Inject constructor(
     private val loadVouchers: LoadVouchersUseCase,
     private val ledgerSnapshotPort: LedgerSnapshotPort,
     private val companySession: CompanySessionPort,
+    private val timeProvider: TimeProvider,
 ) : ViewModel() {
 
     private val partyId: String = requireNotNull(savedStateHandle.get<String>(PARTY_ID_ARG)) { "partyId is required" }
@@ -191,6 +195,8 @@ class PartyDetailViewModel @Inject constructor(
             }
             PartyDetailEvent.SaveNote -> saveNote()
             is PartyDetailEvent.DeleteNoteTapped -> deleteNoteTapped(event.noteId)
+            is PartyDetailEvent.MarkNoteDoneTapped -> setNoteCompletionTapped(event.noteId, completed = true)
+            is PartyDetailEvent.ReopenNoteTapped -> setNoteCompletionTapped(event.noteId, completed = false)
             is PartyDetailEvent.LinkedVoucherTapped -> {
                 val note = _uiState.value.notesInTimeline.firstOrNull { it.linkedVoucherId == event.voucherId }
                 if (note != null) _effects.tryEmit(PartyDetailEffect.OpenVoucherDetails(event.voucherId))
@@ -521,6 +527,21 @@ class PartyDetailViewModel @Inject constructor(
         viewModelScope.launch {
             deleteNote(companyId, noteId)
             load()
+        }
+    }
+
+    /** The only UI path to [SetNoteCompletionUseCase] (MVP-1.2-E) — never deletes the note, only
+     * changes [com.budcom.android.feature.party.domain.model.PartyNote.completedAt], preserving its
+     * place in Timeline history. A partial Timeline-only refresh is enough (mirrors
+     * [resolveIssueTapped]/[reopenIssueTapped]'s own efficiency principle): completion never
+     * changes fields/contacts/tags/issues, only how this one note reads in the Timeline — and, by
+     * the same live-read construction as every other Dincharya source, whether it still surfaces on
+     * the Dincharya follow-up list next time that screen loads. */
+    private fun setNoteCompletionTapped(noteId: String, completed: Boolean) {
+        val companyId = _uiState.value.companyId ?: return
+        viewModelScope.launch {
+            setNoteCompletion(companyId, noteId, if (completed) timeProvider.nowEpochMillis() else null)
+            loadTimeline(_uiState.value.selectedIssueFilterId)
         }
     }
 }

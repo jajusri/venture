@@ -457,6 +457,24 @@ private fun NoteRow(note: PartyNote, onEvent: (PartyDetailEvent) -> Unit) {
                     )
                 }
             }
+            // Commitment/Follow-up notes are the same rows Dincharya's follow-up group surfaces —
+            // due date and completion state must be visible here, not only discoverable by opening
+            // Edit (MVP-1.2-E: this whole due-date/status row plus the Mark done/Reopen action
+            // below did not exist before this milestone's hardening pass).
+            if (note.type.showsDueDate() && note.dueAt != null) {
+                // Deliberately neutral color regardless of complete/incomplete: this row has no
+                // access to "now" (computed once at the ViewModel/repository layer everywhere else
+                // in this codebase, never re-derived at Compose render time), so it cannot honestly
+                // classify overdue/due-today/upcoming the way Dincharya's own urgency label does —
+                // coloring every incomplete row as an error would be a false urgency signal for a
+                // note that is not yet due. The text alone states the fact.
+                Text(
+                    text = if (note.completedAt != null) "Done · due ${formatTimelineDate(note.dueAt)}" else "Due ${formatTimelineDate(note.dueAt)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("party_detail_note_${note.noteId}_due_status"),
+                )
+            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Row {
                     note.linkedVoucherId?.let { voucherId ->
@@ -469,6 +487,19 @@ private fun NoteRow(note: PartyNote, onEvent: (PartyDetailEvent) -> Unit) {
                         onClick = { onEvent(PartyDetailEvent.EditNoteTapped(note.noteId)) },
                         modifier = Modifier.testTag("party_detail_note_${note.noteId}_edit"),
                     ) { Text("Edit") }
+                    if (note.type.showsDueDate() && note.dueAt != null) {
+                        if (note.completedAt == null) {
+                            TextButton(
+                                onClick = { onEvent(PartyDetailEvent.MarkNoteDoneTapped(note.noteId)) },
+                                modifier = Modifier.testTag("party_detail_note_${note.noteId}_mark_done"),
+                            ) { Text("Mark done") }
+                        } else {
+                            TextButton(
+                                onClick = { onEvent(PartyDetailEvent.ReopenNoteTapped(note.noteId)) },
+                                modifier = Modifier.testTag("party_detail_note_${note.noteId}_reopen"),
+                            ) { Text("Reopen") }
+                        }
+                    }
                 }
                 TextButton(
                     onClick = { onEvent(PartyDetailEvent.DeleteNoteTapped(note.noteId)) },
