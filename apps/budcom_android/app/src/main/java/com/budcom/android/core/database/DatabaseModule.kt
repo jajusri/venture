@@ -13,6 +13,7 @@ import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyDao
 import com.budcom.android.feature.party.data.local.PartyExportEventDao
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
+import com.budcom.android.feature.party.data.local.PartyIssueDao
 import com.budcom.android.feature.party.data.local.PartyNoteDao
 import com.budcom.android.feature.party.data.local.PartySourceLinkDao
 import com.budcom.android.feature.party.data.local.TagDao
@@ -42,6 +43,7 @@ object DatabaseModule {
         DatabaseConstants.NAME,
     ).addMigrations(
         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+        MIGRATION_8_9,
     ).build()
 
     @Provides
@@ -85,6 +87,9 @@ object DatabaseModule {
 
     @Provides
     fun providePartyExportEventDao(db: AppDatabase): PartyExportEventDao = db.partyExportEventDao()
+
+    @Provides
+    fun providePartyIssueDao(db: AppDatabase): PartyIssueDao = db.partyIssueDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -307,6 +312,35 @@ object DatabaseModule {
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS `index_party_export_events_companyId_partyId_createdAt` " +
                     "ON `party_export_events` (`companyId`, `partyId`, `createdAt`)",
+            )
+        }
+    }
+
+    /**
+     * Additive-only (MVP-1.2-A): extends `party_notes` with typed/due-date/completion/issue-
+     * grouping columns and adds the new `party_issues` table. No existing table is dropped or
+     * destructively recreated. `type` is added `NOT NULL DEFAULT 'general'` — every pre-existing
+     * `party_notes` row backfills to `'general'` via this default, so no note written before this
+     * migration changes behavior. `dueAt`/`completedAt`/`issueId` are nullable and need no default;
+     * SQLite implicitly defaults a nullable `ALTER TABLE ... ADD COLUMN` to NULL for existing rows.
+     */
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `party_notes` ADD COLUMN `type` TEXT NOT NULL DEFAULT 'general'")
+            db.execSQL("ALTER TABLE `party_notes` ADD COLUMN `dueAt` INTEGER")
+            db.execSQL("ALTER TABLE `party_notes` ADD COLUMN `completedAt` INTEGER")
+            db.execSQL("ALTER TABLE `party_notes` ADD COLUMN `issueId` TEXT")
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `party_issues` (" +
+                    "`companyId` TEXT NOT NULL, `issueId` TEXT NOT NULL, `partyId` TEXT NOT NULL, " +
+                    "`title` TEXT NOT NULL, `status` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                    "`resolvedAt` INTEGER, `updatedAt` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `issueId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_party_issues_companyId_partyId_status_createdAt` " +
+                    "ON `party_issues` (`companyId`, `partyId`, `status`, `createdAt`)",
             )
         }
     }

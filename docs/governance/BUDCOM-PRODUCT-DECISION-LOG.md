@@ -92,6 +92,66 @@ Each entry should contain:
 
 **Status:** Locked
 
+### PDL-014 — Relationship Timeline is the unified relationship history
+**Date:** 2026-08-18
+**Area:** MVP-1.2 — Party Detail / Relationship Timeline
+**Decision:** Relationship Timeline is the single, unified historical presentation for a Party. Party = the relationship; Timeline = the history of that relationship. Notes and Issues (and, where reliable evidence exists, accounting events, contact/activity events, and BUDCOM actions) are structured objects/events that appear *within* the Timeline. Do not build separate, competing "Notes History" / "Issue History" / "Relationship Timeline" experiences. Only implement event types supported by approved scope and actual repository evidence — no fabricated events, no generic event engine built merely for future flexibility, no AI-generated timeline entries, no duplicating the same event across multiple histories. The Timeline must remain deterministic, explainable, and locally grounded.
+
+**Why:** Resolves architecture doc §3.1 (open question 1). Answers the Product Owner's explicit instruction that Party Detail should read as one coherent relationship history rather than several parallel, overlapping views.
+
+**Alternatives rejected:** Building Notes History, Issue History, and Relationship Timeline as three separate presentation surfaces over the same underlying data.
+
+**Consequences:** MVP-1.2-B's Relationship Timeline design (architecture doc §10) is confirmed as the primary read surface replacing the flat Notes list's presentation, not an addition alongside it. Issue History (1.2-C) is a filtered view *into* the Timeline, not a separate list implementation (architecture doc §10 already anticipated this — now locked, not merely a working assumption).
+
+**Revisit trigger:** If a future milestone identifies a relationship-history event type that cannot be deterministically and locally grounded, or the Product Owner explicitly reopens the presentation question.
+
+**Status:** Locked
+
+### PDL-015 — Referral Tree / RJ Concept deferred, outside MVP-1.2
+**Date:** 2026-08-18
+**Area:** MVP-1.2 scope boundary
+**Decision:** Referral Tree / RJ Concept is explicitly outside MVP-1.2. Do not implement referral tables, referral UI, or referral attribution logic. Do not modify Party identity architecture merely to anticipate Referral Tree. It is deferred to a later, dedicated architecture and implementation milestone.
+
+**Why:** Resolves architecture doc §3.2 (open question 2). The locked Master Product Execution Plan §8 MVP-1.2 line item never names Referral Tree even though the referral spec calls it "VVIMP" — this was a genuine sequencing ambiguity, now closed by explicit Product Owner decision rather than a Claude judgment call.
+
+**Alternatives rejected:** Folding Referral Tree into MVP-1.2 alongside Relationship Timeline/Issue History/Dincharya, since the spec labels it high-importance.
+
+**Consequences:** No referral schema, UI, or Party-identity change occurs in MVP-1.2-A through 1.2-E. Referral Tree remains a fully open future milestone with its own dedicated planning session.
+
+**Revisit trigger:** A dedicated future architecture/planning session for Referral Tree, explicitly authorized by the Product Owner.
+
+**Status:** Locked
+
+### PDL-016 — Home Insights / OI system deferred, outside MVP-1.2
+**Date:** 2026-08-18
+**Area:** MVP-1.2 scope boundary
+**Decision:** Home Insights and the broader Insights/OI system remain outside MVP-1.2. Do not implement a Home Insights dashboard, Attention Engine, generative AI, insight ranking, Mango attribution, insight notifications, a full OI engine, AI summaries, or other speculative intelligence features. The architectural distinction holds: Insights determines what deserves attention; Dincharya manages what the user should do. MVP-1.2 may produce deterministic action data that could eventually feed Insights, but must not build the Insights system itself.
+
+**Why:** Resolves architecture doc §3.3 (open question 3). No Home Insights content specification exists anywhere in the repository (confirmed by the MVP-1.2 planning session) — building it now would mean inventing a workstream the Product Owner has reserved for separate, dedicated planning.
+
+**Alternatives rejected:** Building a minimal Home Insights surface alongside Dincharya on the theory that the two are entangled.
+
+**Consequences:** Dincharya (1.2-D) is self-contained and does not wait for or depend on the Insights workstream. No Insights-specific schema, ranking logic, or AI call is introduced anywhere in MVP-1.2.
+
+**Revisit trigger:** A dedicated future Insights/OI specification and planning session, explicitly authorized by the Product Owner.
+
+**Status:** Locked
+
+### PDL-017 — OS-level notifications deferred, Dincharya v1 is in-app only
+**Date:** 2026-08-18
+**Area:** MVP-1.2 — Dincharya
+**Decision:** OS-level notifications are outside MVP-1.2 v1. Dincharya begins as an in-app action surface only: open BUDCOM → Dincharya → see today's/relevant actions → act. Do not introduce Android notification permissions, notification channels, background reminder scheduling, boot rescheduling, push notifications, notification services, or recurring OS reminders.
+
+**Why:** Resolves architecture doc §3.4 (open question 4). Zero notification infrastructure exists today (no `POST_NOTIFICATIONS` permission, no channel, zero `Worker` classes despite WorkManager being wired at the Hilt level) — adding it now would open a new permission/security surface as a first release risk rather than a natural extension.
+
+**Alternatives rejected:** Shipping OS push/local notifications in Dincharya v1 for immediacy.
+
+**Consequences:** MVP-1.2-D builds Dincharya as a pull-to-check, in-app list only. No new Android permission, channel, or `Worker` is added anywhere in MVP-1.2.
+
+**Revisit trigger:** After the in-app Dincharya workflow is proven with real usage, a dedicated future session may scope OS-level notifications as its own reviewable security/permission surface.
+
+**Status:** Locked
+
 ---
 
 ## New decision template

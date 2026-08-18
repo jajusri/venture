@@ -9,12 +9,15 @@ import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueStatus
 import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartyNotePage
 import com.budcom.android.feature.party.domain.model.PartyPage
@@ -25,12 +28,15 @@ import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import com.budcom.android.feature.party.domain.usecase.AddNoteUseCase
 import com.budcom.android.feature.party.domain.usecase.AssignTagUseCase
+import com.budcom.android.feature.party.domain.usecase.CreateIssueUseCase
 import com.budcom.android.feature.party.domain.usecase.CreateOrGetTagUseCase
 import com.budcom.android.feature.party.domain.usecase.DeleteContactPersonUseCase
 import com.budcom.android.feature.party.domain.usecase.DeleteNoteUseCase
+import com.budcom.android.feature.party.domain.usecase.EditNoteUseCase
 import com.budcom.android.feature.party.domain.usecase.GetAllTagsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetContactPersonsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetFieldProvenanceUseCase
+import com.budcom.android.feature.party.domain.usecase.GetIssuesForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetNotesForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartyByIdUseCase
 import com.budcom.android.feature.party.domain.usecase.GetSourceLinkForPartyUseCase
@@ -98,7 +104,10 @@ class PartyDetailViewModelTest {
         assignTag = AssignTagUseCase(repository),
         unassignTag = UnassignTagUseCase(repository),
         addNote = AddNoteUseCase(repository),
+        editNote = EditNoteUseCase(repository),
         deleteNote = DeleteNoteUseCase(repository),
+        getIssuesForParty = GetIssuesForPartyUseCase(repository),
+        createIssue = CreateIssueUseCase(repository),
         loadVouchers = LoadVouchersUseCase(voucherRepository),
         ledgerSnapshotPort = PartyDetailTestFakeLedgerSnapshotPort(ledgers),
         companySession = PartyDetailTestFakeCompanySession("co-1"),
@@ -281,7 +290,7 @@ class PartyDetailViewModelTest {
     @Test
     fun `tapping an unavailable linked voucher shows a message, not a crash`() = runTest(dispatcher) {
         val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
-        repository.addNote("co-1", party.partyId, "2 pieces short", "v-missing")
+        repository.addNote("co-1", party.partyId, "2 pieces short", "v-missing", NoteType.General, null, null)
         val vm = createViewModel(party.partyId)
         advanceUntilIdle()
 
@@ -307,6 +316,100 @@ class PartyDetailViewModelTest {
         advanceUntilIdle()
 
         assertTrue(vm.uiState.value.notes.isEmpty())
+    }
+
+    @Test
+    fun `a note added with no type change defaults to General`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+
+        vm.onEvent(PartyDetailEvent.AddNoteTapped)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.NoteBodyChanged("Just a remark"))
+        vm.onEvent(PartyDetailEvent.SaveNote)
+        advanceUntilIdle()
+
+        assertEquals(NoteType.General, vm.uiState.value.notes.single().type)
+    }
+
+    @Test
+    fun `picking Follow-up type and a due date saves both`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+
+        vm.onEvent(PartyDetailEvent.AddNoteTapped)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.NoteBodyChanged("Call back Friday"))
+        vm.onEvent(PartyDetailEvent.NoteTypeChanged(NoteType.FollowUp))
+        vm.onEvent(PartyDetailEvent.NoteDueAtChanged("2026-08-21"))
+        vm.onEvent(PartyDetailEvent.SaveNote)
+        advanceUntilIdle()
+
+        val note = vm.uiState.value.notes.single()
+        assertEquals(NoteType.FollowUp, note.type)
+        assertTrue(note.dueAt != null && note.dueAt!! > 0)
+    }
+
+    @Test
+    fun `an invalid due date shows a notice instead of silently dropping it`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+
+        vm.onEvent(PartyDetailEvent.AddNoteTapped)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.NoteBodyChanged("Call back Friday"))
+        vm.onEvent(PartyDetailEvent.NoteTypeChanged(NoteType.FollowUp))
+        vm.onEvent(PartyDetailEvent.NoteDueAtChanged("not-a-date"))
+        vm.onEvent(PartyDetailEvent.SaveNote)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.notice != null)
+        assertTrue(vm.uiState.value.notes.isEmpty())
+    }
+
+    @Test
+    fun `editing an existing note through the note editor preserves its identity`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.AddNoteTapped)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.NoteBodyChanged("Original text"))
+        vm.onEvent(PartyDetailEvent.SaveNote)
+        advanceUntilIdle()
+        val noteId = vm.uiState.value.notes.single().noteId
+
+        vm.onEvent(PartyDetailEvent.EditNoteTapped(noteId))
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.NoteBodyChanged("Updated text"))
+        vm.onEvent(PartyDetailEvent.SaveNote)
+        advanceUntilIdle()
+
+        val notes = vm.uiState.value.notes
+        assertEquals(1, notes.size)
+        assertEquals(noteId, notes.single().noteId)
+        assertEquals("Updated text", notes.single().body)
+    }
+
+    @Test
+    fun `starting a new issue from the note editor groups the note under it`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+
+        vm.onEvent(PartyDetailEvent.AddNoteTapped)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.NoteBodyChanged("2 pieces short"))
+        vm.onEvent(PartyDetailEvent.NoteNewIssueTitleChanged("Short shipment"))
+        vm.onEvent(PartyDetailEvent.SaveNote)
+        advanceUntilIdle()
+
+        val note = vm.uiState.value.notes.single()
+        assertTrue(note.issueId != null)
+        assertEquals(1, repository.issuesFor("co-1", party.partyId).size)
     }
 
     private fun ledger(id: String, amount: String, side: String) = Ledger(
@@ -358,7 +461,11 @@ private class InMemoryPartyRepository : PartyRepository {
     private val tags = mutableMapOf<String, Tag>()
     private val tagAssignments = mutableSetOf<Triple<String, String, String>>()
     private val notes = mutableMapOf<String, PartyNote>()
+    private val issues = mutableMapOf<String, PartyIssue>()
     private var clock = 1_000L
+
+    fun issuesFor(companyId: String, partyId: String): List<PartyIssue> =
+        issues.values.filter { it.companyId == companyId && it.partyId == partyId }
 
     fun seedCustomer(companyId: String, ledgerId: String, name: String): Party {
         val partyId = UUID.randomUUID().toString()
@@ -465,16 +572,38 @@ private class InMemoryPartyRepository : PartyRepository {
         tagAssignments -= Triple(companyId, partyId, tagId)
     }
 
-    override suspend fun addNote(companyId: String, partyId: String, body: String, linkedVoucherId: String?): PartyNote {
+    override suspend fun addNote(
+        companyId: String,
+        partyId: String,
+        body: String,
+        linkedVoucherId: String?,
+        type: NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): PartyNote {
         clock += 1
-        val note = PartyNote(companyId, UUID.randomUUID().toString(), partyId, body, linkedVoucherId, clock, clock)
+        val note = PartyNote(companyId, UUID.randomUUID().toString(), partyId, body, linkedVoucherId, clock, clock, type, dueAt, null, issueId)
         notes[note.noteId] = note
         return note
     }
 
-    override suspend fun editNote(companyId: String, noteId: String, body: String): PartyNote? {
+    override suspend fun editNote(
+        companyId: String,
+        noteId: String,
+        body: String,
+        type: NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): PartyNote? {
         val existing = notes[noteId] ?: return null
-        val updated = existing.copy(body = body, updatedAt = clock)
+        val updated = existing.copy(body = body, type = type, dueAt = dueAt, issueId = issueId, updatedAt = clock)
+        notes[noteId] = updated
+        return updated
+    }
+
+    override suspend fun setNoteCompletion(companyId: String, noteId: String, completedAt: Long?): PartyNote? {
+        val existing = notes[noteId] ?: return null
+        val updated = existing.copy(completedAt = completedAt, updatedAt = clock)
         notes[noteId] = updated
         return updated
     }
@@ -487,6 +616,31 @@ private class InMemoryPartyRepository : PartyRepository {
         val items = notes.values.filter { it.companyId == companyId && it.partyId == partyId }.sortedByDescending { it.createdAt }
         return PartyNotePage(items, page, pageSize, items.size)
     }
+
+    override suspend fun createIssue(companyId: String, partyId: String, title: String): PartyIssue {
+        clock += 1
+        val issue = PartyIssue(companyId, UUID.randomUUID().toString(), partyId, title, IssueStatus.Open, clock, null, clock)
+        issues[issue.issueId] = issue
+        return issue
+    }
+
+    override suspend fun resolveIssue(companyId: String, issueId: String): PartyIssue? {
+        val existing = issues[issueId] ?: return null
+        val updated = existing.copy(status = IssueStatus.Resolved, resolvedAt = clock, updatedAt = clock)
+        issues[issueId] = updated
+        return updated
+    }
+
+    override suspend fun reopenIssue(companyId: String, issueId: String): PartyIssue? {
+        val existing = issues[issueId] ?: return null
+        val updated = existing.copy(status = IssueStatus.Open, resolvedAt = null, updatedAt = clock)
+        issues[issueId] = updated
+        return updated
+    }
+
+    override suspend fun getIssuesForParty(companyId: String, partyId: String): List<PartyIssue> =
+        issues.values.filter { it.companyId == companyId && it.partyId == partyId }
+            .sortedWith(compareBy<PartyIssue> { it.status }.thenByDescending { it.createdAt })
 
     override suspend fun getExportCandidates(
         companyId: String,

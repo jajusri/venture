@@ -271,7 +271,7 @@ class PartyDetailScreenTest {
         composeRule.setContent {
             BudcomTheme {
                 PartyDetailScreen(
-                    state = PartyDetailUiState(isLoading = false, party = party(), activeDialog = PartyDetailDialog.AddNote()),
+                    state = PartyDetailUiState(isLoading = false, party = party(), activeDialog = PartyDetailDialog.NoteEditor()),
                     onEvent = { lastEvent = it },
                 )
             }
@@ -280,6 +280,87 @@ class PartyDetailScreenTest {
         assertTrue(lastEvent is PartyDetailEvent.NoteBodyChanged)
         composeRule.onNodeWithTag("party_detail_note_save").performClick()
         assertEquals(PartyDetailEvent.SaveNote, lastEvent)
+    }
+
+    @Test
+    fun pickingANoteTypeEmitsNoteTypeChanged() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(isLoading = false, party = party(), activeDialog = PartyDetailDialog.NoteEditor()),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_note_type_Commitment").performClick()
+        assertEquals(
+            PartyDetailEvent.NoteTypeChanged(com.budcom.android.feature.party.domain.model.NoteType.Commitment),
+            lastEvent,
+        )
+    }
+
+    @Test
+    fun commitmentTypeShowsTheDueDateField() {
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false,
+                        party = party(),
+                        activeDialog = PartyDetailDialog.NoteEditor(type = com.budcom.android.feature.party.domain.model.NoteType.Commitment),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_note_due_at").assertIsDisplayed()
+    }
+
+    @Test
+    fun generalTypeHidesTheDueDateField() {
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(isLoading = false, party = party(), activeDialog = PartyDetailDialog.NoteEditor()),
+                    onEvent = {},
+                )
+            }
+        }
+        assertEquals(0, composeRule.onAllNodesForTag("party_detail_note_due_at").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun tappingEditOnANoteEmitsEditNoteTapped() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(isLoading = false, party = party(), notes = listOf(note(id = "n1"))),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_note_n1_edit").performClick()
+        assertEquals(PartyDetailEvent.EditNoteTapped("n1"), lastEvent)
+    }
+
+    @Test
+    fun editModeShowsEditNoteTitleAndPrefillsBody() {
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false,
+                        party = party(),
+                        activeDialog = PartyDetailDialog.NoteEditor(noteId = "n1", body = "Existing text"),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_note_editor_dialog").assertIsDisplayed()
+        composeRule.onNodeWithTag("party_detail_note_body").assertIsDisplayed()
     }
 
     @Test

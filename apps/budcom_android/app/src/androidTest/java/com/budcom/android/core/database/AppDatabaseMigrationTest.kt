@@ -826,4 +826,116 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 8 -> 9 migration (MVP-1.2-A: typed/due-date/completion/issue-grouping
+     * columns on `party_notes`, plus the new `party_issues` table) preserves every pre-existing
+     * row and never falls back to a destructive recreation. Critically, this also proves the
+     * backward-compatibility claim itself: a `party_notes` row inserted *before* this migration
+     * (with none of the four new columns) reads back as `type = 'general'` afterward — the exact
+     * guarantee that lets every pre-1.2-A note keep behaving unchanged.
+     */
+    @Test
+    fun migrate8To9_preservesExistingRowsAndAddsTypedNotesAndPartyIssuesTableOnly() {
+        val db89DbName = "migration-test-db-8-9"
+
+        var db = helper.createDatabase(db89DbName, 8)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_parties (companyId, partyId, displayName, classification, primaryPhone, " +
+                "primaryPhoneNormalized, primaryEmail, addressLine1, addressCity, addressState, addressPincode, " +
+                "gstin, createdAt, updatedAt) VALUES ('acme-001', 'party-1', 'ABC Traders', 'customer', NULL, " +
+                "NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1736899200000, 1736899200000)",
+        )
+        db.execSQL(
+            "INSERT INTO party_notes (companyId, noteId, partyId, body, linkedVoucherId, createdAt, updatedAt) " +
+                "VALUES ('acme-001', 'note-1', 'party-1', 'Customer says 2 pieces short', NULL, " +
+                "1736899200000, 1736899200000)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db89DbName, 9, false, DatabaseModule.MIGRATION_8_9)
+
+        db.query("SELECT name FROM cached_companies WHERE id = 'acme-001'").use { cursor ->
+            assertTrue("existing company row must survive the migration", cursor.moveToFirst())
+            assertEquals("Acme Corp", cursor.getString(0))
+        }
+        db.query("SELECT displayName FROM cached_parties WHERE companyId = 'acme-001' AND partyId = 'party-1'").use { cursor ->
+            assertTrue("existing party row must survive the migration", cursor.moveToFirst())
+            assertEquals("ABC Traders", cursor.getString(0))
+        }
+
+        // The backward-compatibility guarantee itself: a note written before this migration, with
+        // none of the four new columns, must read back with type backfilled to 'general' and every
+        // other new column NULL — never crash, never silently change its body.
+        db.query(
+            "SELECT body, type, dueAt, completedAt, issueId FROM party_notes " +
+                "WHERE companyId = 'acme-001' AND noteId = 'note-1'",
+        ).use { cursor ->
+            assertTrue("pre-existing note row must survive the migration", cursor.moveToFirst())
+            assertEquals("Customer says 2 pieces short", cursor.getString(0))
+            assertEquals("general", cursor.getString(1))
+            assertTrue("dueAt must backfill to NULL, not 0", cursor.isNull(2))
+            assertTrue("completedAt must backfill to NULL", cursor.isNull(3))
+            assertTrue("issueId must backfill to NULL", cursor.isNull(4))
+        }
+
+        val noteColumns = mutableMapOf<String, String>()
+        db.query("PRAGMA table_info(`party_notes`)").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val typeIdx = cursor.getColumnIndexOrThrow("type")
+            while (cursor.moveToNext()) {
+                noteColumns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+            }
+        }
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "noteId" to "TEXT", "partyId" to "TEXT", "body" to "TEXT",
+                "linkedVoucherId" to "TEXT", "createdAt" to "INTEGER", "updatedAt" to "INTEGER",
+                "type" to "TEXT", "dueAt" to "INTEGER", "completedAt" to "INTEGER", "issueId" to "TEXT",
+            ),
+            noteColumns,
+        )
+
+        // A note written *after* the migration, with no type specified at the SQL level, must
+        // also backfill to 'general' via the column default — not just pre-existing rows.
+        db.execSQL(
+            "INSERT INTO party_notes (companyId, noteId, partyId, body, linkedVoucherId, createdAt, updatedAt) " +
+                "VALUES ('acme-001', 'note-2', 'party-1', 'Post-migration note', NULL, 1736899300000, 1736899300000)",
+        )
+        db.query("SELECT type FROM party_notes WHERE companyId = 'acme-001' AND noteId = 'note-2'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("general", cursor.getString(0))
+        }
+
+        val issueColumns = mutableMapOf<String, String>()
+        db.query("PRAGMA table_info(`party_issues`)").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val typeIdx = cursor.getColumnIndexOrThrow("type")
+            while (cursor.moveToNext()) {
+                issueColumns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+            }
+        }
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "issueId" to "TEXT", "partyId" to "TEXT", "title" to "TEXT",
+                "status" to "TEXT", "createdAt" to "INTEGER", "resolvedAt" to "INTEGER", "updatedAt" to "INTEGER",
+            ),
+            issueColumns,
+        )
+
+        db.execSQL(
+            "INSERT INTO party_issues (companyId, issueId, partyId, title, status, createdAt, resolvedAt, updatedAt) " +
+                "VALUES ('acme-001', 'issue-1', 'party-1', '2 pieces short', 'open', 1736899200000, NULL, 1736899200000)",
+        )
+        db.query("SELECT title FROM party_issues WHERE companyId = 'acme-001' AND partyId = 'party-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("2 pieces short", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

@@ -15,6 +15,8 @@ import com.budcom.android.feature.party.data.local.TagDao
 import com.budcom.android.feature.party.data.local.TagEntity
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueStatus
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import kotlinx.coroutines.CoroutineDispatcher
@@ -41,9 +43,10 @@ class PartyRepositoryImplTest {
     private val tagDao = FakeTagDao()
     private val noteDao = FakePartyNoteDao()
     private val exportEventDao = FakePartyExportEventDao()
+    private val issueDao = FakePartyIssueDao()
 
     private fun repository() = PartyRepositoryImpl(
-        partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, noteDao, exportEventDao, time, dispatchers,
+        partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, noteDao, exportEventDao, issueDao, time, dispatchers,
     )
 
     private fun seed(
@@ -492,9 +495,9 @@ class PartyRepositoryImplTest {
         val repo = repository()
         val partyId = partyIdFor(repo, "guid:cash-customer")
         time.now = 1_000L
-        repo.addNote("co-1", partyId, "First note", null)
+        repo.addNote("co-1", partyId, "First note", null, NoteType.General, null, null)
         time.now = 2_000L
-        repo.addNote("co-1", partyId, "Second note", null)
+        repo.addNote("co-1", partyId, "Second note", null, NoteType.General, null, null)
 
         val notes = repo.getNotesForParty("co-1", partyId, 1, 20)
         assertEquals(listOf("Second note", "First note"), notes.items.map { it.body })
@@ -504,27 +507,76 @@ class PartyRepositoryImplTest {
     fun `a note can link to a voucher by stable id`() = runTest(dispatcher) {
         val repo = repository()
         val partyId = partyIdFor(repo, "guid:cash-customer")
-        val note = repo.addNote("co-1", partyId, "2 pieces short", "v-1842")
+        val note = repo.addNote("co-1", partyId, "2 pieces short", "v-1842", NoteType.General, null, null)
         assertEquals("v-1842", note.linkedVoucherId)
     }
 
     @Test
-    fun `editing a note updates its body and updatedAt`() = runTest(dispatcher) {
+    fun `a note with no type specified defaults to General, preserving pre-1_2-A behavior`() = runTest(dispatcher) {
         val repo = repository()
         val partyId = partyIdFor(repo, "guid:cash-customer")
-        val note = repo.addNote("co-1", partyId, "Original", null)
+        val note = repo.addNote("co-1", partyId, "Just a quick remark", null, NoteType.General, null, null)
+
+        assertEquals(NoteType.General, note.type)
+        assertNull(note.dueAt)
+        assertNull(note.completedAt)
+        assertNull(note.issueId)
+    }
+
+    @Test
+    fun `a commitment note carries a due date`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val note = repo.addNote("co-1", partyId, "Will pay by Friday", null, NoteType.Commitment, 9_999_999L, null)
+
+        assertEquals(NoteType.Commitment, note.type)
+        assertEquals(9_999_999L, note.dueAt)
+    }
+
+    @Test
+    fun `editing a note updates its body, type, due date and issue, and updatedAt`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val note = repo.addNote("co-1", partyId, "Original", null, NoteType.General, null, null)
+        val issue = repo.createIssue("co-1", partyId, "2 pieces short")
         time.now = 5_000L
-        val edited = repo.editNote("co-1", note.noteId, "Edited body")
+        val edited = repo.editNote("co-1", note.noteId, "Edited body", NoteType.FollowUp, 8_000L, issue.issueId)
 
         assertEquals("Edited body", edited?.body)
+        assertEquals(NoteType.FollowUp, edited?.type)
+        assertEquals(8_000L, edited?.dueAt)
+        assertEquals(issue.issueId, edited?.issueId)
         assertEquals(5_000L, edited?.updatedAt)
+    }
+
+    @Test
+    fun `marking a note complete does not delete it`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val note = repo.addNote("co-1", partyId, "Call back tomorrow", null, NoteType.FollowUp, 1_000L, null)
+        time.now = 2_000L
+        val completed = repo.setNoteCompletion("co-1", note.noteId, 2_000L)
+
+        assertEquals(2_000L, completed?.completedAt)
+        assertEquals(1, repo.getNotesForParty("co-1", partyId, 1, 20).items.size)
+    }
+
+    @Test
+    fun `reopening a completed note clears completedAt`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val note = repo.addNote("co-1", partyId, "Call back tomorrow", null, NoteType.FollowUp, 1_000L, null)
+        repo.setNoteCompletion("co-1", note.noteId, 2_000L)
+        val reopened = repo.setNoteCompletion("co-1", note.noteId, null)
+
+        assertNull(reopened?.completedAt)
     }
 
     @Test
     fun `deleting a note removes it from the party's list`() = runTest(dispatcher) {
         val repo = repository()
         val partyId = partyIdFor(repo, "guid:cash-customer")
-        val note = repo.addNote("co-1", partyId, "To be deleted", null)
+        val note = repo.addNote("co-1", partyId, "To be deleted", null, NoteType.General, null, null)
         repo.deleteNote("co-1", note.noteId)
 
         assertTrue(repo.getNotesForParty("co-1", partyId, 1, 20).items.isEmpty())
@@ -534,9 +586,71 @@ class PartyRepositoryImplTest {
     fun `notes are company isolated`() = runTest(dispatcher) {
         val repo = repository()
         val partyIdA = repo.createProspect("co-A", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "A Party")).partyId
-        repo.addNote("co-A", partyIdA, "Note in company A", null)
+        repo.addNote("co-A", partyIdA, "Note in company A", null, NoteType.General, null, null)
 
         assertTrue(repo.getNotesForParty("co-B", partyIdA, 1, 20).items.isEmpty())
+    }
+
+    // ============================== ISSUES ==============================
+
+    @Test
+    fun `creating an issue starts it open`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val issue = repo.createIssue("co-1", partyId, "2 pieces short — Sales Voucher #1842")
+
+        assertEquals(IssueStatus.Open, issue.status)
+        assertNull(issue.resolvedAt)
+    }
+
+    @Test
+    fun `resolving an issue sets resolvedAt and never deletes its notes`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val issue = repo.createIssue("co-1", partyId, "Short shipment")
+        repo.addNote("co-1", partyId, "2 pieces short", null, NoteType.Complaint, null, issue.issueId)
+        time.now = 3_000L
+
+        val resolved = repo.resolveIssue("co-1", issue.issueId)
+
+        assertEquals(IssueStatus.Resolved, resolved?.status)
+        assertEquals(3_000L, resolved?.resolvedAt)
+        assertEquals(1, repo.getNotesForParty("co-1", partyId, 1, 20).items.size)
+    }
+
+    @Test
+    fun `reopening a resolved issue clears resolvedAt`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val issue = repo.createIssue("co-1", partyId, "Short shipment")
+        repo.resolveIssue("co-1", issue.issueId)
+
+        val reopened = repo.reopenIssue("co-1", issue.issueId)
+
+        assertEquals(IssueStatus.Open, reopened?.status)
+        assertNull(reopened?.resolvedAt)
+    }
+
+    @Test
+    fun `open issues are listed before resolved issues`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val resolved = repo.createIssue("co-1", partyId, "Already fixed")
+        repo.resolveIssue("co-1", resolved.issueId)
+        val open = repo.createIssue("co-1", partyId, "Still open")
+
+        val issues = repo.getIssuesForParty("co-1", partyId)
+
+        assertEquals(listOf(open.issueId, resolved.issueId), issues.map { it.issueId })
+    }
+
+    @Test
+    fun `issues are company isolated`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyIdA = repo.createProspect("co-A", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "A Party")).partyId
+        repo.createIssue("co-A", partyIdA, "Issue in company A")
+
+        assertTrue(repo.getIssuesForParty("co-B", partyIdA).isEmpty())
     }
 
     // ============================== TALLY XML EXPORT (MVP-1.1-D) ==============================
@@ -872,5 +986,20 @@ private class FakePartyExportEventDao : com.budcom.android.feature.party.data.lo
 
     override suspend fun insert(entity: com.budcom.android.feature.party.data.local.PartyExportEventEntity) {
         store[entity.companyId to entity.exportId] = entity
+    }
+}
+
+private class FakePartyIssueDao : com.budcom.android.feature.party.data.local.PartyIssueDao {
+    val store = mutableMapOf<Pair<String, String>, com.budcom.android.feature.party.data.local.PartyIssueEntity>()
+
+    override suspend fun findAllForParty(companyId: String, partyId: String): List<com.budcom.android.feature.party.data.local.PartyIssueEntity> =
+        store.values.filter { it.companyId == companyId && it.partyId == partyId }
+            .sortedWith(compareBy<com.budcom.android.feature.party.data.local.PartyIssueEntity> { it.status }.thenByDescending { it.createdAt })
+
+    override suspend fun findById(companyId: String, issueId: String): com.budcom.android.feature.party.data.local.PartyIssueEntity? =
+        store[companyId to issueId]
+
+    override suspend fun upsert(entity: com.budcom.android.feature.party.data.local.PartyIssueEntity) {
+        store[entity.companyId to entity.issueId] = entity
     }
 }

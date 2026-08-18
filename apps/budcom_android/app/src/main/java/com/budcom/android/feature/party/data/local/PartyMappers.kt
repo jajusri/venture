@@ -1,12 +1,15 @@
 package com.budcom.android.feature.party.data.local
 
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueStatus
 import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.PartySourceType
@@ -110,6 +113,53 @@ internal fun PartyNoteEntity.toDomain(): PartyNote = PartyNote(
     body = body,
     linkedVoucherId = linkedVoucherId,
     createdAt = createdAt,
+    updatedAt = updatedAt,
+    type = type.toNoteType(),
+    dueAt = dueAt,
+    completedAt = completedAt,
+    issueId = issueId,
+)
+
+internal fun String.toNoteType(): NoteType = when (lowercase()) {
+    "payment_issue" -> NoteType.PaymentIssue
+    "complaint" -> NoteType.Complaint
+    "delivery_issue" -> NoteType.DeliveryIssue
+    "commitment" -> NoteType.Commitment
+    "product_interest" -> NoteType.ProductInterest
+    "internal_remark" -> NoteType.InternalRemark
+    "follow_up" -> NoteType.FollowUp
+    else -> NoteType.General
+}
+
+internal fun NoteType.asColumn(): String = when (this) {
+    NoteType.General -> "general"
+    NoteType.PaymentIssue -> "payment_issue"
+    NoteType.Complaint -> "complaint"
+    NoteType.DeliveryIssue -> "delivery_issue"
+    NoteType.Commitment -> "commitment"
+    NoteType.ProductInterest -> "product_interest"
+    NoteType.InternalRemark -> "internal_remark"
+    NoteType.FollowUp -> "follow_up"
+}
+
+internal fun String.toIssueStatus(): IssueStatus = when (lowercase()) {
+    "resolved" -> IssueStatus.Resolved
+    else -> IssueStatus.Open
+}
+
+internal fun IssueStatus.asColumn(): String = when (this) {
+    IssueStatus.Open -> "open"
+    IssueStatus.Resolved -> "resolved"
+}
+
+internal fun PartyIssueEntity.toDomain(): PartyIssue = PartyIssue(
+    companyId = companyId,
+    issueId = issueId,
+    partyId = partyId,
+    title = title,
+    status = status.toIssueStatus(),
+    createdAt = createdAt,
+    resolvedAt = resolvedAt,
     updatedAt = updatedAt,
 )
 

@@ -389,9 +389,27 @@ private class FakePartyRepository : PartyRepository {
         partyId: String,
         body: String,
         linkedVoucherId: String?,
+        type: com.budcom.android.feature.party.domain.model.NoteType,
+        dueAt: Long?,
+        issueId: String?,
     ): com.budcom.android.feature.party.domain.model.PartyNote = error("unused")
-    override suspend fun editNote(companyId: String, noteId: String, body: String): com.budcom.android.feature.party.domain.model.PartyNote? = error("unused")
+    override suspend fun editNote(
+        companyId: String,
+        noteId: String,
+        body: String,
+        type: com.budcom.android.feature.party.domain.model.NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): com.budcom.android.feature.party.domain.model.PartyNote? = error("unused")
+    override suspend fun setNoteCompletion(companyId: String, noteId: String, completedAt: Long?): com.budcom.android.feature.party.domain.model.PartyNote? =
+        error("unused")
     override suspend fun deleteNote(companyId: String, noteId: String): Unit = error("unused")
+    override suspend fun createIssue(companyId: String, partyId: String, title: String): com.budcom.android.feature.party.domain.model.PartyIssue =
+        error("unused")
+    override suspend fun resolveIssue(companyId: String, issueId: String): com.budcom.android.feature.party.domain.model.PartyIssue? = error("unused")
+    override suspend fun reopenIssue(companyId: String, issueId: String): com.budcom.android.feature.party.domain.model.PartyIssue? = error("unused")
+    override suspend fun getIssuesForParty(companyId: String, partyId: String): List<com.budcom.android.feature.party.domain.model.PartyIssue> =
+        error("unused")
     override suspend fun getNotesForParty(
         companyId: String,
         partyId: String,

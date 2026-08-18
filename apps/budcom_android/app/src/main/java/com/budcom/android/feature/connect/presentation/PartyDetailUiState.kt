@@ -2,9 +2,11 @@ package com.budcom.android.feature.connect.presentation
 
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
+import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.Tag
@@ -58,8 +60,18 @@ sealed interface PartyDetailDialog {
         val isPrimary: Boolean = false,
     ) : PartyDetailDialog
     data object AddTag : PartyDetailDialog
-    data class AddNote(
+
+    /** Serves both add (`noteId == null`) and edit (`noteId` set), exactly like
+     * [ContactPersonEditor] already does for contact persons — one dialog, one shape, an optional
+     * id field indicating mode. */
+    data class NoteEditor(
+        val noteId: String? = null,
         val body: String = "",
+        val type: NoteType = NoteType.General,
+        val dueAtText: String = "",
+        val issueOptions: List<PartyIssue> = emptyList(),
+        val selectedIssueId: String? = null,
+        val newIssueTitle: String = "",
         val voucherOptions: List<VoucherPickOptionUi> = emptyList(),
         val selectedVoucherId: String? = null,
         val isLoadingVouchers: Boolean = false,
@@ -108,7 +120,12 @@ sealed interface PartyDetailEvent {
     data class RemoveTagTapped(val tagId: String) : PartyDetailEvent
 
     data object AddNoteTapped : PartyDetailEvent
+    data class EditNoteTapped(val noteId: String) : PartyDetailEvent
     data class NoteBodyChanged(val body: String) : PartyDetailEvent
+    data class NoteTypeChanged(val type: NoteType) : PartyDetailEvent
+    data class NoteDueAtChanged(val text: String) : PartyDetailEvent
+    data class NoteIssueSelected(val issueId: String?) : PartyDetailEvent
+    data class NoteNewIssueTitleChanged(val title: String) : PartyDetailEvent
     data class NoteVoucherSelected(val voucherId: String?) : PartyDetailEvent
     data object SaveNote : PartyDetailEvent
     data class DeleteNoteTapped(val noteId: String) : PartyDetailEvent
@@ -126,6 +143,20 @@ internal fun FieldProvenanceState.toUiLabel(): String = when (this) {
     FieldProvenanceState.Conflict -> "Needs review"
     FieldProvenanceState.EmptyUnknown -> "Not set"
 }
+
+internal fun NoteType.toUiLabel(): String = when (this) {
+    NoteType.General -> "General"
+    NoteType.PaymentIssue -> "Payment issue"
+    NoteType.Complaint -> "Complaint"
+    NoteType.DeliveryIssue -> "Delivery issue"
+    NoteType.Commitment -> "Commitment"
+    NoteType.ProductInterest -> "Product interest"
+    NoteType.InternalRemark -> "Internal remark"
+    NoteType.FollowUp -> "Follow-up"
+}
+
+/** Only [NoteType.Commitment]/[NoteType.FollowUp] carry a meaningful due date (architecture §9.1). */
+internal fun NoteType.showsDueDate(): Boolean = this == NoteType.Commitment || this == NoteType.FollowUp
 
 internal val PARTY_DETAIL_FIELD_LABELS: List<Pair<String, String>> = listOf(
     PartyFieldNames.PRIMARY_PHONE to "Phone",

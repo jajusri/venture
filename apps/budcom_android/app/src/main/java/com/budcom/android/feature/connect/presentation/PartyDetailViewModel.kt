@@ -9,15 +9,20 @@ import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueStatus
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import com.budcom.android.feature.party.domain.usecase.AssignTagUseCase
+import com.budcom.android.feature.party.domain.usecase.CreateIssueUseCase
 import com.budcom.android.feature.party.domain.usecase.CreateOrGetTagUseCase
 import com.budcom.android.feature.party.domain.usecase.DeleteContactPersonUseCase
 import com.budcom.android.feature.party.domain.usecase.DeleteNoteUseCase
+import com.budcom.android.feature.party.domain.usecase.EditNoteUseCase
 import com.budcom.android.feature.party.domain.usecase.GetAllTagsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetContactPersonsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetFieldProvenanceUseCase
+import com.budcom.android.feature.party.domain.usecase.GetIssuesForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetNotesForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartyByIdUseCase
 import com.budcom.android.feature.party.domain.usecase.GetSourceLinkForPartyUseCase
@@ -39,7 +44,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import javax.inject.Inject
 
 @HiltViewModel
@@ -59,7 +66,10 @@ class PartyDetailViewModel @Inject constructor(
     private val assignTag: AssignTagUseCase,
     private val unassignTag: UnassignTagUseCase,
     private val addNote: AddNoteUseCase,
+    private val editNote: EditNoteUseCase,
     private val deleteNote: DeleteNoteUseCase,
+    private val getIssuesForParty: GetIssuesForPartyUseCase,
+    private val createIssue: CreateIssueUseCase,
     private val loadVouchers: LoadVouchersUseCase,
     private val ledgerSnapshotPort: LedgerSnapshotPort,
     private val companySession: CompanySessionPort,
@@ -133,12 +143,44 @@ class PartyDetailViewModel @Inject constructor(
             is PartyDetailEvent.RemoveTagTapped -> removeTag(event.tagId)
 
             PartyDetailEvent.AddNoteTapped -> openAddNoteDialog()
+            is PartyDetailEvent.EditNoteTapped -> openEditNoteDialog(event.noteId)
             is PartyDetailEvent.NoteBodyChanged -> _uiState.update { state ->
-                val dialog = state.activeDialog as? PartyDetailDialog.AddNote ?: return@update state
+                val dialog = state.activeDialog as? PartyDetailDialog.NoteEditor ?: return@update state
                 state.copy(activeDialog = dialog.copy(body = event.body))
             }
+            is PartyDetailEvent.NoteTypeChanged -> _uiState.update { state ->
+                val dialog = state.activeDialog as? PartyDetailDialog.NoteEditor ?: return@update state
+                state.copy(
+                    activeDialog = dialog.copy(
+                        type = event.type,
+                        dueAtText = if (event.type.showsDueDate()) dialog.dueAtText else "",
+                    ),
+                )
+            }
+            is PartyDetailEvent.NoteDueAtChanged -> _uiState.update { state ->
+                val dialog = state.activeDialog as? PartyDetailDialog.NoteEditor ?: return@update state
+                state.copy(activeDialog = dialog.copy(dueAtText = event.text))
+            }
+            is PartyDetailEvent.NoteIssueSelected -> _uiState.update { state ->
+                val dialog = state.activeDialog as? PartyDetailDialog.NoteEditor ?: return@update state
+                state.copy(
+                    activeDialog = dialog.copy(
+                        selectedIssueId = event.issueId,
+                        newIssueTitle = if (event.issueId != null) "" else dialog.newIssueTitle,
+                    ),
+                )
+            }
+            is PartyDetailEvent.NoteNewIssueTitleChanged -> _uiState.update { state ->
+                val dialog = state.activeDialog as? PartyDetailDialog.NoteEditor ?: return@update state
+                state.copy(
+                    activeDialog = dialog.copy(
+                        newIssueTitle = event.title,
+                        selectedIssueId = if (event.title.isNotBlank()) null else dialog.selectedIssueId,
+                    ),
+                )
+            }
             is PartyDetailEvent.NoteVoucherSelected -> _uiState.update { state ->
-                val dialog = state.activeDialog as? PartyDetailDialog.AddNote ?: return@update state
+                val dialog = state.activeDialog as? PartyDetailDialog.NoteEditor ?: return@update state
                 state.copy(activeDialog = dialog.copy(selectedVoucherId = event.voucherId))
             }
             PartyDetailEvent.SaveNote -> saveNote()
@@ -319,49 +361,93 @@ class PartyDetailViewModel @Inject constructor(
     }
 
     private fun openAddNoteDialog() {
-        _uiState.update { it.copy(activeDialog = PartyDetailDialog.AddNote(isLoadingVouchers = true)) }
-        val companyId = _uiState.value.companyId
-        val ledgerName = _uiState.value.sourceLink?.let { _uiState.value.party?.displayName }
-        if (companyId == null || ledgerName == null) {
-            _uiState.update { state ->
-                (state.activeDialog as? PartyDetailDialog.AddNote)?.let { state.copy(activeDialog = it.copy(isLoadingVouchers = false)) } ?: state
-            }
-            return
-        }
-        viewModelScope.launch {
-            val today = LocalDate.now()
-            val query = VoucherQuery(
-                companyId = companyId,
-                dateRange = VoucherDateRange(today.minusDays(365).toString(), today.toString()),
-                partyName = ledgerName,
-                page = 1,
-                pageSize = 20,
+        _uiState.update { it.copy(activeDialog = PartyDetailDialog.NoteEditor(isLoadingVouchers = true)) }
+        loadNoteEditorOptions()
+    }
+
+    private fun openEditNoteDialog(noteId: String) {
+        val note = _uiState.value.notes.firstOrNull { it.noteId == noteId } ?: return
+        _uiState.update {
+            it.copy(
+                activeDialog = PartyDetailDialog.NoteEditor(
+                    noteId = note.noteId,
+                    body = note.body,
+                    type = note.type,
+                    dueAtText = note.dueAt?.let(::formatDueAt).orEmpty(),
+                    selectedIssueId = note.issueId,
+                    selectedVoucherId = note.linkedVoucherId,
+                    isLoadingVouchers = true,
+                ),
             )
-            val options = when (val result = loadVouchers(query)) {
-                is AppResult.Success -> result.value.items.map {
-                    VoucherPickOptionUi(it.identity.id, "${it.date} · ${it.type} · ${it.number.orEmpty()}")
+        }
+        loadNoteEditorOptions()
+    }
+
+    private fun loadNoteEditorOptions() {
+        val companyId = _uiState.value.companyId
+        val isEditingExistingNote = (_uiState.value.activeDialog as? PartyDetailDialog.NoteEditor)?.noteId != null
+        val ledgerName = _uiState.value.sourceLink?.let { _uiState.value.party?.displayName }
+        viewModelScope.launch {
+            val issues = companyId?.let { getIssuesForParty(it, partyId) }
+                ?.filter { it.status == IssueStatus.Open }
+                .orEmpty()
+            // The voucher picker is Add-only (editNote never carries linkedVoucherId — see the
+            // Compose dialog's own comment) — skip the fetch entirely in edit mode.
+            val vouchers = if (!isEditingExistingNote && companyId != null && ledgerName != null) {
+                val today = LocalDate.now()
+                val query = VoucherQuery(
+                    companyId = companyId,
+                    dateRange = VoucherDateRange(today.minusDays(365).toString(), today.toString()),
+                    partyName = ledgerName,
+                    page = 1,
+                    pageSize = 20,
+                )
+                when (val result = loadVouchers(query)) {
+                    is AppResult.Success -> result.value.items.map {
+                        VoucherPickOptionUi(it.identity.id, "${it.date} · ${it.type} · ${it.number.orEmpty()}")
+                    }
+                    is AppResult.Failure -> emptyList()
                 }
-                is AppResult.Failure -> emptyList()
+            } else {
+                emptyList()
             }
             _uiState.update { state ->
-                val dialog = state.activeDialog as? PartyDetailDialog.AddNote ?: return@update state
-                state.copy(activeDialog = dialog.copy(voucherOptions = options, isLoadingVouchers = false))
+                val dialog = state.activeDialog as? PartyDetailDialog.NoteEditor ?: return@update state
+                state.copy(activeDialog = dialog.copy(issueOptions = issues, voucherOptions = vouchers, isLoadingVouchers = false))
             }
         }
     }
 
     private fun saveNote() {
-        val dialog = _uiState.value.activeDialog as? PartyDetailDialog.AddNote ?: return
+        val dialog = _uiState.value.activeDialog as? PartyDetailDialog.NoteEditor ?: return
         val companyId = _uiState.value.companyId ?: return
         if (dialog.body.isBlank()) {
             showNotice("A note needs some text.")
             return
         }
+        val dueAtText = dialog.dueAtText.trim()
+        if (dialog.type.showsDueDate() && dueAtText.isNotEmpty() && parseDueAt(dueAtText) == null) {
+            showNotice("Due date must be in YYYY-MM-DD format.")
+            return
+        }
+        val dueAt = if (dialog.type.showsDueDate()) dueAtText.ifEmpty { null }?.let(::parseDueAt) else null
         viewModelScope.launch {
-            addNote(companyId, partyId, dialog.body.trim(), dialog.selectedVoucherId)
+            val issueId = resolveIssueId(companyId, dialog)
+            if (dialog.noteId == null) {
+                addNote(companyId, partyId, dialog.body.trim(), dialog.selectedVoucherId, dialog.type, dueAt, issueId)
+            } else {
+                editNote(companyId, dialog.noteId, dialog.body.trim(), dialog.type, dueAt, issueId)
+            }
             _uiState.update { it.copy(activeDialog = null) }
             load()
         }
+    }
+
+    private suspend fun resolveIssueId(companyId: String, dialog: PartyDetailDialog.NoteEditor): String? {
+        dialog.selectedIssueId?.let { return it }
+        val title = dialog.newIssueTitle.trim()
+        if (title.isEmpty()) return null
+        return createIssue(companyId, partyId, title).issueId
     }
 
     private fun deleteNoteTapped(noteId: String) {
@@ -372,6 +458,16 @@ class PartyDetailViewModel @Inject constructor(
         }
     }
 }
+
+/** ISO `yyyy-MM-dd`, matching this app's existing date-string convention (e.g. [VoucherDateRange]).
+ * Deliberately a plain text field, not a full date-picker dialog — an interim, minimal-UI choice
+ * for this foundation milestone; invalid/blank text is treated as "no due date" (see [saveNote]),
+ * never crashes. */
+private fun parseDueAt(text: String): Long? =
+    runCatching { LocalDate.parse(text).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() }.getOrNull()
+
+private fun formatDueAt(epochMillis: Long): String =
+    Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate().toString()
 
 private fun effectiveFieldValue(party: Party, fieldName: String): String? = when (fieldName) {
     PartyFieldNames.PRIMARY_PHONE -> party.primaryPhone

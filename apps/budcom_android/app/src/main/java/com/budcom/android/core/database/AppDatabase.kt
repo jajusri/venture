@@ -24,6 +24,8 @@ import com.budcom.android.feature.party.data.local.PartyExportEventDao
 import com.budcom.android.feature.party.data.local.PartyExportEventEntity
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceEntity
+import com.budcom.android.feature.party.data.local.PartyIssueDao
+import com.budcom.android.feature.party.data.local.PartyIssueEntity
 import com.budcom.android.feature.party.data.local.PartyNoteDao
 import com.budcom.android.feature.party.data.local.PartyNoteEntity
 import com.budcom.android.feature.party.data.local.PartySourceLinkDao
@@ -54,6 +56,7 @@ import com.budcom.android.feature.party.data.local.TagEntity
         PartyTagCrossRefEntity::class,
         PartyNoteEntity::class,
         PartyExportEventEntity::class,
+        PartyIssueEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -73,4 +76,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun partyNoteDao(): PartyNoteDao
     abstract fun partyExportEventDao(): PartyExportEventDao
+    abstract fun partyIssueDao(): PartyIssueDao
 }

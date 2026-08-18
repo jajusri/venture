@@ -1,7 +1,8 @@
 # BUDCOM MVP-1.2 — Relationship Timeline, Issue History, Dincharya & OI Architecture
 
-**Status:** PLANNING COMPLETE — implementation not started, per explicit instruction
+**Status:** PRODUCT DECISIONS LOCKED (2026-08-18) — MVP-1.2-A implementation authorized and underway
 **Produced:** 2026-08-17, in a dedicated planning/recovery/architecture session following MVP-1.1's freeze
+**Decisions locked:** 2026-08-18, `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-014–PDL-017 (§3 below)
 **Governance:** `docs/governance/POST-MVP-1-DEVELOPMENT-MODUS-OPERANDI.md`
 **Primary planning authority:** `docs/planning/BUDCOM-MASTER-PRODUCT-EXECUTION-PLAN.md` §8 (locked scope title and objective)
 **Supporting authority:** `docs/planning/BUDCOM-CONNECT-CONTACTS-UNIVERSAL-PARTY-REFERRAL-TREE-SPEC.md` §20/§23/§24 (the only repository document that defines what these four terms actually mean and where they sit in the UI)
@@ -9,8 +10,8 @@
 
 This document is MVP-1.2's equivalent of `BUDCOM-MVP-1-1-CONNECT-UNIVERSAL-PARTY-ARCHITECTURE.md` — a
 pre-implementation architecture/scope baseline, written and reconciled against actual repository
-evidence before any code is touched. Implementation should not begin until the open questions in
-§3 are resolved by the Product Owner (Brainstorm 1), per this project's own governance.
+evidence before any code is touched. The four open questions in §3 were resolved and locked by the
+Product Owner on 2026-08-18 (PDL-014–PDL-017); MVP-1.2-A implementation is now authorized per §22.
 
 ---
 
@@ -80,36 +81,30 @@ change and zero Desktop work.
 
 ---
 
-## 3. Open questions — resolve before implementation (Brainstorm 1 gate)
+## 3. Open questions — RESOLVED (2026-08-18, Product Owner decision)
 
-Per `POST-MVP-1-DEVELOPMENT-MODUS-OPERANDI.md`'s own clarification-gate rule (PDL-007), these are
-genuine ambiguities this planning session found no locked repository answer for. They should go to
-the Product Owner/ChatGPT Brainstorm 1 pass before MVP-1.2-A begins — proceeding without an answer
-risks building the wrong thing once, which costs more than asking once.
+Per `POST-MVP-1-DEVELOPMENT-MODUS-OPERANDI.md`'s own clarification-gate rule (PDL-007), these were
+genuine ambiguities this planning session found no locked repository answer for. The Product Owner
+has now explicitly answered all four, recorded permanently in
+`docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-014 through PDL-017. **All four locked
+decisions confirm this plan's own working assumptions/recommendations below** — no rework of the
+architecture in §4–§21 was required, only converting "working assumption" language to "locked."
 
-1. **Does the Relationship Timeline replace the existing flat "Notes/Activity" section on Party
-   Detail, or does it sit alongside it as a new, separate view?** This plan's working assumption
-   (§9) is that Timeline *becomes* the primary read surface for the same underlying data (notes +
-   export events, better organized) rather than a duplicate — but this is a presentation choice
-   the Product Owner should confirm, not one this session should lock unilaterally.
-2. **Is Referral Tree part of MVP-1.2, a later milestone, or genuinely shelved?** The referral spec
-   (`BUDCOM-CONNECT-CONTACTS-UNIVERSAL-PARTY-REFERRAL-TREE-SPEC.md`) calls it "a first-class Party
-   capability," "VVIMP," with 6 dedicated sections (§14–§19) — but the **locked** Master Product
-   Execution Plan's MVP-1.2 line item (§8) names only Relationship Timeline/Issue History/
-   Dincharya/OI and never mentions Referral Tree. This plan treats Referral Tree as **explicitly
-   out of MVP-1.2 scope** (§6) because the locked sequencing document is silent on it, not because
-   it was found unimportant — a real product-sequencing decision is needed, not a Claude judgment
-   call, per this task's own "do not silently broaden MVP-1.2" instruction.
-3. **What should Home Insights (the separate, not-yet-specified workstream) actually be, and does
-   any part of it belong in MVP-1.2's Dincharya, or is it entirely a later cross-cutting effort?**
-   This plan assumes Dincharya is self-contained and does **not** wait for or depend on the Home
-   Insights workstream (§6) — but the Product Owner may see them as more entangled than repository
-   evidence currently shows.
-4. **Should Dincharya support OS-level notifications in its first release, or is an in-app list
-   sufficient for v1?** This plan recommends deferring OS notifications entirely (§6, §11) given
-   the complete absence of existing notification infrastructure and the meaningful new
-   permission/security surface (`POST_NOTIFICATIONS`, API 33+) that would open — but this is a
-   product trade-off (immediacy vs. scope discipline), not a purely technical one.
+1. **RESOLVED — PDL-014.** Relationship Timeline is the unified historical presentation for a
+   Party (Party = the relationship, Timeline = the history of that relationship); it *becomes* the
+   primary read surface for the same underlying data (notes + export events, better organized)
+   rather than sitting alongside a separate Notes view. Confirms this plan's §9/§10 working
+   assumption exactly.
+2. **RESOLVED — PDL-015.** Referral Tree / RJ Concept is explicitly outside MVP-1.2, deferred to a
+   later dedicated architecture/implementation milestone. Confirms this plan's §6 treatment
+   exactly.
+3. **RESOLVED — PDL-016.** Home Insights and the broader Insights/OI system remain outside MVP-1.2.
+   Dincharya is self-contained and does not wait for or depend on the Home Insights workstream.
+   Confirms this plan's §6 treatment exactly.
+4. **RESOLVED — PDL-017.** Dincharya v1 is in-app only; OS-level notifications are deferred
+   entirely, not bundled into MVP-1.2. Confirms this plan's §6/§11 recommendation exactly.
+
+MVP-1.2-A may now proceed per §22.
 
 ---
 

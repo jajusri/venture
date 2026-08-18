@@ -2,11 +2,13 @@ package com.budcom.android.feature.party.domain.repository
 
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartyNotePage
 import com.budcom.android.feature.party.domain.model.PartyPage
@@ -117,14 +119,60 @@ interface PartyRepository {
 
     suspend fun unassignTag(companyId: String, partyId: String, tagId: String)
 
-    suspend fun addNote(companyId: String, partyId: String, body: String, linkedVoucherId: String?): PartyNote
+    /** [type]/[dueAt]/[issueId] are new in MVP-1.2-A — pass [NoteType.General]/`null`/`null` for
+     * the pre-1.2-A one-tap "just write a note" behavior (see [com.budcom.android.feature.party.domain.usecase.AddNoteUseCase]
+     * for the use-case-layer defaults that preserve this). */
+    suspend fun addNote(
+        companyId: String,
+        partyId: String,
+        body: String,
+        linkedVoucherId: String?,
+        type: NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): PartyNote
 
-    suspend fun editNote(companyId: String, noteId: String, body: String): PartyNote?
+    /** Replaces the note's body/type/due-date/issue-grouping in one call — callers must pass the
+     * full intended state of all four fields (not just what changed), exactly like
+     * [upsertContactPerson] already does for contact-person edits, so a caller can never
+     * accidentally reset a field it didn't mean to touch. Never touches [PartyNote.completedAt] —
+     * see [setNoteCompletion] for that. */
+    suspend fun editNote(
+        companyId: String,
+        noteId: String,
+        body: String,
+        type: NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): PartyNote?
+
+    /** Marks a follow-up/commitment note done ([completedAt] non-null) or reopens it (`null`)
+     * without deleting it — completion is a state change, preserving the note's place in future
+     * Timeline history (architecture §9.1). */
+    suspend fun setNoteCompletion(companyId: String, noteId: String, completedAt: Long?): PartyNote?
 
     suspend fun deleteNote(companyId: String, noteId: String)
 
     /** Bounded, newest-first, indexed — never a full scan. */
     suspend fun getNotesForParty(companyId: String, partyId: String, page: Int, pageSize: Int): PartyNotePage
+
+    // ---- MVP-1.2-A: party issues ----
+
+    /** Creates a new open [PartyIssue] grouping for a Party — e.g. "2 pieces short — Sales Voucher
+     * #1842". Never deletes or hides existing notes; a note joins the issue via
+     * [PartyNote.issueId] set through [addNote]/[editNote]. */
+    suspend fun createIssue(companyId: String, partyId: String, title: String): PartyIssue
+
+    /** Transitions an issue to resolved. Never deletes or hides its notes. */
+    suspend fun resolveIssue(companyId: String, issueId: String): PartyIssue?
+
+    /** Transitions a resolved issue back to open. */
+    suspend fun reopenIssue(companyId: String, issueId: String): PartyIssue?
+
+    /** Open issues first, then resolved — unpaged, since a single Party's issue count is expected
+     * to stay small, exactly like this feature's existing unpaged per-party tag/contact-person
+     * reads (architecture §16). */
+    suspend fun getIssuesForParty(companyId: String, partyId: String): List<PartyIssue>
 
     // ---- MVP-1.1-D: Tally XML enrichment round-trip ----
 

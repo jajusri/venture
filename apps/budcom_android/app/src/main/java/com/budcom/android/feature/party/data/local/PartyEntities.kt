@@ -1,5 +1,6 @@
 package com.budcom.android.feature.party.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 
@@ -116,6 +117,12 @@ data class PartyContactPersonEntity(
  * data locally, only the reference; the Voucher itself may later become locally unavailable
  * (e.g. outside the currently-synced window), which the read side must handle gracefully rather
  * than treating as an error.
+ *
+ * MVP-1.2-A additions (`MIGRATION_8_9`): [type]/[dueAt]/[completedAt]/[issueId]. [type] carries a
+ * SQL-level `DEFAULT 'general'` via [ColumnInfo] — not just a Kotlin default — because SQLite
+ * requires a default when `ALTER TABLE ... ADD COLUMN` adds a `NOT NULL` column to an
+ * already-populated table, and Room's own generated schema must declare the identical default or
+ * migration validation reports a mismatch.
  */
 @Entity(
     tableName = "party_notes",
@@ -129,6 +136,33 @@ data class PartyNoteEntity(
     val body: String,
     val linkedVoucherId: String?,
     val createdAt: Long,
+    val updatedAt: Long,
+    @ColumnInfo(defaultValue = "'general'") val type: String = "general",
+    val dueAt: Long? = null,
+    val completedAt: Long? = null,
+    val issueId: String? = null,
+)
+
+/**
+ * A grouped, continuing Party issue (MVP-1.2-A, architecture §9.2). Structural precedent: the
+ * self-referential [TagEntity] shape, per architecture §7 — here a note groups into an issue via
+ * [com.budcom.android.feature.party.domain.model.PartyNote.issueId] rather than a join table,
+ * since a note belongs to at most one issue (contrast with the many-to-many [PartyTagCrossRefEntity]).
+ * Resolving an issue never deletes or hides its notes — it only changes [status].
+ */
+@Entity(
+    tableName = "party_issues",
+    primaryKeys = ["companyId", "issueId"],
+    indices = [Index(value = ["companyId", "partyId", "status", "createdAt"])],
+)
+data class PartyIssueEntity(
+    val companyId: String,
+    val issueId: String,
+    val partyId: String,
+    val title: String,
+    val status: String,
+    val createdAt: Long,
+    val resolvedAt: Long?,
     val updatedAt: Long,
 )
 

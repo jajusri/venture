@@ -4,10 +4,12 @@ import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPo
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
 import com.budcom.android.feature.party.domain.model.LedgerPartyEligibilityPolicy
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartyNotePage
 import com.budcom.android.feature.party.domain.model.PartyExportEvent
@@ -150,13 +152,34 @@ class UnassignTagUseCase @Inject constructor(private val repository: PartyReposi
     suspend operator fun invoke(companyId: String, partyId: String, tagId: String) = repository.unassignTag(companyId, partyId, tagId)
 }
 
+/** [type]/[dueAt]/[issueId] default to [NoteType.General]/`null`/`null`, preserving the pre-
+ * 1.2-A one-tap "just write a note" behavior for every existing caller. */
 class AddNoteUseCase @Inject constructor(private val repository: PartyRepository) {
-    suspend operator fun invoke(companyId: String, partyId: String, body: String, linkedVoucherId: String?): PartyNote =
-        repository.addNote(companyId, partyId, body, linkedVoucherId)
+    suspend operator fun invoke(
+        companyId: String,
+        partyId: String,
+        body: String,
+        linkedVoucherId: String?,
+        type: NoteType = NoteType.General,
+        dueAt: Long? = null,
+        issueId: String? = null,
+    ): PartyNote = repository.addNote(companyId, partyId, body, linkedVoucherId, type, dueAt, issueId)
 }
 
 class EditNoteUseCase @Inject constructor(private val repository: PartyRepository) {
-    suspend operator fun invoke(companyId: String, noteId: String, body: String): PartyNote? = repository.editNote(companyId, noteId, body)
+    suspend operator fun invoke(
+        companyId: String,
+        noteId: String,
+        body: String,
+        type: NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): PartyNote? = repository.editNote(companyId, noteId, body, type, dueAt, issueId)
+}
+
+class SetNoteCompletionUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, noteId: String, completedAt: Long?): PartyNote? =
+        repository.setNoteCompletion(companyId, noteId, completedAt)
 }
 
 class DeleteNoteUseCase @Inject constructor(private val repository: PartyRepository) {
@@ -166,6 +189,25 @@ class DeleteNoteUseCase @Inject constructor(private val repository: PartyReposit
 class GetNotesForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
     suspend operator fun invoke(companyId: String, partyId: String, page: Int = 1, pageSize: Int = 20): PartyNotePage =
         repository.getNotesForParty(companyId, partyId, page, pageSize)
+}
+
+// ---- MVP-1.2-A: party issues ----
+
+class CreateIssueUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String, title: String): PartyIssue =
+        repository.createIssue(companyId, partyId, title)
+}
+
+class ResolveIssueUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, issueId: String): PartyIssue? = repository.resolveIssue(companyId, issueId)
+}
+
+class ReopenIssueUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, issueId: String): PartyIssue? = repository.reopenIssue(companyId, issueId)
+}
+
+class GetIssuesForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, partyId: String): List<PartyIssue> = repository.getIssuesForParty(companyId, partyId)
 }
 
 // ---- MVP-1.1-D: Tally XML enrichment round-trip ----

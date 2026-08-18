@@ -46,6 +46,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budcom.android.feature.masterdata.presentation.MasterDataErrorBlock
 import com.budcom.android.feature.masterdata.presentation.MasterDataLoadingIndicator
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyNote
 
@@ -109,7 +110,7 @@ fun PartyDetailScreen(
         is PartyDetailDialog.EditField -> EditFieldDialog(dialog, onEvent)
         is PartyDetailDialog.ContactPersonEditor -> ContactPersonEditorDialog(dialog, onEvent)
         PartyDetailDialog.AddTag -> AddTagDialog(state, onEvent)
-        is PartyDetailDialog.AddNote -> AddNoteDialog(dialog, onEvent)
+        is PartyDetailDialog.NoteEditor -> NoteEditorDialog(dialog, onEvent)
         null -> Unit
     }
 
@@ -284,12 +285,26 @@ private fun NoteRow(note: PartyNote, onEvent: (PartyDetailEvent) -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().testTag("party_detail_note_${note.noteId}")) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(note.body)
+            if (note.type != NoteType.General) {
+                Text(
+                    note.type.toUiLabel(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("party_detail_note_${note.noteId}_type"),
+                )
+            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                note.linkedVoucherId?.let { voucherId ->
+                Row {
+                    note.linkedVoucherId?.let { voucherId ->
+                        TextButton(
+                            onClick = { onEvent(PartyDetailEvent.LinkedVoucherTapped(voucherId)) },
+                            modifier = Modifier.testTag("party_detail_note_${note.noteId}_voucher"),
+                        ) { Text("Linked voucher") }
+                    }
                     TextButton(
-                        onClick = { onEvent(PartyDetailEvent.LinkedVoucherTapped(voucherId)) },
-                        modifier = Modifier.testTag("party_detail_note_${note.noteId}_voucher"),
-                    ) { Text("Linked voucher") }
+                        onClick = { onEvent(PartyDetailEvent.EditNoteTapped(note.noteId)) },
+                        modifier = Modifier.testTag("party_detail_note_${note.noteId}_edit"),
+                    ) { Text("Edit") }
                 }
                 TextButton(
                     onClick = { onEvent(PartyDetailEvent.DeleteNoteTapped(note.noteId)) },
@@ -418,10 +433,10 @@ private fun AddTagDialog(state: PartyDetailUiState, onEvent: (PartyDetailEvent) 
 }
 
 @Composable
-private fun AddNoteDialog(dialog: PartyDetailDialog.AddNote, onEvent: (PartyDetailEvent) -> Unit) {
+private fun NoteEditorDialog(dialog: PartyDetailDialog.NoteEditor, onEvent: (PartyDetailEvent) -> Unit) {
     AlertDialog(
         onDismissRequest = { onEvent(PartyDetailEvent.DismissDialog) },
-        title = { Text("Add note") },
+        title = { Text(if (dialog.noteId == null) "Add note" else "Edit note") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -430,19 +445,66 @@ private fun AddNoteDialog(dialog: PartyDetailDialog.AddNote, onEvent: (PartyDeta
                     label = { Text("Note") },
                     modifier = Modifier.fillMaxWidth().testTag("party_detail_note_body"),
                 )
-                if (dialog.isLoadingVouchers) {
-                    Box(modifier = Modifier.fillMaxWidth()) { CircularProgressIndicator() }
-                } else if (dialog.voucherOptions.isNotEmpty()) {
-                    Text("Link a voucher (optional)", style = MaterialTheme.typography.labelMedium)
-                    LazyColumn(modifier = Modifier.testTag("party_detail_note_voucher_list")) {
-                        items(dialog.voucherOptions, key = { it.voucherId }) { option ->
-                            val selected = option.voucherId == dialog.selectedVoucherId
+
+                Text("Type", style = MaterialTheme.typography.labelMedium)
+                LazyColumn(modifier = Modifier.testTag("party_detail_note_type_list")) {
+                    items(NoteType.entries, key = { it.name }) { type ->
+                        val selected = type == dialog.type
+                        TextButton(
+                            onClick = { onEvent(PartyDetailEvent.NoteTypeChanged(type)) },
+                            modifier = Modifier.testTag("party_detail_note_type_${type.name}"),
+                        ) { Text(if (selected) "✓ ${type.toUiLabel()}" else type.toUiLabel()) }
+                    }
+                }
+
+                if (dialog.type.showsDueDate()) {
+                    OutlinedTextField(
+                        value = dialog.dueAtText,
+                        onValueChange = { onEvent(PartyDetailEvent.NoteDueAtChanged(it)) },
+                        label = { Text("Due date (YYYY-MM-DD)") },
+                        modifier = Modifier.fillMaxWidth().testTag("party_detail_note_due_at"),
+                    )
+                }
+
+                if (dialog.issueOptions.isNotEmpty()) {
+                    Text("Part of an issue (optional)", style = MaterialTheme.typography.labelMedium)
+                    LazyColumn(modifier = Modifier.testTag("party_detail_note_issue_list")) {
+                        items(dialog.issueOptions, key = { it.issueId }) { issue ->
+                            val selected = issue.issueId == dialog.selectedIssueId
                             TextButton(
                                 onClick = {
-                                    onEvent(PartyDetailEvent.NoteVoucherSelected(if (selected) null else option.voucherId))
+                                    onEvent(PartyDetailEvent.NoteIssueSelected(if (selected) null else issue.issueId))
                                 },
-                                modifier = Modifier.testTag("party_detail_note_voucher_${option.voucherId}"),
-                            ) { Text(if (selected) "✓ ${option.label}" else option.label) }
+                                modifier = Modifier.testTag("party_detail_note_issue_${issue.issueId}"),
+                            ) { Text(if (selected) "✓ ${issue.title}" else issue.title) }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = dialog.newIssueTitle,
+                    onValueChange = { onEvent(PartyDetailEvent.NoteNewIssueTitleChanged(it)) },
+                    label = { Text("Or start a new issue (optional)") },
+                    modifier = Modifier.fillMaxWidth().testTag("party_detail_note_new_issue"),
+                )
+
+                // Voucher-linking is only offered when creating a note — editNote does not carry
+                // linkedVoucherId (unchanged pre-1.2-A behavior), so showing this picker in edit
+                // mode would be a false affordance: a selection here would be silently discarded.
+                if (dialog.noteId == null) {
+                    if (dialog.isLoadingVouchers) {
+                        Box(modifier = Modifier.fillMaxWidth()) { CircularProgressIndicator() }
+                    } else if (dialog.voucherOptions.isNotEmpty()) {
+                        Text("Link a voucher (optional)", style = MaterialTheme.typography.labelMedium)
+                        LazyColumn(modifier = Modifier.testTag("party_detail_note_voucher_list")) {
+                            items(dialog.voucherOptions, key = { it.voucherId }) { option ->
+                                val selected = option.voucherId == dialog.selectedVoucherId
+                                TextButton(
+                                    onClick = {
+                                        onEvent(PartyDetailEvent.NoteVoucherSelected(if (selected) null else option.voucherId))
+                                    },
+                                    modifier = Modifier.testTag("party_detail_note_voucher_${option.voucherId}"),
+                                ) { Text(if (selected) "✓ ${option.label}" else option.label) }
+                            }
                         }
                     }
                 }
@@ -456,6 +518,6 @@ private fun AddNoteDialog(dialog: PartyDetailDialog.AddNote, onEvent: (PartyDeta
         dismissButton = {
             TextButton(onClick = { onEvent(PartyDetailEvent.DismissDialog) }) { Text("Cancel") }
         },
-        modifier = Modifier.testTag("party_detail_add_note_dialog"),
+        modifier = Modifier.testTag("party_detail_note_editor_dialog"),
     )
 }

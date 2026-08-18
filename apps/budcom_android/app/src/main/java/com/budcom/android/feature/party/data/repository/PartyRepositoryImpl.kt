@@ -11,6 +11,8 @@ import com.budcom.android.feature.party.data.local.PartyExportEventDao
 import com.budcom.android.feature.party.data.local.PartyExportEventEntity
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
 import com.budcom.android.feature.party.data.local.PartyFieldProvenanceEntity
+import com.budcom.android.feature.party.data.local.PartyIssueDao
+import com.budcom.android.feature.party.data.local.PartyIssueEntity
 import com.budcom.android.feature.party.data.local.PartyNoteDao
 import com.budcom.android.feature.party.data.local.PartyNoteEntity
 import com.budcom.android.feature.party.data.local.PartySourceLinkDao
@@ -24,13 +26,16 @@ import com.budcom.android.feature.party.data.local.toDomain
 import com.budcom.android.feature.party.data.local.toFieldProvenanceState
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
+import com.budcom.android.feature.party.domain.model.IssueStatus
 import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartyNotePage
 import com.budcom.android.feature.party.domain.model.PartyPage
@@ -57,6 +62,7 @@ class PartyRepositoryImpl @Inject constructor(
     private val tagDao: TagDao,
     private val noteDao: PartyNoteDao,
     private val exportEventDao: PartyExportEventDao,
+    private val issueDao: PartyIssueDao,
     private val timeProvider: TimeProvider,
     private val dispatchers: DispatcherProvider,
 ) : PartyRepository {
@@ -415,26 +421,57 @@ class PartyRepositoryImpl @Inject constructor(
     override suspend fun unassignTag(companyId: String, partyId: String, tagId: String) =
         withContext(dispatchers.io) { tagDao.unassign(companyId, partyId, tagId) }
 
-    override suspend fun addNote(companyId: String, partyId: String, body: String, linkedVoucherId: String?): PartyNote =
-        withContext(dispatchers.io) {
-            val now = timeProvider.nowEpochMillis()
-            val entity = PartyNoteEntity(
-                companyId = companyId,
-                noteId = UUID.randomUUID().toString(),
-                partyId = partyId,
-                body = body,
-                linkedVoucherId = linkedVoucherId,
-                createdAt = now,
-                updatedAt = now,
-            )
-            noteDao.upsert(entity)
-            entity.toDomain()
-        }
+    override suspend fun addNote(
+        companyId: String,
+        partyId: String,
+        body: String,
+        linkedVoucherId: String?,
+        type: NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): PartyNote = withContext(dispatchers.io) {
+        val now = timeProvider.nowEpochMillis()
+        val entity = PartyNoteEntity(
+            companyId = companyId,
+            noteId = UUID.randomUUID().toString(),
+            partyId = partyId,
+            body = body,
+            linkedVoucherId = linkedVoucherId,
+            createdAt = now,
+            updatedAt = now,
+            type = type.asColumn(),
+            dueAt = dueAt,
+            completedAt = null,
+            issueId = issueId,
+        )
+        noteDao.upsert(entity)
+        entity.toDomain()
+    }
 
-    override suspend fun editNote(companyId: String, noteId: String, body: String): PartyNote? =
+    override suspend fun editNote(
+        companyId: String,
+        noteId: String,
+        body: String,
+        type: NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): PartyNote? = withContext(dispatchers.io) {
+        val existing = noteDao.findById(companyId, noteId) ?: return@withContext null
+        val updated = existing.copy(
+            body = body,
+            type = type.asColumn(),
+            dueAt = dueAt,
+            issueId = issueId,
+            updatedAt = timeProvider.nowEpochMillis(),
+        )
+        noteDao.upsert(updated)
+        updated.toDomain()
+    }
+
+    override suspend fun setNoteCompletion(companyId: String, noteId: String, completedAt: Long?): PartyNote? =
         withContext(dispatchers.io) {
             val existing = noteDao.findById(companyId, noteId) ?: return@withContext null
-            val updated = existing.copy(body = body, updatedAt = timeProvider.nowEpochMillis())
+            val updated = existing.copy(completedAt = completedAt, updatedAt = timeProvider.nowEpochMillis())
             noteDao.upsert(updated)
             updated.toDomain()
         }
@@ -450,6 +487,43 @@ class PartyRepositoryImpl @Inject constructor(
             val items = noteDao.pageForParty(companyId, partyId, safeSize, (safePage - 1) * safeSize)
             PartyNotePage(items.map { it.toDomain() }, safePage, safeSize, total)
         }
+
+    // ---- MVP-1.2-A: party issues ----
+
+    override suspend fun createIssue(companyId: String, partyId: String, title: String): PartyIssue =
+        withContext(dispatchers.io) {
+            val now = timeProvider.nowEpochMillis()
+            val entity = PartyIssueEntity(
+                companyId = companyId,
+                issueId = UUID.randomUUID().toString(),
+                partyId = partyId,
+                title = title,
+                status = IssueStatus.Open.asColumn(),
+                createdAt = now,
+                resolvedAt = null,
+                updatedAt = now,
+            )
+            issueDao.upsert(entity)
+            entity.toDomain()
+        }
+
+    override suspend fun resolveIssue(companyId: String, issueId: String): PartyIssue? = withContext(dispatchers.io) {
+        val existing = issueDao.findById(companyId, issueId) ?: return@withContext null
+        val now = timeProvider.nowEpochMillis()
+        val updated = existing.copy(status = IssueStatus.Resolved.asColumn(), resolvedAt = now, updatedAt = now)
+        issueDao.upsert(updated)
+        updated.toDomain()
+    }
+
+    override suspend fun reopenIssue(companyId: String, issueId: String): PartyIssue? = withContext(dispatchers.io) {
+        val existing = issueDao.findById(companyId, issueId) ?: return@withContext null
+        val updated = existing.copy(status = IssueStatus.Open.asColumn(), resolvedAt = null, updatedAt = timeProvider.nowEpochMillis())
+        issueDao.upsert(updated)
+        updated.toDomain()
+    }
+
+    override suspend fun getIssuesForParty(companyId: String, partyId: String): List<PartyIssue> =
+        withContext(dispatchers.io) { issueDao.findAllForParty(companyId, partyId).map { it.toDomain() } }
 
     // ---- MVP-1.1-D: Tally XML enrichment round-trip ----
 

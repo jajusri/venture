@@ -10,9 +10,16 @@ governing the three-tier split. Update all three when a work unit changes their 
 
 **MVP-1.1 STATUS: COMPLETE / FROZEN (2026-08-17)** — A through E all technically complete, and the
 final `continuity.26` candidate is now installed on the owner's device (§5).
-**MVP-1.2 STATUS: PLANNING/ARCHITECTURE COMPLETE (2026-08-17) — implementation NOT started.** See
-§3. Four open product questions must be answered before MVP-1.2-A begins — full detail:
-`docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`.
+**MVP-1.2 STATUS: PRODUCT DECISIONS LOCKED (2026-08-18); MVP-1.2-A TECHNICALLY COMPLETE, READY FOR
+REVIEW (2026-08-18).** The four open product questions from the 2026-08-17 architecture session
+were explicitly answered by the Product Owner on 2026-08-18 and recorded permanently as
+`docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-014–PDL-017 (Relationship Timeline is the
+unified history surface; Referral Tree deferred; Home Insights/OI deferred; OS notifications
+deferred, Dincharya v1 is in-app only). All four confirmed this plan's own working assumptions — no
+architecture rework was needed. MVP-1.2-A (Structured Party Activity Foundation — typed notes,
+due-date/completion, `party_issues`, `MIGRATION_8_9`) is then implemented and mini-hardened this
+same session. See §3. Full detail: `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md`
+Part A; architecture: `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`.
 **PUBLIC RELEASE BLOCKED — SIGNING ONLY** (Windows code-signing + Android release keystore, neither
 exists; Android `applicationId` also undecided — unrelated to and unchanged by MVP-1.1/1.2 work)
 **ANDROID `continuity.26` (versionCode 27)** — final MVP-1.1 candidate, **installed** on device
@@ -23,43 +30,48 @@ exists; Android `applicationId` also undecided — unrelated to and unchanged by
 ## 2. Branch / HEAD
 
 - Branch: `main`, not pushed to `origin`.
-- HEAD at end of this session: see `git log -1`. This session's commit adds the MVP-1.2
-  architecture/planning document and updates the Development Ledger/this checkpoint — see
-  Development Ledger phase 26. No application code was changed. A separate, undocumented-in-Git
-  installation session (Development Ledger phase 25) installed the already-committed
-  `continuity.26` candidate onto the owner's device; that session made no code/doc/Git changes by
-  its own explicit instruction.
-- Android: the final MVP-1.1 candidate `0.1.1-continuity.26` (versionCode 27) is now installed on
-  device `I2407i` (§5) — the prior "owner-approved `continuity.22`" reference is superseded by
-  this install.
+- Starting HEAD this session: `ea6869caf71ff6a07406b9d15dbb0b68c7bcb5a2` (`docs: MVP-1.2 planning,
+  recovery & architecture review`), working tree clean.
+- HEAD at end of this session: see `git log -1`. This session's commit(s) lock the four MVP-1.2
+  product decisions (PDL-014–PDL-017), implement MVP-1.2-A (Room schema v8→v9, repository/use-case/
+  ViewModel/Compose changes, 24 new tests), and update all three Durable-Development-Record
+  documents — see Development Ledger phase 27.
+- Android: the final MVP-1.1 candidate `0.1.1-continuity.26` (versionCode 27) remains installed on
+  device `I2407i` (§5) — unchanged this session; MVP-1.2-A's version was deliberately not bumped
+  (see specialist status doc Part A §A11).
 
-## 3. This session's work (MVP-1.2 planning, recovery & architecture review)
+## 3. This session's work (product decisions locked + MVP-1.2-A implementation)
 
-No implementation — a planning/architecture session per explicit instruction. Read the locked
-Master Product Execution Plan §8 (MVP-1.2's only locked scope title), the Universal Party Referral
-Tree spec (the only document that actually defines Relationship Timeline/Issue History/Dincharya/
-OI and where they sit in the UI), the UI Design Decisions doc, the Screen Inventory, `BUDCOM-NOT-
-NOW.md`, and the Product Decision Log. Verified directly against source rather than assumed:
-`party_notes` is flat/single-type today (no type/status/due-date/grouping); zero `Worker` classes
-exist despite WorkManager being wired; Desktop has no Connect/Party surface at all, confirming
-MVP-1.2 needs zero Desktop/Connector work.
+**Part 1 — decisions locked.** The four open product questions from the prior architecture session
+were answered by the Product Owner and recorded permanently as
+`docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-014–PDL-017: Relationship Timeline is the
+unified historical presentation for a Party (not a separate Notes/Issue/Timeline trio); Referral
+Tree deferred to a later dedicated milestone; Home Insights/OI system deferred, Dincharya
+self-contained; OS-level notifications deferred, Dincharya v1 is in-app only. All four confirmed
+the architecture document's own working assumptions/recommendations — the architecture doc's §3
+was updated from "open questions" to "resolved" rather than rewritten, since no substantive change
+was needed.
 
-Produced a full plan-vs-repository reconciliation matrix and a complete architecture document:
-data model (extend `party_notes` with `type`/`dueAt`/`completedAt`/`issueId`; new `party_issues`
-table; `MIGRATION_8_9`), UI/UX intent (no visual design, per instruction — information hierarchy
-only), a five-sub-milestone breakdown (1.2-A structured-activity foundation → 1.2-B Relationship
-Timeline → 1.2-C Issue History → 1.2-D Dincharya → 1.2-E integrated hardening, mirroring MVP-1.1's
-own proven rhythm), test plan, and risk ranking (company-isolation on Dincharya's new cross-party
-query is the single highest risk, since it is the first query in this feature area spanning an
-entire company at once).
+**Part 2 — MVP-1.2-A implemented.** Exactly the architecture doc's §22 recommended prompt: Room
+schema v8→v9 (`party_notes` extended with `type`/`dueAt`/`completedAt`/`issueId`; new
+`party_issues` table); `PartyRepository`/`PartyUseCases` extended for typed note create/edit,
+due-date/completion toggling, and issue create/resolve/reopen; Party Detail's note dialog gained a
+type picker, conditional due-date field, and issue picker — and, having found during inspection
+that the dialog was Add-only despite the architecture doc calling it "the existing add/edit note
+dialog," this session made it genuinely serve both modes (mirroring the already-established
+`ContactPersonEditor` precedent), then self-caught and fixed one resulting defect (an edit-mode
+voucher-relinking false affordance) before commit. 24 new tests (14 JVM + 16 instrumented, all run
+on a connected physical device); full regression clean (`testDebugUnitTest`/`testReleaseUnitTest`
+1,179/1,179, both lints 0 errors, all three assembles green, instrumented suite 245/257 — the
+identical 12-failure pre-existing device-viewport class, zero overlap). A genuine screen-lock-
+during-long-run false alarm (53 failures on the first instrumented pass) was investigated, traced
+to the device's screen timing out mid-run (not a code regression — every extra failure was in a
+file this session never touched), and resolved via a device power-setting change (`adb shell svc
+power stayon usb`), not accepted or worked around blindly. Full detail, evidence, and the exact
+mini-hardening checklist: `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md`
+Part A.
 
-**Explicitly excluded from MVP-1.2, with reasoning recorded rather than assumed:** Referral Tree
-(named "VVIMP" in its own locked spec but absent from the master plan's actual MVP-1.2 line item —
-a genuine open product-sequencing question, §3 of the architecture doc), the Home Insights
-dashboard (no content spec exists anywhere in the repository), OS-level push notifications for
-Dincharya (zero supporting infrastructure exists today).
-
-Full detail: `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`.
+Full architecture detail: `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`.
 Prior milestone (MVP-1.1-A through E): `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Parts A–E.
 
 ## 4. Public release blocker (unrelated to MVP-1.1/1.2, unchanged)
@@ -98,23 +110,19 @@ repository evidence, not session memory.
 
 ## 7. Exact NEXT TASK
 
-**MVP-1.1 is complete/frozen and installed (§1/§5). MVP-1.2's architecture/scope plan is complete
-(§3). Implementation has not begun.**
+**MVP-1.1 is complete/frozen and installed (§1/§5). MVP-1.2's four product decisions are locked
+(§1/§3, PDL-014–PDL-017). MVP-1.2-A is technically complete, mini-hardened, and documented (§3;
+full evidence in `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Part A).**
 
-Before MVP-1.2-A can start, four open product questions need a Product Owner/ChatGPT Brainstorm-1
-answer — see `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`
-§3 for full framing:
+Per this milestone's own stop condition: **MVP-1.2-A has passed its gates. STOP — do not
+automatically begin MVP-1.2-B.** Product/technical review of the 1.2-A result is expected before
+1.2-B is authorized, per the locked progression `1.2-A → review → 1.2-B → review → 1.2-C → review →
+1.2-D → review → 1.2-E → FREEZE`.
 
-1. Does Relationship Timeline replace or sit alongside the existing flat Notes/Activity display?
-2. Is Referral Tree part of MVP-1.2, a later milestone, or genuinely shelved?
-3. Does any part of the still-unwritten Home Insights workstream entangle with Dincharya?
-4. Does Dincharya need OS-level notifications in v1, or is an in-app list sufficient (this plan's
-   recommendation)?
-
-Once answered, the recommended next prompt is the architecture document's §22 — **MVP-1.2-A only**
-(structured Party Activity foundation: typed notes, due-date/completion, a new `party_issues`
-table, `MIGRATION_8_9`; explicitly not Relationship Timeline/Issue History/Dincharya themselves,
-which are 1.2-B/C/D).
+**Next authorized task once reviewed: MVP-1.2-B — Relationship Timeline** (architecture doc §11,
+§18) — the merged notes + export-events chronological read model, replacing the current flat Notes
+list's presentation on Party Detail per the now-locked PDL-014. Explicitly not yet in scope: Issue
+History section (1.2-C), Dincharya screen (1.2-D), or any further MVP-1.2 UI beyond Timeline itself.
 
 Two independent items from prior sessions also remain open, unaffected by and not blocking the
 above:
@@ -122,11 +130,11 @@ above:
 1. **Obtain and configure production signing credentials** — the sole remaining blocker to public
    release, unrelated to and unchanged by MVP-1.1/1.2 work (see §4 and the gate matrix for exact
    steps). Human/external action; do not perform unilaterally.
-2. **Exercise a real Tally XML import by hand** against a real paired Tally company using the now-
+2. **Exercise a real Tally XML import by hand** against a real paired Tally company using the
    installed `continuity.26` candidate, per the human acceptance checklist in
    `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Part E §E14 — device pairing was deliberately not
    attempted during installation (out of that task's scope).
 
-**Not started:** MVP-1.2 implementation; external/public distribution; MVP-1.3+. Do not begin
+**Not started:** MVP-1.2-B through 1.2-E; external/public distribution; MVP-1.3+. Do not begin
 distribution before signing exists and the product owner explicitly authorizes it. Do not begin
-MVP-1.2-A without the four open questions above being answered first.
+MVP-1.2-B without product/technical review of the 1.2-A result first.

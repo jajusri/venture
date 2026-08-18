@@ -13,12 +13,14 @@ import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerLiveDetail
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
 import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
+import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
 import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import com.budcom.android.feature.party.domain.model.PartyFieldProvenance
+import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartyNotePage
 import com.budcom.android.feature.party.domain.model.PartyPage
@@ -320,10 +322,24 @@ private class InMemoryExportPartyRepository : PartyRepository {
     override suspend fun createOrGetTag(name: String, parentTagId: String?): Tag = error("unused")
     override suspend fun assignTag(companyId: String, partyId: String, tagId: String) = error("unused")
     override suspend fun unassignTag(companyId: String, partyId: String, tagId: String) = error("unused")
-    override suspend fun addNote(companyId: String, partyId: String, body: String, linkedVoucherId: String?): PartyNote = error("unused")
-    override suspend fun editNote(companyId: String, noteId: String, body: String): PartyNote? = error("unused")
+    override suspend fun addNote(
+        companyId: String,
+        partyId: String,
+        body: String,
+        linkedVoucherId: String?,
+        type: NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): PartyNote = error("unused")
+    override suspend fun editNote(companyId: String, noteId: String, body: String, type: NoteType, dueAt: Long?, issueId: String?): PartyNote? =
+        error("unused")
+    override suspend fun setNoteCompletion(companyId: String, noteId: String, completedAt: Long?): PartyNote? = error("unused")
     override suspend fun deleteNote(companyId: String, noteId: String) = error("unused")
     override suspend fun getNotesForParty(companyId: String, partyId: String, page: Int, pageSize: Int): PartyNotePage = error("unused")
+    override suspend fun createIssue(companyId: String, partyId: String, title: String): PartyIssue = error("unused")
+    override suspend fun resolveIssue(companyId: String, issueId: String): PartyIssue? = error("unused")
+    override suspend fun reopenIssue(companyId: String, issueId: String): PartyIssue? = error("unused")
+    override suspend fun getIssuesForParty(companyId: String, partyId: String): List<PartyIssue> = error("unused")
 
     override suspend fun getExportCandidates(companyId: String, partyId: String): List<TallyFieldExportCandidate> =
         TallyExportFieldMapping.ELIGIBLE_FIELDS.map { fieldName ->

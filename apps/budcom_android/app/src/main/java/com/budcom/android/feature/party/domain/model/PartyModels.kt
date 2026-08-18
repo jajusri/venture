@@ -124,9 +124,36 @@ data class Tag(
     val createdAt: Long,
 )
 
+/** Note-type vocabulary (MVP-1.2-A, architecture §9.1) — a fixed, small, named set matching the
+ * locked referral-spec vocabulary, not an extensible taxonomy (PDL-012). [General] is the default,
+ * preserving the pre-1.2-A one-tap "just write a note" behavior. */
+enum class NoteType {
+    General,
+    PaymentIssue,
+    Complaint,
+    DeliveryIssue,
+    Commitment,
+    ProductInterest,
+    InternalRemark,
+    FollowUp,
+}
+
+/** Lifecycle of a [PartyIssue] — resolving never deletes or hides its underlying notes. */
+enum class IssueStatus {
+    Open,
+    Resolved,
+}
+
 /** BUDCOM-only Party note (architecture §17) — never enters Tally XML. [linkedVoucherId] is a
  * stable reference only, never a copy of Voucher data; the referenced Voucher may not be locally
- * available (e.g. outside the synced window), which is a normal, handled state, not an error. */
+ * available (e.g. outside the synced window), which is a normal, handled state, not an error.
+ *
+ * MVP-1.2-A additions: [type] classifies the note (defaults to [NoteType.General], preserving
+ * every pre-1.2-A note's behavior unchanged); [dueAt]/[completedAt] are only meaningful for
+ * [NoteType.Commitment]/[NoteType.FollowUp] — a note is never deleted to "complete" it, completion
+ * is a state change that preserves the note's place in Timeline history; [issueId] optionally
+ * groups this note under a [PartyIssue].
+ */
 data class PartyNote(
     val companyId: String,
     val noteId: String,
@@ -134,6 +161,24 @@ data class PartyNote(
     val body: String,
     val linkedVoucherId: String?,
     val createdAt: Long,
+    val updatedAt: Long,
+    val type: NoteType = NoteType.General,
+    val dueAt: Long? = null,
+    val completedAt: Long? = null,
+    val issueId: String? = null,
+)
+
+/** A grouped, continuing Party issue (architecture §9.2/§17) — e.g. "2 pieces short — Sales
+ * Voucher #1842". Notes reference an issue via [PartyNote.issueId]; resolving an issue never
+ * deletes or hides its notes from the Timeline, it only changes [status]. */
+data class PartyIssue(
+    val companyId: String,
+    val issueId: String,
+    val partyId: String,
+    val title: String,
+    val status: IssueStatus,
+    val createdAt: Long,
+    val resolvedAt: Long?,
     val updatedAt: Long,
 )
 
