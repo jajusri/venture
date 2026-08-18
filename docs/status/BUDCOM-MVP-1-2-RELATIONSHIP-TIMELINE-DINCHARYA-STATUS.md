@@ -746,3 +746,293 @@ not begin MVP-1.3. Do not push. Do not install.**
 
 Next authorized task: **MVP-1.2-D — Dincharya**, pending Product Owner/technical review of this B+C
 result.
+
+---
+
+# Checkpoint — B/C Preservation, Git Push, and MVP-1.2-D Readiness Review
+
+**Session type:** preservation + read-only architecture review. **No production code was written or
+modified in this session.**
+
+## CP1. Repository recovery
+
+Verified directly, not assumed: `git status` clean; branch `main`; HEAD
+`8f77cf63b7533f1418cb6208157969dee3022765` (the exact commit the prior B/C session's own final
+report claimed); B commit `95ff98d` and C commit `8f77cf6` both present in `git log`; single author
+(`Rajgopal Jaju <jajusri1@gmail.com>`) across all 234 commits ahead of the pre-push `origin/main`;
+zero unexpected/untracked files.
+
+## CP2. B/C source verification
+
+Every claim in Parts B/C above was re-verified against actual source this session (not trusted
+blindly): `PartyTimelineDao.kt` exists with 7 `UNION ALL` occurrences and both `issue_opened`/
+`issue_resolved` arms present; `DatabaseConstants.VERSION` is still `9` with zero
+`MIGRATION_9_10`; the Issues section composables (`IssuesSection`/`IssueCard`, 5 references) and
+`resolveIssueTapped`/`reopenIssueTapped` (4 references) exist in the ViewModel; `issueActivitySummary`
+exists on `PartyNoteDao`; company-isolation tests exist in both the instrumented Timeline test (2
+matches) and the JVM repository test (5 matches, case-insensitive scan). **No discrepancy found
+between the B/C reports and the actual repository.**
+
+## CP3. Test/build baseline
+
+Since the source tree is byte-for-byte unchanged since the last full green verification at the end
+of the C session, a full re-run of the expensive instrumented suite would be ceremony, not signal.
+Ran `testDebugUnitTest` + `lintDebug`: **every task reported `UP-TO-DATE`** — Gradle's own
+incremental-build fingerprinting independently confirms zero drift since the last recorded
+1,201/1,201 JVM / 0-lint-error / 274-of-286-instrumented (12 known baseline, zero overlap) result.
+No new failure discovered; nothing needed fixing.
+
+## CP4. Git safety check (before push)
+
+- `git status --short`: empty (nothing uncommitted).
+- Commits ahead of pre-push `origin/main`: 234, single author, all recognizable BUDCOM milestone
+  work (spans early architecture docs through MVP-1.2-C) — nothing unrelated or unexplained.
+- Secret/credential scan across the full diff range (`git diff origin/main..HEAD`): zero matches for
+  private-key headers, API-key/secret/password literal patterns, AWS-style keys, or certificate
+  blocks; zero `.jks`/`.keystore`/`.p12`/`.pfx`/`.pem`/`.key` files in the diff. (Consistent with the
+  already-documented fact that no signing credentials exist anywhere in this repository.)
+- `.gitignore` already excludes `.env`/`.env.*`/`*.jks`/`node_modules/`.
+- Branch confirmed `main`; remote confirmed `origin` → `https://github.com/jajusri/budcom.git`
+  (the expected repository).
+- Relationship to `origin/main` before push: 234 ahead, 0 behind — a clean fast-forward, zero
+  divergence, zero risk of overwriting remote-only work.
+
+## CP5. Push result
+
+```
+git push origin main
+To https://github.com/jajusri/budcom.git
+   7cf85ba..8f77cf6  main -> main
+```
+
+Normal fast-forward push, **no force flag used**. Post-push verification:
+
+- Local HEAD: `8f77cf63b7533f1418cb6208157969dee3022765`
+- `origin/main` HEAD (after `git fetch origin`): `8f77cf63b7533f1418cb6208157969dee3022765`
+- **Exact match** — local and remote are byte-identical.
+- Working tree remains clean; `git status` reports "up to date with 'origin/main'", zero divergence.
+- 234 commits (previously local-only since project inception) now preserved on `origin/main`,
+  spanning from `7cf85ba`'s successor through `8f77cf6`.
+
+This push is a **recovery checkpoint only** — it does not publish BUDCOM to end users, does not
+submit to any app store, and does not change the public-release-blocked status (§4 above,
+unchanged: no signing credentials exist).
+
+## CP6. MVP-1.2-D — DINCHARYA READINESS REVIEW (read-only — implementation NOT started)
+
+### CP6.1 Locked scope (reconciled against architecture doc §1/§6/§11 and PDL-014–PDL-017)
+
+Exactly three deterministic item types, per the locked Master Plan §8 and architecture doc §6/§11:
+
+1. **Promised-payment/callback follow-ups** — notes with `type IN ('commitment','follow_up')`,
+   `dueAt IS NOT NULL`, `completedAt IS NULL`.
+2. **Pending Tally XML confirmation** — `party_field_provenance` rows with
+   `state = 'exported'` (awaiting a live Tally re-sync to confirm or conflict).
+3. **Pending contact completion** — Parties with `primaryPhone IS NULL` and/or
+   `primaryEmail IS NULL`.
+
+A new top-level `feature/dincharya/` package, reached from a **new fourth Dashboard primary entry**
+(mirrors Connect's own MVP-1.1-B addition exactly). Each row deep-links to
+`Routes.partyDetail(partyId)` — never a second, parallel detail view. OI framing copy
+("We are not AI. This is OI — programmed to help you") in the empty state / near the top. Explicitly
+bounded, capped-count-plus-"N more" disclosure — never an infinite scroll.
+
+### CP6.2 Data-source analysis (per item type)
+
+| Item type | Authoritative source | Table/entity | Existing DAO/repo surface | New schema? | New query? |
+|---|---|---|---|---|---|
+| Follow-ups/callbacks | `PartyNote.type`/`dueAt`/`completedAt` (1.2-A) | `party_notes` | `PartyNoteDao` (no company-wide method yet) | **No** — columns already exist | **Yes** — new company-wide bounded query, first of its kind on this DAO |
+| Pending Tally confirmation | `PartyFieldProvenance.state` (1.1-A/D) | `party_field_provenance` | `PartyFieldProvenanceDao` (party-scoped only today) | **No** | **Yes** — new company-wide bounded query |
+| Pending contact completion | `Party.primaryPhone`/`primaryEmail` (1.1-A) | `cached_parties` | `PartyDao` (already has company-scoped list/search) | **No** | **Yes**, but closely mirrors `listByClassification`'s existing shape |
+
+All three are local-Room-only, offline-capable by construction — no Connector/network call for any
+of them (the Tally-confirmation item type reads a field BUDCOM already persisted from a prior
+`GET /ledgers/{id}` call in 1.1-D; it does not perform a new live Tally read).
+
+**Confirms the architecture doc's own claim:** two of the three item types (Tally confirmation,
+contact completion) need zero new columns; only the follow-up type needed new columns, and those
+were already added in 1.2-A. Company-isolation for all three is `companyId`-scoped at the query
+boundary (CP6.3), never left to UI-layer filtering.
+
+### CP6.3 Company isolation — the dominant risk (architecture §13/§20 Risk #1, HIGH)
+
+Every one of the three new DAO queries **must** take `companyId` as its first bound parameter and
+filter on it directly in SQL — the same natural-key discipline every existing Party table already
+uses, with zero exception. This is the first query in the whole Connect/Party feature area that
+spans an entire company's Parties in one read, so unlike every 1.1/1.2-A/B/C query (single-party or
+already-narrowed-by-partyId), there is no secondary narrowing to lean on — `companyId` scoping is
+the *only* isolation boundary, and it must be enforced in the DAO's SQL, not filtered afterward in
+Kotlin or in the ViewModel.
+
+**Named, explicit, blocking adversarial tests required before 1.2-D can be considered
+acceptance-complete** (not incidental side effects of other tests, mirroring 1.1-B's own
+company-isolation test discipline and this session's own B/C precedent):
+
+- Two companies, each with a Party of the identical display name and identical phone number, each
+  with its own due follow-up — company A's Dincharya list must never show company B's item.
+  Follow the exact evidence pattern established in
+  `PartyRepositoryImplTest`'s `timeline never leaks another company's notes or export events, even
+  with identical content` (B) and `issue lifecycle timeline entries and activity summaries never
+  leak across companies` (C).
+  - Identical ledger names across two companies whose provenance both happen to be `state = 'exported'`.
+  - Identical/overlapping `dueAt` timestamps across two companies (proves no accidental cross-company
+    merge/sort happens before the `companyId` filter is applied).
+  - A Party in company A missing contact info, and a same-named Party in company B that is *not*
+    missing contact info — company B's list must correctly show nothing for that Party.
+  - Company-switching mid-session (the active `companyId` changes) must immediately produce a fresh,
+    correctly-scoped Dincharya read, never a stale cached cross-company list.
+
+### CP6.4 Ordering / bounding
+
+Architecture §10 already locks the bounding UX: **grouped by the three item types** (never one
+undifferentiated mixed list), each group **capped with an explicit "N more" disclosure**, never an
+infinite scroll; completed/confirmed/resolved items **drop off automatically** (a query-level filter,
+e.g. `completedAt IS NULL`, not a manually-curated list).
+
+**Genuine open ambiguity, explicitly flagged rather than silently resolved (architecture §20 Risk
+#2, MEDIUM, its own words: "not fully resolvable by architecture alone — needs a concrete product
+decision"):** the exact staleness/aging rule for a follow-up that has been overdue for a long time —
+does it stay pinned at the top indefinitely, or does its prominence decay after some threshold? The
+architecture doc does not lock a specific number of days, and this session did not invent one. A
+sensible, conservative, easily-changed **default** for 1.2-D's first implementation: order each
+group by `dueAt ASC` (soonest/most-overdue first, a natural and honest ordering that needs no
+invented "urgency score"), with a fixed cap (e.g. 20 per group, matching the `pageSize` convention
+already used everywhere else in this codebase) and a "N more" link — deferring any special
+decay/demotion rule until the Product Owner confirms one is actually wanted. This preserves
+"deterministic, explainable, bounded" without inventing a product policy.
+
+**Tie-breaker for deterministic ordering:** `dueAt ASC, noteId ASC` (or the equivalent natural key
+per item type) — the exact same "add a secondary sort key so paging never duplicates/drops a row"
+discipline this session already proved necessary and tested for the Timeline merge (B9/C's
+same-timestamp tie-break tests).
+
+### CP6.5 Performance design
+
+- **Follow-ups query:** `party_notes` has no company-wide (only `companyId, partyId`) index today.
+  A `WHERE companyId = ? AND type IN (...) AND dueAt IS NOT NULL AND completedAt IS NULL ORDER BY
+  dueAt ASC LIMIT ? OFFSET ?` query can still use the existing index's `companyId` prefix to narrow
+  to the company's own notes before filtering/sorting the remainder in SQLite — bounded by one
+  company's total note count, never the whole database. Acceptable without a new index for realistic
+  per-company scale (matching this session's own equivalent reasoning for `issueActivitySummary` in
+  C, which also relies on an existing prefix index rather than adding a new one) — **but this must be
+  empirically proven, not assumed:** a 500+-row large-fixture instrumented performance test
+  (following `PartyDaoTest.pageByClassification_staysFastAndBoundedWithALargeFixture`'s exact
+  pattern and the same sub-2-second bar) is architecture §16's own explicit acceptance requirement
+  for this query specifically, and should be the deciding evidence for whether a new index (and a
+  small additive `MIGRATION_9_10`) becomes justified. Do not add the index pre-emptively without
+  that evidence (PDL-012).
+- **Tally-confirmation query:** `party_field_provenance` has only a `(companyId, partyId)` index; a
+  company-wide `state = 'exported'` filter narrows via the same prefix-match reasoning. Same
+  large-fixture proof requirement.
+- **Contact-completion query:** `cached_parties` already has a plain `(companyId)` index (used by
+  existing `listByClassification`/`searchParties`) — a `WHERE companyId = ? AND (primaryPhone IS
+  NULL OR primaryEmail IS NULL)` filter is the cheapest of the three, structurally identical to
+  already-proven queries.
+- **General:** `LIMIT`/`OFFSET` throughout, never an in-memory filter over a full company load
+  (architecture §16's explicit instruction); no N+1 — each item type is one bounded query, not one
+  query per Party.
+
+### CP6.6 UX / accessibility
+
+Dincharya is a **new top-level screen**, not an extension of Party Detail — it does not reuse
+`PartyDetailScreen`'s composables directly, though it should reuse the same established shared
+composables (`MasterDataLoadingIndicator`/`MasterDataErrorBlock`) and the same honest-empty-state
+discipline (`connect_empty_customers`/`connect_empty_prospects` precedent). Each grouped section
+needs its own header (mirroring `SectionHeader` from Party Detail) and each row needs a deep-link
+action (mirroring the existing `Routes.partyDetail(partyId)` navigation, unchanged). No new
+navigation paradigm — a fourth `HomePrimaryEntryRow` on the Dashboard, exactly like Connect's own
+addition. Long Party names/note text: rely on Compose's natural text wrapping, the same discipline
+already proven safe throughout B/C — no new truncation logic needed. Every interactive element
+should be a labeled `TextButton`/`Card`, the same self-describing pattern used throughout
+Connect/Party Detail — no icon-only controls. **Dincharya must not become**: a second Notes list, a
+second Timeline, a Home Insights preview, or anything resembling an AI assistant — it is an
+action-oriented, deterministic, bounded list only.
+
+### CP6.7 Proposed file/architecture map (Room → Domain → Repository → Use Case → ViewModel → Compose, unchanged layering)
+
+| File | New/existing | Purpose |
+|---|---|---|
+| `feature/party/data/local/PartyNoteDao.kt` | existing, extended | new bounded company-wide follow-up query |
+| `feature/party/data/local/PartyFieldProvenanceDao.kt` | existing, extended | new bounded company-wide exported-field query |
+| `feature/party/data/local/PartyDao.kt` | existing, extended | new bounded company-wide missing-contact query |
+| `feature/party/domain/model/DincharyaModels.kt` | new | `DincharyaItem` sealed type (3 cases) + bounded page/summary types |
+| `feature/party/domain/repository/PartyRepository.kt` / `Impl.kt` | existing, extended | `getDincharyaItems(companyId, ...)` — or a small dedicated repository if the architecture doc's "new feature/dincharya/ package" boundary is read strictly (worth confirming during implementation, not this readiness pass) |
+| `feature/party/domain/usecase/PartyUseCases.kt` (or a new `DincharyaUseCases.kt`) | new/extended | `GetDincharyaItemsUseCase` |
+| `feature/dincharya/presentation/DincharyaScreen.kt` | new | grouped-by-type screen, capped lists, OI copy |
+| `feature/dincharya/presentation/DincharyaUiState.kt` | new | UiState/Event/Effect |
+| `feature/dincharya/presentation/DincharyaViewModel.kt` | new | loads/paginates the three groups |
+| `navigation/Routes.kt` | existing, extended | new `DINCHARYA` route constant |
+| `navigation/BudcomNavHost.kt` | existing, extended | new `composable(route = Routes.DINCHARYA)` entry |
+| `feature/dashboard/presentation/DashboardUiState.kt` | existing, extended | new `OpenDincharya` event + `DashboardNavigation.Dincharya` |
+| `feature/dashboard/presentation/DashboardViewModel.kt` | existing, extended | wire the new event (mirrors `OpenConnect`, `DashboardViewModel.kt:166`) |
+| `feature/dashboard/presentation/DashboardScreen.kt` | existing, extended | fourth `HomePrimaryEntryRow` (mirrors `DashboardScreen.kt:369-388`) |
+
+**No schema/migration file is expected** unless the 500-row performance proof (CP6.5) demonstrates a
+genuine need for a new index — in which case the smallest possible additive `MIGRATION_9_10` (index
+only, no column change) would be the correct, evidence-justified response, not a pre-emptive one.
+
+### CP6.8 Test matrix
+
+- **DAO:** company isolation (CP6.3, blocking); correct eligibility filter per item type
+  (`completedAt IS NULL`, `state = 'exported'`, missing-contact predicate); deterministic ordering
+  and tie-break; empty-company/empty-result; bounded `LIMIT`/`OFFSET` correctness across a page
+  boundary (no gaps/duplicates, matching B/C's own proven pattern).
+- **Repository:** correct `companyId` pass-through end-to-end; offline behavior (zero network/
+  Connector import, grep-verifiable like every prior milestone).
+- **ViewModel:** loading/success/empty/error states; refresh; all three item types individually and
+  combined (explicitly named in architecture §17); "N more" disclosure logic; the cross-company
+  leakage test repeated at this layer too, not just the DAO (matching this session's own two-layer
+  isolation discipline).
+- **UI:** grouped rendering per item type; deep-link-back to Party Detail; empty state honesty;
+  accessibility (labeled controls); long content; dark/light theme (existing `BudcomTheme`, no new
+  theming work).
+- **Instrumented:** the required 500+-row large-fixture performance test (CP6.5); real-device
+  company-isolation proof; Dashboard entry wiring test (mirrors `DashboardViewModelTest`'s existing
+  `OpenConnect` case at line 280).
+- **Regression:** full MVP-1/1.1/1.2-A/B/C suite re-run clean, zero new instrumented failure beyond
+  the known 12.
+
+### CP6.9 Hardening checklist (pre-implementation risk list)
+
+| Risk | Guard |
+|---|---|
+| Cross-company leakage | CP6.3 — named blocking adversarial tests at DAO, repository, and ViewModel layers |
+| Incorrect due-date interpretation | Reuse 1.2-A's exact `dueAt`/`completedAt` semantics unchanged; no new date logic invented |
+| Stale data | All local-Room-only reads are always current as of the last sync — no separate staleness state to track |
+| Duplicate Dincharya items | Each item type is one row per source row (note/provenance/party) — no join that could fan out |
+| Missing Party identity | Every item type already carries `partyId`/`companyId` from its source row — no orphan risk |
+| Resolved issues resurfacing | N/A to Dincharya directly (issues aren't one of the three item types) — but a follow-up note tied to a resolved issue should still surface if still due/incomplete, since completion and issue-resolution are independent state (verify this is the intended behavior during implementation, not assumed here) |
+| Completed items resurfacing | Query-level `completedAt IS NULL` filter, never a UI-only hide |
+| Timestamp collisions | Deterministic secondary tie-break (CP6.4), matching B/C's proven pattern |
+| Empty company | Honest empty state per item group, matching Connect's precedent |
+| Company switching | Fresh query on every company change — no stale cross-company cache |
+| Rotation/process recreation | Same ViewModel-scoped `StateFlow` pattern proven throughout B/C |
+| Long names/notes | Compose natural wrapping, no new truncation logic |
+| Offline state | Pure local Room — works identically online/offline |
+| Migration compatibility | Only relevant if the performance proof justifies a new index (CP6.5) |
+| N+1 regression | Three single bounded queries, not one per Party |
+| Accessibility omissions | Labeled `TextButton`/`Card` throughout, same as B/C |
+| False action affordances | Every action must actually be backed by working navigation/data — no placeholder buttons |
+
+### CP6.10 Explicit scope lock (confirmed, not re-litigated)
+
+MVP-1.2-D will **not** include, and nothing in the current codebase suggests otherwise: Referral
+Tree / RJ Concept (PDL-015), Home Insights / OI dashboard beyond the framing-copy discipline
+(PDL-016), generative AI of any kind, OS-level notifications (PDL-017), Vartalap, Business Profile,
+Catalogue, cloud sync, direct Tally writes or automatic Tally imports, any Desktop change, any
+Connector change. All confirmed unchanged/untouched this session (grep-verified in CP2, and no
+source under `apps/budcom_desktop` or the Connector was read or modified).
+
+### CP6.11 Version/artifact policy (this checkpoint)
+
+Version **not bumped**. `0.1.1-continuity.26` / versionCode 27 remains the installed candidate on
+device `10BF44124K000E3`. No APK built or installed this session. The next coherent version bump
+should land at an appropriate MVP-1.2 milestone boundary (most likely after 1.2-D, or at the 1.2-E
+integrated-hardening freeze), not during this checkpoint.
+
+## CP7. MVP-1.2-D READINESS REVIEW COMPLETE — IMPLEMENTATION NOT STARTED.
+
+This record, together with the architecture document's own §10/§11/§13/§16/§17/§20, is intended to
+let a completely fresh Claude session begin MVP-1.2-D directly without repeating this analysis.
+
+**Exact next task: MVP-1.2-D — Dincharya implementation**, pending Product Owner/technical review.
