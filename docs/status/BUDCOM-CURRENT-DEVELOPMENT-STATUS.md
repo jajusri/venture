@@ -13,14 +13,24 @@ governing the three-tier split. Update all three when a work unit changes their 
 freeze) are all complete. Product decisions locked as `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md`
 PDL-014–PDL-018. Full detail: `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md`
 Parts A–E; architecture: `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`.
-Per this task's own governing stop condition, **MVP-1.3 is not started, not authorized.**
+**MVP-1.3 STATUS: PLANNING/RECOVERY REVIEW COMPLETE (2026-08-18) — IMPLEMENTATION NOT STARTED, NOT
+AUTHORIZED.** MVP-1.3's architecture-sequencing/ownership shape is locked (Business Profile, per
+`docs/planning/BUDCOM-MASTER-PRODUCT-EXECUTION-PLAN.md` §9); its detailed field-level scope is
+explicitly not — the Master Plan's own words, "Detailed scope comes from Brainstorm 1," and no
+Brainstorm-1 output (the mandatory User+ChatGPT step) exists anywhere yet. Zero Business-Profile/
+Catalogue code exists anywhere in this repository (confirmed by direct search). Full detail, including
+a plan-vs-repository reconciliation matrix, five explicit open product decisions, a candidate (not
+locked) architecture, and a proposed sub-milestone structure:
+`docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`. **Exact next task is Brainstorm 1
+(User + ChatGPT), not Claude implementation** — see §7.
 **PUBLIC RELEASE BLOCKED — SIGNING ONLY** (Windows code-signing + Android release keystore, neither
 exists; Android `applicationId` also undecided — unrelated to and unchanged by MVP-1.1/1.2 work)
 **ANDROID `0.1.1-continuity.27` (versionCode 28)** — the single coherent MVP-1.2 freeze candidate,
-bumped only after full A–D+E regression was confirmed green. **Installed** on device `I2407i`
-(`10BF44124K000E3`) via `adb install -r` this session — a genuine fresh install (the device had zero
-BUDCOM package beforehand, per the Part D finding in §5 below). Launch/smoke-verified clean; see §5.
-**DESKTOP `0.4.18`** / **CONNECTOR `0.4.6`** — unchanged, not touched, and not required by MVP-1.2.
+unchanged this session. **Installed** on device `I2407i` (`10BF44124K000E3`) since the MVP-1.2-E
+session, launch/smoke-verified clean; see §5 (unchanged this session — this was a read-only planning
+session, no device action taken).
+**DESKTOP `0.4.18`** / **CONNECTOR `0.4.6`** — unchanged, not touched, and not required by MVP-1.2
+or this MVP-1.3 planning review.
 
 ## 2. Branch / HEAD
 
@@ -39,24 +49,29 @@ BUDCOM package beforehand, per the Part D finding in §5 below). Launch/smoke-ve
   single coherent MVP-1.2 freeze bump, performed only after full A–D+E regression was green (per
   explicit instruction, not before).
 
-### 2a. Push status
+### 2a. Push status (MVP-1.2-D/E)
 
 **PUSHED — confirmed byte-identical.** `git push origin main` completed as a normal fast-forward,
-no force flag, no history rewrite: `d964b76..d9af6f7 main -> main`. Post-push verification via
-`git fetch origin` + `git rev-parse`: local HEAD and `origin/main` both resolve to
-`d9af6f7623f66d8d028d3ee61d2d3fa79a91ceb9` — exact match. `git status` reports "up to date with
-'origin/main'", working tree clean. This preserves the entire MVP-1.2-D + MVP-1.2-E work (7 commits:
-4 from D, 3 from E) on the remote, spanning from `d964b760` (the pre-D baseline, already on
-`origin/main` since the B/C checkpoint push) through `d9af6f7` (E's own documentation commit). This
-present commit (recording this exact confirmation) necessarily lands after that verified point and
-is pushed separately, immediately after — see `git log -1` for the true current tip at any given
-read of this file.
+no force flag, no history rewrite: `d964b76..7732844 main -> main` (the final push included one
+small follow-up documentation commit, `7732844`, recording this exact confirmation). Post-push
+verification via `git fetch origin` + `git rev-parse`: local HEAD and `origin/main` both resolved to
+`773284485e03028508e89b8f84ebeda54a1dac3b` — exact match, working tree clean. This preserved the
+entire MVP-1.2-D + MVP-1.2-E work (8 commits total) on the remote.
 
-Recorded factually, not assumed: this file is updated *before* the push step in this session's own
-sequence, so the authoritative push result (fast-forward push succeeded and local HEAD ==
-`origin/main`, or push was not possible / not yet performed) is stated in this session's own final
-report and should be cross-checked against `git status`/`git log` directly rather than trusted from
-this line alone if this document is read before that report.
+### 2b. MVP-1.3 planning/recovery review session
+
+- Starting HEAD: `773284485e03028508e89b8f84ebeda54a1dac3b` — confirmed to exactly match this task's
+  own expected baseline; working tree clean; zero untracked files; local HEAD byte-identical to
+  `origin/main` before any action was taken.
+- This is an explicitly **read-only reconnaissance session** — no production code, migration, test,
+  APK, or version bump was touched. The only repository changes are three documentation files: the
+  new `docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`, a correction to
+  `docs/design/BUDCOM-SCREEN-INVENTORY.md` (five stale-missing screens added), and this file plus
+  the Development Ledger (phase 33).
+- **Not pushed.** This task did not explicitly authorize a push for this planning session (unlike
+  MVP-1.2-E, which did) — the documentation commit(s) remain local-only, ahead of `origin/main`,
+  until explicitly authorized. See the session's own final report for the exact resulting HEAD and
+  commit hash.
 
 ## 3. Recent session work (MVP-1.2-B through E)
 
@@ -119,6 +134,21 @@ explicitly **not** exercised on-device (no real Tally Connector pairing availabl
 environment) — verified only through the automated instrumented suite instead, stated honestly as a
 weaker form of evidence than genuine on-device navigation. Full detail:
 `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Part E; ledger: phase 32.
+
+**MVP-1.3 planning/recovery review, complete (2026-08-18).** Read-only reconnaissance only — no
+implementation. Verified the MVP-1.2 freeze baseline directly (matches this task's own expected
+values exactly, §2b). Read the full authoritative document set and searched the entire repository
+plus the external design archive for any Business-Profile/Catalogue groundwork — found none (zero
+code anywhere), but real, locked architecture-sequencing/ownership-shape groundwork does exist
+(Master Plan §9, UI Decisions §7). **Central finding:** the milestone's *detailed* scope requires
+Brainstorm 1 (User + ChatGPT, per the Modus Operandi's own mandatory development cycle), which has
+not happened for this milestone — so this session produced a complete planning package (gap-analysis
+matrix, five explicit open product decisions ranked by risk, a candidate not-locked architecture, a
+proposed sub-milestone structure) as *input* to that brainstorm, rather than guessing at scope or
+beginning implementation. One documentation-staleness defect found and fixed along the way:
+`BUDCOM-SCREEN-INVENTORY.md`'s screen table had been stale since before MVP-1.1-B (missing five
+shipped screens), corrected directly. Full detail:
+`docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`; ledger: phase 33.
 
 ## 4. Public release blocker (unrelated to MVP-1.1/1.2, unchanged)
 
@@ -191,15 +221,23 @@ repository evidence, not session memory.
 
 **MVP-1.1 is complete/frozen (§1). MVP-1.2 is COMPLETE / FROZEN (§1) — Parts A through E all
 complete, documented, tested, version-bumped, built, installed, and smoke-tested (§3/§5; full
-evidence in `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts A–E).**
-Per this task's own governing stop condition: **do not begin MVP-1.3 substantively. Do not modify
-Desktop. Do not begin public signing. Do not publish anything.**
+evidence in `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts A–E).
+MVP-1.3's planning/recovery review is also complete (§3; full detail in
+`docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`) — the milestone's architecture-
+sequencing/ownership shape is confirmed locked, but its detailed scope is confirmed NOT locked.**
 
-**Next authorized task: MVP-1.3 planning/recovery review** — read-only reconnaissance only (read the
-Master Product Execution Plan, reconcile against actual repository state, produce a scope/
-architecture plan), exactly mirroring how the MVP-1.2 planning session (ledger phase 26) began
-before any MVP-1.2 code was written. Do not begin MVP-1.3 implementation until that review is
-produced and explicitly authorized.
+**Next task: Brainstorm 1 (User + ChatGPT) for MVP-1.3 Business Profile** — not Claude implementation
+of any kind. Per `docs/governance/POST-MVP-1-DEVELOPMENT-MODUS-OPERANDI.md` §2/§3 and PDL-010, this
+step belongs to the User and ChatGPT, not Claude: define the problem, desired outcome, UX/workflow,
+data authority, online/offline behavior, persistence, edge cases, invariants, scope, exclusions, and
+acceptance criteria. The architecture document's own §5 names the five specific open questions this
+brainstorm needs to resolve (ranked by risk, §5.1 — whether a Business Profile is scoped per Tally
+`companyId` or is genuinely singular per installation — being the highest-priority one to resolve
+first, since it determines the primary key of any schema that follows). Once resolved, record the
+outcome as new Product Decision Log entries (mirroring PDL-014–018's own pattern) and a revised/
+confirmed version of the architecture document — only then does an MVP-1.3-A implementation prompt
+become issuable to a fresh Claude session, the same way the MVP-1.2-D readiness review's own
+"Checkpoint" section made that milestone directly executable without re-deriving its analysis.
 
 Two independent items from prior sessions also remain open, unaffected by and not blocking the
 above:
@@ -207,13 +245,13 @@ above:
 1. **Obtain and configure production signing credentials** — the sole remaining blocker to public
    release, unrelated to and unchanged by MVP-1.1/1.2 work (see §4 and the gate matrix for exact
    steps). Human/external action; do not perform unilaterally.
-2. **Exercise a real Tally XML import by hand** against a real paired Tally company using the now-
+2. **Exercise a real Tally XML import by hand** against a real paired Tally company using the
    installed `continuity.27` candidate (§5), per the human acceptance checklist in
    `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Part E §E14 — device pairing has still never been
    attempted (out of every installation-only task's scope so far); this is also the only way to
    exercise Dashboard/Connect/Dincharya/Timeline/Issues genuinely on-device, per §5's own honest
-   disclosure of what this session's smoke test could and could not reach.
+   disclosure of what MVP-1.2-E's own smoke test could and could not reach.
 
-**Not started:** MVP-1.3 (planning/recovery review authorized, implementation not); external/public
-distribution. Do not begin distribution before signing exists and the product owner explicitly
-authorizes it.
+**Not started:** MVP-1.3 implementation (planning/recovery review complete, Brainstorm 1 still
+outstanding); external/public distribution. Do not begin distribution before signing exists and the
+product owner explicitly authorizes it.
