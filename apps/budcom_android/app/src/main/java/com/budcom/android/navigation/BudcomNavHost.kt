@@ -12,6 +12,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.budcom.android.feature.businessprofile.presentation.BusinessProfileRoute
 import com.budcom.android.feature.company.presentation.CompanyRoute
 import com.budcom.android.feature.connect.presentation.ConnectRoute
 import com.budcom.android.feature.connect.presentation.PartyDetailRoute
@@ -96,6 +97,7 @@ fun BudcomNavHost(
                 onOpenLedgers = { navController.navigate(Routes.ledgers()) },
                 onOpenConnect = { navController.navigate(Routes.connect()) },
                 onOpenDincharya = { navController.navigate(Routes.DINCHARYA) },
+                onOpenBusinessProfile = { navController.navigate(Routes.BUSINESS_PROFILE) },
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenSync = { navController.navigate(Routes.SYNC) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
@@ -247,6 +249,9 @@ fun BudcomNavHost(
                     navController.navigate(Routes.partyDetail(partyId))
                 },
             )
+        }
+        composable(route = Routes.BUSINESS_PROFILE) {
+            BusinessProfileRoute()
         }
         composable(
             route = Routes.PARTY_DETAIL,

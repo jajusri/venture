@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -77,6 +78,7 @@ fun DashboardRoute(
     onOpenLedgers: () -> Unit,
     onOpenConnect: () -> Unit,
     onOpenDincharya: () -> Unit,
+    onOpenBusinessProfile: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSync: () -> Unit,
     onOpenDiagnostics: () -> Unit,
@@ -94,6 +96,7 @@ fun DashboardRoute(
                 DashboardNavigation.Ledgers -> onOpenLedgers()
                 DashboardNavigation.Connect -> onOpenConnect()
                 DashboardNavigation.Dincharya -> onOpenDincharya()
+                DashboardNavigation.BusinessProfile -> onOpenBusinessProfile()
                 DashboardNavigation.Search -> onOpenSearch()
                 DashboardNavigation.Sync -> onOpenSync()
                 DashboardNavigation.Diagnostics -> onOpenDiagnostics()
@@ -362,11 +365,11 @@ private fun HomeCompactStatusRow(state: DashboardUiState, onEvent: (DashboardEve
 }
 
 /**
- * Vouchers, Ledgers, Connect, and (MVP-1.2-D) Dincharya as the primary Home entries, Stock Items
- * deliberately absent from prime space (BUDCOM-UI-DESIGN-DECISIONS §3 — Stock Items remains
- * reachable via Master Data below). Dincharya follows the exact precedent Connect itself set in
- * MVP-1.1-B — a fourth [HomePrimaryEntryRow], [DashboardEvent.OpenDincharya], no new navigation
- * paradigm invented.
+ * Vouchers, Ledgers, Connect, (MVP-1.2-D) Dincharya, and (MVP-1.3-A) Business Profile as the
+ * primary Home entries, Stock Items deliberately absent from prime space (BUDCOM-UI-DESIGN-
+ * DECISIONS §3 — Stock Items remains reachable via Master Data below). Each addition follows the
+ * exact precedent Connect itself set in MVP-1.1-B — one more [HomePrimaryEntryRow], one more
+ * `DashboardEvent.OpenX`, no new navigation paradigm invented.
  */
 @Composable
 private fun HomePrimaryEntries(onEvent: (DashboardEvent) -> Unit) {
@@ -398,6 +401,13 @@ private fun HomePrimaryEntries(onEvent: (DashboardEvent) -> Unit) {
             subtitle = stringResource(R.string.dashboard_primary_dincharya_subtitle),
             testTag = "dashboard_primary_dincharya",
             onClick = { onEvent(DashboardEvent.OpenDincharya) },
+        )
+        HomePrimaryEntryRow(
+            icon = Icons.Filled.Info,
+            title = stringResource(R.string.dashboard_action_business_profile),
+            subtitle = stringResource(R.string.dashboard_primary_business_profile_subtitle),
+            testTag = "dashboard_primary_business_profile",
+            onClick = { onEvent(DashboardEvent.OpenBusinessProfile) },
         )
     }
 }

@@ -165,6 +165,7 @@ class DashboardViewModel @Inject constructor(
             DashboardEvent.OpenLedgers -> emitNav(DashboardNavigation.Ledgers)
             DashboardEvent.OpenConnect -> emitNav(DashboardNavigation.Connect)
             DashboardEvent.OpenDincharya -> emitNav(DashboardNavigation.Dincharya)
+            DashboardEvent.OpenBusinessProfile -> emitNav(DashboardNavigation.BusinessProfile)
             DashboardEvent.OpenSearch -> emitNav(DashboardNavigation.Search)
             DashboardEvent.OpenSync -> emitNav(DashboardNavigation.Sync)
             DashboardEvent.OpenDiagnostics -> emitNav(DashboardNavigation.Diagnostics)
@@ -284,6 +285,7 @@ enum class DashboardNavigation {
     Ledgers,
     Connect,
     Dincharya,
+    BusinessProfile,
     Search,
     Sync,
     Diagnostics,
