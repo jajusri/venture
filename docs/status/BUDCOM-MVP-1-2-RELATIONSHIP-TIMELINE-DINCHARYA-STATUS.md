@@ -1652,14 +1652,22 @@ Performed directly on device `10BF44124K000E3` after install:
 
 ## E17. Git
 
-Commits this session (see §"Recent commits" or `git log`): a `fix(android)` commit for E2's
-note-completion UI wiring, a `test(android)` commit for E8's new tests plus the E13 version bump,
-and a `docs` commit for this Part E record plus the Development Ledger/Current-Development-Status
-updates. `git status` clean before and after each commit; no unrelated file, no secret/credential
-pattern, no generated artifact staged (build outputs remain correctly `.gitignore`d — verified via
-`git check-ignore`). Push result and final HEAD-vs-`origin/main` alignment are recorded in
-`docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` §2 (filled in after the push step, not
-self-referenced here to avoid this record going stale the moment a later commit is amended).
+Commits this session: `7d6a931` (`fix(android)`, E2's note-completion UI wiring), `ffb9d99`
+(`test(android)`, E8's new tests plus the E13 version bump), `d9af6f7` (`docs`, this Part E record
+plus the Development Ledger phase 32/Current-Development-Status updates). `git status` clean before
+and after each commit; a dedicated secret/credential scan across the full `origin/main..HEAD` diff
+range (private-key headers, API-key/secret/password literal patterns, AWS-style keys, certificate
+blocks, `.jks`/`.keystore`/`.p12`/`.pfx`/`.pem`/`.key`/`.env` files) found zero matches; the full
+36-file diff-range file list was inspected directly and contains only expected MVP-1.2-D/E files —
+no unrelated file, no generated artifact (build outputs remain correctly `.gitignore`d, verified via
+`git check-ignore`).
+
+**Pushed.** `git push origin main` completed as a normal fast-forward, no force flag, no history
+rewrite: `d964b76..d9af6f7 main -> main`. Post-push verification via `git fetch origin` +
+`git rev-parse`: local HEAD and `origin/main` both resolved to
+`d9af6f7623f66d8d028d3ee61d2d3fa79a91ceb9` — exact byte-identical match; `git status` reported "up
+to date with 'origin/main'". Full confirmation recorded in
+`docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` §2a.
 
 ## E18. Accepted limitations (explicit)
 

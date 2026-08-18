@@ -24,26 +24,33 @@ BUDCOM package beforehand, per the Part D finding in §5 below). Launch/smoke-ve
 
 ## 2. Branch / HEAD
 
-- Branch: `main`. `origin/main` was last verified byte-identical to local HEAD at the B/C checkpoint
-  (`8f77cf63b7533f1418cb6208157969dee3022765`, 2026-08-18) — MVP-1.2-D's and MVP-1.2-E's commits
-  advance local HEAD well beyond that point; push status for this range is recorded in §2a below,
-  not assumed.
+- Branch: `main`.
 - Starting HEAD of the MVP-1.2-D session: `d964b760e90339d3037a3447bbffa85e116e4801`.
 - HEAD after MVP-1.2-D: `57a27e44f813aede9e5b71dd5a43440380ed670c` (4 commits: data/domain/
   repository, presentation/navigation/Dashboard, tests, documentation).
 - Starting HEAD of the MVP-1.2-E session: `57a27e44f813aede9e5b71dd5a43440380ed670c`, working tree
   clean — confirmed by direct inspection (`git status`, `git log`, `DatabaseConstants.VERSION`,
   presence of all 8 `feature/dincharya/` files), not trusted from documentation alone.
-- HEAD after MVP-1.2-E: see `git log -1` / this session's own final report — this session created a
-  `fix(android)` commit (note-completion UI wiring), a `test(android)` commit (new tests + version
-  bump), and a `docs` commit (this checkpoint + ledger phase 32 + specialist status Part E). Exact
-  hash intentionally not hand-copied here to avoid this record going stale the moment a later commit
-  is amended — see the session's own final report for the authoritative value.
+- HEAD after MVP-1.2-E (before this push-confirmation commit): `d9af6f7623f66d8d028d3ee61d2d3fa79a91ceb9`
+  — three commits: `7d6a931` (`fix(android)`: note-completion UI wiring), `ffb9d99`
+  (`test(android)`: new tests + version bump), `d9af6f7` (`docs`: this checkpoint + ledger phase 32
+  + specialist status Part E).
 - Android: version bumped `0.1.1-continuity.26`→**`0.1.1-continuity.27`** (versionCode 27→28) — the
   single coherent MVP-1.2 freeze bump, performed only after full A–D+E regression was green (per
   explicit instruction, not before).
 
 ### 2a. Push status
+
+**PUSHED — confirmed byte-identical.** `git push origin main` completed as a normal fast-forward,
+no force flag, no history rewrite: `d964b76..d9af6f7 main -> main`. Post-push verification via
+`git fetch origin` + `git rev-parse`: local HEAD and `origin/main` both resolve to
+`d9af6f7623f66d8d028d3ee61d2d3fa79a91ceb9` — exact match. `git status` reports "up to date with
+'origin/main'", working tree clean. This preserves the entire MVP-1.2-D + MVP-1.2-E work (7 commits:
+4 from D, 3 from E) on the remote, spanning from `d964b760` (the pre-D baseline, already on
+`origin/main` since the B/C checkpoint push) through `d9af6f7` (E's own documentation commit). This
+present commit (recording this exact confirmation) necessarily lands after that verified point and
+is pushed separately, immediately after — see `git log -1` for the true current tip at any given
+read of this file.
 
 Recorded factually, not assumed: this file is updated *before* the push step in this session's own
 sequence, so the authoritative push result (fast-forward push succeeded and local HEAD ==
