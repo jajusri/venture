@@ -36,6 +36,18 @@ requirement (that run's own known side effect removed the prior install; reinsta
 re-verified, see §5).
 **DESKTOP `0.4.18`** / **CONNECTOR `0.4.6`** — unchanged, not touched, and not required by MVP-1.3.
 
+**Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening (focused
+polish/performance task, not a milestone — no version bump).** Fixed the same
+Load/Refresh-delegate-to-one-identical-method bug Phase 3E fixed for Vouchers, but on the Ledger
+side: `LedgerRepositoryImpl.loadLedgers()` was network-first for every normal Ledger Browser open
+(and every Universal Search keystroke against Ledgers), falling back to Room only on failure —
+split into cache-only `listLedgers()`/network `refreshLedgers()`. Also made Detailed Ledger sharing
+reachable by a normal tap (a "Ledger Summary / Detailed Ledger / More options…" menu) instead of
+requiring a hidden long-press. 1,257/1,257 unit tests both variants (+8 from the 1,249/1,249
+baseline), 0 lint errors, both assembles green; no device available this session for live/
+instrumented verification (documented limitation). Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §24.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.
@@ -319,6 +331,10 @@ MVP-1.3 is COMPLETE / FROZEN (§1) — Parts A, B, and C all complete, documente
 version-bumped, built, installed, and smoke-tested (§3/§5; full evidence in
 `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Parts A–C). The five product decisions this
 milestone needed were supplied directly in its own governing prompt and locked as PDL-019.**
+
+**Phase 36 (Ledger Sharing Discoverability + Offline Performance Hardening — §1 above,
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §24) is complete** — a bounded, explicitly-authorized
+side-quest, not a new milestone. It does not change the item below.
 
 **Next task: MVP-1.4 planning/recovery review** (read-only architecture/gap-analysis review,
 matching the MVP-1.3 planning session's own precedent exactly — §2b/§3 above — not implementation).

@@ -519,11 +519,149 @@ prompt's own "continue A → B → C automatically when the preceding gate passe
 
 **MVP-1.3 COMPLETE / FROZEN.**
 
+**Exact NEXT TASK (at the time):** MVP-1.4 planning/recovery review. Superseded temporarily by the
+focused polish task in §24 below (explicitly authorized as a side-quest, not a new milestone); MVP-1.4
+planning/recovery review remains the task after §24 closes.
+
+## 24. Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening
+
+Focused polish/performance task on the already-frozen MVP-1.3 baseline (HEAD `2555c1d` at start) —
+explicitly authorized as a bounded side-quest, not a new milestone (no milestone number invented, no
+MVP-1.4 work touched). Two independent problems, investigated and fixed with evidence before any
+code was changed, per the task's own "trace first, do not assume" mandate.
+
+### A. Detailed Ledger Share discoverability
+
+**Investigated:** `LedgerStatementScreen.kt`'s Share icon used `combinedClickable` — a plain tap
+fired `ShareLedgerFast` (shares immediately using the *remembered* default statement mode from
+Settings -> Ledger Sharing, Summary unless the user had separately changed that setting), while
+`Detailed` was reachable only by long-pressing the icon to open the "Advanced Options" bottom
+sheet, selecting the Detailed radio button, then confirming a destination. No second
+PDF-generation/sharing implementation existed — `LedgerStatementViewModel.shareStatement()` was
+already the single funnel for both paths.
+
+**Fix:** the Share icon's normal tap now opens a small "Share Ledger" menu with three entries —
+**Ledger Summary**, **Detailed Ledger**, and **More options…** — reusing the exact same
+`shareStatement()`/PDF/share-coordinator machinery via one new event,
+`LedgerStatementEvent.ShareLedgerWithMode(mode)`, which shares immediately using the currently
+displayed period and the remembered default *destination* (unchanged Settings behavior) with an
+explicit mode instead of the implicit remembered one. "More options…" opens the existing
+long-press Advanced sheet unchanged (period/destination override, WhatsApp-to-Party, Save/Preview
+PDF — all preserved exactly). Long-press on the icon still opens that same Advanced sheet directly,
+kept only as a shortcut for muscle memory — nothing on the screen depends on it any more. Added
+content descriptions to the icon and each menu item.
+`apps/budcom_android/app/src/main/java/com/budcom/android/feature/masterdata/ledger/presentation/{LedgerStatementScreen.kt,LedgerStatementUiState.kt,LedgerStatementViewModel.kt}`.
+
+### B. Offline Ledger performance
+
+**Investigated:** traced both places a user can "open the Ledger" — the Ledger Browser list
+(`LedgerBrowserViewModel`/`LedgerRepositoryImpl`) and the Ledger Statement detail screen
+(`LedgerStatementViewModel`/`GetLocalLedgerStatementUseCase`). The Statement detail screen was
+already fully local-first (from the pre-existing `a4dcf33`/`30e7ed4` "local-first Ledger
+persistence" work) — its `load(refreshing=false)` path never touches the network, confirmed by
+existing zero-network-call tests; no bottleneck there. The **actual bottleneck**: `LedgerBrowserViewModel`
+constructs `LoadLedgersUseCase` for every normal open/search/pagination/retry and
+`RefreshLedgersUseCase` only for explicit pull-to-refresh — but both use cases delegated to the
+exact same `LedgerRepositoryImpl.loadLedgers()`, which called the Connector network endpoint
+*first*, every time, falling back to the Room cache only on failure. This is the identical bug
+shape Phase 3E fixed for Vouchers ([[project_budcom_phase3e_offline_voucher]] in memory —
+`LoadVouchersUseCase`/`RefreshVouchersUseCase` were textually identical before that fix); the
+Ledger side never received the equivalent fix. The same repository method was also the backing
+implementation for `SearchLedgersPortImpl` (Universal Search's Ledger provider), so every
+Ledger keystroke in Universal Search paid the same live-network cost. Room itself was already
+correctly indexed (`cached_ledgers(companyId)`, `cached_ledgers(companyId, name)`) with no N+1 —
+`LedgerMovementDao`'s narration/inventory-line reads were already batched, not per-voucher.
+
+**Fix (smallest correct change, reusing the Voucher-established cache-only-vs-refresh split):**
+split `LedgerRepository` into `listLedgers()` (Room-only; fails honestly with "No offline data
+available. Connect to BUDCOM Desktop and synchronize once." when the company has never been
+synced, matching Voucher's own wording) and `refreshLedgers()` (the prior network-first body,
+unchanged). `LoadLedgersUseCase` now calls `listLedgers`; `RefreshLedgersUseCase` calls
+`refreshLedgers`; `SearchLedgersPortImpl` now calls `listLedgers` too (fixes Universal Search's
+identical exposure as a byproduct). `LedgerBrowserViewModel` needed no change — it already
+selected the correct use case per its own `refreshing` flag; the bug was entirely inside the
+repository. No Room schema change, no new datastore, no pagination/index change — none were
+implicated by the evidence.
+`apps/budcom_android/app/src/main/java/com/budcom/android/feature/masterdata/ledger/{domain/repository/LedgerRepository.kt,domain/usecase/LedgerUseCases.kt,data/repository/LedgerRepositoryImpl.kt,data/repository/SearchLedgersPortImpl.kt}`.
+
+**Freshness UI (Part G):** `LedgerBrowserUiState.dataFreshnessAt` was already populated end-to-end
+by both read paths but never rendered anywhere. Added a one-line "Data last synced: {timestamp}"
+label above the search field, visible whenever content is present; the existing pull-to-refresh
+gesture remains the only manual-refresh affordance (no new button added, matching "do not
+overcomplicate the Ledger UI"). `LedgerBrowserScreen.kt`.
+
+**Measurement methodology and honest limitation:** no Android device or emulator was available in
+this session (`adb` not present; no `connectedDebugAndroidTest` run performed) — the specific,
+genuine constraint documented per the task's own instructions rather than fabricating a wall-clock
+number. Evidence instead: (1) a new JVM regression test,
+`LedgerBrowserViewModelTest`."Load, search, retry, and pagination never touch the network path —
+only explicit Refresh does", proves 0 `refreshLedgers` calls across init/search/retry and exactly 1
+after an explicit `Refresh` event; (2) a new `LedgerRepositoryImplTest` section proves `listLedgers`
+reaches a result using only `UnreachableRemote`/`UnreachableAuthenticatedRemote` fakes (calling
+either throws), i.e. the cache-only path is structurally incapable of making a network call, not
+merely observed not to. This is code-path proof, not a live timing measurement — before this fix,
+every normal open paid for a live Connector/Tally round trip (bounded to one attempt by the
+pre-existing `RetryPolicy.None` on the Ledger endpoint, per the Phase 3E memory, but still a real
+network+Tally round trip); after the fix, a normal open is a single indexed Room read with no
+network dependency at all. A live on-device before/after timing (mirroring the Voucher Phase 3F–3H
+live validation already on record) was not performed and is recommended as a follow-up when a
+device is available, but is not required to trust the fix: the change is a structural
+network-call-elimination, not a tuning change whose benefit could only be inferred from timing.
+
+### C. Architecture decision
+
+Room retained as the sole local store — it was already the correct choice and already properly
+indexed; the bottleneck was purely in the repository's *read-first* choice of transport, not in
+Room itself. No new database/cache technology introduced. No speculative refactor: Desktop
+Connector, Tally write paths, Business Profile, Catalogue, Vartalap, Referral Tree, Home
+Insights/OI, generative AI, and cloud sync were not touched.
+
+### D. Tests
+
+Baseline (HEAD `2555c1d`, before this task's changes): `testDebugUnitTest`/`testReleaseUnitTest`
+1,249/1,249 both, 0 failures (measured this session via `git stash` to isolate the pre-fix tree —
+not assumed from an older checkpoint). After: **1,257/1,257 both, 0 failures** (+8 net new tests:
++4 `LedgerRepositoryImplTest` (`listLedgers` cache-hit/no-cache/blank-company/search-respected),
++1 `LedgerBrowserViewModelTest` (the Load-vs-Refresh network-isolation regression above),
++3 `LedgerStatementViewModelTest` (`ShareLedgerWithMode` Detailed/Summary/period-correctness);
+`LedgerUseCasesTest`'s one test was rewritten in place to prove `Load`/`Refresh` now call
+*different* repository methods, the exact contract the bug violated. Plus 8 new instrumented
+(`androidTest`, not run this session — no device) tests: 2 in `LedgerBrowserScreenTest`
+(freshness label shown/absent) and 6 in `LedgerStatementScreenTest` (tap opens the two-option
+menu; Summary/Detailed/More-options each emit the right event; long-press still opens Advanced
+options directly). `:app:lintDebug` 0 errors (87 pre-existing warnings, unrelated
+`MonochromeLauncherIcon` on launcher icons). `:app:assembleDebug`/`:app:assembleRelease`
+(R8-minified) both green. The known 12 pre-existing instrumented-suite failures could not be
+re-verified this session (no device) — **unchanged, not re-confirmed**; this is stated as a
+limitation, not claimed as tested.
+
+### E. Accepted limitations
+
+1. No Android device/emulator available this session — no live on-device timing, no
+   `connectedDebugAndroidTest` run, no re-confirmation of the 12 known pre-existing instrumented
+   failures. Recommended follow-up when a device is available (mirrors the Voucher Phase 3F–3H
+   live-validation precedent).
+2. `LedgerStatementContentUi.lastSyncedAt` is a pre-existing dead field (always constructed as
+   `null` by `LedgerStatementViewModel.load()`, never rendered by `LedgerStatementContent`) —
+   noted during investigation, left untouched as out-of-scope (it is not the reported bottleneck
+   and populating/rendering it would be a UI change beyond this task's ask).
+3. `git diff` renders `LedgerStatementScreenTest.kt`'s change as far larger than the actual edit
+   (a 93-line net addition) because the file's many near-identical
+   `composeRule.setContent { BudcomTheme { LedgerStatementScreen(...) } }` blocks defeat the line
+   diff algorithm (confirmed with Myers/histogram/patience, and independently by full content
+   review) — a cosmetic diff-rendering artifact, not a content defect.
+
+### F. Version / Git
+
+No version bump — a focused polish task, not a milestone freeze point, per the task's own explicit
+instruction. Not installed to a device (none attached). Commit(s): see `git log` immediately
+following this entry.
+
 **Exact NEXT TASK:** MVP-1.4 planning/recovery review (read-only architecture/gap-analysis review,
 matching the MVP-1.3 planning session's own precedent — not implementation). Do not begin MVP-1.4
 implementation without an explicit new go-ahead.
 
-## 24. Current source-of-truth references
+## 25. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`
