@@ -1,6 +1,7 @@
 # BUDCOM MVP-1.2 — Relationship Timeline, Issue History, Dincharya & OI — Status
 
-**Status:** Part A technically complete, ready for review.
+**Status:** Part A complete. Part B complete — acceptance gate PASSED, automatic continuation to
+Part C authorized per this session's own governing prompt.
 **Companion documents:** `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` (concise current-state
 checkpoint), `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` (chronological record),
 `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md` (locked
@@ -330,12 +331,218 @@ builds, not preserved as named release candidates).
 - The previously accepted 12 device-viewport instrumented failures remain accepted, re-confirmed
   with zero overlap and zero new failures this session (A10).
 
-## A13. Exact NEXT TASK
+## A13. Exact NEXT TASK (superseded — see Part B)
 
-**MVP-1.2-A is complete, mini-hardened, and documented. STOP per this task's own instruction — do
-not begin MVP-1.2-B in this session.**
+~~MVP-1.2-A is complete, mini-hardened, and documented. STOP... Awaits Product Owner/technical
+review of this 1.2-A result before being authorized.~~ — **explicitly authorized and completed this
+session**, see Part B below.
 
-Next: **MVP-1.2-B — Relationship Timeline** (architecture doc §11, §18) — the merged notes +
-export-events chronological read model, replacing the current flat Notes list's presentation on
-Party Detail, per the now-locked PDL-014. Awaits Product Owner/technical review of this 1.2-A
-result before being authorized.
+---
+
+# Part B — MVP-1.2-B: Relationship Timeline
+
+**Starting HEAD:** `f26def29c7e23ab2743616bc469abcdf94328242` (`feat(android): lock MVP-1.2 product
+decisions, implement MVP-1.2-A Party Activity foundation`), working tree clean. Recovered state by
+direct inspection rather than trusting the prior session's own report: re-read `git log -1`,
+`DatabaseConstants.VERSION` (confirmed `9`, unchanged since 1.2-A), `adb devices -l` (device
+`10BF44124K000E3` connected/authorized), and the actual current `PartyDetailScreen.kt`/
+`PartyDetailUiState.kt`/`PartyDetailViewModel.kt`/`PartyRepository.kt` source before writing any
+code.
+
+## B1. Scope actually implemented
+
+Exactly architecture doc §10/§11's 1.2-B line item: the Relationship Timeline read model, merging
+`party_notes` and `party_export_events` into one chronological, bounded/paged feed, replacing the
+flat Notes list's presentation on Party Detail (locked by PDL-014). **Deliberately not included in
+B, reserved for C's own explicit "Issue/Timeline Consistency" requirement:** issue-lifecycle events
+(opened/resolved) in the Timeline — architecture doc's own 1.2-B description names only "notes +
+export events interleaved," and building the Issues section first (C) before wiring its lifecycle
+into the same merge query keeps each milestone's diff honestly scoped to what it actually delivers.
+
+## B2. Architecture — the merge query
+
+New `PartyTimelineDao` (`feature/party/data/local/PartyTimelineDao.kt`) — a dedicated read-only
+`@Dao` belonging to neither `party_notes` nor `party_export_events` alone, since the merge belongs
+to neither table individually. A single SQL `UNION ALL` of both tables (aliased into one shared
+column shape via a `TimelineRowEntity` projection, non-`@Entity`, no migration needed — both source
+tables already existed), `ORDER BY timestamp DESC, id ASC LIMIT/OFFSET` computed **entirely in
+SQL**, not merged in Kotlin after two separate paged reads — this was a deliberate architecture
+decision: naively fetching page N from each source independently and merging in memory cannot
+correctly paginate a single chronological feed across a source boundary (page 2 might need 3 rows
+from notes and 1 from exports, a split that shifts unpredictably as more data accumulates). The
+`id ASC` tie-break (not left to chance) guarantees deterministic paging even when two events share
+an identical timestamp (B9's explicit same-timestamp test).
+
+**Zero schema change, zero migration.** `PartyTimelineDao` is a pure `@Query` projection over two
+already-existing tables — Room validated the query at KSP compile time against the real schema
+(confirmed: `compileDebugKotlin` succeeded on first attempt with the query in place, meaning Room's
+own SQL validator accepted it against `9.json`'s actual column set). `DatabaseConstants.VERSION`
+remains `9`, unchanged from 1.2-A.
+
+`issueId` filter parameter (`NULL` = full unfiltered Timeline) is already wired into the query and
+repository/use-case layers this session, but not yet exposed anywhere in the UI — built now so
+1.2-C's "tap an issue to see its filtered notes" (architecture §10) reuses this exact query rather
+than a second, duplicate list implementation, without needing a B→C signature change later.
+
+## B3. Data model
+
+`TimelineEntry` (new `feature/party/domain/model/TimelineModels.kt`) — a sealed interface with
+exactly two 1.2-B cases, `NoteEvent`/`ExportEvent`, each wrapping the real, unmodified
+`PartyNote`/`PartyExportEvent` domain object (never a flattened/lossy projection) plus a computed
+`timestamp` for sort/merge purposes. `TimelineEntryPage` mirrors the existing `PartyNotePage`
+paging shape exactly (`items`/`page`/`pageSize`/`totalItems`/`canLoadMore`).
+
+## B4. Repository / use-case API
+
+`PartyRepository.getTimelineForParty(companyId, partyId, page, pageSize, issueId)` — no default
+parameter values on the interface (matching the convention established in 1.2-A: defaults live only
+on `GetTimelineForPartyUseCase.invoke`, e.g. `page = 1, pageSize = 20, issueId = null`).
+
+## B5. UI change — Party Detail's flat Notes list becomes the Relationship Timeline
+
+Per PDL-014, this is a genuine **replacement of presentation**, not an addition: `PartyDetailUiState`'s
+`notes`/`notesPage`/`notesCanLoadMore`/`isLoadingMoreNotes` fields are gone, replaced by
+`timeline`/`timelinePage`/`timelineCanLoadMore`/`isLoadingMoreTimeline`. A new computed
+`notesInTimeline: List<PartyNote>` property (`timeline.filterIsInstance<NoteEvent>().map { it.note }`)
+lets note-only operations (edit lookup, linked-voucher lookup) keep working against the merged
+Timeline without re-fetching — the Timeline is the single source, not a second parallel list.
+
+The section header changed from "Notes" to "Relationship Timeline"; a new `TimelineRow` composable
+dispatches each entry to the existing `NoteRow` (note-kind, unchanged internals) or a new
+`ExportEventRow` (export-kind, read-only, "Exported to Tally: Phone, Email" using the same
+`TallyExportFieldMapping.labelFor()` plain-language labels the XML-export screen already uses — no
+raw field name ever shown). Both row kinds now show a formatted date (`dd MMM yyyy`, matching
+`VoucherDateFormatting.kt`'s existing display convention) — a deliberate, explicitly-justified small
+enhancement: a chronological Timeline with no visible dates would fail this milestone's own
+"maintain chronological clarity" requirement, and pre-1.2-B `NoteRow` showed no date at all.
+
+Add/edit/delete-note actions, the note editor dialog, and the "Add note" button are all unchanged —
+notes are still created/edited exactly as in 1.2-A, only their **read presentation** changed.
+
+## B6. Company isolation — adversarial evidence
+
+Dedicated tests at both layers, not incidental:
+- DAO (`PartyTimelineDaoTest.timelineNeverLeaksAnotherCompanysNotesOrExportEvents`): the exact same
+  `partyId` natural key reused under two different `companyId`s, with different note content under
+  each — company A's Timeline returns exactly its own 2 events; company B's returns exactly its own
+  1 event; a lookup combining company B's `companyId` with company A's `partyId` (the cross-company
+  natural-key confusion case) returns empty, not company A's data.
+- Repository (`PartyRepositoryImplTest`'s `timeline never leaks another company's notes or export
+  events, even with identical content`): two Prospects with the **identical** display name and
+  **identical** phone number, created independently under `co-A`/`co-B`, each given a note — proves
+  the isolation holds even under a genuine same-identity collision, not just different-looking data.
+
+## B7. Performance evidence
+
+`PartyTimelineDaoTest.timelineStaysBoundedAndFastWithALargeFixture` — 300 notes + 50 export events
+(350 total) for one party against real in-memory Room/SQLite on the connected device; a bounded
+20-row paged query returns in well under the 2-second soft ceiling (same bar as `PartyDaoTest`'s own
+500-row precedent), `countTimelineForParty` matches exactly (350), and the newest overall entry
+(a note, since its timestamp exceeds every export event's) is correctly first — proving the merge's
+`ORDER BY` genuinely spans both sources, not just one. All Timeline queries use `LIMIT`/`OFFSET`; no
+full-table or full-party in-memory sort.
+
+## B8. Offline behavior
+
+Unchanged — `PartyTimelineDao` reads only already-local Room tables; zero network call, zero
+Connector interaction anywhere in the new code (same class of evidence as 1.2-A: no import of any
+Connector/API type in the touched files).
+
+## B9. Mini-hardening review
+
+- **Empty Party / empty timeline:** `PartyRepositoryImplTest`'s `an empty party has an empty
+  timeline that cannot load more` and `PartyTimelineDaoTest.anEmptyPartyHasAnEmptyTimeline` both
+  assert `items.isEmpty()`, `totalItems == 0`, `canLoadMore == false` — no crash, no error state. The
+  Compose layer shows an explicit "No activity yet" message (`party_detail_timeline_empty` testTag,
+  instrumented-test-verified) rather than blank space — the existing honest-empty-state discipline
+  extended to this new surface.
+- **One event / many events:** covered by the merge-ordering and large-fixture tests (B6/B7).
+- **Same-day (same-timestamp) events:** `PartyTimelineDaoTest.sameTimestampEntriesGetADeterministic
+  TieBreakSoPagingNeverDuplicatesOrDrops` — three entries sharing one exact timestamp; proves both
+  that repeated reads return a stable order and that paging across the tie produces no
+  duplicate/dropped row.
+- **Long text / long Party name:** no `maxLines`/truncation applied to note bodies or export
+  summaries (Compose `Text` wraps naturally) — matches the pre-1.2-B `NoteRow`'s own behavior,
+  verified not to regress.
+- **Missing optional fields:** `dueAt`/`completedAt`/`issueId` remain fully nullable through the
+  merge; `PartyExportEvent.fieldNames` is defensively handled (`.orEmpty()`) though `recordExport`'s
+  own pre-existing `require(eligible.isNotEmpty())` check means an empty list should never actually
+  reach this path.
+- **Malformed/stale references, deleted/changed underlying entities:** issues are never deletable
+  (no delete method exists on `PartyIssueDao`, unchanged from 1.2-A), so a note's `issueId` can never
+  dangle; the existing "linked voucher not available" honest-fallback (1.1-C) is unchanged.
+- **Duplicate events:** the `UNION ALL` reads each source table exactly once per row; no
+  denormalization, no write-side duplication introduced anywhere.
+- **Chronological ordering / pagination:** B6/B7 above, plus `PartyDetailViewModelTest`'s
+  `loading more timeline entries appends rather than replaces the page` (25-note fixture, exact
+  boundary at pageSize 20).
+- **Migration integrity:** N/A — no migration this milestone (B2).
+- **Accessibility:** every new element is plain `Text`/`Card`, the same self-describing pattern
+  already used and previously audited (MVP-1.1-E) elsewhere on this screen; `ExportEventRow` has no
+  interactive control at all (read-only), so nothing new needed a content description.
+- **Rotation/recomposition/navigation:** unchanged — Timeline state lives in the same
+  ViewModel-scoped `StateFlow` as everything else on this screen, surviving rotation exactly like
+  the pre-1.2-B Notes state did; `Load` re-fires on each navigation entry (unchanged `init` block).
+
+**Defects found:** none this session — B extended an already-hardened surface (1.2-A) along an
+already-proven architectural seam (Room → Domain → Repository → Use Case → ViewModel → Compose), and
+no genuine defect surfaced during implementation or review.
+
+## B10. Tests
+
+- **New JVM tests (7):** `PartyRepositoryImplTest` — 5 Timeline tests (merge-ordering,
+  pagination-boundary, empty-party, issueId-filter-excludes-exports, company-isolation-with-identical-
+  content); `PartyDetailViewModelTest` — 2 Timeline tests (empty-state, load-more-appends).
+- **New instrumented tests (16), run and passing on device `10BF44124K000E3`:** `PartyTimelineDaoTest`
+  (new file, 8 — merge-ordering, count, empty, pagination-boundary, tie-break-determinism,
+  issueId-filter, company-isolation, large-fixture performance); `PartyDetailScreenTest` (5 —
+  empty-state, export-row rendering, notes+exports rendering together, load-more-timeline button).
+- **Existing-test mechanical updates (no behavior change):** the same five unrelated fake
+  `PartyRepository` implementations from 1.2-A (`ConnectViewModelTest`, `PartyXmlExportViewModelTest`,
+  `ProspectCreateViewModelTest`, `ReconcilePartiesFromLedgersUseCaseTest`, `SyncViewModelTest`) each
+  needed one additional `getTimelineForParty` stub override for the extended interface — mechanical,
+  same precedented class of change as 1.2-A's own.
+
+## B11. Full regression results
+
+- `testDebugUnitTest` / `testReleaseUnitTest`: **1,186/1,186 passing** both (was 1,179 after 1.2-A;
+  +7 new this session — 5 repository + 2 ViewModel; one incidental, already-documented
+  `VoucherRepositoryImplTest` timing flake reproduced once on the first release run, confirmed clean
+  on an isolated retry and on the full-suite re-run — the exact same pre-existing flake class
+  recorded in 1.1-D/E and 1.2-A, not a new regression).
+- `lintDebug` / `lintRelease`: **0 errors** both (report-XML-verified).
+- `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`: all `BUILD SUCCESSFUL`.
+- `connectedDebugAndroidTest` on device `10BF44124K000E3`: **256/268 passing** (was 245/257 after
+  1.2-A; +11 net new instrumented tests run this session — 16 new minus the 5 `PartyDetailScreenTest`
+  cases replaced in place). The 12 failures are byte-for-byte the same pre-existing
+  device-viewport-artifact class (`DashboardScreenTest`, `DiagnosticsScreenTest`,
+  `LedgerStatementScreenTest`, `SecurePairingScreenTest`, `ServerConfigScreenTest`,
+  `SettingsScreenTest`, `SyncScreenTest`, `VoucherDetailsScreenTest`) — **zero overlap** with any
+  file this session touched. Applied the stay-awake device-power-setting fix (`adb shell svc power
+  stayon usb` + wake) *before* this session's instrumented run, based directly on 1.2-A's own
+  documented lesson — the run completed cleanly in 2m10s with exactly the known 12 failures on the
+  first attempt, no repeat investigation needed.
+
+## B12. Version / artifacts
+
+**Version not bumped.** Per this task's explicit "Do NOT bump the Android version after B" instruction
+— `versionName`/`versionCode` remain `0.1.1-continuity.26`/`27`, unchanged.
+
+## B13. Accepted limitations (explicit)
+
+- Issue-lifecycle events (opened/resolved) do not yet appear in the Timeline — reserved for 1.2-C's
+  explicit "Issue/Timeline Consistency" requirement (B1).
+- The previously accepted 12 device-viewport instrumented failures remain accepted, re-confirmed
+  with zero overlap and zero new failures this session (B11).
+- All 1.2-A accepted limitations (specialist doc §A12) remain unchanged and still apply.
+
+## B14. ACCEPTANCE GATE RESULT
+
+**MVP-1.2-B ACCEPTANCE GATE PASSED — AUTOMATIC CONTINUATION TO MVP-1.2-C AUTHORIZED.**
+
+Every mandatory gate item verified with evidence above: compiles; JVM/instrumented tests pass;
+lint/assembles green; company-isolation, ordering, empty/sparse, and pagination tests all pass;
+accessibility unaffected; zero new unexplained instrumented failures (exact known-12 baseline);
+zero P0/P1 defect; zero security/data-integrity issue; zero architecture contradiction; zero
+accidental scope expansion (issue-lifecycle Timeline events deliberately deferred to C, not
+silently included). Proceeding to Part C in this same session.

@@ -30,6 +30,7 @@ import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.model.TallyExportFieldMapping
 import com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate
+import com.budcom.android.feature.party.domain.model.TimelineEntryPage
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import com.budcom.android.feature.party.domain.usecase.GetExportCandidatesUseCase
 import com.budcom.android.feature.party.domain.usecase.GetExportHistoryUseCase
@@ -336,6 +337,8 @@ private class InMemoryExportPartyRepository : PartyRepository {
     override suspend fun setNoteCompletion(companyId: String, noteId: String, completedAt: Long?): PartyNote? = error("unused")
     override suspend fun deleteNote(companyId: String, noteId: String) = error("unused")
     override suspend fun getNotesForParty(companyId: String, partyId: String, page: Int, pageSize: Int): PartyNotePage = error("unused")
+    override suspend fun getTimelineForParty(companyId: String, partyId: String, page: Int, pageSize: Int, issueId: String?): TimelineEntryPage =
+        error("unused")
     override suspend fun createIssue(companyId: String, partyId: String, title: String): PartyIssue = error("unused")
     override suspend fun resolveIssue(companyId: String, issueId: String): PartyIssue? = error("unused")
     override suspend fun reopenIssue(companyId: String, issueId: String): PartyIssue? = error("unused")

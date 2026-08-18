@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -44,9 +45,10 @@ class PartyRepositoryImplTest {
     private val noteDao = FakePartyNoteDao()
     private val exportEventDao = FakePartyExportEventDao()
     private val issueDao = FakePartyIssueDao()
+    private val timelineDao = FakePartyTimelineDao(noteDao, exportEventDao)
 
     private fun repository() = PartyRepositoryImpl(
-        partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, noteDao, exportEventDao, issueDao, time, dispatchers,
+        partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, noteDao, exportEventDao, issueDao, timelineDao, time, dispatchers,
     )
 
     private fun seed(
@@ -653,6 +655,97 @@ class PartyRepositoryImplTest {
         assertTrue(repo.getIssuesForParty("co-B", partyIdA).isEmpty())
     }
 
+    // ============================== RELATIONSHIP TIMELINE (MVP-1.2-B) ==============================
+
+    @Test
+    fun `timeline merges notes and export events newest first`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        time.now = 1_000L
+        repo.addNote("co-1", partyId, "First note", null, NoteType.General, null, null)
+        time.now = 2_000L
+        repo.recordExport("co-1", partyId, "export.xml", listOf(PartyFieldNames.PRIMARY_EMAIL))
+        time.now = 3_000L
+        repo.addNote("co-1", partyId, "Second note", null, NoteType.General, null, null)
+
+        val timeline = repo.getTimelineForParty("co-1", partyId, 1, 20, null)
+
+        assertEquals(3, timeline.totalItems)
+        assertEquals(
+            listOf(3_000L, 2_000L, 1_000L),
+            timeline.items.map { it.timestamp },
+        )
+        assertTrue(timeline.items.first() is com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent)
+        assertTrue(timeline.items[1] is com.budcom.android.feature.party.domain.model.TimelineEntry.ExportEvent)
+    }
+
+    @Test
+    fun `timeline pagination respects page boundaries with no gaps or duplicates`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        repeat(5) { i ->
+            time.now = (i + 1) * 1_000L
+            repo.addNote("co-1", partyId, "Note $i", null, NoteType.General, null, null)
+        }
+
+        val page1 = repo.getTimelineForParty("co-1", partyId, 1, 2, null)
+        val page2 = repo.getTimelineForParty("co-1", partyId, 2, 2, null)
+        val page3 = repo.getTimelineForParty("co-1", partyId, 3, 2, null)
+
+        assertEquals(5, page1.totalItems)
+        assertTrue(page1.canLoadMore)
+        assertTrue(page2.canLoadMore)
+        assertFalse(page3.canLoadMore)
+        val allIds = (page1.items + page2.items + page3.items)
+            .map { (it as com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent).note.noteId }
+        assertEquals(5, allIds.distinct().size)
+    }
+
+    @Test
+    fun `an empty party has an empty timeline that cannot load more`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+
+        val timeline = repo.getTimelineForParty("co-1", partyId, 1, 20, null)
+
+        assertTrue(timeline.items.isEmpty())
+        assertEquals(0, timeline.totalItems)
+        assertFalse(timeline.canLoadMore)
+    }
+
+    @Test
+    fun `filtering the timeline by issueId returns only that issue's notes, never export events`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyId = partyIdFor(repo, "guid:cash-customer")
+        val issue = repo.createIssue("co-1", partyId, "Short shipment")
+        repo.addNote("co-1", partyId, "Unrelated note", null, NoteType.General, null, null)
+        repo.addNote("co-1", partyId, "2 pieces short", null, NoteType.Complaint, null, issue.issueId)
+        repo.recordExport("co-1", partyId, "export.xml", listOf(PartyFieldNames.PRIMARY_EMAIL))
+
+        val filtered = repo.getTimelineForParty("co-1", partyId, 1, 20, issue.issueId)
+
+        assertEquals(1, filtered.items.size)
+        val note = (filtered.items.single() as com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent).note
+        assertEquals("2 pieces short", note.body)
+    }
+
+    @Test
+    fun `timeline never leaks another company's notes or export events, even with identical content`() = runTest(dispatcher) {
+        val repo = repository()
+        val partyIdA = repo.createProspect("co-A", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "ABC Traders", phone = "9876543210")).partyId
+        val partyIdB = repo.createProspect("co-B", com.budcom.android.feature.party.domain.model.ProspectDraft(displayName = "ABC Traders", phone = "9876543210")).partyId
+        repo.addNote("co-A", partyIdA, "Customer says 2 pieces short", null, NoteType.Complaint, null, null)
+        repo.recordExport("co-A", partyIdA, "export.xml", listOf(PartyFieldNames.PRIMARY_EMAIL))
+
+        val timelineA = repo.getTimelineForParty("co-A", partyIdA, 1, 20, null)
+        val timelineB = repo.getTimelineForParty("co-B", partyIdB, 1, 20, null)
+        val crossCompanyLookup = repo.getTimelineForParty("co-B", partyIdA, 1, 20, null)
+
+        assertEquals(2, timelineA.totalItems)
+        assertTrue("a same-named/same-phone Party in a different company must start with an empty timeline", timelineB.items.isEmpty())
+        assertTrue("company A's partyId must not resolve any data under company B's scope", crossCompanyLookup.items.isEmpty())
+    }
+
     // ============================== TALLY XML EXPORT (MVP-1.1-D) ==============================
 
     @Test
@@ -1002,4 +1095,54 @@ private class FakePartyIssueDao : com.budcom.android.feature.party.data.local.Pa
     override suspend fun upsert(entity: com.budcom.android.feature.party.data.local.PartyIssueEntity) {
         store[entity.companyId to entity.issueId] = entity
     }
+}
+
+/** Mirrors [com.budcom.android.feature.party.data.local.PartyTimelineDao]'s real `UNION ALL`
+ * semantics by merging the exact same [FakePartyNoteDao]/[FakePartyExportEventDao] instances the
+ * repository-under-test already writes through — never a separately duplicated store, so this
+ * fake can never silently drift from what a real merged read would show. */
+private class FakePartyTimelineDao(
+    private val noteDao: FakePartyNoteDao,
+    private val exportEventDao: FakePartyExportEventDao,
+) : com.budcom.android.feature.party.data.local.PartyTimelineDao {
+
+    private fun merged(companyId: String, partyId: String, issueId: String?): List<com.budcom.android.feature.party.data.local.TimelineRowEntity> {
+        val notes = noteDao.store.values
+            .filter { it.companyId == companyId && it.partyId == partyId && (issueId == null || it.issueId == issueId) }
+            .map { note ->
+                com.budcom.android.feature.party.data.local.TimelineRowEntity(
+                    kind = "note", id = note.noteId, companyId = note.companyId, partyId = note.partyId,
+                    timestamp = note.createdAt, updatedAt = note.updatedAt, body = note.body,
+                    linkedVoucherId = note.linkedVoucherId, type = note.type, dueAt = note.dueAt,
+                    completedAt = note.completedAt, issueId = note.issueId, outputFileName = null, fieldNamesCsv = null,
+                )
+            }
+        val exports = if (issueId == null) {
+            exportEventDao.store.values.filter { it.companyId == companyId && it.partyId == partyId }.map { event ->
+                com.budcom.android.feature.party.data.local.TimelineRowEntity(
+                    kind = "export", id = event.exportId, companyId = event.companyId, partyId = event.partyId,
+                    timestamp = event.createdAt, updatedAt = event.createdAt, body = null, linkedVoucherId = null,
+                    type = null, dueAt = null, completedAt = null, issueId = null,
+                    outputFileName = event.outputFileName, fieldNamesCsv = event.fieldNamesCsv,
+                )
+            }
+        } else {
+            emptyList()
+        }
+        return (notes + exports).sortedWith(
+            compareByDescending<com.budcom.android.feature.party.data.local.TimelineRowEntity> { it.timestamp }.thenBy { it.id },
+        )
+    }
+
+    override suspend fun pageTimelineForParty(
+        companyId: String,
+        partyId: String,
+        issueId: String?,
+        limit: Int,
+        offset: Int,
+    ): List<com.budcom.android.feature.party.data.local.TimelineRowEntity> =
+        merged(companyId, partyId, issueId).drop(offset).take(limit)
+
+    override suspend fun countTimelineForParty(companyId: String, partyId: String, issueId: String?): Int =
+        merged(companyId, partyId, issueId).size
 }

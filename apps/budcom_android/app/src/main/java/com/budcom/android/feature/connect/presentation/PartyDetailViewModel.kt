@@ -23,7 +23,7 @@ import com.budcom.android.feature.party.domain.usecase.GetAllTagsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetContactPersonsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetFieldProvenanceUseCase
 import com.budcom.android.feature.party.domain.usecase.GetIssuesForPartyUseCase
-import com.budcom.android.feature.party.domain.usecase.GetNotesForPartyUseCase
+import com.budcom.android.feature.party.domain.usecase.GetTimelineForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartyByIdUseCase
 import com.budcom.android.feature.party.domain.usecase.GetSourceLinkForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetTagsForPartyUseCase
@@ -58,7 +58,7 @@ class PartyDetailViewModel @Inject constructor(
     private val getTagsForParty: GetTagsForPartyUseCase,
     private val getAllTags: GetAllTagsUseCase,
     private val getSourceLinkForParty: GetSourceLinkForPartyUseCase,
-    private val getNotesForParty: GetNotesForPartyUseCase,
+    private val getTimelineForParty: GetTimelineForPartyUseCase,
     private val updateBudcomOnlyField: UpdateBudcomOnlyFieldUseCase,
     private val upsertContactPerson: UpsertContactPersonUseCase,
     private val deleteContactPerson: DeleteContactPersonUseCase,
@@ -94,7 +94,7 @@ class PartyDetailViewModel @Inject constructor(
     fun onEvent(event: PartyDetailEvent) {
         when (event) {
             PartyDetailEvent.Load, PartyDetailEvent.Retry -> load()
-            PartyDetailEvent.LoadMoreNotes -> loadMoreNotes()
+            PartyDetailEvent.LoadMoreTimeline -> loadMoreTimeline()
             is PartyDetailEvent.ViewLedgerTapped -> {
                 val ledgerId = event.ledgerId
                 if (ledgerId.isNullOrBlank()) showNotice("No linked Ledger for this party.") else _effects.tryEmit(PartyDetailEffect.OpenLedgerStatement(ledgerId))
@@ -186,7 +186,7 @@ class PartyDetailViewModel @Inject constructor(
             PartyDetailEvent.SaveNote -> saveNote()
             is PartyDetailEvent.DeleteNoteTapped -> deleteNoteTapped(event.noteId)
             is PartyDetailEvent.LinkedVoucherTapped -> {
-                val note = _uiState.value.notes.firstOrNull { it.linkedVoucherId == event.voucherId }
+                val note = _uiState.value.notesInTimeline.firstOrNull { it.linkedVoucherId == event.voucherId }
                 if (note != null) _effects.tryEmit(PartyDetailEffect.OpenVoucherDetails(event.voucherId))
                 else showNotice("Linked voucher is not available.")
             }
@@ -239,7 +239,7 @@ class PartyDetailViewModel @Inject constructor(
             val contactPersons = getContactPersons(companyId, partyId)
             val tags = getTagsForParty(companyId, partyId)
             val allTags = getAllTags()
-            val notesPage = getNotesForParty(companyId, partyId, page = 1, pageSize = 20)
+            val timelinePage = getTimelineForParty(companyId, partyId, page = 1, pageSize = 20)
 
             _uiState.update {
                 it.copy(
@@ -252,28 +252,28 @@ class PartyDetailViewModel @Inject constructor(
                     contactPersons = contactPersons,
                     tags = tags,
                     allTags = allTags,
-                    notes = notesPage.items,
-                    notesPage = notesPage.page,
-                    notesCanLoadMore = notesPage.canLoadMore,
+                    timeline = timelinePage.items,
+                    timelinePage = timelinePage.page,
+                    timelineCanLoadMore = timelinePage.canLoadMore,
                     error = null,
                 )
             }
         }
     }
 
-    private fun loadMoreNotes() {
+    private fun loadMoreTimeline() {
         val state = _uiState.value
         val companyId = state.companyId ?: return
-        if (!state.notesCanLoadMore || state.isLoadingMoreNotes) return
+        if (!state.timelineCanLoadMore || state.isLoadingMoreTimeline) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingMoreNotes = true) }
-            val nextPage = getNotesForParty(companyId, partyId, page = state.notesPage + 1, pageSize = 20)
+            _uiState.update { it.copy(isLoadingMoreTimeline = true) }
+            val nextPage = getTimelineForParty(companyId, partyId, page = state.timelinePage + 1, pageSize = 20)
             _uiState.update {
                 it.copy(
-                    isLoadingMoreNotes = false,
-                    notes = it.notes + nextPage.items,
-                    notesPage = nextPage.page,
-                    notesCanLoadMore = nextPage.canLoadMore,
+                    isLoadingMoreTimeline = false,
+                    timeline = it.timeline + nextPage.items,
+                    timelinePage = nextPage.page,
+                    timelineCanLoadMore = nextPage.canLoadMore,
                 )
             }
         }
@@ -366,7 +366,7 @@ class PartyDetailViewModel @Inject constructor(
     }
 
     private fun openEditNoteDialog(noteId: String) {
-        val note = _uiState.value.notes.firstOrNull { it.noteId == noteId } ?: return
+        val note = _uiState.value.notesInTimeline.firstOrNull { it.noteId == noteId } ?: return
         _uiState.update {
             it.copy(
                 activeDialog = PartyDetailDialog.NoteEditor(

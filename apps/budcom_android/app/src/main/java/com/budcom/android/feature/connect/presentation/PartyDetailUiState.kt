@@ -10,6 +10,7 @@ import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.Tag
+import com.budcom.android.feature.party.domain.model.TimelineEntry
 
 /** One editable Tally-compatible field row, with its current effective value and provenance —
  * the UI reads this instead of poking at [Party] + a raw provenance map directly. */
@@ -37,15 +38,21 @@ data class PartyDetailUiState(
     val contactPersons: List<PartyContactPerson> = emptyList(),
     val tags: List<Tag> = emptyList(),
     val allTags: List<Tag> = emptyList(),
-    val notes: List<PartyNote> = emptyList(),
-    val notesPage: Int = 1,
-    val notesCanLoadMore: Boolean = false,
-    val isLoadingMoreNotes: Boolean = false,
+    val timeline: List<TimelineEntry> = emptyList(),
+    val timelinePage: Int = 1,
+    val timelineCanLoadMore: Boolean = false,
+    val isLoadingMoreTimeline: Boolean = false,
     val error: MasterDataUiError? = null,
     val notice: String? = null,
     val activeDialog: PartyDetailDialog? = null,
 ) {
     val hasAccountingLink: Boolean get() = sourceLink != null
+
+    /** The Timeline's note-kind entries, unwrapped — used by note edit/delete/linked-voucher
+     * lookups that only ever operate on a note, never an export event (architecture §10: the
+     * Timeline is the single presentation of this data, so notes are read from it, not from a
+     * second, separately-fetched list — see [com.budcom.android.feature.connect.presentation.PartyDetailViewModel]). */
+    val notesInTimeline: List<PartyNote> get() = timeline.filterIsInstance<TimelineEntry.NoteEvent>().map { it.note }
 }
 
 sealed interface PartyDetailDialog {
@@ -90,7 +97,7 @@ sealed interface PartyDetailEffect {
 sealed interface PartyDetailEvent {
     data object Load : PartyDetailEvent
     data object Retry : PartyDetailEvent
-    data object LoadMoreNotes : PartyDetailEvent
+    data object LoadMoreTimeline : PartyDetailEvent
     data class ViewLedgerTapped(val ledgerId: String?) : PartyDetailEvent
     data class ViewVouchersTapped(val ledgerName: String) : PartyDetailEvent
     data object ExportToTallyTapped : PartyDetailEvent

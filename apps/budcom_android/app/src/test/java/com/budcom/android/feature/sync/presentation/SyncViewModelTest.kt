@@ -419,6 +419,13 @@ private class SyncVmFakePartyRepository : PartyRepository {
         page: Int,
         pageSize: Int,
     ): com.budcom.android.feature.party.domain.model.PartyNotePage = error("unused")
+    override suspend fun getTimelineForParty(
+        companyId: String,
+        partyId: String,
+        page: Int,
+        pageSize: Int,
+        issueId: String?,
+    ): com.budcom.android.feature.party.domain.model.TimelineEntryPage = error("unused")
     override suspend fun getExportCandidates(
         companyId: String,
         partyId: String,

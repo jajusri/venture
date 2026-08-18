@@ -31,6 +31,7 @@ import com.budcom.android.feature.party.data.local.PartyNoteEntity
 import com.budcom.android.feature.party.data.local.PartySourceLinkDao
 import com.budcom.android.feature.party.data.local.PartySourceLinkEntity
 import com.budcom.android.feature.party.data.local.PartyTagCrossRefEntity
+import com.budcom.android.feature.party.data.local.PartyTimelineDao
 import com.budcom.android.feature.party.data.local.TagDao
 import com.budcom.android.feature.party.data.local.TagEntity
 
@@ -77,4 +78,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun partyNoteDao(): PartyNoteDao
     abstract fun partyExportEventDao(): PartyExportEventDao
     abstract fun partyIssueDao(): PartyIssueDao
+    abstract fun partyTimelineDao(): PartyTimelineDao
 }

@@ -48,7 +48,13 @@ import com.budcom.android.feature.masterdata.presentation.MasterDataErrorBlock
 import com.budcom.android.feature.masterdata.presentation.MasterDataLoadingIndicator
 import com.budcom.android.feature.party.domain.model.NoteType
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
+import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyNote
+import com.budcom.android.feature.party.domain.model.TallyExportFieldMapping
+import com.budcom.android.feature.party.domain.model.TimelineEntry
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun PartyDetailRoute(
@@ -208,14 +214,24 @@ private fun PartyDetailContent(state: PartyDetailUiState, onEvent: (PartyDetailE
             Text("Add contact person")
         }
 
-        // E. Notes / Activity
-        SectionHeader("Notes")
-        state.notes.forEach { note -> NoteRow(note, onEvent) }
-        if (state.notesCanLoadMore) {
+        // E. Relationship Timeline (PDL-014: the unified historical presentation for this Party —
+        // notes and Tally-export events merged into one chronological feed, never two competing
+        // histories).
+        SectionHeader("Relationship Timeline")
+        if (state.timeline.isEmpty()) {
+            Text(
+                "No activity yet",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("party_detail_timeline_empty"),
+            )
+        }
+        state.timeline.forEach { entry -> TimelineRow(entry, onEvent) }
+        if (state.timelineCanLoadMore) {
             TextButton(
-                onClick = { onEvent(PartyDetailEvent.LoadMoreNotes) },
-                modifier = Modifier.testTag("party_detail_load_more_notes"),
-            ) { Text(if (state.isLoadingMoreNotes) "Loading…" else "Load more notes") }
+                onClick = { onEvent(PartyDetailEvent.LoadMoreTimeline) },
+                modifier = Modifier.testTag("party_detail_load_more_timeline"),
+            ) { Text(if (state.isLoadingMoreTimeline) "Loading…" else "Load more") }
         }
         TextButton(onClick = { onEvent(PartyDetailEvent.AddNoteTapped) }, modifier = Modifier.testTag("party_detail_add_note")) {
             Text("Add note")
@@ -280,18 +296,61 @@ private fun ContactPersonRow(contact: PartyContactPerson, onEvent: (PartyDetailE
     }
 }
 
+/** MVP-1.2-B Relationship Timeline dispatch — one row per truthful, locally-sourced event
+ * (architecture §10, PDL-014). Reuses [NoteRow] verbatim for note-kind entries rather than a
+ * second rendering path. */
+@Composable
+private fun TimelineRow(entry: TimelineEntry, onEvent: (PartyDetailEvent) -> Unit) {
+    when (entry) {
+        is TimelineEntry.NoteEvent -> NoteRow(entry.note, onEvent)
+        is TimelineEntry.ExportEvent -> ExportEventRow(entry.event)
+    }
+}
+
+@Composable
+private fun ExportEventRow(event: PartyExportEvent) {
+    Card(modifier = Modifier.fillMaxWidth().testTag("party_detail_export_event_${event.exportId}")) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                "Exported to Tally: ${event.fieldNames.joinToString(", ") { TallyExportFieldMapping.labelFor(it) }}",
+                modifier = Modifier.testTag("party_detail_export_event_${event.exportId}_summary"),
+            )
+            Text(
+                formatTimelineDate(event.createdAt),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private val TIMELINE_DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("dd MMM yyyy")
+
+/** Matches [com.budcom.android.feature.voucher.presentation.formatVoucherDate]'s display
+ * convention ("dd MMM yyyy"), applied to an epoch-millis Timeline timestamp instead of an
+ * ISO date-only string. */
+private fun formatTimelineDate(epochMillis: Long): String =
+    Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate().format(TIMELINE_DATE_FORMATTER)
+
 @Composable
 private fun NoteRow(note: PartyNote, onEvent: (PartyDetailEvent) -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().testTag("party_detail_note_${note.noteId}")) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(note.body)
-            if (note.type != NoteType.General) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    note.type.toUiLabel(),
+                    formatTimelineDate(note.createdAt),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.testTag("party_detail_note_${note.noteId}_type"),
                 )
+                if (note.type != NoteType.General) {
+                    Text(
+                        note.type.toUiLabel(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("party_detail_note_${note.noteId}_type"),
+                    )
+                }
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Row {

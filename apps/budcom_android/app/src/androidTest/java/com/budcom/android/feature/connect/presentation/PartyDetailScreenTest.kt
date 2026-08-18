@@ -13,6 +13,7 @@ import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.model.PartyContactPerson
+import com.budcom.android.feature.party.domain.model.PartyExportEvent
 import com.budcom.android.feature.party.domain.model.PartyFieldNames
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartySourceLink
@@ -63,6 +64,9 @@ class PartyDetailScreenTest {
 
     private fun note(id: String = "n1", linkedVoucherId: String? = null) =
         PartyNote(companyId = "co-1", noteId = id, partyId = "p1", body = "Called about delivery", linkedVoucherId = linkedVoucherId, createdAt = 0L, updatedAt = 0L)
+
+    private fun timelineOf(vararg notes: PartyNote): List<com.budcom.android.feature.party.domain.model.TimelineEntry> =
+        notes.map { com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent(it) }
 
     @Test
     fun loadingState() {
@@ -241,7 +245,7 @@ class PartyDetailScreenTest {
         composeRule.setContent {
             BudcomTheme {
                 PartyDetailScreen(
-                    state = PartyDetailUiState(isLoading = false, party = party(), notes = listOf(note(linkedVoucherId = "v1"))),
+                    state = PartyDetailUiState(isLoading = false, party = party(), timeline = timelineOf(note(linkedVoucherId = "v1"))),
                     onEvent = { lastEvent = it },
                 )
             }
@@ -257,12 +261,83 @@ class PartyDetailScreenTest {
         composeRule.setContent {
             BudcomTheme {
                 PartyDetailScreen(
-                    state = PartyDetailUiState(isLoading = false, party = party(), notes = listOf(note(linkedVoucherId = null))),
+                    state = PartyDetailUiState(isLoading = false, party = party(), timeline = timelineOf(note(linkedVoucherId = null))),
                     onEvent = {},
                 )
             }
         }
         assertEquals(0, composeRule.onAllNodesForTag("party_detail_note_n1_voucher").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun emptyTimelineShowsAnHonestEmptyStateNotBlankSpace() {
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(state = PartyDetailUiState(isLoading = false, party = party(), timeline = emptyList()), onEvent = {})
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_timeline_empty").assertIsDisplayed()
+    }
+
+    @Test
+    fun exportEventRowShowsFieldLabelsAndDate() {
+        val event = PartyExportEvent(
+            companyId = "co-1", exportId = "exp-1", partyId = "p1", createdAt = 0L,
+            outputFileName = "export.xml", fieldNames = listOf(PartyFieldNames.PRIMARY_PHONE, PartyFieldNames.PRIMARY_EMAIL),
+        )
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false,
+                        party = party(),
+                        timeline = listOf(com.budcom.android.feature.party.domain.model.TimelineEntry.ExportEvent(event)),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_export_event_exp-1_summary").assertIsDisplayed()
+    }
+
+    @Test
+    fun notesAndExportEventsRenderTogetherInOneTimeline() {
+        val event = PartyExportEvent(
+            companyId = "co-1", exportId = "exp-1", partyId = "p1", createdAt = 500L,
+            outputFileName = "export.xml", fieldNames = listOf(PartyFieldNames.PRIMARY_EMAIL),
+        )
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false,
+                        party = party(),
+                        timeline = listOf(
+                            com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent(note(id = "n1")),
+                            com.budcom.android.feature.party.domain.model.TimelineEntry.ExportEvent(event),
+                        ),
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_note_n1").assertIsDisplayed()
+        composeRule.onNodeWithTag("party_detail_export_event_exp-1").assertIsDisplayed()
+    }
+
+    @Test
+    fun loadMoreTimelineButtonEmitsLoadMoreTimeline() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(isLoading = false, party = party(), timeline = timelineOf(note()), timelineCanLoadMore = true),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_load_more_timeline").performClick()
+        assertEquals(PartyDetailEvent.LoadMoreTimeline, lastEvent)
     }
 
     @Test
@@ -336,7 +411,7 @@ class PartyDetailScreenTest {
         composeRule.setContent {
             BudcomTheme {
                 PartyDetailScreen(
-                    state = PartyDetailUiState(isLoading = false, party = party(), notes = listOf(note(id = "n1"))),
+                    state = PartyDetailUiState(isLoading = false, party = party(), timeline = timelineOf(note(id = "n1"))),
                     onEvent = { lastEvent = it },
                 )
             }

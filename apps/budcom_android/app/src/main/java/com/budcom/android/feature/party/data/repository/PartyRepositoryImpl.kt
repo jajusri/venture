@@ -19,6 +19,7 @@ import com.budcom.android.feature.party.data.local.PartySourceLinkDao
 import com.budcom.android.feature.party.data.local.PartySourceLinkEntity
 import com.budcom.android.feature.party.data.local.PartyTagAssignmentRow
 import com.budcom.android.feature.party.data.local.PartyTagCrossRefEntity
+import com.budcom.android.feature.party.data.local.PartyTimelineDao
 import com.budcom.android.feature.party.data.local.TagDao
 import com.budcom.android.feature.party.data.local.TagEntity
 import com.budcom.android.feature.party.data.local.asColumn
@@ -44,6 +45,7 @@ import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.model.TallyExportFieldMapping
 import com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate
+import com.budcom.android.feature.party.domain.model.TimelineEntryPage
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -63,6 +65,7 @@ class PartyRepositoryImpl @Inject constructor(
     private val noteDao: PartyNoteDao,
     private val exportEventDao: PartyExportEventDao,
     private val issueDao: PartyIssueDao,
+    private val timelineDao: PartyTimelineDao,
     private val timeProvider: TimeProvider,
     private val dispatchers: DispatcherProvider,
 ) : PartyRepository {
@@ -487,6 +490,22 @@ class PartyRepositoryImpl @Inject constructor(
             val items = noteDao.pageForParty(companyId, partyId, safeSize, (safePage - 1) * safeSize)
             PartyNotePage(items.map { it.toDomain() }, safePage, safeSize, total)
         }
+
+    // ---- MVP-1.2-B: Relationship Timeline ----
+
+    override suspend fun getTimelineForParty(
+        companyId: String,
+        partyId: String,
+        page: Int,
+        pageSize: Int,
+        issueId: String?,
+    ): TimelineEntryPage = withContext(dispatchers.io) {
+        val safePage = page.coerceAtLeast(1)
+        val safeSize = pageSize.coerceIn(1, 100)
+        val total = timelineDao.countTimelineForParty(companyId, partyId, issueId)
+        val items = timelineDao.pageTimelineForParty(companyId, partyId, issueId, safeSize, (safePage - 1) * safeSize)
+        TimelineEntryPage(items.map { it.toDomain() }, safePage, safeSize, total)
+    }
 
     // ---- MVP-1.2-A: party issues ----
 

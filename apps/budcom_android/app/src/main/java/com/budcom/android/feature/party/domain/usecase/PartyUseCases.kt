@@ -18,6 +18,7 @@ import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate
+import com.budcom.android.feature.party.domain.model.TimelineEntryPage
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import javax.inject.Inject
 
@@ -189,6 +190,18 @@ class DeleteNoteUseCase @Inject constructor(private val repository: PartyReposit
 class GetNotesForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
     suspend operator fun invoke(companyId: String, partyId: String, page: Int = 1, pageSize: Int = 20): PartyNotePage =
         repository.getNotesForParty(companyId, partyId, page, pageSize)
+}
+
+// ---- MVP-1.2-B: Relationship Timeline ----
+
+class GetTimelineForPartyUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(
+        companyId: String,
+        partyId: String,
+        page: Int = 1,
+        pageSize: Int = 20,
+        issueId: String? = null,
+    ): TimelineEntryPage = repository.getTimelineForParty(companyId, partyId, page, pageSize, issueId)
 }
 
 // ---- MVP-1.2-A: party issues ----

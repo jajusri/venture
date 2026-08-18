@@ -16,6 +16,7 @@ import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate
+import com.budcom.android.feature.party.domain.model.TimelineEntryPage
 
 /**
  * Local-first, bounded/paged Party read+write surface for later Connect UI (MVP-1.1-B+) and for
@@ -155,6 +156,18 @@ interface PartyRepository {
 
     /** Bounded, newest-first, indexed — never a full scan. */
     suspend fun getNotesForParty(companyId: String, partyId: String, page: Int, pageSize: Int): PartyNotePage
+
+    // ---- MVP-1.2-B: Relationship Timeline ----
+
+    /**
+     * The unified Relationship Timeline (architecture §10, PDL-014) — notes and Tally-export
+     * events merged into one chronological, bounded/paged feed, newest first. [issueId] narrows to
+     * one issue's notes only (export events are excluded when set); pass `null` for the full,
+     * unfiltered Timeline. Every entry is read live from its own authoritative table — nothing is
+     * duplicated or cached, so this can never drift from what [getNotesForParty]/[getExportHistory]
+     * would themselves report.
+     */
+    suspend fun getTimelineForParty(companyId: String, partyId: String, page: Int, pageSize: Int, issueId: String?): TimelineEntryPage
 
     // ---- MVP-1.2-A: party issues ----
 

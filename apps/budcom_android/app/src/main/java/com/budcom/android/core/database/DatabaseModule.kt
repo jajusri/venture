@@ -16,6 +16,7 @@ import com.budcom.android.feature.party.data.local.PartyFieldProvenanceDao
 import com.budcom.android.feature.party.data.local.PartyIssueDao
 import com.budcom.android.feature.party.data.local.PartyNoteDao
 import com.budcom.android.feature.party.data.local.PartySourceLinkDao
+import com.budcom.android.feature.party.data.local.PartyTimelineDao
 import com.budcom.android.feature.party.data.local.TagDao
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -90,6 +91,9 @@ object DatabaseModule {
 
     @Provides
     fun providePartyIssueDao(db: AppDatabase): PartyIssueDao = db.partyIssueDao()
+
+    @Provides
+    fun providePartyTimelineDao(db: AppDatabase): PartyTimelineDao = db.partyTimelineDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {

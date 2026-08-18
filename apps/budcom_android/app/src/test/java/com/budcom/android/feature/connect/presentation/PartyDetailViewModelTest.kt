@@ -25,6 +25,8 @@ import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.PartySourceType
 import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.model.Tag
+import com.budcom.android.feature.party.domain.model.TimelineEntry
+import com.budcom.android.feature.party.domain.model.TimelineEntryPage
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import com.budcom.android.feature.party.domain.usecase.AddNoteUseCase
 import com.budcom.android.feature.party.domain.usecase.AssignTagUseCase
@@ -37,7 +39,7 @@ import com.budcom.android.feature.party.domain.usecase.GetAllTagsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetContactPersonsUseCase
 import com.budcom.android.feature.party.domain.usecase.GetFieldProvenanceUseCase
 import com.budcom.android.feature.party.domain.usecase.GetIssuesForPartyUseCase
-import com.budcom.android.feature.party.domain.usecase.GetNotesForPartyUseCase
+import com.budcom.android.feature.party.domain.usecase.GetTimelineForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartyByIdUseCase
 import com.budcom.android.feature.party.domain.usecase.GetSourceLinkForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetTagsForPartyUseCase
@@ -96,7 +98,7 @@ class PartyDetailViewModelTest {
         getTagsForParty = GetTagsForPartyUseCase(repository),
         getAllTags = GetAllTagsUseCase(repository),
         getSourceLinkForParty = GetSourceLinkForPartyUseCase(repository),
-        getNotesForParty = GetNotesForPartyUseCase(repository),
+        getTimelineForParty = GetTimelineForPartyUseCase(repository),
         updateBudcomOnlyField = UpdateBudcomOnlyFieldUseCase(repository),
         upsertContactPerson = UpsertContactPersonUseCase(repository),
         deleteContactPerson = DeleteContactPersonUseCase(repository),
@@ -284,7 +286,7 @@ class PartyDetailViewModelTest {
         vm.onEvent(PartyDetailEvent.SaveNote)
         advanceUntilIdle()
 
-        assertEquals("Customer called about delivery", vm.uiState.value.notes.first().body)
+        assertEquals("Customer called about delivery", vm.uiState.value.notesInTimeline.first().body)
     }
 
     @Test
@@ -310,12 +312,12 @@ class PartyDetailViewModelTest {
         vm.onEvent(PartyDetailEvent.NoteBodyChanged("Temp note"))
         vm.onEvent(PartyDetailEvent.SaveNote)
         advanceUntilIdle()
-        val noteId = vm.uiState.value.notes.single().noteId
+        val noteId = vm.uiState.value.notesInTimeline.single().noteId
 
         vm.onEvent(PartyDetailEvent.DeleteNoteTapped(noteId))
         advanceUntilIdle()
 
-        assertTrue(vm.uiState.value.notes.isEmpty())
+        assertTrue(vm.uiState.value.notesInTimeline.isEmpty())
     }
 
     @Test
@@ -330,7 +332,7 @@ class PartyDetailViewModelTest {
         vm.onEvent(PartyDetailEvent.SaveNote)
         advanceUntilIdle()
 
-        assertEquals(NoteType.General, vm.uiState.value.notes.single().type)
+        assertEquals(NoteType.General, vm.uiState.value.notesInTimeline.single().type)
     }
 
     @Test
@@ -347,7 +349,7 @@ class PartyDetailViewModelTest {
         vm.onEvent(PartyDetailEvent.SaveNote)
         advanceUntilIdle()
 
-        val note = vm.uiState.value.notes.single()
+        val note = vm.uiState.value.notesInTimeline.single()
         assertEquals(NoteType.FollowUp, note.type)
         assertTrue(note.dueAt != null && note.dueAt!! > 0)
     }
@@ -367,7 +369,7 @@ class PartyDetailViewModelTest {
         advanceUntilIdle()
 
         assertTrue(vm.uiState.value.notice != null)
-        assertTrue(vm.uiState.value.notes.isEmpty())
+        assertTrue(vm.uiState.value.notesInTimeline.isEmpty())
     }
 
     @Test
@@ -380,7 +382,7 @@ class PartyDetailViewModelTest {
         vm.onEvent(PartyDetailEvent.NoteBodyChanged("Original text"))
         vm.onEvent(PartyDetailEvent.SaveNote)
         advanceUntilIdle()
-        val noteId = vm.uiState.value.notes.single().noteId
+        val noteId = vm.uiState.value.notesInTimeline.single().noteId
 
         vm.onEvent(PartyDetailEvent.EditNoteTapped(noteId))
         advanceUntilIdle()
@@ -388,7 +390,7 @@ class PartyDetailViewModelTest {
         vm.onEvent(PartyDetailEvent.SaveNote)
         advanceUntilIdle()
 
-        val notes = vm.uiState.value.notes
+        val notes = vm.uiState.value.notesInTimeline
         assertEquals(1, notes.size)
         assertEquals(noteId, notes.single().noteId)
         assertEquals("Updated text", notes.single().body)
@@ -407,9 +409,44 @@ class PartyDetailViewModelTest {
         vm.onEvent(PartyDetailEvent.SaveNote)
         advanceUntilIdle()
 
-        val note = vm.uiState.value.notes.single()
+        val note = vm.uiState.value.notesInTimeline.single()
         assertTrue(note.issueId != null)
         assertEquals(1, repository.issuesFor("co-1", party.partyId).size)
+    }
+
+    // ============================== RELATIONSHIP TIMELINE (MVP-1.2-B) ==============================
+
+    @Test
+    fun `a party with no notes shows an empty timeline, not an error`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.timeline.isEmpty())
+        assertNull(vm.uiState.value.error)
+        assertFalse(vm.uiState.value.timelineCanLoadMore)
+    }
+
+    @Test
+    fun `loading more timeline entries appends rather than replaces the page`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+        repeat(25) { i ->
+            repository.addNote("co-1", party.partyId, "Note $i", null, NoteType.General, null, null)
+        }
+        vm.onEvent(PartyDetailEvent.Retry)
+        advanceUntilIdle()
+
+        assertEquals(20, vm.uiState.value.timeline.size)
+        assertTrue(vm.uiState.value.timelineCanLoadMore)
+
+        vm.onEvent(PartyDetailEvent.LoadMoreTimeline)
+        advanceUntilIdle()
+
+        assertEquals(25, vm.uiState.value.timeline.size)
+        assertFalse(vm.uiState.value.timelineCanLoadMore)
+        assertEquals(25, vm.uiState.value.timeline.distinctBy { (it as com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent).note.noteId }.size)
     }
 
     private fun ledger(id: String, amount: String, side: String) = Ledger(
@@ -615,6 +652,17 @@ private class InMemoryPartyRepository : PartyRepository {
     override suspend fun getNotesForParty(companyId: String, partyId: String, page: Int, pageSize: Int): PartyNotePage {
         val items = notes.values.filter { it.companyId == companyId && it.partyId == partyId }.sortedByDescending { it.createdAt }
         return PartyNotePage(items, page, pageSize, items.size)
+    }
+
+    override suspend fun getTimelineForParty(companyId: String, partyId: String, page: Int, pageSize: Int, issueId: String?): TimelineEntryPage {
+        val all = notes.values
+            .filter { it.companyId == companyId && it.partyId == partyId && (issueId == null || it.issueId == issueId) }
+            .sortedByDescending { it.createdAt }
+            .map { TimelineEntry.NoteEvent(it) }
+        val safePage = page.coerceAtLeast(1)
+        val safeSize = pageSize.coerceAtLeast(1)
+        val paged = all.drop((safePage - 1) * safeSize).take(safeSize)
+        return TimelineEntryPage(paged, safePage, safeSize, all.size)
     }
 
     override suspend fun createIssue(companyId: String, partyId: String, title: String): PartyIssue {

@@ -13,6 +13,7 @@ import com.budcom.android.feature.party.domain.model.PartyIssue
 import com.budcom.android.feature.party.domain.model.PartyNote
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.PartySourceType
+import com.budcom.android.feature.party.domain.model.TimelineEntry
 import com.budcom.android.feature.party.domain.model.Tag
 
 internal fun PartyEntity.toDomain(): Party = Party(
@@ -171,6 +172,34 @@ internal fun PartyExportEventEntity.toDomain(): PartyExportEvent = PartyExportEv
     outputFileName = outputFileName,
     fieldNames = fieldNamesCsv.split(",").filter { it.isNotBlank() },
 )
+
+internal fun TimelineRowEntity.toDomain(): TimelineEntry = when (kind) {
+    "export" -> TimelineEntry.ExportEvent(
+        PartyExportEvent(
+            companyId = companyId,
+            exportId = id,
+            partyId = partyId,
+            createdAt = timestamp,
+            outputFileName = outputFileName.orEmpty(),
+            fieldNames = fieldNamesCsv?.split(",")?.filter { it.isNotBlank() }.orEmpty(),
+        ),
+    )
+    else -> TimelineEntry.NoteEvent(
+        PartyNote(
+            companyId = companyId,
+            noteId = id,
+            partyId = partyId,
+            body = body.orEmpty(),
+            linkedVoucherId = linkedVoucherId,
+            createdAt = timestamp,
+            updatedAt = updatedAt,
+            type = (type ?: "general").toNoteType(),
+            dueAt = dueAt,
+            completedAt = completedAt,
+            issueId = issueId,
+        ),
+    )
+}
 
 internal fun TagEntity.toDomain(): Tag = Tag(
     tagId = tagId,
