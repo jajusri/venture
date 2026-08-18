@@ -221,6 +221,62 @@ follow-up aging/decay policy — none of which should be inferred from this mile
 
 ---
 
+### PDL-019 — MVP-1.3 Business Profile: scope, fields, provenance, storage, and boundary
+
+**Date:** 2026-08-18
+**Area:** MVP-1.3 — Business Profile
+**Decision:** Resolves the five open questions `docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`
+§5 flagged as requiring Brainstorm 1, per an explicit ChatGPT/Product Owner review:
+
+1. **Company scoping (§5.1):** Business Profile is scoped **per selected Tally `companyId`** — the
+   same natural-key discipline every other BUDCOM table already uses (`companyId` as the sole
+   isolation boundary, no installation-global profile). "One business identity" means one identity
+   *for the currently selected company*, not one identity for the whole installation. Conceptually:
+   `Selected Tally Company → Business Profile → future Catalogue → future Vartalap`.
+2. **Field list (§5.2):** a deliberately small, useful set — Business/Trading Name, Legal Name,
+   Address, City, State, Pincode, Phone, Email, GSTIN, Website, Logo, Short Business Description.
+   No arbitrary Tally field import; no catalogue/product fields; no social-feed/marketplace fields.
+3. **Provenance (§5.3):** Business Profile is **100% BUDCOM-owned data** for MVP-1.3 — the existing
+   `PartyFieldProvenance` model is explicitly **not** applied. There is no approved Tally round-trip
+   requirement for this milestone; no Connector mutation endpoint, no automatic Tally import. A
+   future Tally-derived-field requirement is a separate architectural decision, not assumed now.
+4. **Asset/logo storage (§5.4):** app-private storage for MVP-1.3, not the existing Private USB
+   Storage mechanism (that remains available for a future decision if proven technically required).
+   Storage sits behind a small abstraction so the mechanism can change later without touching the
+   Business Profile domain model.
+5. **Visitor-facing scope (§5.5):** MVP-1.3 is **owner-side only** — no visitor-facing "Resources"
+   view. Resources/Catalogue/public-facing content is explicitly deferred to MVP-1.4 and later
+   communication work.
+
+**Why:** These were the exact open questions this repository's own MVP-1.3 planning/recovery review
+(`docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`, 2026-08-18) identified as
+requiring a real product decision rather than a Claude judgment call (per PDL-010's own "ChatGPT
+plans architecture" rule) — now answered by explicit ChatGPT/Product Owner review, closing the
+Brainstorm-1 gap that document's §3 named as blocking implementation.
+
+**Alternatives rejected:** an installation-global Business Profile (rejected — breaks the company-
+isolation invariant every other BUDCOM table relies on, and does not match how a user with several
+paired Tally companies would expect distinct businesses to behave); forcing `PartyFieldProvenance`
+onto Business Profile fields (rejected — no evidenced Tally round-trip exists for this milestone,
+and doing so would be unjustified complexity, PDL-012); shipping visitor-facing Resources in 1.3
+(rejected — a materially larger access-control surface than an owner-only editor, better sequenced
+with Catalogue in 1.4); reusing Private USB Storage for the logo (rejected as the MVP-1.3 default —
+no proven technical requirement yet, and app-private storage is simpler and lower-risk for a single
+small image).
+
+**Consequences:** MVP-1.3-A's schema uses `companyId` as (part of) its natural key, mirroring
+`PartyEntity`; no `business_profile_field_provenance` table is built; no Connector/Tally change of
+any kind is in scope; logo storage is app-private, behind an interface; no public/Resources screen,
+route, or data model exists anywhere in MVP-1.3.
+
+**Revisit trigger:** A dedicated future product session that explicitly wants a Tally-derived
+Business Profile field, a visitor-facing Resources view, or a storage-mechanism change — none of
+which should be inferred from MVP-1.3's own code.
+
+**Status:** Locked
+
+---
+
 ## New decision template
 
 ### PDL-XXX — <Title>

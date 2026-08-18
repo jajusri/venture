@@ -9,6 +9,7 @@ import com.budcom.android.feature.masterdata.ledger.data.local.LedgerStatementDa
 import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemDao
 import com.budcom.android.feature.voucher.data.local.VoucherDao
 import com.budcom.android.core.connection.data.local.PairedConnectorDao
+import com.budcom.android.feature.businessprofile.data.local.BusinessProfileDao
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyDao
 import com.budcom.android.feature.party.data.local.PartyExportEventDao
@@ -44,7 +45,7 @@ object DatabaseModule {
         DatabaseConstants.NAME,
     ).addMigrations(
         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-        MIGRATION_8_9,
+        MIGRATION_8_9, MIGRATION_9_10,
     ).build()
 
     @Provides
@@ -94,6 +95,9 @@ object DatabaseModule {
 
     @Provides
     fun providePartyTimelineDao(db: AppDatabase): PartyTimelineDao = db.partyTimelineDao()
+
+    @Provides
+    fun provideBusinessProfileDao(db: AppDatabase): BusinessProfileDao = db.businessProfileDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -345,6 +349,24 @@ object DatabaseModule {
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS `index_party_issues_companyId_partyId_status_createdAt` " +
                     "ON `party_issues` (`companyId`, `partyId`, `status`, `createdAt`)",
+            )
+        }
+    }
+
+    /**
+     * Additive-only (MVP-1.3-A): adds the single `business_profile` table — one BUDCOM-owned row
+     * per Tally company (PDL-019), never a Party-adjacent or provenance-tracked table. No existing
+     * table is touched, dropped, or destructively recreated.
+     */
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `business_profile` (" +
+                    "`companyId` TEXT NOT NULL, `tradingName` TEXT NOT NULL, `legalName` TEXT, " +
+                    "`addressLine1` TEXT, `addressCity` TEXT, `addressState` TEXT, `addressPincode` TEXT, " +
+                    "`phone` TEXT, `phoneNormalized` TEXT, `email` TEXT, `gstin` TEXT, `website` TEXT, " +
+                    "`description` TEXT, `logoAssetPath` TEXT, `createdAt` INTEGER NOT NULL, " +
+                    "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`))",
             )
         }
     }

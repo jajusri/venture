@@ -16,6 +16,8 @@ import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemEntit
 import com.budcom.android.feature.voucher.data.local.*
 import com.budcom.android.core.connection.data.local.PairedConnectorDao
 import com.budcom.android.core.connection.data.local.PairedConnectorEntity
+import com.budcom.android.feature.businessprofile.data.local.BusinessProfileDao
+import com.budcom.android.feature.businessprofile.data.local.BusinessProfileEntity
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyContactPersonEntity
 import com.budcom.android.feature.party.data.local.PartyDao
@@ -58,6 +60,7 @@ import com.budcom.android.feature.party.data.local.TagEntity
         PartyNoteEntity::class,
         PartyExportEventEntity::class,
         PartyIssueEntity::class,
+        BusinessProfileEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -79,4 +82,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun partyExportEventDao(): PartyExportEventDao
     abstract fun partyIssueDao(): PartyIssueDao
     abstract fun partyTimelineDao(): PartyTimelineDao
+    abstract fun businessProfileDao(): BusinessProfileDao
 }
