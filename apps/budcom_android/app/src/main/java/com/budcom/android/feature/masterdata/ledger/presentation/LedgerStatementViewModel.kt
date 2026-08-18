@@ -117,6 +117,14 @@ class LedgerStatementViewModel @Inject constructor(
                     destination = state.sharingPreferences.defaultDestination.toShareDestination(),
                 )
             }
+            is LedgerStatementEvent.ShareLedgerWithMode -> {
+                val state = _uiState.value
+                shareStatement(
+                    period = state.periodSelection,
+                    mode = event.mode,
+                    destination = state.sharingPreferences.defaultDestination.toShareDestination(),
+                )
+            }
             LedgerStatementEvent.PreviewLedgerFast -> {
                 val state = _uiState.value
                 shareStatement(

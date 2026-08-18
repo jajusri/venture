@@ -31,7 +31,20 @@ class LedgerRepositoryImpl @Inject constructor(
     private val authenticatedRemoteDataSource: AuthenticatedLedgerRemoteDataSource,
 ) : LedgerRepository {
 
-    override suspend fun loadLedgers(query: LedgerQuery): AppResult<LedgerPage> =
+    /**
+     * Room-only: reads the local cache immediately and never contacts the Connector — the fast
+     * path used on every normal screen open, search keystroke, and pagination fetch. A company
+     * with no cache at all (never synced) fails honestly with [NO_CACHE_MESSAGE] rather than
+     * silently reaching for the network.
+     */
+    override suspend fun listLedgers(query: LedgerQuery): AppResult<LedgerPage> =
+        withContext(dispatchers.io) {
+            val companyId = selectedCompanyStore.getSelectedCompanyId()
+            val cached = companyId?.takeIf { it.isNotBlank() }?.let { localDataSource.query(it, query) }
+            cached?.let { AppResult.Success(it) } ?: AppResult.Failure(AppError.Message(NO_CACHE_MESSAGE))
+        }
+
+    override suspend fun refreshLedgers(query: LedgerQuery): AppResult<LedgerPage> =
         withContext(dispatchers.io) {
             // Captured once per call, before either transport is chosen or invoked, so a company
             // switch that lands while this request is in flight can never mislabel that request's
@@ -110,6 +123,10 @@ class LedgerRepositoryImpl @Inject constructor(
         }
 
         localDataSource.replaceAll(companyId, collected.distinctById(), freshness)
+    }
+
+    companion object {
+        const val NO_CACHE_MESSAGE = "No offline data available. Connect to BUDCOM Desktop and synchronize once."
     }
 }
 

@@ -31,6 +31,8 @@ import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -150,24 +152,64 @@ fun LedgerStatementScreen(
                         enabled = state.hasContent && !state.isShareBusy,
                         modifier = Modifier.testTag("ledger_statement_preview_button"),
                     ) { Text("Preview") }
-                    // Tap: immediately shares using the remembered default (Settings -> Ledger
-                    // Sharing) with no options screen — the locked ~3-tap fast path. Long-press:
-                    // opens advanced/change options for a one-time override, reusing this same
-                    // icon rather than adding new UI chrome (no separate overflow pattern existed
-                    // on this screen to reuse instead).
+                    // Tap: opens a direct two-option "Share Ledger" menu (Ledger Summary /
+                    // Detailed Ledger) — both are one ordinary tap away, no hidden gesture
+                    // required to reach Detailed. A third "More options" entry reaches the same
+                    // long-press advanced sheet (period/destination override), so every existing
+                    // capability stays reachable without needing the gesture either. Long-press
+                    // is kept as a direct shortcut straight to that advanced sheet for muscle
+                    // memory, but nothing on this screen now depends on it.
+                    var showShareMenu by remember { mutableStateOf(false) }
                     Box(
                         modifier = Modifier
                             .size(48.dp)
                             .combinedClickable(
                                 enabled = state.hasContent && !state.isShareBusy,
-                                onClick = { onEvent(LedgerStatementEvent.ShareLedgerFast) },
+                                onClick = { showShareMenu = true },
                                 onLongClick = { onEvent(LedgerStatementEvent.OpenShareOptions) },
                             )
                             .testTag("ledger_statement_share_button")
-                            .semantics { contentDescription = "Share ledger statement. Long-press for more options." },
+                            .semantics { contentDescription = "Share ledger. Choose Ledger Summary or Detailed Ledger." },
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(Icons.Filled.Share, contentDescription = null)
+                        DropdownMenu(
+                            expanded = showShareMenu,
+                            onDismissRequest = { showShareMenu = false },
+                            modifier = Modifier.testTag("ledger_statement_share_menu"),
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Ledger Summary") },
+                                onClick = {
+                                    showShareMenu = false
+                                    onEvent(LedgerStatementEvent.ShareLedgerWithMode(LedgerStatementMode.Summary))
+                                },
+                                modifier = Modifier
+                                    .testTag("ledger_statement_share_menu_summary")
+                                    .semantics { contentDescription = "Share Ledger Summary" },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Detailed Ledger") },
+                                onClick = {
+                                    showShareMenu = false
+                                    onEvent(LedgerStatementEvent.ShareLedgerWithMode(LedgerStatementMode.Detailed))
+                                },
+                                modifier = Modifier
+                                    .testTag("ledger_statement_share_menu_detailed")
+                                    .semantics { contentDescription = "Share Detailed Ledger" },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("More options…") },
+                                onClick = {
+                                    showShareMenu = false
+                                    onEvent(LedgerStatementEvent.OpenShareOptions)
+                                },
+                                modifier = Modifier
+                                    .testTag("ledger_statement_share_menu_more")
+                                    .semantics { contentDescription = "More sharing options" },
+                            )
+                        }
                     }
                 },
             )

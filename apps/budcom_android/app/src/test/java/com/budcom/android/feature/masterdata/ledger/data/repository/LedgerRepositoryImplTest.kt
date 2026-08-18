@@ -76,7 +76,7 @@ class LedgerRepositoryImplTest {
         )
         val repo = repository(remote = remote, local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.LEGACY))
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Success
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Success
 
         assertEquals(1, result.value.items.size)
         assertEquals(1, local.replaceCount)
@@ -88,7 +88,7 @@ class LedgerRepositoryImplTest {
     fun `offline without cache maps failure`() = runTest(dispatcher) {
         val repo = repository(remote = FakeRemote(ApiResult.Failure(NetworkError.NoConnectivity)))
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Failure
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Failure
         assertTrue(result.error is AppError.Offline)
     }
 
@@ -97,7 +97,7 @@ class LedgerRepositoryImplTest {
         val local = FakeLedgerLocal().apply { stored["co-1"] = mutableListOf(sampleLedger()) }
         val repo = repository(remote = FakeRemote(ApiResult.Failure(NetworkError.NoConnectivity)), local = local)
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Success
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Success
         assertEquals("guid:cash", result.value.items.single().id)
     }
 
@@ -108,7 +108,7 @@ class LedgerRepositoryImplTest {
         remote.setLegacyPageResult(1, ApiResult.Success(LedgerPage(listOf(sampleLedger(id = "guid:new", name = "New")), 1, 50, 100, 2, "t2")))
         val repo = repository(remote = remote, local = local)
 
-        repo.loadLedgers(LedgerQuery())
+        repo.refreshLedgers(LedgerQuery())
 
         assertEquals(0, local.replaceCount)
         assertTrue(local.stored["co-1"]!!.any { it.id == "guid:old" })
@@ -122,7 +122,7 @@ class LedgerRepositoryImplTest {
         // An empty vault resolves LEGACY (proven independently by ConnectorTransportSelectionGateTest).
         val repo = repository(remote = remote, local = local, transportGate = FakeTransportGate(ConnectorTransportSelection.LEGACY))
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Success
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Success
 
         assertEquals(1, result.value.items.size)
         assertEquals(1, remote.callCount)
@@ -140,7 +140,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = authenticated,
         )
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Success
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Success
 
         assertEquals(1, result.value.items.size)
         assertEquals(1, authenticated.callCount)
@@ -176,7 +176,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = authenticated,
         )
 
-        val result = repo.loadLedgers(LedgerQuery())
+        val result = repo.refreshLedgers(LedgerQuery())
 
         // UnreachableRemote (the default `remote`) throws if ever called — reaching a result at
         // all (rather than an exception) is the proof the real gate resolved AUTHENTICATED.
@@ -193,7 +193,7 @@ class LedgerRepositoryImplTest {
         )
 
         // UnreachableRemote (the default `remote`) throws if ever called — reaching here proves it wasn't.
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Failure
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Failure
         assertEquals(localVaultStateError, result.error)
     }
 
@@ -202,8 +202,8 @@ class LedgerRepositoryImplTest {
         val gate = CountingTransportGate(ConnectorTransportSelection.LEGACY)
         val repo = repository(remote = FakeRemote(ApiResult.Success(emptyLegacyPage())), transportGate = gate)
 
-        repo.loadLedgers(LedgerQuery())
-        repo.loadLedgers(LedgerQuery())
+        repo.refreshLedgers(LedgerQuery())
+        repo.refreshLedgers(LedgerQuery())
 
         assertEquals(2, gate.resolveCount)
     }
@@ -215,9 +215,9 @@ class LedgerRepositoryImplTest {
         val authenticated = FakeAuthenticatedRemote(AppResult.Success(emptyLegacyPage()))
         val repo = repository(remote = legacy, transportGate = gate, authenticatedRemote = authenticated)
 
-        repo.loadLedgers(LedgerQuery())
+        repo.refreshLedgers(LedgerQuery())
         gate.selection = ConnectorTransportSelection.AUTHENTICATED
-        repo.loadLedgers(LedgerQuery())
+        repo.refreshLedgers(LedgerQuery())
 
         assertEquals(1, legacy.callCount)
         assertEquals(1, authenticated.callCount)
@@ -247,7 +247,7 @@ class LedgerRepositoryImplTest {
                 authenticatedRemote = authenticated,
             )
 
-            val result = repo.loadLedgers(LedgerQuery())
+            val result = repo.refreshLedgers(LedgerQuery())
 
             assertTrue("expected cache fallback for $error", result is AppResult.Success)
             assertEquals("guid:cached", (result as AppResult.Success).value.items.single().id)
@@ -265,7 +265,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = FakeAuthenticatedRemote(AppResult.Failure(localVaultStateError)),
         )
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Failure
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Failure
 
         assertEquals(localVaultStateError, result.error)
         assertEquals(0, local.replaceCount)
@@ -287,7 +287,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = FakeAuthenticatedRemote(AppResult.Failure(rejection)),
         )
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Failure
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Failure
 
         assertEquals(rejection, result.error)
         assertEquals(401, (result.error as AppError.Remote).httpStatus)
@@ -310,7 +310,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = FakeAuthenticatedRemote(AppResult.Failure(rejection)),
         )
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Failure
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Failure
 
         assertEquals(403, (result.error as AppError.Remote).httpStatus)
         assertEquals(AUTHENTICATED_ACCESS_DENIED_CODE, (result.error as AppError.Remote).code)
@@ -331,7 +331,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = authenticated,
         )
 
-        repo.loadLedgers(LedgerQuery())
+        repo.refreshLedgers(LedgerQuery())
 
         assertTrue(local.stored["co-A"]!!.any { it.id == "guid:a-row" })
         assertEquals(listOf("guid:b-row"), local.stored["co-B"]!!.map { it.id })
@@ -350,7 +350,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = authenticated,
         )
 
-        repo.loadLedgers(LedgerQuery())
+        repo.refreshLedgers(LedgerQuery())
 
         assertEquals("co-A", local.stored.keys.single())
         assertTrue(local.stored["co-A"]!!.any { it.id == "guid:a-row" })
@@ -367,7 +367,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = FakeAuthenticatedRemote(AppResult.Failure(AppError.Offline())),
         )
 
-        repo.loadLedgers(LedgerQuery())
+        repo.refreshLedgers(LedgerQuery())
 
         assertEquals(listOf("guid:b-row"), local.stored["co-B"]!!.map { it.id })
     }
@@ -383,7 +383,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = authenticated,
         )
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Success
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Success
 
         assertEquals(1, result.value.items.size)
         assertEquals(0, local.replaceCount)
@@ -399,7 +399,7 @@ class LedgerRepositoryImplTest {
             authenticatedRemote = FakeAuthenticatedRemote(AppResult.Failure(AppError.Offline())),
         )
 
-        val result = repo.loadLedgers(LedgerQuery()) as AppResult.Failure
+        val result = repo.refreshLedgers(LedgerQuery()) as AppResult.Failure
         assertTrue(result.error is AppError.Offline)
     }
 
@@ -418,6 +418,50 @@ class LedgerRepositoryImplTest {
         assertEquals(0, legacyCalls[0])
         assertEquals(0, authenticatedCalls[0])
         assertEquals("guid:cash", page!!.items.single().id)
+    }
+
+    // ============================== listLedgers (Room-only, cache-first) ==============================
+
+    @Test
+    fun `listLedgers returns the cached page without calling either remote transport`() = runTest(dispatcher) {
+        val local = FakeLedgerLocal().apply { stored["co-1"] = mutableListOf(sampleLedger()) }
+        // Both remote sources default to Unreachable* — reaching a Success at all is the proof
+        // that listLedgers never touched either transport.
+        val repo = repository(local = local)
+
+        val result = repo.listLedgers(LedgerQuery()) as AppResult.Success
+
+        assertEquals("guid:cash", result.value.items.single().id)
+    }
+
+    @Test
+    fun `listLedgers fails honestly when the company has never been synced, without calling the network`() = runTest(dispatcher) {
+        val repo = repository(local = FakeLedgerLocal())
+
+        val result = repo.listLedgers(LedgerQuery()) as AppResult.Failure
+
+        assertEquals(LedgerRepositoryImpl.NO_CACHE_MESSAGE, (result.error as AppError.Message).message)
+    }
+
+    @Test
+    fun `listLedgers with a blank selected company fails without an unsafe cache lookup`() = runTest(dispatcher) {
+        val repo = repository(local = FakeLedgerLocal(), store = FakeSelectedCompanyStore(null))
+
+        val result = repo.listLedgers(LedgerQuery())
+
+        assertTrue(result is AppResult.Failure)
+    }
+
+    @Test
+    fun `listLedgers respects the caller's search text against the cache exactly like a refresh would`() = runTest(dispatcher) {
+        val local = FakeLedgerLocal().apply {
+            stored["co-1"] = mutableListOf(sampleLedger(id = "guid:cash", name = "Cash"), sampleLedger(id = "guid:bank", name = "Bank"))
+        }
+        val repo = repository(local = local)
+
+        val result = repo.listLedgers(LedgerQuery(text = "cas")) as AppResult.Success
+
+        assertEquals("guid:cash", result.value.items.single().id)
     }
 }
 

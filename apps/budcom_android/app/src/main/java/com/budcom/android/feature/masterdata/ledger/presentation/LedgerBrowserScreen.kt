@@ -112,6 +112,14 @@ fun LedgerBrowserScreen(
                 if (!state.isOnline) {
                     MasterDataOfflineBanner(testTag = "ledger_offline_banner")
                 }
+                if (state.hasContent) {
+                    Text(
+                        text = "Data last synced: ${state.dataFreshnessAt ?: "unknown"}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("ledger_data_freshness"),
+                    )
+                }
 
                 OutlinedTextField(
                     value = state.searchQuery,

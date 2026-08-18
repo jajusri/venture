@@ -65,6 +65,31 @@ class LedgerBrowserViewModelTest {
         assertEquals("Cash", vm.uiState.value.ledgers[0].primaryLabel)
     }
 
+    /**
+     * The actual offline-performance bottleneck this task fixed: opening the Ledger Browser
+     * (init/Load), searching, retrying, and paginating must never depend on a live Connector/
+     * Tally round trip when the company already has a local cache — only an explicit pull-to-
+     * refresh may. Before the fix, `LoadLedgersUseCase` and `RefreshLedgersUseCase` both
+     * delegated to the exact same network-first repository method.
+     */
+    @Test
+    fun `Load, search, retry, and pagination never touch the network path — only explicit Refresh does`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        assertEquals(1, repository.listCalls)
+        assertEquals(0, repository.refreshCalls)
+
+        vm.onEvent(LedgerBrowserEvent.SearchChanged("cash"))
+        advanceUntilIdle()
+        vm.onEvent(LedgerBrowserEvent.Retry)
+        advanceUntilIdle()
+        assertEquals(0, repository.refreshCalls)
+
+        vm.onEvent(LedgerBrowserEvent.Refresh)
+        advanceUntilIdle()
+        assertEquals(1, repository.refreshCalls)
+    }
+
     @Test
     fun `empty result`() = runTest(dispatcher) {
         repository.result = AppResult.Success(
@@ -186,8 +211,19 @@ private class FakeLedgerRepository : LedgerRepository {
         ),
     )
     var lastQuery: LedgerQuery? = null
+    var listCalls = 0
+        private set
+    var refreshCalls = 0
+        private set
 
-    override suspend fun loadLedgers(query: LedgerQuery): AppResult<LedgerPage> {
+    override suspend fun listLedgers(query: LedgerQuery): AppResult<LedgerPage> {
+        listCalls += 1
+        lastQuery = query
+        return result
+    }
+
+    override suspend fun refreshLedgers(query: LedgerQuery): AppResult<LedgerPage> {
+        refreshCalls += 1
         lastQuery = query
         return result
     }

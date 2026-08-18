@@ -1,9 +1,11 @@
 package com.budcom.android.feature.masterdata.ledger.presentation
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.ui.theme.BudcomTheme
@@ -76,6 +78,37 @@ class LedgerBrowserScreenTest {
         }
         composeRule.onNodeWithTag("ledger_retry").performClick()
         assertTrue(retried)
+    }
+
+    @Test
+    fun freshnessLabelShowsWhenContentIsPresent() {
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerBrowserScreen(
+                    state = LedgerBrowserUiState(
+                        isInitialLoading = false,
+                        ledgers = listOf(LedgerRowUi("guid:cash", "Cash", null, "Active", null)),
+                        dataFreshnessAt = "2026-08-18T09:00:00Z",
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("ledger_data_freshness").assertIsDisplayed()
+        composeRule.onNodeWithText("Data last synced: 2026-08-18T09:00:00Z").assertIsDisplayed()
+    }
+
+    @Test
+    fun freshnessLabelIsAbsentWithoutContent() {
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerBrowserScreen(
+                    state = LedgerBrowserUiState(isInitialLoading = false),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("ledger_data_freshness").assertDoesNotExist()
     }
 
     @Test

@@ -317,6 +317,60 @@ class LedgerStatementViewModelTest {
     }
 
     @Test
+    fun `ShareLedgerWithMode Detailed shares in Detailed mode using the remembered default destination, with no options screen shown`() = runTest(dispatcher) {
+        sharingPreferencesStore = FakeLedgerSharingPreferencesStore(
+            LedgerSharingPreferences(defaultDestination = LedgerShareDefaultDestination.WhatsAppSelect),
+        )
+        val movement = LedgerMovementRow("v1", "2026-08-10", "Sales", "v-1", null, 1, "100", "dr")
+        movementDao.lastSales = listOf(movement)
+        movementDao.movements = listOf(movement)
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.whatsAppIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.shareEffects.test {
+            vm.onEvent(LedgerStatementEvent.ShareLedgerWithMode(LedgerStatementMode.Detailed))
+            advanceUntilIdle()
+            assertTrue(awaitItem() is LedgerStatementShareEffect.LaunchShare)
+        }
+        assertEquals("Detailed mode must batch-query inventory lines once", 1, movementDao.inventoryQueryCalls)
+        assertFalse("tapping a share-mode choice must never open the advanced options sheet", vm.uiState.value.showShareOptions)
+    }
+
+    @Test
+    fun `ShareLedgerWithMode Summary shares in Summary mode without querying inventory lines`() = runTest(dispatcher) {
+        val movement = LedgerMovementRow("v1", "2026-08-10", "Sales", "v-1", null, 1, "100", "dr")
+        movementDao.lastSales = listOf(movement)
+        movementDao.movements = listOf(movement)
+        val vm = createVm()
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        shareCoordinator.shareIntentResult = LedgerStatementShareResult.Success(Intent())
+        vm.onEvent(LedgerStatementEvent.ShareLedgerWithMode(LedgerStatementMode.Summary))
+        advanceUntilIdle()
+        assertEquals(0, movementDao.inventoryQueryCalls)
+    }
+
+    @Test
+    fun `ShareLedgerWithMode uses the currently displayed period, not a stale one`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(LedgerStatementEvent.PeriodSelected(LedgerPeriodSelection.PreviousFinancialYear))
+        advanceUntilIdle()
+        shareCoordinator.prepareResult = LedgerStatementShareResult.Success(
+            PreparedLedgerStatementPdf("content://x", "/cache/x.pdf", "x.pdf"),
+        )
+        vm.onEvent(LedgerStatementEvent.ShareLedgerWithMode(LedgerStatementMode.Detailed))
+        advanceUntilIdle()
+        assertEquals("2025-04-01", shareCoordinator.lastPreparedStatement?.period?.from)
+        assertEquals("2026-03-31", shareCoordinator.lastPreparedStatement?.period?.to)
+    }
+
+    @Test
     fun `AdvancedShare overrides period, mode, and destination for exactly one share without persisting a new default`() = runTest(dispatcher) {
         movementDao.movements = listOf(LedgerMovementRow("v1", "2026-08-05", "Sales", "v-1", null, 1, "100", "dr"))
         val vm = createVm()

@@ -85,8 +85,17 @@ sealed interface LedgerStatementEvent {
      * blank id here means the row itself is malformed, never a legitimate deep link to reject. */
     data class TransactionTapped(val voucherId: String) : LedgerStatementEvent
     /** Normal Share Ledger tap — uses [LedgerStatementUiState.sharingPreferences] and the
-     * currently displayed period immediately, with no options screen. */
+     * currently displayed period immediately, with no options screen. Retained for the
+     * remembered-default fast path (e.g. a future one-tap re-share); the visible Share Ledger
+     * button itself now routes through [ShareLedgerWithMode] so Summary/Detailed are always an
+     * explicit, visible choice rather than an implicit remembered default. */
     data object ShareLedgerFast : LedgerStatementEvent
+    /** Tap on Share Ledger — shares immediately using the currently displayed period and the
+     * remembered default destination (Settings -> Ledger Sharing), with [mode] chosen directly
+     * from the two-option "Share Ledger" menu (Ledger Summary / Detailed Ledger) rather than a
+     * hidden long-press. Reuses the exact same [shareStatement] path as [ShareLedgerFast]/
+     * [AdvancedShare] — no separate PDF-generation or sharing machinery. */
+    data class ShareLedgerWithMode(val mode: LedgerStatementMode) : LedgerStatementEvent
     /** Direct one-tap Preview entry point (parity with Voucher's "View invoice PDF") — generates
      * the statement PDF for the currently displayed period/mode and opens it in the shared in-app
      * preview, without going through the long-press Advanced Options sheet. */

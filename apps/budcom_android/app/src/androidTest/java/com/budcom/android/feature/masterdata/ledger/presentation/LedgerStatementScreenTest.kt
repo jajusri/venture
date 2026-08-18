@@ -5,12 +5,15 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import com.budcom.android.core.pdf.PdfPageRenderer
 import com.budcom.android.core.pdf.PdfPreviewDocument
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.ui.theme.BudcomTheme
 import org.junit.Assert.assertEquals
@@ -188,6 +191,96 @@ class LedgerStatementScreenTest {
         composeRule.onNodeWithTag("pdf_preview_screen").assertIsDisplayed()
         composeRule.onNodeWithTag("pdf_preview_back").performClick()
         assertTrue(dismissed)
+    }
+
+    @Test
+    fun tappingShareButtonOpensTwoOptionMenuWithoutAnyLongPress() {
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerStatementScreen(
+                    state = LedgerStatementUiState(isInitialLoading = false, content = sampleContent()),
+                    onEvent = {},
+                    onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("ledger_statement_share_button").performClick()
+        composeRule.onNodeWithTag("ledger_statement_share_menu_summary").assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger_statement_share_menu_detailed").assertIsDisplayed()
+    }
+
+    @Test
+    fun tappingLedgerSummaryInTheShareMenuEmitsShareLedgerWithModeSummary() {
+        var emitted: LedgerStatementEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerStatementScreen(
+                    state = LedgerStatementUiState(isInitialLoading = false, content = sampleContent()),
+                    onEvent = { emitted = it },
+                    onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("ledger_statement_share_button").performClick()
+        composeRule.onNodeWithTag("ledger_statement_share_menu_summary").performClick()
+        assertEquals(LedgerStatementEvent.ShareLedgerWithMode(LedgerStatementMode.Summary), emitted)
+    }
+
+    @Test
+    fun tappingDetailedLedgerInTheShareMenuEmitsShareLedgerWithModeDetailed() {
+        var emitted: LedgerStatementEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerStatementScreen(
+                    state = LedgerStatementUiState(isInitialLoading = false, content = sampleContent()),
+                    onEvent = { emitted = it },
+                    onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("ledger_statement_share_button").performClick()
+        composeRule.onNodeWithTag("ledger_statement_share_menu_detailed").performClick()
+        assertEquals(LedgerStatementEvent.ShareLedgerWithMode(LedgerStatementMode.Detailed), emitted)
+    }
+
+    @Test
+    fun tappingMoreOptionsInTheShareMenuOpensTheAdvancedOptionsSheet() {
+        var emitted: LedgerStatementEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerStatementScreen(
+                    state = LedgerStatementUiState(isInitialLoading = false, content = sampleContent()),
+                    onEvent = { emitted = it },
+                    onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("ledger_statement_share_button").performClick()
+        composeRule.onNodeWithTag("ledger_statement_share_menu_more").performClick()
+        assertEquals(LedgerStatementEvent.OpenShareOptions, emitted)
+    }
+
+    @Test
+    fun longPressOnShareButtonStillOpensAdvancedOptionsDirectly() {
+        // Preserved as a shortcut for muscle memory, but no longer required for anything —
+        // Summary/Detailed are already reachable through a normal tap (see the menu tests above).
+        var emitted: LedgerStatementEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                LedgerStatementScreen(
+                    state = LedgerStatementUiState(isInitialLoading = false, content = sampleContent()),
+                    onEvent = { emitted = it },
+                    onBack = {},
+                    pdfPageRenderer = fakePdfPageRenderer,
+                )
+            }
+        }
+        composeRule.onNodeWithTag("ledger_statement_share_button").performTouchInput { longClick() }
+        assertEquals(LedgerStatementEvent.OpenShareOptions, emitted)
     }
 
     @Test
