@@ -209,6 +209,9 @@
     <string name="business_profile_save_action">Save</string>
     <string name="business_profile_saving">Saving…</string>
     <string name="business_profile_cancel_action">Cancel</string>
+    <string name="business_profile_add_logo_action">Add Logo</string>
+    <string name="business_profile_replace_logo_action">Replace Logo</string>
+    <string name="business_profile_remove_logo_action">Remove Logo</string>
     <string name="business_profile_field_trading_name">Business / Trading Name</string>
     <string name="business_profile_field_legal_name">Legal Name</string>
     <string name="business_profile_field_address">Address</string>

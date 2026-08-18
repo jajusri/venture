@@ -1,16 +1,29 @@
 package com.budcom.android.feature.businessprofile.presentation
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -19,10 +32,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -30,12 +52,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budcom.android.R
 import com.budcom.android.feature.masterdata.presentation.MasterDataErrorBlock
 import com.budcom.android.feature.masterdata.presentation.MasterDataLoadingIndicator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable
 fun BusinessProfileRoute(
     viewModel: BusinessProfileViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val pickLogoLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) viewModel.onEvent(BusinessProfileEvent.LogoPicked(uri))
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                BusinessProfileEffect.RequestLogoPick ->
+                    pickLogoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+        }
+    }
     BusinessProfileScreen(state = state, onEvent = viewModel::onEvent)
 }
 
@@ -131,6 +167,7 @@ private fun BusinessProfileViewContent(state: BusinessProfileUiState, onEvent: (
             .testTag("business_profile_view"),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        BusinessProfileLogo(logoFile = state.logoFile, modifier = Modifier.testTag("business_profile_logo"))
         Text(
             text = form.tradingName,
             style = MaterialTheme.typography.headlineSmall,
@@ -175,6 +212,44 @@ private fun BusinessProfileViewContent(state: BusinessProfileUiState, onEvent: (
     }
 }
 
+/**
+ * Decodes [logoFile] off the main thread (`BitmapFactory.decodeFile`, the same pattern already
+ * established by `PdfPreviewScreen`'s page rendering — no Coil/Glide dependency exists in this
+ * codebase, and adding one for a single small logo image is disproportionate). A missing or
+ * corrupt file (`decodeFile` returns `null`, never throws) falls back to a plain placeholder icon —
+ * never a crash, never a blank gap.
+ */
+@Composable
+private fun BusinessProfileLogo(logoFile: File?, modifier: Modifier = Modifier) {
+    var bitmap by remember(logoFile) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(logoFile) {
+        bitmap = logoFile?.let { file -> withContext(Dispatchers.IO) { BitmapFactory.decodeFile(file.absolutePath) } }
+    }
+    val current = bitmap
+    Box(
+        modifier = modifier
+            .size(72.dp)
+            .clip(CircleShape)
+            .semantics { contentDescription = "Business logo" },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (current != null) {
+            Image(
+                bitmap = current.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.AccountCircle,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @Composable
 private fun ProfileViewRow(label: String, value: String, testTag: String) {
     Column {
@@ -194,6 +269,28 @@ private fun BusinessProfileEditForm(state: BusinessProfileUiState, onEvent: (Bus
             .testTag("business_profile_edit_form"),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        BusinessProfileLogo(logoFile = state.logoFile, modifier = Modifier.testTag("business_profile_logo"))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { onEvent(BusinessProfileEvent.ChangeLogoTapped) },
+                enabled = !state.isUpdatingLogo,
+                modifier = Modifier.testTag("business_profile_change_logo"),
+            ) {
+                Text(stringResource(if (state.logoFile != null) R.string.business_profile_replace_logo_action else R.string.business_profile_add_logo_action))
+            }
+            if (state.logoFile != null) {
+                OutlinedButton(
+                    onClick = { onEvent(BusinessProfileEvent.ClearLogoTapped) },
+                    enabled = !state.isUpdatingLogo,
+                    modifier = Modifier.testTag("business_profile_remove_logo"),
+                ) {
+                    Text(stringResource(R.string.business_profile_remove_logo_action))
+                }
+            }
+            if (state.isUpdatingLogo) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp).testTag("business_profile_logo_busy"))
+            }
+        }
         ProfileTextField(
             value = form.tradingName,
             onValueChange = { onEvent(BusinessProfileEvent.TradingNameChanged(it)) },

@@ -1,17 +1,26 @@
 package com.budcom.android.feature.businessprofile.presentation
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.feature.businessprofile.domain.model.BusinessProfile
 import com.budcom.android.feature.businessprofile.domain.model.BusinessProfileDraft
+import com.budcom.android.feature.businessprofile.domain.usecase.ClearBusinessProfileLogoUseCase
 import com.budcom.android.feature.businessprofile.domain.usecase.GetBusinessProfileUseCase
+import com.budcom.android.feature.businessprofile.domain.usecase.ResolveBusinessProfileLogoFileUseCase
 import com.budcom.android.feature.businessprofile.domain.usecase.SaveBusinessProfileUseCase
+import com.budcom.android.feature.businessprofile.domain.usecase.UpdateBusinessProfileLogoUseCase
+import com.budcom.android.feature.businessprofile.storage.BusinessProfileLogoFailureReason
+import com.budcom.android.feature.businessprofile.storage.BusinessProfileLogoResult
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
@@ -31,11 +40,17 @@ import javax.inject.Inject
 class BusinessProfileViewModel @Inject constructor(
     private val getBusinessProfile: GetBusinessProfileUseCase,
     private val saveBusinessProfile: SaveBusinessProfileUseCase,
+    private val updateBusinessProfileLogo: UpdateBusinessProfileLogoUseCase,
+    private val clearBusinessProfileLogo: ClearBusinessProfileLogoUseCase,
+    private val resolveBusinessProfileLogoFile: ResolveBusinessProfileLogoFileUseCase,
     private val companySession: CompanySessionPort,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BusinessProfileUiState())
     val uiState: StateFlow<BusinessProfileUiState> = _uiState.asStateFlow()
+
+    private val _effects = MutableSharedFlow<BusinessProfileEffect>(extraBufferCapacity = 1)
+    val effects: SharedFlow<BusinessProfileEffect> = _effects.asSharedFlow()
 
     private var loadJob: Job? = null
 
@@ -77,11 +92,26 @@ class BusinessProfileViewModel @Inject constructor(
             is BusinessProfileEvent.DescriptionChanged -> updateForm { copy(description = event.value) }
             BusinessProfileEvent.SaveTapped -> save()
             BusinessProfileEvent.DismissNotice -> _uiState.update { it.copy(notice = null) }
+            BusinessProfileEvent.ChangeLogoTapped -> _effects.tryEmit(BusinessProfileEffect.RequestLogoPick)
+            is BusinessProfileEvent.LogoPicked -> updateLogo(event.uri)
+            BusinessProfileEvent.ClearLogoTapped -> clearLogo()
         }
     }
 
     private inline fun updateForm(crossinline transform: BusinessProfileFormState.() -> BusinessProfileFormState) {
         _uiState.update { it.copy(form = it.form.transform()) }
+    }
+
+    /** Applies [transform] only if the state is still showing [requestedCompanyId] — a no-op
+     * otherwise. Guards every async save/logo operation below: without this, a company switch that
+     * completes *while* a save or logo update for the previous company is still in flight would let
+     * that stale result silently overwrite the newly-loaded company's state once it finally
+     * resolves, mixing data across companies. `load()`'s own `loadJob` cancellation prevents the
+     * analogous problem for reads; this is the equivalent guard for writes, which are not cancelled
+     * mid-flight (a half-written save should still complete on disk, it just must not clobber the
+     * UI of whichever company is now showing). */
+    private inline fun updateIfStillOnCompany(requestedCompanyId: String, crossinline transform: BusinessProfileUiState.() -> BusinessProfileUiState) {
+        _uiState.update { if (it.companyId == requestedCompanyId) it.transform() else it }
     }
 
     private fun load(companyId: String) {
@@ -90,6 +120,7 @@ class BusinessProfileViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             runCatching { getBusinessProfile(companyId) }
                 .onSuccess { profile ->
+                    val logoFile = resolveBusinessProfileLogoFile(profile?.logoAssetPath)
                     _uiState.update { state ->
                         if (profile != null) {
                             val loaded = profile.toFormState()
@@ -98,6 +129,7 @@ class BusinessProfileViewModel @Inject constructor(
                                 hasSavedProfile = true,
                                 isEditing = false,
                                 logoAssetPath = profile.logoAssetPath,
+                                logoFile = logoFile,
                                 form = loaded,
                                 savedForm = loaded,
                             )
@@ -107,6 +139,7 @@ class BusinessProfileViewModel @Inject constructor(
                                 hasSavedProfile = false,
                                 isEditing = false,
                                 logoAssetPath = null,
+                                logoFile = null,
                                 form = BusinessProfileFormState(),
                                 savedForm = BusinessProfileFormState(),
                             )
@@ -146,9 +179,9 @@ class BusinessProfileViewModel @Inject constructor(
             _uiState.update { it.copy(isSaving = true, error = null) }
             runCatching { saveBusinessProfile(companyId, draft) }
                 .onSuccess { profile ->
-                    _uiState.update {
-                        val saved = profile.toFormState()
-                        it.copy(
+                    val saved = profile.toFormState()
+                    updateIfStillOnCompany(companyId) {
+                        copy(
                             isSaving = false,
                             isEditing = false,
                             hasSavedProfile = true,
@@ -160,12 +193,57 @@ class BusinessProfileViewModel @Inject constructor(
                     }
                 }
                 .onFailure { throwable ->
-                    _uiState.update {
-                        it.copy(isSaving = false, notice = throwable.message ?: "Could not save the Business Profile. Please try again.")
+                    updateIfStillOnCompany(companyId) {
+                        copy(isSaving = false, notice = throwable.message ?: "Could not save the Business Profile. Please try again.")
                     }
                 }
         }
     }
+
+    private fun updateLogo(uri: Uri) {
+        val companyId = _uiState.value.companyId ?: return
+        viewModelScope.launch {
+            updateIfStillOnCompany(companyId) { copy(isUpdatingLogo = true) }
+            val result = runCatching { updateBusinessProfileLogo(companyId, uri) }.getOrNull()
+            when (result) {
+                null -> updateIfStillOnCompany(companyId) {
+                    copy(isUpdatingLogo = false, notice = "Save the Business Profile before adding a logo.")
+                }
+                is BusinessProfileLogoResult.Success -> {
+                    val logoFile = resolveBusinessProfileLogoFile(result.logoAssetPath)
+                    updateIfStillOnCompany(companyId) {
+                        copy(
+                            isUpdatingLogo = false,
+                            logoAssetPath = result.logoAssetPath,
+                            logoFile = logoFile,
+                            notice = "Logo updated.",
+                        )
+                    }
+                }
+                is BusinessProfileLogoResult.Failure -> updateIfStillOnCompany(companyId) {
+                    copy(isUpdatingLogo = false, notice = result.reason.toUserMessage())
+                }
+            }
+        }
+    }
+
+    private fun clearLogo() {
+        val companyId = _uiState.value.companyId ?: return
+        viewModelScope.launch {
+            updateIfStillOnCompany(companyId) { copy(isUpdatingLogo = true) }
+            runCatching { clearBusinessProfileLogo(companyId) }
+            updateIfStillOnCompany(companyId) {
+                copy(isUpdatingLogo = false, logoAssetPath = null, logoFile = null, notice = "Logo removed.")
+            }
+        }
+    }
+}
+
+private fun BusinessProfileLogoFailureReason.toUserMessage(): String = when (this) {
+    BusinessProfileLogoFailureReason.UnsupportedFileType -> "Please choose a JPG, PNG, or WEBP image."
+    BusinessProfileLogoFailureReason.FileTooLarge -> "That image is too large (max 5 MB)."
+    BusinessProfileLogoFailureReason.UnreadableSource -> "Could not read the selected image. Please try again."
+    BusinessProfileLogoFailureReason.StorageError -> "Could not save the logo. Please try again."
 }
 
 private fun BusinessProfile.toFormState(): BusinessProfileFormState = BusinessProfileFormState(

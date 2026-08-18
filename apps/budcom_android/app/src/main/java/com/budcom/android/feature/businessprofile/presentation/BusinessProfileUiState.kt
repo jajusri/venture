@@ -1,6 +1,8 @@
 package com.budcom.android.feature.businessprofile.presentation
 
+import android.net.Uri
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
+import java.io.File
 
 /**
  * MVP-1.3-A Business Profile screen state. A single inline view/edit toggle over one whole-entity
@@ -19,6 +21,11 @@ data class BusinessProfileUiState(
     val hasSavedProfile: Boolean = false,
     val isEditing: Boolean = false,
     val logoAssetPath: String? = null,
+    /** Resolved, path-traversal-re-validated file for [logoAssetPath] — `null` whenever there is
+     * no logo, or the stored path fails to resolve (missing/corrupt/tampered). Display code should
+     * decode this, never the raw [logoAssetPath] string directly. */
+    val logoFile: File? = null,
+    val isUpdatingLogo: Boolean = false,
     /** The live, possibly-unsaved form the user is editing. */
     val form: BusinessProfileFormState = BusinessProfileFormState(),
     /** The last value actually persisted (or blank if never saved) — distinct from [form] so
@@ -63,4 +70,17 @@ sealed interface BusinessProfileEvent {
     data class DescriptionChanged(val value: String) : BusinessProfileEvent
     data object SaveTapped : BusinessProfileEvent
     data object DismissNotice : BusinessProfileEvent
+    /** Requests the system photo picker be launched — handled by [BusinessProfileRoute], which owns
+     * the `ActivityResultLauncher` (a ViewModel cannot launch one directly). */
+    data object ChangeLogoTapped : BusinessProfileEvent
+    data class LogoPicked(val uri: Uri) : BusinessProfileEvent
+    data object ClearLogoTapped : BusinessProfileEvent
+}
+
+/** One-shot, non-state UI effects — mirrors
+ * [com.budcom.android.feature.connect.presentation.PartyXmlExportViewModel]'s own
+ * `MutableSharedFlow<Effect>(extraBufferCapacity = 1)` pattern for the identical reason: launching
+ * an `ActivityResultLauncher` is an Activity-scoped action a ViewModel cannot perform directly. */
+sealed interface BusinessProfileEffect {
+    data object RequestLogoPick : BusinessProfileEffect
 }
