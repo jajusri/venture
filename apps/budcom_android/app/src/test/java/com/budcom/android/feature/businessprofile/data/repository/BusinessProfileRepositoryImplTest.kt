@@ -125,6 +125,16 @@ class BusinessProfileRepositoryImplTest {
         assertTrue(logoStore.deletedFor.contains("co-a"))
     }
 
+    @Test
+    fun `resolveLogoFile delegates to the logo store and returns null for a blank path`() = runTest(dispatcher) {
+        val repo = repository()
+        val resolved = File("/files/business_profile_logos/co-a.png")
+        logoStore.resolvedFile = resolved
+
+        assertEquals(resolved, repo.resolveLogoFile("/files/business_profile_logos/co-a.png"))
+        assertNull(repo.resolveLogoFile(null))
+    }
+
     // ============================== COMPANY ISOLATION ==============================
 
     @Test
@@ -159,11 +169,12 @@ private class FakeBusinessProfileDao : BusinessProfileDao {
 
 private class FakeBusinessProfileLogoStore : BusinessProfileLogoStore {
     var nextResult: BusinessProfileLogoResult = BusinessProfileLogoResult.Success("/files/default.png")
+    var resolvedFile: File? = null
     val deletedFor = mutableListOf<String>()
 
     override suspend fun saveLogo(companyId: String, sourceUri: Uri): BusinessProfileLogoResult = nextResult
 
-    override fun resolveLogoFile(logoAssetPath: String?): File? = null
+    override fun resolveLogoFile(logoAssetPath: String?): File? = if (logoAssetPath == null) null else resolvedFile
 
     override suspend fun deleteLogo(companyId: String) {
         deletedFor += companyId

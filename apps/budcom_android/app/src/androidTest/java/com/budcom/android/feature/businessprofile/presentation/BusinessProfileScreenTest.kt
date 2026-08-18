@@ -1,18 +1,22 @@
 package com.budcom.android.feature.businessprofile.presentation
 
+import android.graphics.Bitmap
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.test.platform.app.InstrumentationRegistry
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.ui.theme.BudcomTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import java.io.File
 
 class BusinessProfileScreenTest {
     @get:Rule
@@ -150,5 +154,83 @@ class BusinessProfileScreenTest {
         composeRule.onNodeWithTag("business_profile_notice_message").assertIsDisplayed()
         composeRule.onNodeWithTag("business_profile_notice_dismiss").performClick()
         assertEquals(BusinessProfileEvent.DismissNotice, lastEvent)
+    }
+
+    // ============================== LOGO (MVP-1.3-B) ==============================
+
+    @Test
+    fun editModeWithNoLogoShowsOnlyAddLogoAndEmitsChangeLogoTapped() {
+        var lastEvent: BusinessProfileEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                BusinessProfileScreen(
+                    state = BusinessProfileUiState(isLoading = false, hasSavedProfile = true, isEditing = true, logoFile = null),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("business_profile_logo").assertIsDisplayed()
+        composeRule.onNodeWithTag("business_profile_change_logo").assertIsDisplayed().performClick()
+        assertEquals(BusinessProfileEvent.ChangeLogoTapped, lastEvent)
+        assertEquals(0, composeRule.onAllNodesForTag("business_profile_remove_logo").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun editModeWithAnExistingLogoShowsReplaceAndRemoveAndRendersTheImage() {
+        val logoFile = writeTinyPngFixture()
+        var lastEvent: BusinessProfileEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                BusinessProfileScreen(
+                    state = BusinessProfileUiState(isLoading = false, hasSavedProfile = true, isEditing = true, logoFile = logoFile),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("business_profile_logo").assertIsDisplayed()
+        composeRule.onNodeWithTag("business_profile_remove_logo").assertIsDisplayed().performClick()
+        assertEquals(BusinessProfileEvent.ClearLogoTapped, lastEvent)
+    }
+
+    @Test
+    fun logoBusyIndicatorShowsWhileUpdatingAndDisablesTheChangeButton() {
+        composeRule.setContent {
+            BudcomTheme {
+                BusinessProfileScreen(
+                    state = BusinessProfileUiState(isLoading = false, hasSavedProfile = true, isEditing = true, isUpdatingLogo = true),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("business_profile_logo_busy").assertIsDisplayed()
+        composeRule.onNodeWithTag("business_profile_change_logo").assertIsNotEnabled()
+    }
+
+    @Test
+    fun viewModeShowsTheLogoAboveTheTradingName() {
+        val logoFile = writeTinyPngFixture()
+        composeRule.setContent {
+            BudcomTheme {
+                BusinessProfileScreen(
+                    state = BusinessProfileUiState(
+                        isLoading = false,
+                        hasSavedProfile = true,
+                        form = BusinessProfileFormState(tradingName = "Acme Traders"),
+                        logoFile = logoFile,
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("business_profile_logo").assertIsDisplayed()
+        composeRule.onNodeWithTag("business_profile_trading_name_value").assertIsDisplayed()
+    }
+
+    private fun writeTinyPngFixture(): File {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = File(context.cacheDir, "business_profile_screen_test_logo_${System.nanoTime()}.png")
+        val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+        file.outputStream().use { out -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, out) }
+        return file
     }
 }
