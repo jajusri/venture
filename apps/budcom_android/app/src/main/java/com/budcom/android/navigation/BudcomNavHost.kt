@@ -21,6 +21,7 @@ import com.budcom.android.feature.connect.presentation.PartyXmlExportViewModel
 import com.budcom.android.feature.connect.presentation.ProspectCreateRoute
 import com.budcom.android.feature.dashboard.presentation.DashboardRoute
 import com.budcom.android.feature.diagnostics.presentation.DiagnosticsRoute
+import com.budcom.android.feature.dincharya.presentation.DincharyaRoute
 import com.budcom.android.feature.discovery.presentation.ConnectorDiscoveryRoute
 import com.budcom.android.feature.masterdata.ledger.presentation.LedgerBrowserRoute
 import com.budcom.android.feature.masterdata.ledger.presentation.LedgerStatementRoute
@@ -94,6 +95,7 @@ fun BudcomNavHost(
                 onOpenVouchers = { navController.navigate(Routes.vouchers()) },
                 onOpenLedgers = { navController.navigate(Routes.ledgers()) },
                 onOpenConnect = { navController.navigate(Routes.connect()) },
+                onOpenDincharya = { navController.navigate(Routes.DINCHARYA) },
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenSync = { navController.navigate(Routes.SYNC) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
@@ -236,6 +238,13 @@ fun BudcomNavHost(
                 },
                 onOpenProspectCreate = {
                     navController.navigate(Routes.PROSPECT_CREATE)
+                },
+            )
+        }
+        composable(route = Routes.DINCHARYA) {
+            DincharyaRoute(
+                onOpenPartyDetail = { partyId ->
+                    navController.navigate(Routes.partyDetail(partyId))
                 },
             )
         }

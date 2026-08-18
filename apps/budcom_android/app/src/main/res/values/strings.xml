@@ -181,6 +181,24 @@
     <string name="dashboard_action_connect">Connect</string>
     <string name="dashboard_primary_connect_subtitle">Customers and prospects</string>
 
+    <string name="dashboard_action_dincharya">Dincharya</string>
+    <string name="dashboard_primary_dincharya_subtitle">Today\'s follow-ups and pending actions</string>
+
+    <string name="dincharya_title">Dincharya</string>
+    <string name="dincharya_oi_framing">We are not AI. This is OI — programmed to help you.</string>
+    <string name="dincharya_empty">Nothing pending right now. New follow-ups and pending actions will appear here.</string>
+    <string name="dincharya_retry">Retry</string>
+    <string name="dincharya_section_followups">Follow-ups &amp; Callbacks</string>
+    <string name="dincharya_section_confirmations">Pending Tally Confirmation</string>
+    <string name="dincharya_section_contact">Pending Contact Info</string>
+    <string name="dincharya_reason_followup_overdue">Follow-up overdue</string>
+    <string name="dincharya_reason_followup_due_today">Follow-up due today</string>
+    <string name="dincharya_reason_followup_upcoming">Follow-up upcoming</string>
+    <string name="dincharya_reason_confirmation">Tally confirmation pending</string>
+    <string name="dincharya_reason_contact">Contact details incomplete</string>
+    <string name="dincharya_confirmation_fields_prefix">Awaiting confirmation: %1$s</string>
+    <string name="dincharya_more_items">%1$d more</string>
+
     <string name="stock_item_browser_title">Stock items</string>
     <string name="stock_item_search_hint">Search stock items</string>
     <string name="stock_item_empty">No stock items found. Sync stock items on the Connector if the list is empty.</string>

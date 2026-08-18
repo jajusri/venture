@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -75,6 +76,7 @@ fun DashboardRoute(
     onOpenVouchers: () -> Unit,
     onOpenLedgers: () -> Unit,
     onOpenConnect: () -> Unit,
+    onOpenDincharya: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSync: () -> Unit,
     onOpenDiagnostics: () -> Unit,
@@ -91,6 +93,7 @@ fun DashboardRoute(
                 DashboardNavigation.Vouchers -> onOpenVouchers()
                 DashboardNavigation.Ledgers -> onOpenLedgers()
                 DashboardNavigation.Connect -> onOpenConnect()
+                DashboardNavigation.Dincharya -> onOpenDincharya()
                 DashboardNavigation.Search -> onOpenSearch()
                 DashboardNavigation.Sync -> onOpenSync()
                 DashboardNavigation.Diagnostics -> onOpenDiagnostics()
@@ -359,9 +362,11 @@ private fun HomeCompactStatusRow(state: DashboardUiState, onEvent: (DashboardEve
 }
 
 /**
- * Vouchers and Ledgers as the primary Home entries, Stock Items deliberately absent from prime
- * space (BUDCOM-UI-DESIGN-DECISIONS §3 — Stock Items remains reachable via Master Data below).
- * Reuses [DashboardEvent.OpenVouchers]/[DashboardEvent.OpenLedgers]; no new destinations.
+ * Vouchers, Ledgers, Connect, and (MVP-1.2-D) Dincharya as the primary Home entries, Stock Items
+ * deliberately absent from prime space (BUDCOM-UI-DESIGN-DECISIONS §3 — Stock Items remains
+ * reachable via Master Data below). Dincharya follows the exact precedent Connect itself set in
+ * MVP-1.1-B — a fourth [HomePrimaryEntryRow], [DashboardEvent.OpenDincharya], no new navigation
+ * paradigm invented.
  */
 @Composable
 private fun HomePrimaryEntries(onEvent: (DashboardEvent) -> Unit) {
@@ -386,6 +391,13 @@ private fun HomePrimaryEntries(onEvent: (DashboardEvent) -> Unit) {
             subtitle = stringResource(R.string.dashboard_primary_connect_subtitle),
             testTag = "dashboard_primary_connect",
             onClick = { onEvent(DashboardEvent.OpenConnect) },
+        )
+        HomePrimaryEntryRow(
+            icon = Icons.Filled.CheckCircle,
+            title = stringResource(R.string.dashboard_action_dincharya),
+            subtitle = stringResource(R.string.dashboard_primary_dincharya_subtitle),
+            testTag = "dashboard_primary_dincharya",
+            onClick = { onEvent(DashboardEvent.OpenDincharya) },
         )
     }
 }

@@ -22,6 +22,7 @@ object Routes {
     const val VOUCHER_DETAILS = "vouchers/detail/{voucherId}"
     const val LEDGER_STATEMENT = "ledgers/statement/{ledgerId}"
     const val CONNECT = "connect?q={q}"
+    const val DINCHARYA = "dincharya"
     const val PARTY_DETAIL = "connect/party/{partyId}"
     const val PROSPECT_CREATE = "connect/prospect/new"
     const val PARTY_XML_EXPORT = "connect/party/{partyId}/xml-export"
