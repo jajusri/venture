@@ -938,4 +938,79 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 9 -> 10 migration (adding `business_profile` for MVP-1.3-A, PDL-019)
+     * preserves every pre-existing row and adds exactly one new, empty table — never a destructive
+     * recreation. Also proves the new table is genuinely insert/query-usable and its column set
+     * matches the entity definition exactly, the same discipline every migration in this codebase
+     * has followed since MIGRATION_5_6.
+     */
+    @Test
+    fun migrate9To10_preservesExistingRowsAndAddsBusinessProfileTableOnly() {
+        val db910DbName = "migration-test-db-9-10"
+
+        var db = helper.createDatabase(db910DbName, 9)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_parties (companyId, partyId, displayName, classification, primaryPhone, " +
+                "primaryPhoneNormalized, primaryEmail, addressLine1, addressCity, addressState, addressPincode, " +
+                "gstin, createdAt, updatedAt) VALUES ('acme-001', 'party-1', 'ABC Traders', 'customer', NULL, " +
+                "NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1736899200000, 1736899200000)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db910DbName, 10, false, DatabaseModule.MIGRATION_9_10)
+
+        db.query("SELECT name FROM cached_companies WHERE id = 'acme-001'").use { cursor ->
+            assertTrue("existing company row must survive the migration", cursor.moveToFirst())
+            assertEquals("Acme Corp", cursor.getString(0))
+        }
+        db.query("SELECT displayName FROM cached_parties WHERE companyId = 'acme-001' AND partyId = 'party-1'").use { cursor ->
+            assertTrue("existing party row must survive the migration", cursor.moveToFirst())
+            assertEquals("ABC Traders", cursor.getString(0))
+        }
+
+        val profileColumns = mutableMapOf<String, String>()
+        db.query("PRAGMA table_info(`business_profile`)").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val typeIdx = cursor.getColumnIndexOrThrow("type")
+            while (cursor.moveToNext()) {
+                profileColumns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+            }
+        }
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "tradingName" to "TEXT", "legalName" to "TEXT",
+                "addressLine1" to "TEXT", "addressCity" to "TEXT", "addressState" to "TEXT",
+                "addressPincode" to "TEXT", "phone" to "TEXT", "phoneNormalized" to "TEXT",
+                "email" to "TEXT", "gstin" to "TEXT", "website" to "TEXT", "description" to "TEXT",
+                "logoAssetPath" to "TEXT", "createdAt" to "INTEGER", "updatedAt" to "INTEGER",
+            ),
+            profileColumns,
+        )
+
+        // The new table starts genuinely empty -- no fabricated/backfilled profile row for any
+        // pre-existing company.
+        db.query("SELECT COUNT(*) FROM business_profile").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+
+        db.execSQL(
+            "INSERT INTO business_profile (companyId, tradingName, legalName, addressLine1, addressCity, " +
+                "addressState, addressPincode, phone, phoneNormalized, email, gstin, website, description, " +
+                "logoAssetPath, createdAt, updatedAt) VALUES ('acme-001', 'Acme Traders', NULL, NULL, NULL, " +
+                "NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1736899200000, 1736899200000)",
+        )
+        db.query("SELECT tradingName FROM business_profile WHERE companyId = 'acme-001'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Acme Traders", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

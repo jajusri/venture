@@ -152,6 +152,22 @@ class DashboardScreenTest {
     }
 
     @Test
+    fun businessProfilePrimaryEntryIsShownAndNavigable() {
+        val events = mutableListOf<DashboardEvent>()
+        composeRule.setContent {
+            BudcomTheme {
+                DashboardScreen(
+                    state = operationalState(),
+                    onEvent = { events.add(it) },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("dashboard_primary_business_profile").assertIsDisplayed()
+        composeRule.onNodeWithTag("dashboard_primary_business_profile").performClick()
+        assertTrue(events.contains(DashboardEvent.OpenBusinessProfile))
+    }
+
+    @Test
     fun refreshAndTestConnectionActionsEmitEvents() {
         val events = mutableListOf<DashboardEvent>()
         composeRule.setContent {
