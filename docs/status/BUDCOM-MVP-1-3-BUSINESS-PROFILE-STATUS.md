@@ -1,7 +1,7 @@
 # BUDCOM MVP-1.3 — Business Profile — Status
 
 **Status:** Part A complete — acceptance gate PASSED. Part B complete — acceptance gate PASSED.
-Continuing automatically to Part C per this task's own explicit instruction.
+Part C (integrated hardening, freeze) complete — **MVP-1.3 COMPLETE / FROZEN.**
 **Companion documents:** `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` (concise current-state
 checkpoint), `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` (chronological record),
 `docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md` (planning/recovery review this
@@ -594,3 +594,200 @@ that hit this — a session-local environment variable, never written into any t
 (`gradle.properties` was deliberately left unchanged, since this is a local-machine/JDK-version
 tooling characteristic, not a project-wide fix). Recorded here so a future session on this same
 machine recognizes the symptom immediately rather than re-diagnosing it from scratch.
+
+---
+
+# Part C — MVP-1.3-C: Integrated Hardening, Candidate Build & Freeze
+
+**Starting HEAD:** `cb585fa571a847edc764bb1f3088b2a6d697516d` (`docs: MVP-1.3-B Business Profile
+status -- acceptance gate passed`), working tree clean, continued in the same session with no
+intervening state change.
+
+## C1. Scope actually implemented
+
+Not a new feature — an integrated audit of Parts A and B working together, the single coherent
+MVP-1.3 version bump, final candidate APKs, installation and smoke test on the owner device, full
+regression, and this Durable Development Record, exactly matching MVP-1.2-E's own precedent for
+what an integrated-hardening-and-freeze part does.
+
+## C2. Integrated hardening review — A+B together
+
+Cross-checked the whole feature (data → domain → repository → storage → ViewModel → Compose) as
+one system, not per-part in isolation:
+
+- **Every use case has a real UI caller.** `GetBusinessProfileUseCase`/`SaveBusinessProfileUseCase`
+  (A), `UpdateBusinessProfileLogoUseCase`/`ClearBusinessProfileLogoUseCase`/
+  `ResolveBusinessProfileLogoFileUseCase` (B) — none exists as dead, unwired capability. (This is
+  the exact class of gap MVP-1.2-E's own audit found and fixed for `SetNoteCompletionUseCase`; this
+  feature has no equivalent gap.)
+- **Company isolation holds end-to-end**, re-verified by direct re-reading of the final ViewModel
+  (not re-run of tests alone): every DAO query is `companyId`-scoped; the B5 async-race guard
+  (`updateIfStillOnCompany`) covers all three mutating operations (save, logo update, logo clear);
+  the `init` block's `loadJob?.cancel()` covers the read path. No new isolation gap found.
+- **Reviewed, not fixed — a deliberate, documented UX characteristic:** the logo Add/Replace/Remove
+  actions call the repository immediately (not staged into `form`/`savedForm` the way text-field
+  edits are), so tapping Cancel after changing a logo does **not** revert the logo, only the text
+  fields. Considered whether this is a defect: it is not — staging a logo change would require
+  holding the picked `Uri`'s bytes in memory without writing them until Save, then discarding on
+  Cancel, a materially more complex flow than this milestone's own "smallest excellent version"
+  principle warrants, and the Remove Logo action already gives an immediate, one-tap undo path if a
+  user regrets a change. Matches the common "photo changes apply immediately" pattern used by many
+  profile-editing UIs. Recorded as an accepted, reviewed design characteristic (C6), not a silently
+  missed defect.
+- **Reviewed, not fixed — a narrow, low-impact notice-race:** `notice` is one shared field; if a
+  user manages to have both a text-field save and a logo update in flight at the same moment (an
+  unusual sequence — tap Save, then immediately tap Change Logo and complete the picker before the
+  save's disk write finishes), whichever operation's completion handler runs last overwrites the
+  other's notice message. The underlying data written by both operations is always correct either
+  way (B5's guard already ensures no state corruption) — only a transient confirmation message could
+  be superseded. Considered and rejected building a queued-notice system for this: the window is
+  narrow, the consequence is cosmetic (a missed toast, not a lost edit or wrong data), and a
+  notification queue is disproportionate machinery for a single-user local-only screen. Recorded as
+  an accepted limitation (C6).
+- **No accidental Tally/network/Desktop/Connector/manifest/public-exposure surface anywhere in A+B
+  combined** — re-confirmed by a fresh grep across the whole `feature/businessprofile` tree this
+  session (zero network/Connector import, zero `Log`/`Timber` call, zero `AndroidManifest.xml`
+  diff, zero file under `apps/budcom_desktop` touched).
+- **Migration integrity** — `MIGRATION_9_10` unchanged since A, already byte-for-byte verified
+  against Room's generated schema (A5) and proven via a real `MigrationTestHelper` run (A5); B
+  introduced zero schema change, `DatabaseConstants.VERSION` remains `10`.
+
+**Defects found this part:** none new. The two items above were reviewed and consciously accepted,
+not silently overlooked — recorded explicitly rather than left implicit.
+
+## C3. Version bump — the single coherent MVP-1.3 freeze bump
+
+`apps/budcom_android/app/build.gradle.kts`: `versionCode` `28` → **`29`**, `versionName`
+`"0.1.1-continuity.27"` → **`"0.1.1-continuity.28"`**. Performed only now, after A and B's full
+regressions were independently green and this part's own fresh full regression (C4) also passed —
+matching this task's own explicit "defer to a coherent milestone boundary" instruction and this
+codebase's established precedent (every prior MVP-1.1/1.2 sub-part deferred its bump to the
+integrated-hardening freeze step).
+
+## C4. Full regression results (post version-bump)
+
+- `testDebugUnitTest` / `testReleaseUnitTest`: **1,266/1,266 passing** both (unchanged from B — no
+  new JVM test added in C, a version-only source change does not add tests). Both runs performed
+  with full JIT (not the C2-disabled workaround, since these tests don't hit the lint pathology) —
+  confirms the `VoucherRepositoryImplTest` timing flake seen once mid-session (B9/C context) does
+  **not** reproduce under normal execution, consistent with the pre-existing, already-documented
+  flake class from MVP-1.1-D/E and MVP-1.2-A.
+- `lintDebug` / `lintRelease`: **0 errors** both (confirmed via report XML `severity="Error"` count
+  on the post-bump build, not just the console summary). This was the first genuinely-cold, fully
+  non-cached lint analysis since MVP-1.2's freeze (version-bump invalidated the `BuildConfig`-keyed
+  cache across the whole module) — see B12 for the JIT-pathology tooling note this triggered and
+  how it was worked around (`JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1`, session-local only).
+- `assembleDebug`, `assembleRelease`, `assembleDebugAndroidTest`: all `BUILD SUCCESSFUL` (combined
+  run, 6m55s, including R8-minified release — confirming the full Hilt DI graph across A+B resolves
+  correctly under minification).
+- `connectedDebugAndroidTest` on device `10BF44124K000E3` (`I2407`/`I2407i`): **333/345 passing**.
+  The 12 failures are byte-for-byte the same pre-existing device-viewport-artifact class documented
+  since MVP-1.1-B (`DashboardScreenTest` ×2, `DiagnosticsScreenTest`, `LedgerStatementScreenTest`
+  ×2, `SecurePairingScreenTest`, `ServerConfigScreenTest` ×2, `SettingsScreenTest` ×2,
+  `SyncScreenTest`, `VoucherDetailsScreenTest`) — **zero overlap** with any `businessprofile`/
+  `AppDatabase`/`Dashboard` file touched this milestone. 345 = 341 (MVP-1.3-A baseline) + 4 new
+  logo-UI instrumented tests from B, confirming no test was silently lost or duplicated between
+  parts.
+
+## C5. Candidate artifacts
+
+**Debug:** `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` — **14,562,380 bytes** —
+SHA-256 `601b248fb07da27da2d805ab4ed8c06681b02e3c01eaeab22fc3a2994896902f` — `com.budcom.android.debug`,
+versionCode 29, versionName `0.1.1-continuity.28`, debuggable (confirmed via `aapt dump badging` on
+the actual built APK, not source config alone).
+
+**Release (unsigned, verification only, never a public-release artifact):**
+`apps/budcom_android/app/build/outputs/apk/release/app-release-unsigned.apk` — **2,536,316 bytes** —
+SHA-256 `dd68728630fb29f54b38ffb60aa8ca8264339810c9b2a7b9921c54b56be94a67` — `com.budcom.android`
+(no debug suffix), same version, not debuggable, unsigned (no signing credentials exist anywhere in
+this repository — unchanged blocker, tracked separately in
+`docs/planning/BUDCOM-MVP-1-PUBLIC-RELEASE-GATE-MATRIX.md`).
+
+## C6. Accepted limitations (explicit, consolidated for the whole MVP-1.3 milestone)
+
+- No image cropping/editing tool (B1) — deliberate, matches this task's own boundary.
+- The share-snapshot type (B7) has no consumer yet — deliberate, the correct MVP-1.3 boundary; a
+  real share feature is explicitly reserved for a future, separately-authorized Vartalap milestone.
+- Cancelling a text-field edit does not revert an already-applied logo change (C2) — a reviewed,
+  accepted, deliberate UX characteristic, not a defect; the Remove Logo action provides an
+  immediate one-tap undo.
+- A narrow notice-message race exists if a save and a logo update are both in flight simultaneously
+  (C2) — cosmetic only (a transient confirmation message can be superseded), never a data-integrity
+  issue; the underlying B5 guard already ensures correct state either way.
+- No format validation on phone/email/GSTIN/website/pincode (A15) — by design, matches this
+  codebase's established free-text convention.
+- The 12 pre-existing device-viewport instrumented failures remain accepted, re-confirmed with zero
+  overlap and zero new failures this session (C4).
+- Public release remains blocked on signing credentials only — unrelated to and unchanged by
+  MVP-1.3 (tracked separately, see C5).
+
+## C7. Installation and smoke test on device `10BF44124K000E3`
+
+**Critical sequencing honored per this task's own explicit warning:** `connectedDebugAndroidTest`
+(C4) was run **before** this installation step, and install state was verified **after** that run
+completed, not merely assumed from before it. Direct check (`adb shell pm list packages
+com.budcom.android`) confirmed the app was indeed absent post-test-run — `connectedDebugAndroidTest`'s
+own documented side effect (installs the app-under-test + test APK before running, uninstalls both
+afterward for test hermeticity), the same behavior already documented in MVP-1.2-D/E. This was not
+silently reinstalled without note — it is recorded here exactly as it happened.
+
+**Install performed:** `adb install -r apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk`
+→ `Performing Streamed Install / Success`. Confirmed via `adb shell dumpsys package
+com.budcom.android.debug`: `versionCode=29`, `versionName=0.1.1-continuity.28`,
+`firstInstallTime == lastUpdateTime` (a genuine fresh install).
+
+**Smoke test performed directly on device:** launch succeeded (`monkey -p com.budcom.android.debug
+-c android.intent.category.LAUNCHER 1`; `MainActivity` became `mFocusedApp`); rendered the correct,
+honest first-run **Secure Pairing** screen (screenshot-confirmed, matching the established dark
+theme, no visual defect); zero `FATAL EXCEPTION`/`AndroidRuntime:` logcat entries across the launch,
+navigation, and relaunch sequence; Back navigation correctly returned to the home launcher
+(`com.android.launcher3` became `mFocusedApp` — root-activity behavior, not a crash, app process
+stayed alive); relaunch succeeded cleanly (`MainActivity` regained focus, zero new crash entries).
+
+**Explicitly not exercised on-device:** Dashboard, Business Profile entry/screen, Connect, Dincharya
+— this environment has no real paired Tally Connector to complete Secure Pairing against, and per
+this task's own instruction no attempt was made to fake or bypass pairing. These surfaces are
+verified only through the automated instrumented Compose test suite (C4 — real Room/real Compose on
+this same device, synthetic state), a distinct and weaker form of evidence than genuine on-device
+navigation, stated as such rather than conflated with it — matching MVP-1.2-E's own precedent
+exactly.
+
+## C8. Final freeze gate checklist
+
+- [x] Compiles clean, both variants.
+- [x] JVM regression clean, both variants (1,266/1,266).
+- [x] Both lints 0 errors (report-XML-verified).
+- [x] All three assembles green, including R8-minified release.
+- [x] Instrumented suite at the exact known-12 baseline, zero overlap, zero new failures.
+- [x] Company isolation holds end-to-end, re-verified this part (C2).
+- [x] Zero P0/P1 defect.
+- [x] Zero security/data-integrity issue.
+- [x] Zero accidental scope expansion (Catalogue/Vartalap/public infrastructure all confirmed
+      absent, C2/B7).
+- [x] Single coherent version bump performed only after all regressions green (C3).
+- [x] Candidate APKs built, hashed, sized (C5).
+- [x] Device install state verified **after** the connected-test run, not merely before it (C7).
+- [x] Smoke test performed with an honest verified-vs-not-verified boundary (C7).
+- [x] This Durable Development Record complete (specialist status doc — this file).
+
+## C9. Git — commits and push
+
+Coherent commits for C's own work (version bump + documentation), following the same
+per-concern grouping already used for A and B. **Pushed to `origin/main` at this final freeze
+step** — explicitly authorized by this task's own "pushing should occur only at the final freeze
+unless explicitly instructed otherwise" instruction, now reached. Exact commit hashes and the
+post-push verification are recorded in `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` §2/§2a.
+
+## C10. FINAL RESULT
+
+Every C gate item verified with evidence above (C8). MVP-1.3-A, MVP-1.3-B, and MVP-1.3-C are all
+complete, tested, documented, version-bumped, built, installed, and smoke-tested.
+
+**MVP-1.3 COMPLETE / FROZEN.**
+
+Per this task's own final stop condition: **STOP. Do not begin MVP-1.4 implementation. Do not begin
+further MVP-1.3 work.**
+
+**EXACT NEXT TASK: MVP-1.4 planning/recovery review** (read-only architecture/gap-analysis review,
+matching the MVP-1.3 planning session's own precedent — not implementation), pending Product
+Owner/technical review of this MVP-1.3 result.
