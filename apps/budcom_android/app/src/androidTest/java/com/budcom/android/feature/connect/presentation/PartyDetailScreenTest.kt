@@ -64,8 +64,16 @@ class PartyDetailScreenTest {
 
     private fun tag(id: String = "t1", name: String = "Dealer") = Tag(id, null, name, name, 0L)
 
-    private fun note(id: String = "n1", linkedVoucherId: String? = null) =
-        PartyNote(companyId = "co-1", noteId = id, partyId = "p1", body = "Called about delivery", linkedVoucherId = linkedVoucherId, createdAt = 0L, updatedAt = 0L)
+    private fun note(
+        id: String = "n1",
+        linkedVoucherId: String? = null,
+        type: com.budcom.android.feature.party.domain.model.NoteType = com.budcom.android.feature.party.domain.model.NoteType.General,
+        dueAt: Long? = null,
+        completedAt: Long? = null,
+    ) = PartyNote(
+        companyId = "co-1", noteId = id, partyId = "p1", body = "Called about delivery", linkedVoucherId = linkedVoucherId,
+        createdAt = 0L, updatedAt = 0L, type = type, dueAt = dueAt, completedAt = completedAt,
+    )
 
     private fun timelineOf(vararg notes: PartyNote): List<com.budcom.android.feature.party.domain.model.TimelineEntry> =
         notes.map { com.budcom.android.feature.party.domain.model.TimelineEntry.NoteEvent(it) }
@@ -262,6 +270,67 @@ class PartyDetailScreenTest {
         assertEquals(PartyDetailEvent.LinkedVoucherTapped("v1"), lastEvent)
         composeRule.onNodeWithTag("party_detail_note_n1_delete").performClick()
         assertEquals(PartyDetailEvent.DeleteNoteTapped("n1"), lastEvent)
+    }
+
+    @Test
+    fun anIncompleteFollowUpNoteShowsMarkDoneAndEmitsMarkNoteDoneTapped() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false,
+                        party = party(),
+                        timeline = timelineOf(note(type = com.budcom.android.feature.party.domain.model.NoteType.FollowUp, dueAt = 1_700_000_000_000L)),
+                    ),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_note_n1_due_status").assertIsDisplayed()
+        composeRule.onNodeWithTag("party_detail_note_n1_mark_done").performClick()
+        assertEquals(PartyDetailEvent.MarkNoteDoneTapped("n1"), lastEvent)
+        assertEquals(0, composeRule.onAllNodesForTag("party_detail_note_n1_reopen").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun aCompletedFollowUpNoteShowsReopenAndEmitsReopenNoteTapped() {
+        var lastEvent: PartyDetailEvent? = null
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(
+                        isLoading = false,
+                        party = party(),
+                        timeline = timelineOf(
+                            note(
+                                type = com.budcom.android.feature.party.domain.model.NoteType.Commitment,
+                                dueAt = 1_700_000_000_000L,
+                                completedAt = 1_700_100_000_000L,
+                            ),
+                        ),
+                    ),
+                    onEvent = { lastEvent = it },
+                )
+            }
+        }
+        composeRule.onNodeWithTag("party_detail_note_n1_reopen").performClick()
+        assertEquals(PartyDetailEvent.ReopenNoteTapped("n1"), lastEvent)
+        assertEquals(0, composeRule.onAllNodesForTag("party_detail_note_n1_mark_done").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun aGeneralNoteWithNoDueDateShowsNeitherDoneNorReopenAction() {
+        composeRule.setContent {
+            BudcomTheme {
+                PartyDetailScreen(
+                    state = PartyDetailUiState(isLoading = false, party = party(), timeline = timelineOf(note())),
+                    onEvent = {},
+                )
+            }
+        }
+        assertEquals(0, composeRule.onAllNodesForTag("party_detail_note_n1_mark_done").fetchSemanticsNodes().size)
+        assertEquals(0, composeRule.onAllNodesForTag("party_detail_note_n1_reopen").fetchSemanticsNodes().size)
     }
 
     @Test

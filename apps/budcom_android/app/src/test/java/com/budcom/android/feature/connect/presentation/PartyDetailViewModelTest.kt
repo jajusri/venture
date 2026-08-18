@@ -2,6 +2,7 @@ package com.budcom.android.feature.connect.presentation
 
 import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.util.TimeProvider
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
@@ -47,6 +48,7 @@ import com.budcom.android.feature.party.domain.usecase.GetSourceLinkForPartyUseC
 import com.budcom.android.feature.party.domain.usecase.GetTagsForPartyUseCase
 import com.budcom.android.feature.party.domain.usecase.ReopenIssueUseCase
 import com.budcom.android.feature.party.domain.usecase.ResolveIssueUseCase
+import com.budcom.android.feature.party.domain.usecase.SetNoteCompletionUseCase
 import com.budcom.android.feature.party.domain.usecase.UnassignTagUseCase
 import com.budcom.android.feature.party.domain.usecase.UpdateBudcomOnlyFieldUseCase
 import com.budcom.android.feature.party.domain.usecase.UpsertContactPersonUseCase
@@ -74,10 +76,13 @@ import org.junit.Before
 import org.junit.Test
 import java.util.UUID
 
+private const val FIXED_NOW = 10_000_000L
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class PartyDetailViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: InMemoryPartyRepository
+    private val timeProvider = TimeProvider { FIXED_NOW }
 
     @Before
     fun setUp() {
@@ -112,6 +117,7 @@ class PartyDetailViewModelTest {
         addNote = AddNoteUseCase(repository),
         editNote = EditNoteUseCase(repository),
         deleteNote = DeleteNoteUseCase(repository),
+        setNoteCompletion = SetNoteCompletionUseCase(repository),
         getIssuesForParty = GetIssuesForPartyUseCase(repository),
         createIssue = CreateIssueUseCase(repository),
         getIssueActivitySummary = GetIssueActivitySummaryUseCase(repository),
@@ -120,6 +126,7 @@ class PartyDetailViewModelTest {
         loadVouchers = LoadVouchersUseCase(voucherRepository),
         ledgerSnapshotPort = PartyDetailTestFakeLedgerSnapshotPort(ledgers),
         companySession = PartyDetailTestFakeCompanySession("co-1"),
+        timeProvider = timeProvider,
     )
 
     // ============================== LOAD ==============================
@@ -419,6 +426,56 @@ class PartyDetailViewModelTest {
         val note = vm.uiState.value.notesInTimeline.single()
         assertTrue(note.issueId != null)
         assertEquals(1, repository.issuesFor("co-1", party.partyId).size)
+    }
+
+    // ============================== NOTE COMPLETION (MVP-1.2-E) ==============================
+    // SetNoteCompletionUseCase existed since 1.2-A but had no UI trigger until this hardening pass —
+    // without it, a Dincharya follow-up had no honest "done" action anywhere in the app.
+
+    @Test
+    fun `marking a follow-up note done sets completedAt to now, preserving the note`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.AddNoteTapped)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.NoteBodyChanged("Call back next week"))
+        vm.onEvent(PartyDetailEvent.NoteTypeChanged(NoteType.FollowUp))
+        vm.onEvent(PartyDetailEvent.NoteDueAtChanged("2026-09-01"))
+        vm.onEvent(PartyDetailEvent.SaveNote)
+        advanceUntilIdle()
+        val noteId = vm.uiState.value.notesInTimeline.single().noteId
+        assertNull(vm.uiState.value.notesInTimeline.single().completedAt)
+
+        vm.onEvent(PartyDetailEvent.MarkNoteDoneTapped(noteId))
+        advanceUntilIdle()
+
+        val notes = vm.uiState.value.notesInTimeline
+        assertEquals(1, notes.size)
+        assertEquals(FIXED_NOW, notes.single { it.noteId == noteId }.completedAt)
+    }
+
+    @Test
+    fun `reopening a completed follow-up note clears completedAt`() = runTest(dispatcher) {
+        val party = repository.seedCustomer("co-1", "guid:abc", "ABC Traders")
+        val vm = createViewModel(party.partyId)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.AddNoteTapped)
+        advanceUntilIdle()
+        vm.onEvent(PartyDetailEvent.NoteBodyChanged("Call back next week"))
+        vm.onEvent(PartyDetailEvent.NoteTypeChanged(NoteType.Commitment))
+        vm.onEvent(PartyDetailEvent.NoteDueAtChanged("2026-09-01"))
+        vm.onEvent(PartyDetailEvent.SaveNote)
+        advanceUntilIdle()
+        val noteId = vm.uiState.value.notesInTimeline.single().noteId
+        vm.onEvent(PartyDetailEvent.MarkNoteDoneTapped(noteId))
+        advanceUntilIdle()
+        assertEquals(FIXED_NOW, vm.uiState.value.notesInTimeline.single().completedAt)
+
+        vm.onEvent(PartyDetailEvent.ReopenNoteTapped(noteId))
+        advanceUntilIdle()
+
+        assertNull(vm.uiState.value.notesInTimeline.single().completedAt)
     }
 
     // ============================== RELATIONSHIP TIMELINE (MVP-1.2-B) ==============================
