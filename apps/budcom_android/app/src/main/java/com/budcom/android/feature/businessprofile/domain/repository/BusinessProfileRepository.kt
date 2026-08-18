@@ -4,6 +4,7 @@ import android.net.Uri
 import com.budcom.android.feature.businessprofile.domain.model.BusinessProfile
 import com.budcom.android.feature.businessprofile.domain.model.BusinessProfileDraft
 import com.budcom.android.feature.businessprofile.storage.BusinessProfileLogoResult
+import java.io.File
 
 /**
  * Local-first, company-scoped Business Profile read+write surface (MVP-1.3-A, PDL-019). Never
@@ -30,4 +31,12 @@ interface BusinessProfileRepository {
     /** Clears the stored logo reference and deletes the underlying file. Safe to call even if no
      * logo currently exists. */
     suspend fun clearLogo(companyId: String)
+
+    /** Resolves a persisted [BusinessProfile.logoAssetPath] to a real, safely-contained [File] for
+     * display — re-validates via the same path-traversal-defended
+     * [com.budcom.android.feature.businessprofile.storage.BusinessProfileLogoStore] check used on
+     * write, even though the path originated from this app's own database, so a corrupted/tampered
+     * row can never resolve outside the logo directory. Returns `null` for a blank path, a missing
+     * file, or a path that fails containment — never throws. */
+    suspend fun resolveLogoFile(logoAssetPath: String?): File?
 }

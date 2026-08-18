@@ -13,6 +13,7 @@ import com.budcom.android.feature.businessprofile.domain.repository.BusinessProf
 import com.budcom.android.feature.businessprofile.storage.BusinessProfileLogoResult
 import com.budcom.android.feature.businessprofile.storage.BusinessProfileLogoStore
 import kotlinx.coroutines.withContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -72,5 +73,9 @@ class BusinessProfileRepositoryImpl @Inject constructor(
         if (existing != null && existing.logoAssetPath != null) {
             dao.upsert(existing.copy(logoAssetPath = null, updatedAt = timeProvider.nowEpochMillis()))
         }
+    }
+
+    override suspend fun resolveLogoFile(logoAssetPath: String?): File? = withContext(dispatchers.io) {
+        logoStore.resolveLogoFile(logoAssetPath)
     }
 }
