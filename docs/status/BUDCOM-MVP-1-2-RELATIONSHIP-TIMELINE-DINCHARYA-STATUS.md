@@ -1,8 +1,10 @@
 # BUDCOM MVP-1.2 — Relationship Timeline, Issue History, Dincharya & OI — Status
 
 **Status:** Part A complete. Part B complete — acceptance gate PASSED. Part C complete. Checkpoint
-(B/C preservation + MVP-1.2-D readiness review) complete. **Part D (Dincharya) complete.** STOP per
-this session's own governing prompt — MVP-1.2-E not started, not authorized.
+(B/C preservation + MVP-1.2-D readiness review) complete. Part D (Dincharya) complete.
+**Part E (integrated hardening + freeze) complete — MVP-1.2 COMPLETE / FROZEN.** Final candidate
+`0.1.1-continuity.27` (versionCode 28) built and installed on the owner device. STOP per this
+task's own governing prompt — MVP-1.3 not started, not authorized.
 **Companion documents:** `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` (concise current-state
 checkpoint), `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` (chronological record),
 `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md` (locked
@@ -1403,4 +1405,292 @@ Next authorized task: **MVP-1.2-E — integrated MVP-1.2 hardening, full regress
 re-verification, accessibility pass, freeze** (architecture §11's own 1.2-E line item), pending
 Product Owner/technical review of this Part D result.
 
-**Exact next task: MVP-1.2-D — Dincharya implementation**, pending Product Owner/technical review.
+---
+
+# Part E — MVP-1.2-E: Integrated Hardening, Freeze, Final Candidate
+
+**Starting HEAD:** `57a27e44f813aede9e5b71dd5a43440380ed670c` (`docs: record MVP-1.2-D Dincharya
+completion (Part D, PDL-018, ledger phase 31)`), working tree clean — Part D's own final HEAD,
+confirmed by direct inspection (`git status`, `git log`, `DatabaseConstants.VERSION`, presence of
+all 8 `feature/dincharya/` files) rather than trusted from documentation alone.
+
+## E1. Scope actually performed
+
+Exactly this task's own definition: **not a new feature** — an integrated audit of Parts A–D working
+together, defect-fixing, migration/accessibility/company-isolation/performance re-verification, one
+coherent version bump, a final debug candidate built and installed on the authorized owner device, a
+real-device smoke test, and the MVP-1.2 freeze. No Referral Tree, Home Insights, generative AI, cloud
+sync, OS notifications, Desktop, Connector, Tally-mutation, signing, or Play Store work — grep- and
+diff-verified untouched (E9).
+
+## E2. Integrated functional audit — one genuine defect found and fixed
+
+Read Parts A–D's actual current source together (not per-part in isolation) looking specifically for
+interaction gaps between them. Found one real, consequential gap:
+
+**`SetNoteCompletionUseCase` — implemented and tested at the repository/use-case layer since
+MVP-1.2-A (architecture §22 item 4's own note: "the capability exists for 1.2-B/C/D to wire, not
+fabricated as a UI affordance ahead of when it's actually needed") — had zero UI caller anywhere in
+the app through Parts B, C, and D.** Grep-verified: zero reference to `setNoteCompletion`/
+`SetNoteCompletionUseCase`/`completedAt` anywhere in `feature/connect/presentation/` before this
+session. Consequence: Dincharya's entire "Follow-ups & Callbacks" group (1.2-D's own Type A) showed
+real, live-queried overdue/due-today/upcoming items that a user had **no honest way to complete** —
+only the indirect, undiscoverable side effect of editing a note's due date to blank or changing its
+type away from `commitment`/`follow_up`. This directly undermines Dincharya's own stated purpose
+("action-focused operational worklist") and is exactly the class of false-affordance/incomplete-loop
+defect this milestone's own audit brief (§8) asks for.
+
+**Fixed:** added `PartyDetailEvent.MarkNoteDoneTapped`/`ReopenNoteTapped`, wired to the
+already-existing `SetNoteCompletionUseCase` via a new `setNoteCompletionTapped` ViewModel handler
+(partial `loadTimeline()` refresh only, mirroring `resolveIssueTapped`/`reopenIssueTapped`'s own
+efficiency principle — completion never changes fields/contacts/tags/issues, only how this one note
+reads). UI: `NoteRow` gained a due-date/completion status line and a Mark done/Reopen `TextButton`
+for `commitment`/`follow_up` notes with a due date — **mirrors the existing Issue Resolve/Reopen
+`TextButton` pattern exactly, no new UI pattern introduced.** A `TimeProvider` (already Hilt-bound,
+already used identically by `PartyRepositoryImpl`) was added to `PartyDetailViewModel`'s constructor
+to supply `completedAt`'s timestamp — never a direct `System.currentTimeMillis()` call, consistent
+with this codebase's one time-source convention throughout.
+
+**A second, smaller issue self-caught while implementing the fix, corrected before commit:** the
+first draft colored the due-date/status line `MaterialTheme.colorScheme.error` for every incomplete
+follow-up, regardless of whether it was actually overdue. Since this row has no access to "now"
+(computed once at the ViewModel/repository layer everywhere else in this codebase, never re-derived
+at Compose render time — the same discipline Dincharya's own `FollowUpUrgency` classification
+follows), coloring every *incomplete* row red would be a false urgency signal for a note not yet
+due. Fixed to a neutral color; the text ("Due <date>" / "Done · due <date>") states the fact plainly,
+color is not used to imply urgency this row cannot honestly compute.
+
+**No other genuine defect found** in the integrated read of Parts A–D's data model, repository
+boundaries, Timeline/Issues/Dincharya live-read construction (structurally cannot drift — all three
+read the same tables directly, never a cached/duplicated copy, confirmed unchanged since B/C), or
+navigation wiring.
+
+## E3. Company isolation — re-verified, not re-invented
+
+Every adversarial company-isolation test from Parts A–D (DAO, repository, and ViewModel layers, for
+notes/issues/Timeline/Dincharya's three item types) was re-run as part of the full regression below
+and passed unchanged. No new cross-party query was added in E (the note-completion fix only adds a
+single-note, already-`companyId`-scoped write, the same natural-key discipline every note write in
+this codebase already uses), so no new isolation surface exists to test. Re-verified rather than
+assumed: `AppDatabaseMigrationTest` (8/8) and every test whose name signals company isolation across
+the instrumented suite passed in the same clean run as everything else (E7).
+
+## E4. Migration verification
+
+`DatabaseConstants.VERSION` remains **9** — E added no column, no table, no index. `AppDatabaseMigrationTest`'s
+full suite (8 tests, `MIGRATION_1_2` through `MIGRATION_8_9`) re-run and passing on real hardware,
+including `migrate8To9_preservesExistingRowsAndAddsTypedNotesAndPartyIssuesTableOnly` — the exact
+same real `MigrationTestHelper`-driven proof from 1.2-A, unchanged and still green. No migration
+work was needed or performed.
+
+## E5. Accessibility audit
+
+Reviewed `PartyDetailScreen.kt` (Timeline/Issues/Notes), `DincharyaScreen.kt`, and `DashboardScreen.kt`
+fresh, together, for the specific items this task names: every interactive element in the touched and
+adjacent surfaces remains a labeled `TextButton`/`Card`/`Checkbox` with a visible `Text` child or an
+explicit `semantics { contentDescription = ... }` — the same self-describing pattern already audited
+in MVP-1.1-E and every 1.2 sub-milestone since; zero icon-only or unlabeled control anywhere in the
+touched files. The one genuine finding was the color-alone false-urgency issue (E2), self-caught and
+fixed before commit — not left for an external report. No other accessibility defect found; no UI
+redesign performed (per this task's own explicit "do not redesign the UI unnecessarily" boundary).
+
+## E6. UX / false-affordance audit
+
+The dominant finding is E2 (a *missing* affordance, the inverse of a false one — Dincharya implied an
+action loop that had no real "done" button). Checked this task's own named false-affordance
+categories directly: edit controls that cannot persist (none found — every dialog's Save path writes
+through the same repository methods its Load path reads); actions available for Prospects that
+require accounting identity (none — `hasAccountingLink`/source-link gating unchanged and still
+correctly excludes Prospects from View Ledger/View Vouchers/Export to Tally); stale actions after a
+state transition (Mark done ↔ Reopen correctly flips immediately after `loadTimeline()`'s partial
+refresh, proven by the new instrumented tests — E8); silently-failing actions (none — every new/
+existing note/issue action is a direct, unguarded repository call, the same no-try/catch convention
+already used throughout `PartyDetailViewModel`, since local Room writes are not expected to fail
+under normal operation); controls enabled when data is unavailable (Mark done/Reopen only render
+when `note.type.showsDueDate() && note.dueAt != null`, so the action is never shown without the data
+it needs).
+
+## E7. Offline / failure / state audit
+
+Re-confirmed rather than re-tested from scratch, since no source change in E touches any of these
+paths beyond the single new note-completion write: Party/Timeline/Issues/Dincharya remain
+local-Room-only (E2's fix is itself a local write, zero network/Connector import — grep-verified);
+loading/empty/error states unchanged; a refresh failure with existing content still shows Dincharya's
+own inline error (D5's fix, unaffected by E); rotation/navigation-away-and-back state survival
+unchanged (`PartyDetailViewModel`'s new `timeProvider` field is a plain constructor-injected
+singleton, not additional mutable state to survive); company switching unaffected (E introduces no
+new company-scoped read). **One consistency point checked and confirmed not a regression:** neither
+Dincharya nor Connect auto-reloads on returning from Party Detail after an edit (both rely on the
+user's own pull-to-refresh) — grep-verified zero `repeatOnLifecycle`/`LifecycleResumeEffect`/
+`DisposableEffect` in `ConnectScreen.kt` either, confirming this is this codebase's existing,
+consistent, already-accepted pattern, not something Dincharya introduced or regressed.
+
+## E8. Tests
+
+- **New JVM tests (2):** `PartyDetailViewModelTest` — `marking a follow-up note done sets
+  completedAt to now, preserving the note`, `reopening a completed follow-up note clears
+  completedAt`.
+- **New instrumented tests (3), run and passing on device `10BF44124K000E3`:** `PartyDetailScreenTest`
+  — `anIncompleteFollowUpNoteShowsMarkDoneAndEmitsMarkNoteDoneTapped`,
+  `aCompletedFollowUpNoteShowsReopenAndEmitsReopenNoteTapped`,
+  `aGeneralNoteWithNoDueDateShowsNeitherDoneNorReopenAction` (proving the action is genuinely absent,
+  not merely disabled, when there is no due date to act on).
+- **Existing-test mechanical update:** `PartyDetailViewModelTest`'s own `createViewModel` helper
+  gained `setNoteCompletion`/`timeProvider` constructor arguments (the fake `InMemoryPartyRepository`
+  already implemented `setNoteCompletion` since 1.2-A's own test coverage, so no fake needed
+  extending — only the constructor call site).
+
+## E9. Scope verification
+
+Grep-verified zero touch anywhere in this session's diff to: `apps/budcom_desktop`, the Connector,
+`AndroidManifest.xml`, any `Worker` class, notification permission/channel code, Referral Tree, Home
+Insights, generative AI, Vartalap, Business Profile, Catalogue, cloud sync, Tally mutation/write
+paths, signing configuration, Play Store metadata. E's entire diff is 6 files: three production
+(`PartyDetailUiState.kt`/`PartyDetailViewModel.kt`/`PartyDetailScreen.kt`), two test
+(`PartyDetailViewModelTest.kt`/`PartyDetailScreenTest.kt`), and `build.gradle.kts`'s version bump.
+
+## E10. Full regression results
+
+- `testDebugUnitTest` / `testReleaseUnitTest`: **1,221/1,221 passing** both (was 1,219 after D; +2
+  new this session).
+- `lintDebug` / `lintRelease`: **0 errors** both (report-XML-verified, not console summary).
+- `assembleDebug`, `assembleRelease` (R8-minified/shrunk), `assembleDebugAndroidTest`: all
+  `BUILD SUCCESSFUL`.
+- `connectedDebugAndroidTest` on device `10BF44124K000E3` (`I2407i`/`I2407`): **312/324 passing**
+  (was 309/321 after D; +3 net new instrumented tests). The 12 failures are byte-for-byte the same
+  pre-existing device-viewport-artifact class documented since MVP-1.1-B (`DashboardScreenTest`,
+  `DiagnosticsScreenTest`, `LedgerStatementScreenTest`, `SecurePairingScreenTest`,
+  `ServerConfigScreenTest`, `SettingsScreenTest`, `SyncScreenTest`, `VoucherDetailsScreenTest`) —
+  **zero overlap** with any file this session touched, confirmed individually: all 35
+  `PartyDetailScreenTest` cases passed (including the 3 new ones), all 8 `AppDatabaseMigrationTest`
+  cases passed. The device stay-awake fix (extended screen timeout + `svc power stayon true`,
+  learned during Part D's own investigation) was applied proactively before this run — it completed
+  cleanly at exactly the known 12-failure baseline on the **first attempt**, no repeat investigation
+  needed this time.
+
+## E11. The known 12-failure baseline — explained, not merely cited
+
+Every one of the 12 failing instrumented tests belongs to the same documented class first identified
+in MVP-1.1-B and re-confirmed identically in every 1.2 sub-milestone since: `DashboardScreenTest` (2),
+`DiagnosticsScreenTest` (1), `LedgerStatementScreenTest` (2), `SecurePairingScreenTest` (1),
+`ServerConfigScreenTest` (2), `SettingsScreenTest` (2), `SyncScreenTest` (1), `VoucherDetailsScreenTest`
+(1) — a device-viewport/timing artifact specific to this physical device's screen geometry and
+instrumentation timing under `createAndroidComposeRule`, not a code defect: the same 12 tests fail
+identically whether or not the files near them are touched, and the failure signatures (e.g.
+`AssertionError: The component is not displayed!`, `Can't scroll to index 5, it is out of bounds`)
+are layout/timing assertions on screens never touched by any 1.2-A through E commit. Re-confirmed
+this session with zero overlap against the 6 files E actually changed.
+
+## E12. Performance
+
+No new query was added in E (E2's fix is a single-row `UPDATE`-equivalent write via the existing
+`upsert`-by-natural-key `PartyNoteDao`/`PartyRepositoryImpl` path, not a new read). The three
+Dincharya large-fixture performance proofs from Part D (D7) are unaffected by E and were re-confirmed
+passing in the same instrumented run (E10) — not re-benchmarked from scratch, since nothing that
+could change their cost was touched.
+
+## E13. Version
+
+**Bumped, the single coherent MVP-1.2 freeze bump, only after full A–D+E regression was confirmed
+green (E10):** `versionCode` 27→**28**, `versionName` `0.1.1-continuity.26`→**`0.1.1-continuity.27`**.
+Confirmed via direct inspection of the actual built APKs (`aapt dump badging`), not merely the source
+config:
+- Debug: `package: name='com.budcom.android.debug' versionCode='28' versionName='0.1.1-continuity.27'`, `application-debuggable`.
+- Release: `package: name='com.budcom.android' versionCode='28' versionName='0.1.1-continuity.27'` (no debug suffix, not debuggable, unsigned as expected — no signing credentials exist anywhere in this repository, unchanged blocker).
+
+## E14. Final APK artifacts
+
+- **Debug:** `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` — 14,470,132 bytes —
+  SHA-256 `92a38394e5eef4cee65eae4ba6caaef86b5e430dfccf22973aa1401362fe9d02`.
+- **Release (unsigned, verification only — never a public-release artifact):**
+  `apps/budcom_android/app/build/outputs/apk/release/app-release-unsigned.apk` — 2,509,604 bytes —
+  SHA-256 `ad11110475ef9e887afd642ef28c06f016a4f48fcf30b819456ab7aa1fee4c92`.
+
+## E15. Device installation
+
+**Device:** `10BF44124K000E3` (`I2407i`/`I2407`) — the same authorized owner device used throughout
+MVP-1.1/1.2, confirmed connected and authorized via `adb devices -l` before any action. **Pre-install
+state:** confirmed via `pm list packages`/`pm path` that **zero BUDCOM package of any kind was
+installed** (the Part D finding — the previously-documented `continuity.26` install had been removed,
+most likely by `connectedDebugAndroidTest`'s own default post-test uninstall behavior; see
+`docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` §5 for full detail). **Install method:**
+`adb install -r <debug apk>` — the safest available method (non-destructive flag even though there
+was nothing to preserve this time); no prior uninstall, no data clear, no pairing/company-state
+wipe performed (there was none to wipe). **Result:** `Performing Streamed Install / Success`.
+**Confirmed installed:** `dumpsys package com.budcom.android.debug` reports `versionCode=28`,
+`versionName=0.1.1-continuity.27`, `firstInstallTime == lastUpdateTime` (a genuine fresh install,
+consistent with the pre-install state).
+
+## E16. Smoke test — exactly what was and was not exercised on real hardware
+
+Performed directly on device `10BF44124K000E3` after install:
+
+1. **Launch:** `am start`/monkey-launcher intent → `MainActivity` became `mFocusedApp` within
+   seconds. **Verified on device.**
+2. **Expected first/current state:** rendered the **Secure Pairing** screen — the correct, honest
+   state for a device with no prior pairing/company data (confirmed by the pre-install package
+   check, E15) — screenshot-confirmed clean render matching the established dark theme, no visual
+   defect. **Verified on device.**
+3. **No fatal crash:** `logcat -d` scanned for `FATAL EXCEPTION`/`AndroidRuntime:` entries
+   attributable to the app across the entire launch — **zero matches**. **Verified on device.**
+4. **Back navigation:** pressing Back from Secure Pairing (the app's root/start destination, no
+   back stack beneath it) correctly returned to the home launcher — standard Android root-activity
+   behavior, not a crash; the app process remained alive in the background (`pidof` confirmed),
+   confirming this was normal navigation, not a process death. **Verified on device.**
+5. **Relaunch:** `am start` a second time brought `MainActivity` back to `mFocusedApp` cleanly.
+   **Verified on device.**
+6. **Existing company/pairing state preserved:** not applicable — there was none to preserve
+   (fresh install, E15).
+7. **Dashboard, Connect entry, Dincharya entry, Party Detail, Timeline, Issues, offline-capable
+   surfaces with real data:** **NOT exercised on this device.** This environment has no real paired
+   Tally Connector to complete Secure Pairing against, and per this task's own explicit instruction
+   ("do not fabricate successful Tally behavior if a real paired Tally connection is unavailable"),
+   no attempt was made to fake or bypass pairing to reach these screens. These surfaces are
+   **verified through automated instrumented Compose tests only** (E8/E10 — real Room/real Compose
+   on this same device, synthetic state, not the live app flow) — a distinct and weaker form of
+   evidence than genuine on-device navigation, stated as such rather than conflated with it.
+
+## E17. Git
+
+Commits this session (see §"Recent commits" or `git log`): a `fix(android)` commit for E2's
+note-completion UI wiring, a `test(android)` commit for E8's new tests plus the E13 version bump,
+and a `docs` commit for this Part E record plus the Development Ledger/Current-Development-Status
+updates. `git status` clean before and after each commit; no unrelated file, no secret/credential
+pattern, no generated artifact staged (build outputs remain correctly `.gitignore`d — verified via
+`git check-ignore`). Push result and final HEAD-vs-`origin/main` alignment are recorded in
+`docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` §2 (filled in after the push step, not
+self-referenced here to avoid this record going stale the moment a later commit is amended).
+
+## E18. Accepted limitations (explicit)
+
+- The device install gap discovered in Part D (now resolved by this session's own install, E15) is
+  a reminder that `connectedDebugAndroidTest` will remove whatever debug build is on this device
+  every time it runs — a structural property of this project's chosen test-gate mechanism on a real
+  persistent-install device, not something E "fixed" at the tooling level. Future sessions should
+  expect the same and plan accordingly (reinstall as the final step, exactly as this session did).
+- Dincharya/Connect's "no auto-reload on return from Party Detail" (E7) remains an accepted,
+  consistent, pre-existing UX characteristic across this codebase, not unique to any one screen —
+  not addressed here since fixing it everywhere at once would be a genuine new feature (a lifecycle-
+  reload pattern that exists nowhere in this codebase today), out of this hardening milestone's
+  scope.
+- All Part A/B/C/D accepted limitations (specialist doc §A12/§B13/§C12/§D13) remain unchanged and
+  still apply — none were revisited or reopened by E.
+
+## E19. MVP-1.2 FREEZE RESULT
+
+**MVP-1.2 COMPLETE / FROZEN.** Every freeze criterion from this task's own §20 verified with
+evidence above: A–D functionality intact (E2's fix is additive, nothing removed or altered);
+integrated hardening complete (E2–E9); no unresolved new correctness/security/data-integrity defect
+(the one defect found was fixed, E2); company isolation proven (E3); migration verified (E4);
+accessibility pass complete (E5); regression gates green apart from the documented historical
+12-device-viewport baseline (E10/E11); final APK builds (E14); final APK installs (E15); launch
+succeeds (E16); smoke test succeeds to the extent a real device without Tally pairing allows, with
+the exact boundary of what was and was not verified on-device stated honestly (E16); documentation
+complete (this record, plus the Development Ledger and Current Development Status); Git clean with
+coherent commits (E17); push result recorded separately, not assumed.
+
+Per this task's own explicit final stop condition: **STOP. Do not begin MVP-1.3. Do not modify
+Desktop. Do not begin public signing. Do not publish anything.**
+
+Next authorized task: **MVP-1.3 planning/recovery review** — read-only reconnaissance only, per this
+task's own instruction not to begin MVP-1.3 substantively.
