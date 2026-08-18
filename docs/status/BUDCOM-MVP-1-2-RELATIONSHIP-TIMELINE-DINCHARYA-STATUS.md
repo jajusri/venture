@@ -1,12 +1,14 @@
 # BUDCOM MVP-1.2 — Relationship Timeline, Issue History, Dincharya & OI — Status
 
-**Status:** Part A complete. Part B complete — acceptance gate PASSED. Part C complete. STOP per
-this session's own governing prompt — MVP-1.2-D not started.
+**Status:** Part A complete. Part B complete — acceptance gate PASSED. Part C complete. Checkpoint
+(B/C preservation + MVP-1.2-D readiness review) complete. **Part D (Dincharya) complete.** STOP per
+this session's own governing prompt — MVP-1.2-E not started, not authorized.
 **Companion documents:** `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` (concise current-state
 checkpoint), `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` (chronological record),
 `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md` (locked
-architecture baseline), `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-014–PDL-017 (the four
-locked product decisions this milestone builds on).
+architecture baseline), `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-014–PDL-018 (the five
+locked product decisions this milestone builds on, PDL-018 being Part D's own eligibility/ordering
+rules).
 
 ---
 
@@ -1034,5 +1036,371 @@ integrated-hardening freeze), not during this checkpoint.
 
 This record, together with the architecture document's own §10/§11/§13/§16/§17/§20, is intended to
 let a completely fresh Claude session begin MVP-1.2-D directly without repeating this analysis.
+
+---
+
+# Part D — MVP-1.2-D: Dincharya
+
+**Starting HEAD:** `d964b760e90339d3037a3447bbffa85e116e4801` (`docs: MVP-1.2-B/C git preservation
+checkpoint + MVP-1.2-D readiness review`), working tree clean, matching this checkpoint's own
+recorded HEAD exactly. `DatabaseConstants.VERSION` confirmed `9`, unchanged since 1.2-A.
+
+## D1. Scope actually implemented
+
+Exactly the three locked item types from CP6.1/PDL-018 — Follow-ups & Callbacks, Pending Tally
+Confirmation, Pending Contact Info — surfaced on a new top-level Dincharya screen reached from a
+fourth Dashboard primary entry, mirroring Connect's own MVP-1.1-B addition exactly. Every design
+decision the checkpoint flagged as "worth confirming during implementation" was resolved and is
+recorded here, not silently assumed:
+
+- **Dedicated `feature/dincharya/` repository, not an extension of `PartyRepository`.** The
+  checkpoint's file map left this open. `PartyRepository` already carries 24 party-scoped methods
+  and five independent hand-written test fakes elsewhere in the tree
+  (`ConnectViewModelTest`/`PartyXmlExportViewModelTest`/`ProspectCreateViewModelTest`/
+  `ReconcilePartiesFromLedgersUseCaseTest`/`SyncViewModelTest`); Dincharya's three queries are
+  genuinely company-wide, not party-scoped, so a new `DincharyaRepository`
+  (`feature/dincharya/domain/repository/DincharyaRepository.kt` +
+  `data/repository/DincharyaRepositoryImpl.kt`, its own `DincharyaBindModule`) composes the same
+  underlying DAOs directly rather than growing `PartyRepository` and forcing five unrelated fakes to
+  grow stub overrides for a concern none of them touch.
+- **Pending Tally Confirmation is grouped per Party, not per pending field.** `party_field_provenance`
+  can have several fields in `exported` state for one Party at once; a naive one-row-per-field query
+  would show the same Party multiple times in one Dincharya group, which reads as a duplicate to a
+  user even though it is technically two different fields. `PartyFieldProvenanceDao.
+  pagePendingConfirmationForCompany` uses `GROUP BY companyId, partyId` with
+  `GROUP_CONCAT(fieldName, ',')`, so a Party with several pending fields is exactly one Dincharya
+  item, its card listing every pending field's plain-language label
+  (`TallyExportFieldMapping.labelFor`).
+- **No SQL JOIN across DAOs — a bounded bulk-by-id lookup instead.** The follow-up and
+  pending-confirmation queries only carry `partyId`, not a display name; rather than joining
+  `party_notes`/`party_field_provenance` against `cached_parties` in SQL (which would make each DAO
+  no longer single-table-focused), `DincharyaRepositoryImpl` resolves display names via one new
+  `PartyDao.findByIds(companyId, partyIds)` bulk lookup per group — the same "bulk read once, map in
+  Kotlin" precedent `ConnectViewModel` already uses for tag/source-link enrichment, just moved into
+  the repository layer. Never one query per row.
+- **The two genuine open product ambiguities the checkpoint flagged are now closed by explicit
+  instruction, recorded as `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-018:** contact
+  completeness excludes Prospects and excludes contact-person-level detail entirely; follow-ups never
+  auto-expire, with the checkpoint's own proposed conservative `dueAt ASC` default confirmed exactly
+  as the locked ordering rule (it already yields overdue-first/due-today/upcoming for free, since
+  those are already chronologically ordered — no separate three-way `CASE` needed).
+
+**Explicitly not built**, confirmed untouched (grep-verified, D9): Referral Tree, Home Insights/OI
+engine beyond the locked framing copy, generative AI, OS notifications/`Worker`/`POST_NOTIFICATIONS`,
+Vartalap, Business Profile, Catalogue, cloud sync, any Desktop/Connector file, any new Tally
+mutation/write path, any Room migration (no schema/column change was needed for any of the three
+item types, confirmed by the readiness review and unchanged by implementation).
+
+## D2. Architecture — three independent bounded queries, not a merged feed
+
+Unlike Relationship Timeline (1.2-B/C), which genuinely needed one interleaved chronological
+`UNION ALL` because notes/exports/issue-lifecycle events share one timeline, Dincharya's three item
+types are architecturally required to stay **visually separate, capped groups** (architecture §10 —
+"grouped by the three deterministic item types... never one undifferentiated mixed list"), so each
+is its own single bounded query, never merged:
+
+- `PartyNoteDao.pageFollowUpsForCompany`/`countFollowUpsForCompany` — `type IN
+  ('commitment','follow_up') AND dueAt IS NOT NULL AND completedAt IS NULL`, `ORDER BY dueAt ASC,
+  noteId ASC`, deliberately no `dueAt` lower bound (PDL-018 — no automatic expiry).
+- `PartyFieldProvenanceDao.pagePendingConfirmationForCompany`/`countPendingConfirmationForCompany` —
+  `state = 'exported'`, grouped per Party (D1).
+- `PartyDao.pageMissingContactInfo`/`countMissingContactInfo` — `classification != 'prospect' AND
+  primaryPhoneNormalized IS NULL AND (primaryEmail IS NULL OR TRIM(primaryEmail) = '')`.
+
+Each group is fetched with a fixed cap (`DINCHARYA_DEFAULT_GROUP_LIMIT = 20`, matching this
+codebase's existing `pageSize` convention) plus a separate `count*` query for the true total, so the
+UI can show an honest "N more" (architecture §10's explicit bounded-disclosure requirement) — this is
+a single capped fetch per group, not the infinite-scroll pagination Connect/Timeline use, since
+Dincharya's own product requirement is a bounded worklist, not a browsable list.
+
+## D3. Data model
+
+New `feature/dincharya/domain/model/DincharyaModels.kt`: `DincharyaItem` sealed interface (three
+cases — `FollowUp`/`PendingTallyConfirmation`/`PendingContactCompletion`, each carrying `partyId`/
+`partyDisplayName` for the deep-link), `FollowUpUrgency` enum (`Overdue`/`DueToday`/`Upcoming` —
+derived purely from comparing `dueAt` to "now" in the device's local zone, never an invented priority
+score), `DincharyaGroup<T>` (bounded `items` + true `totalItems`, `moreCount` computed), and
+`DincharyaSnapshot` (all three groups together, `isEmpty` convenience). Zero new Room entity, zero
+new table — every field already existed on `PartyNoteEntity`/`PartyFieldProvenanceEntity`/
+`PartyEntity` since 1.2-A/1.1-A/1.1-D.
+
+New `PartyFieldProvenanceDao.kt`'s `PendingConfirmationRow` projection (`companyId`/`partyId`/
+`fieldNamesCsv`/`earliestAt`) — a plain non-`@Entity` Room projection, same pattern as
+`PartyTimelineDao`'s `TimelineRowEntity`/`PartyNoteDao`'s `IssueActivityRow`.
+
+## D4. Repository / use-case API
+
+`DincharyaRepository` (three methods, `getFollowUps`/`getPendingTallyConfirmations`/
+`getPendingContactCompletions`, each `(companyId, limit)`) implemented by `DincharyaRepositoryImpl`,
+injecting `PartyDao`/`PartyNoteDao`/`PartyFieldProvenanceDao`/`TimeProvider`/`DispatcherProvider`
+directly — the same constructor-injection and `withContext(dispatchers.io)` IO-wrapping convention
+`PartyRepositoryImpl` already uses, `TimeProvider.nowEpochMillis()` for urgency classification (never
+a direct `System.currentTimeMillis()` call). `GetDincharyaSnapshotUseCase` combines all three into
+one `DincharyaSnapshot` — the single entry point `DincharyaViewModel` calls, so "load Dincharya" is
+always all three groups together, never a partially-loaded screen.
+
+## D5. UI — new top-level screen + fourth Dashboard entry
+
+`feature/dincharya/presentation/`: `DincharyaUiState`/`DincharyaEvent`/`DincharyaEffect`
+(`DincharyaScreen.kt`), `DincharyaViewModel` (mirrors `ConnectViewModel`'s exact
+`companySession.observeSelectedCompanyId().distinctUntilChanged()` reload-on-company-change pattern),
+`DincharyaScreen`/`DincharyaRoute` (Compose). Reuses the established shared components
+(`MasterDataLoadingIndicator`/`MasterDataErrorBlock`/`MasterDataUiError`) and the honest-empty-state
+discipline already proven on Connect/Relationship Timeline — no new visual system introduced. One
+`LazyColumn` with an always-visible OI framing line (`"We are not AI. This is OI — programmed to help
+you."`, architecture §10's exact locked wording) at the top, then one section per non-empty item
+type (header, capped rows, "N more" when `moreCount > 0`), each row a labeled `Card` with a combined
+semantics `contentDescription` (name, plain-language reason, and body/fields), deep-linking to
+`Routes.partyDetail(partyId)` on tap — never a second, parallel detail view. Plain-language reason
+labels only, exactly the task's own examples ("Follow-up overdue"/"Follow-up due today"/"Follow-up
+upcoming"/"Tally confirmation pending"/"Contact details incomplete") — no raw `NoteType`, DAO name, or
+internal enum ever reaches the UI.
+
+Dashboard: `DashboardEvent.OpenDincharya` → `DashboardViewModel.onEvent` → `DashboardNavigation.
+Dincharya` → `DashboardScreen`'s `LaunchedEffect` collector → `onOpenDincharya()` → `BudcomNavHost`'s
+`navController.navigate(Routes.DINCHARYA)` — the identical five-hop wiring Connect's own
+`OpenConnect`/`DashboardNavigation.Connect` already uses, replicated exactly, not reinvented. Fourth
+`HomePrimaryEntryRow` (`Icons.Filled.CheckCircle`, confirmed present in the actual
+`material-icons-core` runtime jar before use, not assumed) added after Connect's row in
+`HomePrimaryEntries`. New simple no-arg `Routes.DINCHARYA = "dincharya"` (the `Routes.SETTINGS`-style
+template, not `Routes.CONNECT`'s query-arg template, since Dincharya takes no search parameter).
+
+**A self-caught gap, fixed before commit:** the first draft of `DincharyaScreen` only showed an error
+block when there was zero existing content, silently dropping a refresh failure once the list already
+had rows — inconsistent with `ConnectScreen`'s own `connect_inline_error` discipline of always stating
+an error honestly even when stale content remains visible. Fixed by adding the identical inline-error
+row inside the content branch.
+
+## D6. Company isolation — the dominant risk, addressed at every layer
+
+Per architecture §13/§20 Risk #1 and CP6.3's own naming of this as the milestone's single highest
+risk, every one of the three new DAO queries binds `companyId` directly in SQL as the sole isolation
+boundary (no secondary `partyId` narrowing exists for a company-wide query to lean on). Named,
+explicit, blocking adversarial tests exist at every layer, not as incidental side effects of other
+tests:
+
+- **DAO (instrumented, real Room, run on device `10BF44124K000E3`):**
+  `PartyNoteDaoTest.followUpsForCompanyAreCompanyIsolatedEvenWithIdenticalNoteIdsAndDueDates` (same
+  `noteId`, same `dueAt`, two companies, different body text — each company's follow-up page returns
+  only its own row); `PartyFieldProvenanceDaoTest.
+  pendingConfirmationForCompanyIsCompanyIsolatedEvenWithIdenticalPartyIds` (identical `partyId`
+  reused under two companies with different pending fields — each company's group shows only its
+  own field); `PartyDaoTest.pageMissingContactInfoIsCompanyIsolatedEvenWithIdenticalNamesAndPhones`
+  (identical display name across two companies, one missing contact info and one not — company B's
+  list is empty for that same-named Party, not company A's data).
+- **Repository (JVM, `DincharyaRepositoryImplTest`):** `follow-ups are company isolated end to end
+  through the repository`, `pending confirmations are company isolated end to end through the
+  repository` — proving `DincharyaRepositoryImpl`'s own display-name-resolution step (`PartyDao.
+  findByIds`) is itself `companyId`-scoped, so even the enrichment join can never leak a name across
+  companies.
+- **ViewModel (JVM, `DincharyaViewModelTest`):** `switching companies triggers a fresh load scoped to
+  the new company, never mixing data` — company A's follow-up body text is on screen, the company
+  session flips to company B mid-session, and only company B's content appears, with `companyId` in
+  `DincharyaUiState` updated to match.
+
+All company-isolation tests reuse the exact adversarial pattern this session's own precedent
+(1.2-B/C's `PartyTimelineDaoTest`/`PartyRepositoryImplTest`) established: identical natural keys
+(name/phone/`noteId`/`partyId`/`dueAt`) deliberately reused across two companies, proving isolation
+holds under a genuine identity collision, not just different-looking data.
+
+## D7. Performance evidence
+
+Each of the three new company-wide queries has a dedicated 500-row large-fixture instrumented
+performance test, following `PartyDaoTest.pageByClassification_staysFastAndBoundedWithALargeFixture`'s
+exact precedent and sub-2-second bar, all **run and passing on real hardware** (device
+`10BF44124K000E3`), not JVM-simulated:
+
+- `PartyNoteDaoTest.pageFollowUpsForCompanyStaysBoundedAndFastWithALargeFixture` — 500 eligible
+  follow-up notes across 50 Parties.
+- `PartyFieldProvenanceDaoTest.pagePendingConfirmationForCompanyStaysBoundedAndFastWithALargeFixture`
+  — 500 Parties each with one `exported`-state field.
+- `PartyDaoTest.pageMissingContactInfoStaysBoundedAndFastWithALargeFixture` — 500 Parties, half
+  eligible after the Prospect-exclusion filter.
+
+Per the readiness review's own explicit instruction (CP6.5, PDL-012), this evidence was the deciding
+factor for whether a new Room index was justified — **all three stayed comfortably under the 2-second
+bar using only the existing `(companyId, ...)`-prefixed indices** (`party_notes`'s
+`(companyId, partyId, createdAt)`, `party_field_provenance`'s `(companyId, partyId)`,
+`cached_parties`'s `(companyId)`/`(companyId, classification)`), so **no new index and no
+`MIGRATION_9_10` were added** — an evidence-grounded "no" rather than a pre-emptive index.
+`DatabaseConstants.VERSION` remains `9`, unchanged since 1.2-A. Every query uses `LIMIT`/`OFFSET`
+throughout; the one bulk-by-id enrichment lookup (`PartyDao.findByIds`) is bounded to the current
+page's distinct `partyId` set (≤20 per group), never a second full-company read; no N+1 anywhere —
+each item type is exactly one bounded query plus at most one bounded enrichment query, never one
+query per Party.
+
+## D8. Offline behavior
+
+Every Dincharya read is local-Room-only. Grep-verified zero import of any Connector/network/Retrofit/
+OkHttp type anywhere under `feature/dincharya/` (same class of evidence as every prior 1.1/1.2
+milestone). The "Pending Tally Confirmation" item type reads `party_field_provenance.state` — data
+MVP-1.1-D's existing `GET /ledgers/{id}` re-sync path already persisted locally — Dincharya performs
+no live Tally read of its own, exactly as architecture §13/§14 require.
+
+## D9. Mini-hardening review
+
+Performed by re-reading the actual changed production code fresh, not merely trusting the tests that
+already passed:
+
+- **Company isolation:** D6 above — the dominant focus, addressed at DAO/repository/ViewModel layers.
+- **False affordances:** every row's tap action genuinely navigates to that Party's real Detail
+  screen (`Routes.partyDetail`, unchanged) — no placeholder button, no action that looks live but
+  does nothing.
+- **Hidden network dependency:** none — D8.
+- **N+1 queries:** none — D7; the one enrichment lookup is bounded, bulk, and per-group, not per-row.
+- **Unsafe null handling:** a follow-up whose display-name lookup misses (structurally shouldn't
+  happen — Parties are never deletable in this codebase) falls back to the raw `partyId` rather than
+  dropping the item or crashing — a genuine follow-up must never silently vanish from Dincharya just
+  because a display-name join missed (`DincharyaRepositoryImplTest`'s own dedicated test for this).
+- **Duplicate items:** a Party with several pending Tally-confirmation fields surfaces as exactly one
+  Dincharya item (D1/D2), not several; a Party can legitimately appear once in each of the three
+  different groups at once (e.g., missing contact info *and* a pending confirmation) — this is not a
+  duplicate, it is two independently true facts about the same Party, and the Compose `LazyColumn`
+  item keys are prefixed per group (`"followup_..."`/`"confirmation_..."`/`"contact_..."`) so this
+  can never produce a duplicate-key crash (`DincharyaScreenTest.
+  sameCompanyPartyAppearingInTwoDifferentGroupsProducesNoDuplicateNodeKeyCrash`).
+  Within one group, each source row (note/provenance-group/Party) produces exactly one item — no join
+  that could fan out.
+- **Accessibility omissions:** every interactive row is a labeled `Card` with a combined
+  `contentDescription` (name + plain-language reason + body/fields) — the same self-describing
+  pattern already audited throughout Connect/Party Detail; no icon-only or unlabeled control
+  introduced; overdue urgency is stated in text first (`dincharya_reason_followup_overdue` etc.),
+  with color used only as a secondary signal, never the sole channel for a state.
+- **Misleading wording:** the reason strings are the task's own locked plain-language examples; the
+  OI framing line is the architecture doc's own locked exact wording — nothing invented.
+- **Destructive behaviour:** zero new `DELETE`/mutation statement anywhere in the three new DAO
+  queries or the new repository — Dincharya is 100% read-only against already-existing tables.
+- **Accidental MVP-1/1.1/1.2-A/B/C regression:** `PartyDao`/`PartyNoteDao`/`PartyFieldProvenanceDao`'s
+  existing methods are untouched (only new methods appended); `PartyRepository`'s 24-method interface
+  is untouched (Dincharya deliberately does not extend it, D1); the full JVM/lint/assemble/instrumented
+  regression suites confirm this directly (D11).
+- **Refresh-error honesty:** D5's self-caught inline-error fix — a refresh failure with existing
+  content on screen is now always stated, never silently swallowed.
+- **Zero Desktop/Connector/manifest/Worker/notification touch:** grep-verified this session (D1).
+
+**Defects found and fixed:** one — the refresh-error-swallowing gap (D5/D9), caught during this
+session's own review before the milestone was declared complete, not by an external report.
+
+**No other genuine defect found.**
+
+## D10. Tests
+
+- **New/extended instrumented DAO tests (real Room, device `10BF44124K000E3`), 22 total:**
+  `PartyDaoTest` — 6 new (missing-contact eligibility, Prospect exclusion, deterministic ordering,
+  company isolation, 500-row performance, bulk `findByIds`); `PartyNoteDaoTest` — 7 new (eligible-type
+  filter, `dueAt ASC` ordering including the overdue-before-upcoming proof, same-`dueAt` tie-break,
+  a very-old-overdue note staying eligible forever, empty-result, company isolation, 500-row
+  performance); new file `PartyFieldProvenanceDaoTest` — 9 tests (basic CRUD round-trip coverage this
+  DAO never had before, per-Party grouping/`GROUP_CONCAT`, never-more-than-one-row-per-Party,
+  earliest-first ordering, clears once every field leaves `exported`, company isolation, 500-row
+  performance).
+- **New instrumented Compose tests, 12 total:** new file `DincharyaScreenTest` — loading, error+retry,
+  empty state, each of the three item types rendering + tap-to-navigate, all three groups rendered
+  simultaneously, the same Party appearing in two groups at once (no crash), "N more" shown/hidden
+  correctly, each `FollowUpUrgency` rendering its own reason, long Party name + long note body
+  rendering without crashing.
+- **New instrumented Dashboard test, 1:** `DashboardScreenTest.
+  dincharyaPrimaryEntryIsShownAndNavigable` — the fourth entry row is visible and emits
+  `DashboardEvent.OpenDincharya` on tap, mirroring the existing `OpenConnect` case precedent.
+- **New JVM tests, 18 total:** new file `DincharyaRepositoryImplTest` — 9 tests (display-name
+  resolution, urgency classification across all three states, the display-name-fallback defensive
+  path, `moreCount` computation, company isolation for follow-ups and for pending confirmations,
+  field-name-to-label mapping, contact-completion pass-through, all three types fetched independently
+  and combined without interference); new file `DincharyaViewModelTest` — 9 tests (no-company-selected
+  message state, successful combined load, genuine empty state vs. error, `moreCount` surfacing,
+  repository-failure error state, retry-clears-error, refresh-without-stuck-busy-flags, item-tap
+  effect, company-switch isolation at the ViewModel layer).
+- **Existing-test mechanical updates (no behavior change):** `PartyRepositoryImplTest`'s own
+  `FakePartyDao`/`FakePartyNoteDao`/`FakePartyFieldProvenanceDao` test doubles each needed stub
+  overrides added for the three DAOs' new interface methods (`= error("unused")`, since
+  `PartyRepositoryImpl` never calls them) — the same precedented mechanical-update class documented in
+  every prior 1.2-A/B/C session whenever a shared DAO interface gains a method; `DashboardViewModelTest`'s
+  existing `navigation events emitted` test extended with the new `OpenDincharya`/`Dincharya` case.
+
+## D11. Full regression results
+
+- `testDebugUnitTest`: **1,219/1,219 passing** (was 1,201 after C; +18 new this session — 9 repository
+  + 9 ViewModel).
+- `testReleaseUnitTest`: **1,219/1,219 passing** (full independent re-run, same suite, same count).
+- `lintDebug` / `lintRelease`: **0 errors** both (confirmed via report XML `severity="Error"` count,
+  not just console summary).
+- `assembleDebug`, `assembleRelease` (including R8 minification/shrinking), `assembleDebugAndroidTest`:
+  all `BUILD SUCCESSFUL`.
+- `connectedDebugAndroidTest` on device `10BF44124K000E3` (`I2407i`/`I2407`): **309/321 passing** (was
+  274/286 after C; +35 net new instrumented tests this session — 22 DAO + 12 Compose + 1 Dashboard).
+  The 12 failures are byte-for-byte the same pre-existing device-viewport-artifact class documented
+  since MVP-1.1-B (`DashboardScreenTest`, `DiagnosticsScreenTest`, `LedgerStatementScreenTest`,
+  `SecurePairingScreenTest`, `ServerConfigScreenTest`, `SettingsScreenTest`, `SyncScreenTest`,
+  `VoucherDetailsScreenTest`) — **zero overlap with any file this session touched**, confirmed by name
+  against every one of the 58 Dincharya/Party-DAO/Dashboard-entry testcases in the XML report
+  individually.
+
+**A genuine environmental false alarm, investigated rather than accepted blindly, exactly the same
+class already documented in Part A's own session:** the first full instrumented run this session
+produced 27 failures, not the expected 12 — the 15 extras were entirely in `CompanyScreenTest` (9,
+`IllegalStateException: No compose hierarchies found in the app`) and `PdfPreviewScreenTest`/
+`PdfPageRendererTest` (6), two classes never in the documented baseline and never touched this
+session, every extra failure carrying the identical device-artifact signature. `adb shell svc power
+stayon usb` alone (Part A's original fix) was applied proactively before this run but proved
+insufficient this time; investigated further rather than retried blindly — `dumpsys battery` showed
+`USB powered: true` but the device's own 30-second default screen-off timeout was still in effect.
+Extended it directly (`adb shell settings put system screen_off_timeout 1800000`) plus `svc power
+stayon true` (not just `usb`) and a fresh wake/keyguard-dismiss, then re-ran the full suite: it
+completed with exactly the documented 12-failure baseline, zero extras, confirming the additional 15
+were a device screen-timeout artifact, not a code regression — recorded here per the Durable
+Development Record rule rather than silently discarded.
+
+## D12. Version / artifacts
+
+**Version not bumped.** Per this task's explicit instruction ("D → review → E integrated hardening →
+one coherent version bump/build/install") and this codebase's own consistent precedent across every
+1.2-A/B/C session: `versionName`/`versionCode` remain `0.1.1-continuity.26`/`27`, unchanged from the
+MVP-1.1 freeze. No APK artifact was produced or installed for distribution this session — only the
+standard `assembleDebug`/`assembleRelease`/`assembleDebugAndroidTest` regression-gate builds (not
+preserved as named release candidates), plus the ephemeral debug test-harness install/uninstall that
+`connectedDebugAndroidTest` itself performs as part of running the instrumented suite on device
+`10BF44124K000E3` — the same mechanism, at the same `versionName`/`versionCode`, every prior 1.2-A/B/C
+session already used for this exact purpose. This is distinct from, and not, a deliberate
+release-candidate installation for the device owner's use.
+
+## D13. Accepted limitations (explicit)
+
+- Pending Tally Confirmation clears only when a field genuinely leaves the `exported` state via a real
+  Tally re-sync (`confirmFieldFromTally`/`reconcileExportedFieldFromTally`, both unchanged 1.1-D
+  paths) — Dincharya itself performs no live Tally read and cannot force a field to clear; this is by
+  design (architecture §13 — zero new Connector call), not a gap.
+- The follow-up urgency boundary (`Overdue`/`DueToday`/`Upcoming`) is computed once per load against
+  `TimeProvider.nowEpochMillis()` at the moment Dincharya is opened/refreshed — a follow-up due
+  exactly at midnight will not silently re-label itself to "overdue" while the screen sits open
+  unrefreshed; this matches every other "now"-relative computation already in this codebase (all
+  computed once per load, never a live ticking clock) and is not a new risk class.
+- Each Dincharya group is capped at 20 items with an honest "N more" count, never paginated further —
+  a deliberate, locked product decision (architecture §10's explicit anti-infinite-scroll requirement),
+  not an oversight; there is no "load more" affordance for Dincharya groups, unlike Connect/Timeline's
+  paged lists.
+- All Part A/B/C accepted limitations (specialist doc §A12/§B13/§C12) remain unchanged and still
+  apply.
+
+## D14. FINAL RESULT
+
+**MVP-1.2-D COMPLETE.** Every mandatory gate item verified with evidence above: compiles clean
+(production + both test source sets); full JVM regression clean both variants (1,219/1,219); both
+lints 0 errors; all three assembles green including R8-minified release; company-isolation tests pass
+with dedicated adversarial evidence at DAO, repository, and ViewModel layers, including identical-
+natural-key collision cases; 500-row large-fixture performance proof passes comfortably under the
+2-second bar for all three new queries, on real hardware, with no new index added (evidence said none
+was needed); instrumented suite at the exact known-12 device-viewport baseline with zero overlap,
+confirmed by an investigated-and-resolved retry rather than blind acceptance; zero P0/P1 defect (one
+self-caught P3 refresh-error-honesty gap, fixed before commit); zero security/data-integrity issue;
+zero accidental scope expansion (no Referral Tree, Home Insights engine, AI ranking, OS notification,
+contact-person task, or Desktop/Connector touch anywhere in this session's diff); zero architecture
+contradiction; PDL-018 records every implementation-level product decision this milestone needed.
+
+Per this task's own explicit governing instruction: **STOP. Do not begin MVP-1.2-E. Do not begin
+MVP-1.3. Do not push. Do not install a release-candidate APK.**
+
+Next authorized task: **MVP-1.2-E — integrated MVP-1.2 hardening, full regression, migration
+re-verification, accessibility pass, freeze** (architecture §11's own 1.2-E line item), pending
+Product Owner/technical review of this Part D result.
 
 **Exact next task: MVP-1.2-D — Dincharya implementation**, pending Product Owner/technical review.

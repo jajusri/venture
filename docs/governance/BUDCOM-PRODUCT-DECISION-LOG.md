@@ -152,6 +152,73 @@ Each entry should contain:
 
 **Status:** Locked
 
+### PDL-018 — Dincharya v1 item-eligibility, ordering, and completion rules
+
+**Date:** 2026-08-18
+**Area:** MVP-1.2-D — Dincharya
+**Decision:** Dincharya v1 is a deterministic, action-focused worklist with exactly three item
+types, each locked as follows:
+
+1. **Contact completeness** — a Party is contact-complete when it has *at least one* valid phone
+   **OR** valid email (not both required). "Pending Contact Completion" shows only when a Party is
+   missing *both* a valid phone and a valid email. "Valid phone" reuses
+   `PhoneNumberNormalizer.normalizeForSearch` exactly (the same `primaryPhoneNormalized` column
+   every other Party surface already relies on) — never a second phone-validation rule. "Valid
+   email" mirrors this codebase's existing convention of applying no format check anywhere: non-
+   blank after trim is the only bar.
+2. **Contact-person completeness is out of scope for Dincharya v1** — no separate tasks for missing
+   contact-person name/designation/phone/email are generated, even though the underlying
+   architecture (MVP-1.1) already tracks contact persons. Only the Party-level minimum-
+   contactability rule above is in scope.
+3. **Prospects are excluded from Pending Contact Completion** — a Prospect missing both phone and
+   email never appears in this Dincharya group. The rule is not broadened to reconsider this later
+   without a fresh product decision.
+4. **Follow-ups never automatically expire** — an overdue `commitment`/`follow_up` note remains
+   active in Dincharya indefinitely until the user explicitly marks it complete or reschedules it
+   (changes its due date). There is no age-based decay, demotion, or silent removal.
+5. **Deterministic ordering, never an invented priority score** — every group orders by a plain,
+   explainable rule (`dueAt ASC` for follow-ups — which yields overdue-first, then due-today, then
+   upcoming, for free, since those are already chronologically ordered; earliest-pending-since for
+   Tally confirmation; display name for contact completion), with a stable secondary tie-break
+   (natural key) so paging/rendering is never ambiguous. No AI ranking, no "urgency score," no
+   generative recommendation of any kind.
+6. **Every item has a deterministic source, ordering rule, and disappearance condition** — a
+   follow-up disappears only when completed or its due date changes past the eligibility window; a
+   pending-confirmation item disappears only when every one of that Party's `exported`-state fields
+   clears (confirmed or conflicted) via a genuine Tally re-sync; a contact-completion item
+   disappears only when a valid phone or email is actually added. Never merely because the screen
+   was opened or refreshed.
+
+**Why:** These are the concrete implementation-level decisions the MVP-1.2-D readiness review (see
+`docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` "Checkpoint" §CP6.4) flagged
+as genuinely open and requiring an explicit Product Owner decision rather than a Claude judgment
+call — specifically, the exact contact-completeness scope (Customer/Prospect/Supplier/Other
+boundary) and the aging/decay rule for long-overdue follow-ups. Both are now closed by explicit
+instruction, not inferred.
+
+**Alternatives rejected:** Requiring both phone and email for contact-completeness (rejected —
+either is sufficient to reach the Party); including contact-person-level tasks in v1 (rejected —
+disproportionate scope for a v1 worklist, deferred to a future milestone if ever needed); including
+Prospects in Pending Contact Completion (rejected — Prospects are pre-relationship records still
+being qualified, not yet expected to carry full contact detail); an automatic expiry/decay window
+for overdue follow-ups (rejected — silently hiding a genuinely unresolved commitment is a worse
+outcome than an old item staying visible); an AI/heuristic priority score for ordering (rejected —
+contradicts the "deterministic, explainable, bounded" architecture principle and Dincharya's
+explicit non-AI framing, PDL-016/PDL-017).
+
+**Consequences:** `PartyDao.pageMissingContactInfo`/`countMissingContactInfo` filter
+`classification != 'prospect'`; `PartyNoteDao.pageFollowUpsForCompany`/`countFollowUpsForCompany`
+carry no `dueAt` lower bound and order by `dueAt ASC, noteId ASC`;
+`PartyFieldProvenanceDao.pagePendingConfirmationForCompany` groups per Party and clears the instant
+no field remains in the `exported` state. No new Tally state machine, no new phone/email validation
+implementation, no contact-person Dincharya item type exist anywhere in the MVP-1.2-D code.
+
+**Revisit trigger:** A dedicated future product session that explicitly wants contact-person-level
+Dincharya tasks, wants Prospects included in contact-completion tracking, or wants a concrete
+follow-up aging/decay policy — none of which should be inferred from this milestone's code.
+
+**Status:** Locked
+
 ---
 
 ## New decision template
