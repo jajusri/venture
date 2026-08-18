@@ -363,15 +363,20 @@ MVP-1.0.x permits only defects, missed essentials and bounded micro-polish.
   (`continuity.26`, versionCode 27) all live there.
 
 **MVP-1.1 is frozen as a whole.** No further MVP-1.1-scoped work should begin without an explicit
-new go-ahead reopening it. The next milestone is **MVP-1.2** (planning/recovery review only — not
-started, see §20 below).
+new go-ahead reopening it.
 
-- MVP-1.2: Relationship Timeline, Issue History, Dincharya and deterministic OI. **Planning/
-  architecture complete (2026-08-17, phase 26)** —
-  `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`. Four open
-  product questions remain before implementation starts (see that document §3), and
-  implementation itself has **not begun**.
-- MVP-1.3: Business Profile. Not started.
+- **MVP-1.2: Relationship Timeline, Issue History, Dincharya and deterministic OI — COMPLETE /
+  FROZEN (2026-08-18).** Parts A through E (integrated hardening + freeze) all implemented, tested,
+  and version-bumped (`0.1.1-continuity.27`, versionCode 28 — the single coherent MVP-1.2 freeze
+  bump). Product decisions locked as PDL-014–PDL-018. Full evidence:
+  `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts A–E; concise summary
+  and exact regression numbers per part: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` §3. (This
+  Ledger entry closes a documentation gap: Parts A–E completed and were recorded in the specialist
+  status doc and the current-status checkpoint, but a corresponding Ledger phase entry for D/E was
+  not added at the time — see phase 34 below for the consolidated record.)
+- **MVP-1.3: Business Profile — IN PROGRESS.** Part A (Business Identity Foundation) complete,
+  acceptance gate passed (2026-08-18); product decisions locked as PDL-019. Full evidence:
+  `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A; see phase 34 below.
 - MVP-1.4: Catalogue and governed assets. Not started.
 - Vartalap, Insights and broader extensions remain concepts unless later committed evidence says
   otherwise.
@@ -414,6 +419,11 @@ plan recommends deferring them). Once answered, the recommended next prompt is t
 `party_issues` table, `MIGRATION_8_9`) only, not the full milestone. Do not start MVP-1.2
 substantively, and do not start external distribution, before an explicit go-ahead.
 
+**Superseded 2026-08-18 (phase 34):** all four questions above were answered, MVP-1.2 A-E is
+complete/frozen, and MVP-1.3-A is complete — see phase 34 (section 22) for the current, accurate
+state. This paragraph is left as historical record of the 2026-08-17 planning snapshot, not
+rewritten.
+
 ## 21. Development and automation governance
 
 The owner sets outcomes and accepts physical/product results. ChatGPT is recorded product and
@@ -427,10 +437,58 @@ At each new AI session: read the checkpoint; inspect status/recent history; read
 domain status and ledger; reconstruct from repository evidence; continue rather than redo. No
 meaningful completed work may exist only in session memory.
 
-## 22. Current source-of-truth references
+## 22. Phase 34 — MVP-1.2 D/E completion (retroactive record) and MVP-1.3-A
+
+This phase closes a documentation gap (§19 above): MVP-1.2-D (Dincharya) and MVP-1.2-E (Integrated
+Hardening, Freeze, Final Candidate) were implemented, tested, and frozen on 2026-08-18, with full
+evidence recorded in the specialist status doc and the current-status checkpoint at the time, but no
+corresponding entry was added to this Ledger. Recorded now, evidence-first, not re-narrated:
+
+- **MVP-1.2-D (Dincharya):** three locked deterministic item types (PDL-018) — Follow-ups/
+  Callbacks, Pending Tally Confirmation, Pending Contact Completion — each a new bounded,
+  `companyId`-scoped, company-wide DAO query; new `feature/dincharya/` repository; a fourth
+  Dashboard entry. 53 new tests. `testDebugUnitTest`/`testReleaseUnitTest` 1,219/1,219 both;
+  instrumented suite 309/321 (unchanged 12-failure baseline). Zero schema change. Full evidence:
+  `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Part D.
+- **MVP-1.2-E (Integrated Hardening, Freeze, Final Candidate):** integrated audit of Parts A–D
+  together; found and fixed one consequential defect (`SetNoteCompletionUseCase` had zero UI caller
+  through B/C/D, wired into Party Detail's note rows). 5 new tests. `testDebugUnitTest`/
+  `testReleaseUnitTest` 1,221/1,221 both; instrumented suite 312/324 (unchanged baseline). Version
+  bumped to `0.1.1-continuity.27`/versionCode 28 — the single coherent MVP-1.2 freeze bump. Built,
+  installed on device `10BF44124K000E3`, and smoke-tested. Pushed to `origin/main` (fast-forward,
+  no force, byte-identical post-push verification). Full evidence:
+  `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Part E.
+- **MVP-1.3 planning/recovery review (read-only):** produced a complete gap-analysis/architecture
+  package (`docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`) identifying five
+  genuine open product decisions rather than guessing at scope. No implementation performed.
+- **MVP-1.3-A (Business Identity Foundation) — implemented and complete (2026-08-18).** The five
+  open product decisions were supplied directly in the implementation session's own governing
+  prompt and locked as **PDL-019**: per-company scope, the initial field set, no
+  `PartyFieldProvenance`/no Tally round-trip, app-private logo storage behind a
+  `BusinessProfileLogoStore` abstraction (file-type allowlist, 5 MB streaming cap, two-layer
+  path-traversal defense), owner-side only. New `business_profile` table (`MIGRATION_9_10`),
+  full repository/domain/logo-storage layers, and a basic whole-entity owner-side editor wired
+  into a fifth Dashboard entry. One self-caught defect fixed pre-test (a Cancel-reverts-to-
+  unsaved-data bug); one genuine instrumented-test discrepancy investigated and resolved at the
+  test level rather than assumed to be baseline flakiness (root-caused to off-screen Save/Cancel
+  buttons on this device, fixed with `performScrollTo()`, confirmed against a comparison test on
+  an already-established screen). 35 new tests (17 JVM + 18 instrumented), with dedicated
+  adversarial company-isolation coverage at the DAO, repository, and ViewModel layers.
+  `testDebugUnitTest`/`testReleaseUnitTest` 1,255/1,255 both; both lints 0 errors; all three
+  assembles green; instrumented suite 329/341 (unchanged 12-failure baseline, zero overlap).
+  Version not bumped (deferred to Part C's freeze, per this codebase's established per-milestone
+  precedent). Full evidence: `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A.
+
+**Exact NEXT TASK (superseded by continuation within the same session — see the specialist status
+doc and current-status checkpoint for the live state):** MVP-1.3-B (Profile Presentation & Sharing
+Foundation).
+
+## 23. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`
+- MVP-1.2 Relationship Timeline/Dincharya: `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md`
+- MVP-1.3 Business Profile: `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md`
 - Controlled Pilot: `docs/planning/BUDCOM-MVP-1-CONTROLLED-PILOT-CLOSURE-STATUS.md`
 - Quality: `docs/governance/BUDCOM-QUALITY-SCORECARD.md`
 - Technical debt: `docs/technical-debt/registry.md`

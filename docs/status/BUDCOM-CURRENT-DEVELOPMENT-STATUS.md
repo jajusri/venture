@@ -13,24 +13,24 @@ governing the three-tier split. Update all three when a work unit changes their 
 freeze) are all complete. Product decisions locked as `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md`
 PDL-014–PDL-018. Full detail: `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md`
 Parts A–E; architecture: `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`.
-**MVP-1.3 STATUS: PLANNING/RECOVERY REVIEW COMPLETE (2026-08-18) — IMPLEMENTATION NOT STARTED, NOT
-AUTHORIZED.** MVP-1.3's architecture-sequencing/ownership shape is locked (Business Profile, per
-`docs/planning/BUDCOM-MASTER-PRODUCT-EXECUTION-PLAN.md` §9); its detailed field-level scope is
-explicitly not — the Master Plan's own words, "Detailed scope comes from Brainstorm 1," and no
-Brainstorm-1 output (the mandatory User+ChatGPT step) exists anywhere yet. Zero Business-Profile/
-Catalogue code exists anywhere in this repository (confirmed by direct search). Full detail, including
-a plan-vs-repository reconciliation matrix, five explicit open product decisions, a candidate (not
-locked) architecture, and a proposed sub-milestone structure:
-`docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`. **Exact next task is Brainstorm 1
-(User + ChatGPT), not Claude implementation** — see §7.
+**MVP-1.3 STATUS: IN PROGRESS — Part A (Business Identity Foundation) COMPLETE, acceptance gate
+PASSED (2026-08-18).** The five product decisions (per-company scope, initial field set, no
+provenance/no Tally round-trip, app-private logo storage behind an abstraction, owner-side only)
+were supplied directly in this session's governing prompt and recorded as
+`docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` **PDL-019**. Part A shipped the `business_profile`
+table (`MIGRATION_9_10`), full repository/domain/logo-storage layers, and a basic whole-entity
+owner-side editor wired into the Dashboard. Continuing automatically to Part B (Profile
+Presentation & Sharing Foundation) per this task's own instruction. Full detail:
+`docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A;
+architecture: `docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md` (its §3/§5 open
+questions marked `RESOLVED — PDL-019`).
 **PUBLIC RELEASE BLOCKED — SIGNING ONLY** (Windows code-signing + Android release keystore, neither
-exists; Android `applicationId` also undecided — unrelated to and unchanged by MVP-1.1/1.2 work)
-**ANDROID `0.1.1-continuity.27` (versionCode 28)** — the single coherent MVP-1.2 freeze candidate,
-unchanged this session. **Installed** on device `I2407i` (`10BF44124K000E3`) since the MVP-1.2-E
-session, launch/smoke-verified clean; see §5 (unchanged this session — this was a read-only planning
-session, no device action taken).
-**DESKTOP `0.4.18`** / **CONNECTOR `0.4.6`** — unchanged, not touched, and not required by MVP-1.2
-or this MVP-1.3 planning review.
+exists; Android `applicationId` also undecided — unrelated to and unchanged by MVP-1.1/1.2/1.3 work)
+**ANDROID `0.1.1-continuity.27` (versionCode 28)** — unchanged this session; the single coherent
+MVP-1.3 version bump is deferred to Part C's freeze, per this task's own instruction and this
+codebase's established precedent. **Installed** on device `I2407i` (`10BF44124K000E3`) since the
+MVP-1.2-E session; not reinstalled this session (Part A produced no new release candidate).
+**DESKTOP `0.4.18`** / **CONNECTOR `0.4.6`** — unchanged, not touched, and not required by MVP-1.3-A.
 
 ## 2. Branch / HEAD
 
@@ -150,6 +150,28 @@ beginning implementation. One documentation-staleness defect found and fixed alo
 shipped screens), corrected directly. Full detail:
 `docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`; ledger: phase 33.
 
+**Part A — MVP-1.3-A Business Identity Foundation, implemented and complete (2026-08-18).** The
+five product decisions (per-company scope, initial field set, no provenance/no Tally round-trip,
+app-private logo storage behind an abstraction, owner-side only) were supplied directly in this
+session's governing prompt, recorded as PDL-019. New `business_profile` table
+(`MIGRATION_9_10`, one row per `companyId`), full repository/domain layer, and a genuine, fully
+tested `BusinessProfileLogoStore` abstraction (file-type allowlist, 5 MB streaming size cap,
+two-layer path-traversal defense) even though no picker UI exists yet — deliberate, since
+`logoAssetPath` is a real schema column A introduces (full reasoning: specialist doc §A3). Basic
+whole-entity owner-side editor wired into a fifth Dashboard entry. One self-caught defect fixed
+before any test ran (a Cancel-reverts-to-unsaved-not-saved-data bug). One genuine instrumented-test
+discrepancy investigated and resolved at the test level, not dismissed as assumed flakiness (two
+new failures traced to Save/Cancel buttons sitting below the fold in an 11-field scrollable form on
+this specific device — fixed with `performScrollTo()` in the test, confirmed by isolating and
+comparing against an already-passing equivalent screen). 17 new JVM tests + 18 new instrumented
+tests, with dedicated adversarial company-isolation coverage at the DAO, repository, and ViewModel
+layers. `testDebugUnitTest`/`testReleaseUnitTest` 1,255/1,255 both; both lints 0 errors (report-XML
+verified); all three assembles green; instrumented suite 329/341, the unchanged 12-failure
+baseline, zero overlap. Zero network/Connector/Desktop/manifest touch (grep-verified). Version not
+bumped (deferred to Part C's freeze). Continuing automatically to Part B in this same session, per
+this task's own "continue A → B → C automatically when the gate passes" instruction. Full detail:
+`docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A; product decisions: PDL-019.
+
 ## 4. Public release blocker (unrelated to MVP-1.1/1.2, unchanged)
 
 No Windows code-signing certificate and no Android release keystore exist anywhere in this
@@ -222,22 +244,18 @@ repository evidence, not session memory.
 **MVP-1.1 is complete/frozen (§1). MVP-1.2 is COMPLETE / FROZEN (§1) — Parts A through E all
 complete, documented, tested, version-bumped, built, installed, and smoke-tested (§3/§5; full
 evidence in `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts A–E).
-MVP-1.3's planning/recovery review is also complete (§3; full detail in
-`docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md`) — the milestone's architecture-
-sequencing/ownership shape is confirmed locked, but its detailed scope is confirmed NOT locked.**
+MVP-1.3 is IN PROGRESS — Part A (Business Identity Foundation) complete, acceptance gate PASSED
+(§3; full evidence in `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A). The five
+product decisions this milestone needed were supplied directly in this session's governing prompt
+and locked as PDL-019 — Brainstorm 1 is no longer outstanding for this milestone.**
 
-**Next task: Brainstorm 1 (User + ChatGPT) for MVP-1.3 Business Profile** — not Claude implementation
-of any kind. Per `docs/governance/POST-MVP-1-DEVELOPMENT-MODUS-OPERANDI.md` §2/§3 and PDL-010, this
-step belongs to the User and ChatGPT, not Claude: define the problem, desired outcome, UX/workflow,
-data authority, online/offline behavior, persistence, edge cases, invariants, scope, exclusions, and
-acceptance criteria. The architecture document's own §5 names the five specific open questions this
-brainstorm needs to resolve (ranked by risk, §5.1 — whether a Business Profile is scoped per Tally
-`companyId` or is genuinely singular per installation — being the highest-priority one to resolve
-first, since it determines the primary key of any schema that follows). Once resolved, record the
-outcome as new Product Decision Log entries (mirroring PDL-014–018's own pattern) and a revised/
-confirmed version of the architecture document — only then does an MVP-1.3-A implementation prompt
-become issuable to a fresh Claude session, the same way the MVP-1.2-D readiness review's own
-"Checkpoint" section made that milestone directly executable without re-deriving its analysis.
+**Next task: continue in the same session to MVP-1.3-B (Profile Presentation & Sharing
+Foundation)** — logo picker/display UI, full presentation-hierarchy/accessibility polish, and the
+internal (non-public) sharing-foundation data boundary, per this task's own explicit "continue
+A → B → C automatically when the preceding gate passes" instruction. If this document is being read
+at the start of a fresh session because that continuation did not happen in one sitting, resume from
+here rather than re-deriving MVP-1.3-A's own analysis — its full evidence is already in the
+specialist status doc.
 
 Two independent items from prior sessions also remain open, unaffected by and not blocking the
 above:
@@ -252,6 +270,6 @@ above:
    exercise Dashboard/Connect/Dincharya/Timeline/Issues genuinely on-device, per §5's own honest
    disclosure of what MVP-1.2-E's own smoke test could and could not reach.
 
-**Not started:** MVP-1.3 implementation (planning/recovery review complete, Brainstorm 1 still
-outstanding); external/public distribution. Do not begin distribution before signing exists and the
-product owner explicitly authorizes it.
+**Not started:** MVP-1.3-B/C (Part A complete, continuing automatically this session per above);
+external/public distribution. Do not begin distribution before signing exists and the product owner
+explicitly authorizes it.

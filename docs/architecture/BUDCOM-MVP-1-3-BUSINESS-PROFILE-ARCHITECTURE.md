@@ -1,12 +1,13 @@
-# BUDCOM MVP-1.3 — Business Profile — Planning / Recovery Review
+# BUDCOM MVP-1.3 — Business Profile — Architecture
 
-**Status:** PLANNING / RECOVERY REVIEW COMPLETE — **implementation NOT authorized.** This document is
-the required input to the still-outstanding **Brainstorm 1 (User + ChatGPT)** step
-(`docs/governance/POST-MVP-1-DEVELOPMENT-MODUS-OPERANDI.md` §3), not a substitute for it. No Claude
-session should begin MVP-1.3 implementation from this document alone — see §3 and §20.
-**Session type:** read-only reconnaissance. Zero production code, zero migration, zero test, zero
-APK, zero version bump. This document plus `docs/design/BUDCOM-SCREEN-INVENTORY.md` (one stale-data
-correction, §2.4) are the only repository changes this session made.
+**Status:** Planning/recovery review complete (2026-08-18); **Brainstorm 1 gap closed (2026-08-18)**
+— all five open product decisions in §5 were explicitly reviewed and approved by ChatGPT/Product
+Owner and are now recorded as `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-019. §5's
+per-question text is preserved below as the reasoning record (each question now carries a
+**RESOLVED — PDL-019** marker with the locked answer); §0 of the MVP-1.3-A implementation prompt is
+the authoritative current statement of the locked scope. **MVP-1.3-A implementation is now
+authorized and in progress/complete** — see the specialist status document
+`docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` for implementation evidence.
 
 ---
 
@@ -123,6 +124,11 @@ two documents disagreeing) and the general-vs-detailed scope gap described in §
 
 ## 3. The central finding — Brainstorm 1 has not happened, and this document is not a substitute for it
 
+> **RESOLVED 2026-08-18 — PDL-019.** The Brainstorm-1 gap this section describes has been closed: all
+> five §5 questions were explicitly reviewed and approved. This section is preserved as the
+> reasoning record for *why* the gap mattered and how it was correctly identified, not as a
+> currently-open blocker.
+
 `docs/planning/BUDCOM-MASTER-PRODUCT-EXECUTION-PLAN.md` §9, verbatim: *"Detailed scope comes from
 Brainstorm 1. Do not allow premature marketplace/social-network expansion."* `docs/governance/
 POST-MVP-1-DEVELOPMENT-MODUS-OPERANDI.md` §2/§3 assigns Brainstorm 1 explicitly to **User + ChatGPT**,
@@ -165,6 +171,14 @@ a genuine open product question only Brainstorm 1 can answer.
 ---
 
 ## 5. Open product decisions — genuine, not resolved by guessing
+
+> **ALL FIVE RESOLVED 2026-08-18 — PDL-019.** §5.1→per-`companyId` scoping. §5.2→the locked field
+> list (Business/Trading Name, Legal Name, Address, City, State, Pincode, Phone, Email, GSTIN,
+> Website, Logo, Short Business Description). §5.3→no `PartyFieldProvenance`, 100% BUDCOM-owned data.
+> §5.4→app-private storage behind a small abstraction. §5.5→owner-side only, no visitor-facing
+> Resources in MVP-1.3. §5.6 (Desktop) remains implicitly answered "no" by the same reasoning that
+> already applied to MVP-1.2 (§2.3) — not separately re-litigated in PDL-019 since no document has
+> ever suggested otherwise. The per-question text below is preserved as the reasoning record.
 
 These are the questions this review could not answer from locked documents alone. Recording them
 precisely, with the concrete options this codebase's own architecture makes visible, is this
