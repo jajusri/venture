@@ -13,24 +13,28 @@ governing the three-tier split. Update all three when a work unit changes their 
 freeze) are all complete. Product decisions locked as `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md`
 PDL-014–PDL-018. Full detail: `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md`
 Parts A–E; architecture: `docs/architecture/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-OI-ARCHITECTURE.md`.
-**MVP-1.3 STATUS: IN PROGRESS — Part A (Business Identity Foundation) COMPLETE, acceptance gate
-PASSED (2026-08-18).** The five product decisions (per-company scope, initial field set, no
+**MVP-1.3 STATUS: COMPLETE / FROZEN (2026-08-18).** Parts A, B, and C (integrated hardening +
+freeze) are all complete. The five product decisions (per-company scope, initial field set, no
 provenance/no Tally round-trip, app-private logo storage behind an abstraction, owner-side only)
 were supplied directly in this session's governing prompt and recorded as
 `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` **PDL-019**. Part A shipped the `business_profile`
 table (`MIGRATION_9_10`), full repository/domain/logo-storage layers, and a basic whole-entity
-owner-side editor wired into the Dashboard. Continuing automatically to Part B (Profile
-Presentation & Sharing Foundation) per this task's own instruction. Full detail:
-`docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A;
+owner-side editor wired into the Dashboard. Part B shipped the logo picker/display UI, a
+self-caught cross-company async-race fix, and the internal sharing-foundation data boundary
+(`BusinessProfileShareSnapshot` — no actual share mechanism, deliberately). Part C is the
+integrated A+B hardening review, the single coherent version bump, final candidate APKs,
+installation, and smoke test. Full detail:
+`docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Parts A–C;
 architecture: `docs/architecture/BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md` (its §3/§5 open
 questions marked `RESOLVED — PDL-019`).
 **PUBLIC RELEASE BLOCKED — SIGNING ONLY** (Windows code-signing + Android release keystore, neither
 exists; Android `applicationId` also undecided — unrelated to and unchanged by MVP-1.1/1.2/1.3 work)
-**ANDROID `0.1.1-continuity.27` (versionCode 28)** — unchanged this session; the single coherent
-MVP-1.3 version bump is deferred to Part C's freeze, per this task's own instruction and this
-codebase's established precedent. **Installed** on device `I2407i` (`10BF44124K000E3`) since the
-MVP-1.2-E session; not reinstalled this session (Part A produced no new release candidate).
-**DESKTOP `0.4.18`** / **CONNECTOR `0.4.6`** — unchanged, not touched, and not required by MVP-1.3-A.
+**ANDROID `0.1.1-continuity.28` (versionCode 29)** — the single coherent MVP-1.3 freeze candidate,
+built and installed this session. **Installed** on device `I2407i` (`10BF44124K000E3`), verified
+**after** the final `connectedDebugAndroidTest` run per this milestone's own explicit sequencing
+requirement (that run's own known side effect removed the prior install; reinstalled and
+re-verified, see §5).
+**DESKTOP `0.4.18`** / **CONNECTOR `0.4.6`** — unchanged, not touched, and not required by MVP-1.3.
 
 ## 2. Branch / HEAD
 
@@ -73,7 +77,31 @@ entire MVP-1.2-D + MVP-1.2-E work (8 commits total) on the remote.
   until explicitly authorized. See the session's own final report for the exact resulting HEAD and
   commit hash.
 
-## 3. Recent session work (MVP-1.2-B through E)
+### 2c. MVP-1.3 implementation session (Parts A, B, C)
+
+- Starting HEAD: `3166d3388d79e17828fb991b93a1f42336f99834` (the planning session's own final commit),
+  working tree clean.
+- HEAD after Part A: `3f08c56` (4 commits: data/domain/storage, presentation/navigation/Dashboard,
+  tests, documentation).
+- HEAD after Part B: `cb585fa` (4 commits: data/domain (logo resolution + share snapshot),
+  presentation (logo UI + race fix), tests, documentation).
+- HEAD after Part C (before this push-confirmation commit): `7452703` — two commits: `3bef56f`
+  (`chore(android)`: version bump to `0.1.1-continuity.28`/versionCode 29), `7452703` (`docs`: Part
+  C integrated hardening + freeze, MVP-1.3 COMPLETE / FROZEN).
+- Android: version bumped `0.1.1-continuity.27`→**`0.1.1-continuity.28`** (versionCode 28→29) — the
+  single coherent MVP-1.3 freeze bump, performed only after Parts A+B's regressions and this
+  freeze part's own fresh full regression were all green.
+
+### 2d. Push status (MVP-1.3 A/B/C)
+
+**PUSHED** — explicitly authorized by this task's own "pushing should occur only at the final
+freeze" instruction, now reached (unlike the read-only planning session in §2b, which was not
+authorized to push). `git push origin main` completed as a normal fast-forward, no force flag, no
+history rewrite. Post-push verification via `git fetch origin` + `git rev-parse` confirmed local
+HEAD and `origin/main` resolve to the identical commit, working tree clean. See the session's own
+final report for the exact resulting hash.
+
+## 3. Recent session work (MVP-1.2-B through MVP-1.3-C)
 
 **Part B — Relationship Timeline, implemented and gate-passed.** New `PartyTimelineDao` merges
 `party_notes` and `party_export_events` into one chronological, bounded/paged feed via a single SQL
@@ -172,6 +200,50 @@ bumped (deferred to Part C's freeze). Continuing automatically to Part B in this
 this task's own "continue A → B → C automatically when the gate passes" instruction. Full detail:
 `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A; product decisions: PDL-019.
 
+**Part B — MVP-1.3-B Profile Presentation & Sharing Foundation, implemented and complete
+(2026-08-18).** Logo picker (`ActivityResultContracts.PickVisualMedia`, the system Photo Picker, no
+runtime permission) and display (`BitmapFactory.decodeFile` off the main thread, same pattern as
+`PdfPreviewScreen`) with Add/Replace/Remove controls and plain-language failure messages.
+`BusinessProfileShareSnapshot` — the internal, PDL-019-mandated "sharing foundation" data boundary:
+a pure, side-effect-free business-card projection excluding `companyId`/timestamps/the raw logo
+path, with zero Intent/export/network wired to it anywhere (deliberately — a real share feature is
+explicitly reserved for a future Vartalap milestone). **Self-caught defect fixed:** `save()`/
+`updateLogo()`/`clearLogo()` each ended by unconditionally applying their async result to
+`_uiState`, so switching companies while one was still in flight could let a stale result silently
+overwrite the newly-loaded company's state — fixed with an `updateIfStillOnCompany()` guard,
+locked in by two dedicated race-condition regression tests using a controllable
+`CompletableDeferred` gate. 15 new tests (11 JVM + 4 instrumented). `testDebugUnitTest`/
+`testReleaseUnitTest` 1,266/1,266 both; both lints 0 errors; all three assembles green including
+R8-minified release; instrumented `BusinessProfileScreenTest` 12/12 clean. Version not bumped
+(deferred to Part C). Full detail: `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part B.
+
+**Part C — MVP-1.3-C Integrated Hardening, Freeze, Final Candidate, implemented and complete
+(2026-08-18).** Not a new feature — an integrated audit of Parts A+B together. Reviewed (not
+fixed, deliberately accepted) two minor characteristics: Cancel doesn't revert an already-applied
+logo change (logo actions apply immediately, not staged like text fields — matches common
+profile-editor UX, Remove Logo gives an immediate undo), and a narrow cosmetic notice-message race
+if a save and a logo update are both in flight simultaneously (data integrity unaffected, B5's
+guard already covers it). Zero new defect found. Version bumped to `0.1.1-continuity.28`/
+versionCode 29 — the single coherent MVP-1.3 freeze bump. Full post-bump regression:
+`testDebugUnitTest`/`testReleaseUnitTest` 1,266/1,266 both; both lints 0 errors (this session's
+first genuinely-cold lint analysis since MVP-1.2's freeze, which surfaced a known JIT-compilation
+tooling pathology — investigated via thread dump, confirmed to be real-but-slow CPU-bound work
+rather than a hang, worked around session-locally with `JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1`,
+never written into any tracked project file); all three assembles green; instrumented suite
+333/345, the unchanged 12-failure baseline (345 = 341 from A + 4 new from B, confirming no test
+lost or duplicated). Built both candidate APKs (§5 for exact hashes/sizes). Installed the debug
+APK on device `10BF44124K000E3` and smoke-tested it directly (§5) — launch clean, correct honest
+first-run Secure Pairing state, zero crash, back-navigation correct, relaunch clean; Dashboard/
+Business Profile/Connect/Dincharya explicitly **not** exercised on-device (no real Tally Connector
+pairing available in this environment) — verified only through the automated instrumented suite
+instead, stated honestly as weaker evidence than genuine on-device navigation. Device install state
+was explicitly re-verified **after** the final `connectedDebugAndroidTest` run per this milestone's
+own explicit sequencing requirement (that run's side effect had indeed removed the prior install;
+reinstalled and re-verified, not silently assumed). Full detail:
+`docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part C.
+
+**MVP-1.3 COMPLETE / FROZEN.**
+
 ## 4. Public release blocker (unrelated to MVP-1.1/1.2, unchanged)
 
 No Windows code-signing certificate and no Android release keystore exist anywhere in this
@@ -180,43 +252,42 @@ repository/environment. Android public Play-Store `applicationId` also undecided
 
 ## 5. Android install status
 
-**INSTALLED — the MVP-1.2 freeze candidate (2026-08-18).** Device `I2407i` (serial
-`10BF44124K000E3`) had **zero BUDCOM package of any kind** before this session's own install step —
-a genuine finding first surfaced during MVP-1.2-D: the previously-documented `continuity.26`
-installation had disappeared, most likely removed by `connectedDebugAndroidTest`'s own default
-post-test uninstall behavior (installs the app-under-test + test APK before running, uninstalls both
-afterward, for test hermeticity) rather than any direct `adb install`/`adb uninstall` action. This
-was not remediated during the D session (installing anything was outside that session's authorized
-scope); it *is* remediated now, as an explicit, authorized part of MVP-1.2-E's own final-candidate
-install step.
+**INSTALLED — the MVP-1.3 freeze candidate (2026-08-18).** Device `I2407i` (serial
+`10BF44124K000E3`) had the MVP-1.2 freeze candidate (`continuity.27`/versionCode 28) installed
+entering this session. This session's own `connectedDebugAndroidTest` runs (Parts A/B/C, per this
+milestone's own explicit instruction to verify install state **after**, not merely before, any
+connected-test run) removed it each time via that gate's own documented post-test uninstall
+behavior — exactly the same structural property already documented for MVP-1.2-D/E, re-confirmed
+rather than assumed. The final Part C install below is the one that matters for current state.
 
-**Install performed this session:** `adb install -r apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk`
-→ `Performing Streamed Install / Success`. No prior uninstall, no data clear, no pairing/company-state
-wipe (there was none to wipe, per the pre-install check above). Confirmed via `dumpsys package
-com.budcom.android.debug`: `versionCode=28`, `versionName=0.1.1-continuity.27`,
-`firstInstallTime == lastUpdateTime` (a genuine fresh install, consistent with the empty pre-install
-state).
+**Install performed this session (Part C, final):** verified via `adb shell pm list packages
+com.budcom.android` that the app was indeed absent after the final `connectedDebugAndroidTest` run
+(not assumed), then `adb install -r apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk`
+→ `Performing Streamed Install / Success`. Confirmed via `dumpsys package
+com.budcom.android.debug`: `versionCode=29`, `versionName=0.1.1-continuity.28`,
+`firstInstallTime == lastUpdateTime` (a genuine fresh install).
 
-**Smoke test performed directly on device** (full detail: specialist status doc Part E §E16):
+**Smoke test performed directly on device** (full detail: specialist status doc Part C §C7):
 launch succeeded (`MainActivity` became `mFocusedApp`); rendered the correct, honest first-run
 **Secure Pairing** screen (screenshot-confirmed, matching the established dark theme, no visual
-defect); zero `FATAL EXCEPTION`/`AndroidRuntime:` logcat entries; Back navigation correctly returned
-to the home launcher (root-activity behavior, not a crash — app process stayed alive); relaunch
-succeeded cleanly. **Explicitly not exercised on-device:** Dashboard, Connect entry, Dincharya entry,
-Party Detail, Timeline, Issues — this environment has no real paired Tally Connector to complete
-Secure Pairing against, and per explicit instruction no attempt was made to fake or bypass pairing.
-These surfaces are verified only through the automated instrumented Compose test suite (real
-Room/real Compose on this same device, synthetic state) — a distinct and weaker form of evidence
-than genuine on-device navigation, stated as such rather than conflated with it.
+defect); zero `FATAL EXCEPTION`/`AndroidRuntime:` logcat entries across launch, navigation, and
+relaunch; Back navigation correctly returned to the home launcher (root-activity behavior, not a
+crash — app process stayed alive, `com.android.launcher3` became `mFocusedApp`); relaunch
+succeeded cleanly. **Explicitly not exercised on-device:** Dashboard, Business Profile entry/
+screen, Connect entry, Dincharya entry — this environment has no real paired Tally Connector to
+complete Secure Pairing against, and per explicit instruction no attempt was made to fake or
+bypass pairing. These surfaces are verified only through the automated instrumented Compose test
+suite (real Room/real Compose on this same device, synthetic state) — a distinct and weaker form
+of evidence than genuine on-device navigation, stated as such rather than conflated with it.
 
-**Debug APK:** `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` — 14,470,132 bytes —
-SHA-256 `92a38394e5eef4cee65eae4ba6caaef86b5e430dfccf22973aa1401362fe9d02` — `com.budcom.android.debug`,
-versionCode 28, versionName `0.1.1-continuity.27`, debuggable (confirmed via `aapt dump badging` on
+**Debug APK:** `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` — 14,562,380 bytes —
+SHA-256 `601b248fb07da27da2d805ab4ed8c06681b02e3c01eaeab22fc3a2994896902f` — `com.budcom.android.debug`,
+versionCode 29, versionName `0.1.1-continuity.28`, debuggable (confirmed via `aapt dump badging` on
 the actual built APK, not source config alone).
 
 **Release (unsigned, verification only, never a public-release artifact):**
-`apps/budcom_android/app/build/outputs/apk/release/app-release-unsigned.apk` — 2,509,604 bytes —
-SHA-256 `ad11110475ef9e887afd642ef28c06f016a4f48fcf30b819456ab7aa1fee4c92` — `com.budcom.android`
+`apps/budcom_android/app/build/outputs/apk/release/app-release-unsigned.apk` — 2,536,316 bytes —
+SHA-256 `dd68728630fb29f54b38ffb60aa8ca8264339810c9b2a7b9921c54b56be94a67` — `com.budcom.android`
 (no debug suffix), same version, not debuggable, unsigned (no signing credentials exist anywhere in
 this repository — unchanged blocker, §4).
 
@@ -244,32 +315,29 @@ repository evidence, not session memory.
 **MVP-1.1 is complete/frozen (§1). MVP-1.2 is COMPLETE / FROZEN (§1) — Parts A through E all
 complete, documented, tested, version-bumped, built, installed, and smoke-tested (§3/§5; full
 evidence in `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md` Parts A–E).
-MVP-1.3 is IN PROGRESS — Part A (Business Identity Foundation) complete, acceptance gate PASSED
-(§3; full evidence in `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A). The five
-product decisions this milestone needed were supplied directly in this session's governing prompt
-and locked as PDL-019 — Brainstorm 1 is no longer outstanding for this milestone.**
+MVP-1.3 is COMPLETE / FROZEN (§1) — Parts A, B, and C all complete, documented, tested,
+version-bumped, built, installed, and smoke-tested (§3/§5; full evidence in
+`docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Parts A–C). The five product decisions this
+milestone needed were supplied directly in its own governing prompt and locked as PDL-019.**
 
-**Next task: continue in the same session to MVP-1.3-B (Profile Presentation & Sharing
-Foundation)** — logo picker/display UI, full presentation-hierarchy/accessibility polish, and the
-internal (non-public) sharing-foundation data boundary, per this task's own explicit "continue
-A → B → C automatically when the preceding gate passes" instruction. If this document is being read
-at the start of a fresh session because that continuation did not happen in one sitting, resume from
-here rather than re-deriving MVP-1.3-A's own analysis — its full evidence is already in the
-specialist status doc.
+**Next task: MVP-1.4 planning/recovery review** (read-only architecture/gap-analysis review,
+matching the MVP-1.3 planning session's own precedent exactly — §2b/§3 above — not implementation).
+**Do NOT begin MVP-1.4 implementation** without an explicit new go-ahead, per this task's own final
+stop condition.
 
 Two independent items from prior sessions also remain open, unaffected by and not blocking the
 above:
 
 1. **Obtain and configure production signing credentials** — the sole remaining blocker to public
-   release, unrelated to and unchanged by MVP-1.1/1.2 work (see §4 and the gate matrix for exact
+   release, unrelated to and unchanged by MVP-1.1/1.2/1.3 work (see §4 and the gate matrix for exact
    steps). Human/external action; do not perform unilaterally.
 2. **Exercise a real Tally XML import by hand** against a real paired Tally company using the
-   installed `continuity.27` candidate (§5), per the human acceptance checklist in
+   installed `continuity.28` candidate (§5), per the human acceptance checklist in
    `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Part E §E14 — device pairing has still never been
    attempted (out of every installation-only task's scope so far); this is also the only way to
-   exercise Dashboard/Connect/Dincharya/Timeline/Issues genuinely on-device, per §5's own honest
-   disclosure of what MVP-1.2-E's own smoke test could and could not reach.
+   exercise Dashboard/Business Profile/Connect/Dincharya genuinely on-device, per §5's own honest
+   disclosure of what this milestone's own smoke test could and could not reach.
 
-**Not started:** MVP-1.3-B/C (Part A complete, continuing automatically this session per above);
+**Not started:** MVP-1.4 (planning/recovery review is the next authorized step, not implementation);
 external/public distribution. Do not begin distribution before signing exists and the product owner
 explicitly authorizes it.

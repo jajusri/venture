@@ -374,9 +374,11 @@ new go-ahead reopening it.
   Ledger entry closes a documentation gap: Parts A–E completed and were recorded in the specialist
   status doc and the current-status checkpoint, but a corresponding Ledger phase entry for D/E was
   not added at the time — see phase 34 below for the consolidated record.)
-- **MVP-1.3: Business Profile — IN PROGRESS.** Part A (Business Identity Foundation) complete,
-  acceptance gate passed (2026-08-18); product decisions locked as PDL-019. Full evidence:
-  `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A; see phase 34 below.
+- **MVP-1.3: Business Profile — COMPLETE / FROZEN (2026-08-18).** Parts A, B, and C (integrated
+  hardening + freeze) all implemented, tested, and version-bumped (`0.1.1-continuity.28`,
+  versionCode 29 — the single coherent MVP-1.3 freeze bump). Product decisions locked as PDL-019.
+  Full evidence: `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Parts A–C; see phase 35
+  below.
 - MVP-1.4: Catalogue and governed assets. Not started.
 - Vartalap, Insights and broader extensions remain concepts unless later committed evidence says
   otherwise.
@@ -419,9 +421,9 @@ plan recommends deferring them). Once answered, the recommended next prompt is t
 `party_issues` table, `MIGRATION_8_9`) only, not the full milestone. Do not start MVP-1.2
 substantively, and do not start external distribution, before an explicit go-ahead.
 
-**Superseded 2026-08-18 (phase 34):** all four questions above were answered, MVP-1.2 A-E is
-complete/frozen, and MVP-1.3-A is complete — see phase 34 (section 22) for the current, accurate
-state. This paragraph is left as historical record of the 2026-08-17 planning snapshot, not
+**Superseded 2026-08-18 (phases 34-35):** all four questions above were answered, and MVP-1.2 A-E
+and MVP-1.3 A-C are both complete/frozen — see phases 34-35 (sections 22-23) for the current,
+accurate state. This paragraph is left as historical record of the 2026-08-17 planning snapshot, not
 rewritten.
 
 ## 21. Development and automation governance
@@ -479,11 +481,49 @@ corresponding entry was added to this Ledger. Recorded now, evidence-first, not 
   Version not bumped (deferred to Part C's freeze, per this codebase's established per-milestone
   precedent). Full evidence: `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part A.
 
-**Exact NEXT TASK (superseded by continuation within the same session — see the specialist status
-doc and current-status checkpoint for the live state):** MVP-1.3-B (Profile Presentation & Sharing
-Foundation).
+## 23. Phase 35 — MVP-1.3-B and MVP-1.3-C — MVP-1.3 COMPLETE / FROZEN
 
-## 23. Current source-of-truth references
+Continued automatically within the same session as phase 34's MVP-1.3-A, per the governing
+prompt's own "continue A → B → C automatically when the preceding gate passes" instruction.
+
+- **MVP-1.3-B (Profile Presentation & Sharing Foundation) — implemented and complete
+  (2026-08-18).** Logo picker (`ActivityResultContracts.PickVisualMedia`) and display
+  (`BitmapFactory.decodeFile` off the main thread) with Add/Replace/Remove controls.
+  `BusinessProfileShareSnapshot` — the internal PDL-019 sharing-foundation data boundary (pure
+  projection, zero Intent/export/network wired to it — a real share feature is explicitly reserved
+  for a future Vartalap milestone). Self-caught defect fixed: `save()`/`updateLogo()`/
+  `clearLogo()` could let a stale async result overwrite a newly-loaded company's state if the
+  user switched companies mid-operation — fixed with an `updateIfStillOnCompany()` guard, locked
+  in by two dedicated race-condition regression tests. 15 new tests (11 JVM + 4 instrumented).
+  `testDebugUnitTest`/`testReleaseUnitTest` 1,266/1,266 both; both lints 0 errors; all three
+  assembles green; instrumented `BusinessProfileScreenTest` 12/12 clean. Version not bumped
+  (deferred to Part C). Full evidence: `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md`
+  Part B.
+- **MVP-1.3-C (Integrated Hardening, Freeze, Final Candidate) — implemented and complete
+  (2026-08-18).** Integrated audit of Parts A+B; reviewed and deliberately accepted two minor
+  characteristics (Cancel doesn't revert an already-applied logo change; a narrow cosmetic
+  notice-message race under a rare concurrent-operation sequence) — zero new defect found. Version
+  bumped to `0.1.1-continuity.28`/versionCode 29 — the single coherent MVP-1.3 freeze bump. Full
+  post-bump regression: `testDebugUnitTest`/`testReleaseUnitTest` 1,266/1,266 both; both lints 0
+  errors (this session's first genuinely-cold lint analysis since MVP-1.2's freeze surfaced a
+  known JIT-compilation tooling pathology in the JetBrains Kotlin Analysis API's Lint/UAST bridge
+  — investigated via JVM thread dump, confirmed real-but-slow rather than a hang, worked around
+  session-locally via `JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1`, never written into any tracked
+  project file); all three assembles green including R8-minified release; instrumented suite
+  333/345 (unchanged 12-failure baseline, zero overlap; 345 = 341 from A + 4 new from B). Built,
+  installed on device `10BF44124K000E3` (device state re-verified **after** the final
+  `connectedDebugAndroidTest` run, per this milestone's own explicit sequencing requirement — its
+  known uninstall side effect was confirmed, not assumed, before reinstalling), and smoke-tested.
+  Pushed to `origin/main`. Full evidence:
+  `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md` Part C.
+
+**MVP-1.3 COMPLETE / FROZEN.**
+
+**Exact NEXT TASK:** MVP-1.4 planning/recovery review (read-only architecture/gap-analysis review,
+matching the MVP-1.3 planning session's own precedent — not implementation). Do not begin MVP-1.4
+implementation without an explicit new go-ahead.
+
+## 24. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`
