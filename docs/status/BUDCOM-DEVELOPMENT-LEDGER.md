@@ -968,7 +968,156 @@ implementation:
 
 **Do not begin MVP-1.4 implementation without an explicit new go-ahead following Brainstorm 1.**
 
-## 29. Current source-of-truth references
+## 29. Phase 39 — TD-035 Permanent Resolution + MVP-1.4 Product Decision Lock
+
+Autonomous 13-part task (Product Owner/ChatGPT pre-approved per the task's own operating mode),
+starting HEAD `141b92d` (Phase 38's own final commit), working tree clean, `main` 1 commit ahead of
+`origin/main` (that same unpushed `141b92d`).
+
+### A. Baseline re-verification (Part 1)
+
+Did not trust Phase 38's documentation alone. Re-traced the live code directly and found one
+correction to Phase 38's own account: `tally-ledger-mapper.ts`'s `mapTallyLedgerToDomain()` — the
+function Phase 38 described as reading `PARENT` — is **dead code**, unreferenced anywhere outside its
+own file. The real, live-wired ledger mapper is `entity-mappers.ts`'s `mapLedger()`, reached via
+`extractor-registry.ts` (`mapNode: mapLedger`) → `master-data-extractor.ts`. All Part 2/3 investigation
+below was re-done against the correct, live path.
+
+### B. TD-035 safety investigation (Parts 2–3) — trust boundary proven before any fix was written
+
+Per this task's explicit governing rule ("do NOT simply add `PARENT` back because TD-001 exists —
+first prove the trust boundary"), traced every place a Connector-parsed `parentGroup` value is
+consumed, end to end:
+
+- **Inbound boundary:** `TallyXmlResponseParser.parse()`'s `sanitizeXml10IllegalCharacters()`
+  (TD-001's fix, 2026-08-16) runs unconditionally for every collection, confirmed by direct read of
+  the parser code — not assumed from the earlier session's documentation.
+- **Outbound boundary:** `request-builder.ts`'s `escapeXml()` is comprehensive for every value it
+  interpolates into a new outbound Tally XML/TDL request.
+- **The critical finding:** a parsed `parentGroup` is **never** fed back into `escapeXml()`'s
+  territory anywhere in the codebase — grepped every call site; `parentGroup` only ever flows into
+  parameterized SQLite storage, the Connector's own JSON REST responses, and plain string comparisons
+  (hierarchy validation). It is never interpolated into generated TDL/XML. This closes the exact
+  injection vector Part 2 required checking for: a returned value can never become executable/
+  generated TDL/XML syntax, because it never reaches the boundary that builds one.
+- Confirmed the live pipeline (`CollectionEntityParser.parseDocument()` → `mapLedger()`) is the same
+  shared, sanitizing parser every other collection uses — no second, parallel extraction mechanism
+  exists or was created.
+
+**Conclusion: proven safe, not assumed safe.** Existing architecture required no redesign to support
+a safe fix — Part 6's "stop at the investigation boundary" branch did not apply; Part 3's implementation
+branch did.
+
+### C. TD-035 fix + adversarial regression coverage (Parts 2, 3, 10)
+
+Restored `'PARENT'` to `MasterDataTemplates.ledgers()`'s `collectionModifyFetch`
+(`connector/budcom_connector/src/extraction/templates/master-data-templates.ts`) — **Ledgers only**.
+StockItems' identical `PARENT`/`BASEUNITS`/`GSTAPPLICABLE` exclusion was deliberately left untouched:
+those fields were not independently verified by this investigation, and Catalogue's own future use of
+them is out of this task's scope (Part 13's anti-scope-creep rule). Synced the parallel
+`LEDGER_RICH_FETCH_FIELDS` constant in `ledger-identity.ts`, found via `git show 8706a80` to have been
+touched by the original TD-035-causing removal commit alongside the FETCH list itself.
+
+Added 18 new permanent adversarial regression tests in `entity-mappers.test.ts` (describe block
+`mapLedger PARENT adversarial coverage (TD-035)`), run against the real live pipeline (parse →
+`mapLedger`), not a mock: the exact `&#4;` decimal reference, `&#x4;` hex reference, and literal 0x04
+byte (the precise TD-001/TD-035 original failure class, now a **permanent regression test** per Part
+2's explicit requirement), `&amp;`/`&lt;`/`&gt;`/`&quot;`/`&apos;` round-trip, newline/tab preservation
+mid-string, Devanagari Unicode, unusual punctuation, a fully-escaped nested-tag-looking value, a
+500+-character value, a combined case, and both empty-PARENT/absent-PARENT edge cases (→ `undefined`,
+matching `normalizeText()`'s documented contract). Updated the two `master-data-templates.test.ts`
+assertions this flipped (Ledgers' FETCH-list expectation now includes `PARENT`; the shared TD-001
+sanitizer-proof test's scope narrowed to StockItems, which it still correctly protects).
+
+Full Connector regression run: **159/159 test files, 1,437/1,437 tests passing** — the complete
+existing suite, none removed or weakened, zero regressions. `tsc --noEmit` and `eslint` both clean.
+
+### D. Connect classification boundary (Part 4)
+
+Added `LedgerGroupClassification` (`DEBTOR`/`CREDITOR`/`OTHER`/`UNKNOWN`) to
+`LedgerPartyEligibilityPolicy.kt` as a centralized, deterministic classification derived from raw
+`parentGroup` — `classifyGroup()` does the keyword matching; the existing `classify()` (used by
+`ReconcilePartiesFromLedgersUseCase`) now delegates to it, provably preserving its exact prior
+DEBTOR/CREDITOR→seed, OTHER/UNKNOWN→null behavior (a dedicated "classify and classifyGroup agree
+exactly" cross-check test over 7 cases). Classification does not depend on display-name similarity;
+Prospects (a BUDCOM-only concept, never Tally-ledger-backed) are not reachable by this path at all, so
+they cannot be misclassified as Debtor/Creditor by construction.
+
+### E. Company isolation (Part 5)
+
+`PartyRepositoryImpl`'s persistence layer already had strong `companyId`-scoping test coverage; the
+one real gap was the `ReconcilePartiesFromLedgersUseCase` orchestration layer's test fake not being
+company-aware. Added `CompanyScopedFakeLedgerSnapshotPort` plus 2 new adversarial tests proving
+identical ledger name/alias/`parentGroup` (and a ledger unique to only one company) across two
+companies never leak into the other company's seed set.
+
+### F. Tests / lint / build (Part 10)
+
+Connector: 159/159 files, 1,437/1,437 tests; `tsc`/`eslint`/`npm run build` all clean; fix confirmed
+present in the compiled `dist/` artifact. Android: 1,266/1,266 tests both variants (+7 new), `lintDebug`
+0 errors (87 pre-existing warnings, unchanged), `assembleDebug`/`assembleRelease` both green (the
+combined Gradle command exceeded the foreground timeout and completed in the background — no
+corrective action needed). Independently re-confirmed after the CRLF cleanup (§I) with a fresh
+`testDebugUnitTest`/`testReleaseUnitTest`/`lintDebug` run: same 1,266/1,266 both variants, 0
+failures/errors (JUnit XML aggregated directly, not read from console text), 87 `Warning`-severity
+lint issues, 0 `Error`-severity — this rerun surfaced and required fixing an environment issue, not a
+code issue: the shell's default `java` on `PATH` is a JDK 8 (`1.8.0_401`), too old for AGP 8.8.2/KSP
+2.1.10, causing an unrelated dependency-resolution failure until `JAVA_HOME` was pointed at Android
+Studio's bundled JBR (JDK 21) for the invocation — noted here since a future session hitting the same
+"Could not resolve... requires at least JVM runtime version 11" error should look here first rather
+than re-diagnosing it. No real-device re-verification was performed this session — no `adb`
+command was run; the fix's live effect on Connect's customer count (last observed as zero on the
+physical device, Phase 37) remains to be confirmed next time that device is used. This is recorded
+honestly as **deferred**, not claimed as proven.
+
+### G. MVP-1.4 nine product decisions locked (Part 7)
+
+Added **PDL-020** to `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md`, transcribing this task's nine
+decisions verbatim (SKU identity; Stock Item relationship; lifecycle; Excel as interchange contract,
+not source of truth; asset storage reusing the Business Profile abstraction pattern; visitor-facing
+Resources deferred but architecturally provisioned; no Desktop surface; sharing via the existing
+Android mechanism; strict company isolation), mirroring PDL-019's structure exactly. Updated
+`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md`'s header and §5.3 with the same
+"ALL RESOLVED — PDL-NNN" blockquote pattern MVP-1.3's own architecture document established for
+PDL-019, plus a per-question `RESOLVED — PDL-020` marker and locked-answer summary for each of the
+nine questions (the original reasoning-record text is preserved below each marker, per the same
+precedent). Also corrected §13 and §14's now-stale "TD-035 spillover" risk language to reflect that
+TD-035 is resolved for Ledgers, with StockItems' identical exclusion explicitly named as the
+still-open residual risk.
+
+### H. Prospect → Ledger future capability (Part 9)
+
+Unchanged this session — the Phase 38 entry in `docs/planning/BUDCOM-NOT-NOW.md` was read to confirm
+it remains present, recorded-only, and not implemented; no edits were made to it.
+
+### I. Git / device safety, and a self-caught CRLF defect (Part 12)
+
+Before staging, `git diff --stat` showed suspiciously large changes in three Connector files
+(`ledger-identity.ts`, `master-data-templates.ts`, `entity-mappers.test.ts`) compared against
+`git diff --ignore-space-at-eol --stat` — a recurring Windows-tooling hazard this project has hit
+before. Confirmed via direct byte inspection that the working tree had picked up 59/130/177 CRLF line
+endings respectively in files whose `HEAD` blobs are pure LF, stripped the injected `\r` bytes with
+`sed`, and re-ran the full Connector suite (159/159, 1,437/1,437 — unchanged) plus `tsc`/`eslint`
+(clean) to confirm the cleanup introduced no regression. Post-cleanup diffs match the
+`--ignore-space-at-eol` baseline exactly. No `adb`, no force push, no history rewrite; the Ledger
+candidate installed on `10BF44124K000E3` from Phase 37 was not touched this session.
+
+### J. Stop-condition compliance (Part 13)
+
+MVP-1.4-A/B/C implementation was **not started** — no Catalogue table, screen, or code exists anywhere
+in the repository as a result of this session. Work performed was limited exactly to: TD-035
+investigation and permanent resolution (safe within existing architecture, so implemented in full,
+not merely documented); TD-035 regression evidence; the nine PDL-020 product decisions; architecture/
+status/decision documentation updates; and leaving the repository at a clean, unambiguous baseline for
+a future, separately-authorized MVP-1.4-A implementation prompt.
+
+**Exact NEXT TASK:** Issue an MVP-1.4-A implementation prompt using
+`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` §5.3 (now PDL-020-resolved) as the locked
+input — this is the first work item PDL-020 actually unblocks. Independently, StockItems'
+`PARENT`/`BASEUNITS`/`GSTAPPLICABLE` exclusion remains open and would need its own safety
+investigation (mirroring §B above) before any Catalogue feature groups products by Tally Stock Group.
+
+## 30. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`

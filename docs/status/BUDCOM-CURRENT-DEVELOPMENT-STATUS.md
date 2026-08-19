@@ -87,6 +87,32 @@ own catalogue/SKU/branch-publish bullet list) from nine OPEN PRODUCT DECISIONS r
 Brainstorm 1 — no MVP-1.4 implementation started. Full detail:
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §28.
 
+**Phase 39 — TD-035 Permanent Resolution + MVP-1.4 Product Decision Lock (2026-08-19).** TD-035
+resolved for Ledgers: proved the trust boundary safe first (a parsed `parentGroup` is never fed back
+into any outbound Tally XML/TDL request anywhere in the Connector, ruling out the injection vector
+that motivated the original defense-in-depth exclusion), then restored `'PARENT'` to
+`MasterDataTemplates.ledgers()`'s FETCH list, added 18 permanent adversarial regression tests
+(`&#4;`/hex/literal-0x04, Unicode, unusual punctuation, long values, nested-tag-looking escaped text,
+empty/absent PARENT), and added a centralized `LedgerGroupClassification`
+(DEBTOR/CREDITOR/OTHER/UNKNOWN) plus company-isolation adversarial tests for
+`ReconcilePartiesFromLedgersUseCase`. StockItems' identical `PARENT`/`BASEUNITS`/`GSTAPPLICABLE`
+exclusion deliberately left untouched (out of scope; its own future safety investigation required).
+Connector: 159/159 files, 1,437/1,437 tests, `tsc`/`eslint`/build all clean. Android: 1,266/1,266
+tests both variants (+7), `lintDebug` 0 errors (87 pre-existing warnings), both assembles green.
+Separately, locked all nine MVP-1.4 product decisions as **PDL-020** (SKU identity; Stock Item
+relationship — BUDCOM-owned presentation entity referencing Tally, no write-back; lifecycle Stock
+Item → Draft → Review → Published; Excel as one canonical interchange contract, not the operational
+database; asset storage reusing the Business Profile abstraction pattern; visitor-facing Resources
+deferred but architecturally provisioned; no Desktop surface; sharing via the existing Android
+mechanism; strict company isolation), and updated
+`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` §5.3 to mark all nine `RESOLVED —
+PDL-020`. No real-device re-verification was performed (no `adb` run this session) — the fix is
+proven safe at the code/test level; its live effect on Connect's customer count was not re-checked
+on the physical device. **No MVP-1.4 implementation was started** — this session's authorized scope
+was investigation, resolution, decision-lock, and documentation only. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §29; `docs/technical-debt/registry.md` TD-035;
+`docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-020.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.
@@ -388,24 +414,29 @@ item below.
 
 **Phase 38 (Git Preservation, Connector Investigation, MVP-1.4 Planning — §1 above,
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §28) is complete.** Phase 36/37's commits are pushed
-(`origin/main` == local `HEAD`). The Connector `parent_group` gap (Phase 37 §26.C) is now fully
-root-caused — TD-035, `docs/technical-debt/registry.md` — but deliberately **not fixed**: it is a
-considered, documented, post-TD-001 defense-in-depth decision in the Connector's own test suite, not
-an oversight, so reversing it requires an explicit Product Owner/ChatGPT decision, not a unilateral
-Claude change. The MVP-1.4 planning/recovery review is done:
-`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md`.
+(`origin/main` == local `HEAD`). The Connector `parent_group` gap (Phase 37 §26.C) was root-caused as
+TD-035 — see Phase 39 immediately below for its resolution.
 
-**Next task: MVP-1.4 Brainstorm 1** (User + ChatGPT), using that document's §5.3 (nine open product
-decisions — product/SKU field list, Stock-Item relationship, branch/draft/review/publish state
-machine, Excel contract, asset-storage mechanism, visitor-facing timing, Desktop surface, sharing
-mechanism, company isolation) as the exact input. **Do NOT begin MVP-1.4 implementation** without an
-explicit new go-ahead following that Brainstorm, per this task's own final stop condition.
+**Phase 39 (TD-035 Permanent Resolution + MVP-1.4 Product Decision Lock — §1 above,
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §29) is complete. This supersedes both items Phase 38 left
+open.** TD-035 is **RESOLVED for Ledgers** (`docs/technical-debt/registry.md`) — the trust boundary
+was proven safe before any fix was written, so this was a Product Owner/ChatGPT-approved *reversal*
+of the prior defense-in-depth decision, not a unilateral one; StockItems' identical exclusion remains
+open and out of scope. All nine of `docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` §5.3's
+open product decisions are now locked as **PDL-020** — MVP-1.4 Brainstorm 1's output has been
+supplied and recorded; that document's §5.3 no longer needs a separate brainstorming pass.
 
-**Separately, not blocking MVP-1.4:** the **TD-035 decision** itself (re-enable Connector `PARENT`
-fetch now that TD-001's sanitizer neutralizes the original risk, or formally ratify the current
-exclusion) is recommended before Prospect→Ledger linking
-(`docs/planning/BUDCOM-NOT-NOW.md`) is ever scheduled — that future capability's own Debtor/Creditor
-classification depends on it.
+**Next task: an MVP-1.4-A implementation prompt.** PDL-020 now provides implementation-ready scope for
+§5.3's nine questions; `docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` §12's candidate
+1.4-A/B/C sub-milestone split remains the structural starting point. **Do NOT begin MVP-1.4
+implementation from this document alone** — Phase 39's own governing task explicitly did not
+authorize implementation; a separate, explicit go-ahead is still required before writing any
+Catalogue code, table, or screen.
+
+**Independently, not blocking MVP-1.4:** StockItems' `PARENT`/`BASEUNITS`/`GSTAPPLICABLE` TDL-fetch
+exclusion remains open (`docs/technical-debt/registry.md` TD-035) and would need its own safety
+investigation — mirroring Phase 39 §B's methodology — before any Catalogue feature groups products by
+Tally Stock Group.
 
 Two independent items from prior sessions also remain open, unaffected by and not blocking the
 above:

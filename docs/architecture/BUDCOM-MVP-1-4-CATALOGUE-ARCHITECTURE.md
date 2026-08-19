@@ -1,11 +1,13 @@
 # BUDCOM MVP-1.4 — Catalogue — Architecture
 
-**Status:** Planning/recovery review complete (2026-08-19). **Not yet authorized for
-implementation.** No Brainstorm 1 (User + ChatGPT) has been performed for MVP-1.4 anywhere in this
-repository or the external design archive — this document inventories the actual repository state,
-reconciles documentation, and separates what is genuinely locked from what is only a proposed
-direction, exactly as the MVP-1.3 architecture document did for Business Profile before its own
-PDL-019. It does not invent product scope.
+**Status:** Planning/recovery review complete (2026-08-19); **Brainstorm 1 gap closed (2026-08-19)**
+— all nine open product decisions in §5.3 were explicitly reviewed and approved by ChatGPT/Product
+Owner and are now recorded as `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` **PDL-020**. §5.3's
+per-question text is preserved below as the reasoning record (each question now carries a
+**RESOLVED — PDL-020** marker with the locked answer). Scope is locked; **implementation is still
+not authorized by this document alone** — per this task's own explicit stop condition, MVP-1.4-A/B/C
+implementation begins only once a separate, explicit go-ahead is given, mirroring how PDL-019 locked
+MVP-1.3's scope without itself being the implementation go-ahead.
 
 ---
 
@@ -178,42 +180,83 @@ own "Detailed scope comes from Brainstorm 1" language was resolved by PDL-019 be
 
 ### 5.3 OPEN PRODUCT DECISIONS (require an explicit Brainstorm 1 + PDL entry — not answered here)
 
-1. **Product/SKU field list.** What fields does a Catalogue product actually carry (name, price,
-   description, category, unit, tax/HSN reuse from Stock Item, multiple images, stock-on-hand
-   display)? No locked list exists, unlike Business Profile's now-locked 12-field set (PDL-019 §5.2).
-2. **Relationship to Tally Stock Items.** Does a Catalogue product always originate as a *draft* from
-   an existing Stock Item (§2.2's `StockItemEntity`)? Can a product exist with no Stock Item link at
-   all? If linked, is the link one-to-one, optional, or many-to-one (e.g. a bundled/kit product)? What
-   happens to a published product if its source Stock Item is later renamed, deactivated, or deleted
-   in Tally?
-3. **Branch/draft/review/publish state machine.** Exact states, allowed transitions, who may act at
-   each transition, and whether "branch" becomes a first-class concept above `companyId` the way the
-   MVP-1.3 architecture document's own §6.1(c) speculated it might (that document explicitly flagged
-   this as "should only be chosen if Catalogue's own eventual branch model is already reasonably well
-   understood, which it currently is not" — still true; this document does not resolve it either).
-4. **Excel import/export exact contract.** Column schema, validation rules, how a re-import
-   reconciles against local edits made in the app since the last export (conflict/precedence rule),
-   and whether Excel is a one-time seeding tool or a recurring two-way sync surface.
-5. **Image/asset storage mechanism.** Reuse Business Profile's exact `BusinessProfileLogoStore`
-   abstraction directly (small change, proven pattern), or a distinct but architecturally consistent
-   store sized for potentially many more and larger product images? §2.1 confirms the *pattern* is
-   reusable; whether the *same table/store* is reused is explicitly still open (MVP-1.3 architecture
-   doc §10 already flagged this "not necessarily the same table").
-6. **Visitor-facing "Resources"/Catalogue view timing.** Does MVP-1.4 ship the permission-controlled
-   visitor-facing view at all, or owner-side-only first (mirroring PDL-019 §5.5's precedent for
-   Business Profile, which explicitly deferred visitor-facing scope "to MVP-1.4 and later")? This is
-   the same access-control-surface risk PDL-019 flagged for 1.3 — this codebase has still never
-   shipped a genuine multi-permission-level view of anything.
-7. **Desktop surface.** MVP-1.2 and MVP-1.3 were both Android-only by explicit architecture-review
-   conclusion (absent a decision otherwise). Does that precedent hold for Catalogue too, given Excel
-   import/export might plausibly be a Desktop-side operation?
-8. **Sharing/distribution mechanism.** UI Decisions §7 names "shared product/catalogue/resource link"
-   only as a future *access origin* into Business Profile generally — it is not a locked MVP-1.4
-   sharing mechanism (QR? deep link? WhatsApp share, mirroring the existing Ledger/Voucher PDF-share
-   pattern? a web-hosted view?).
-9. **Company isolation shape.** Presumably `companyId`-scoped like every other table (§2.1's
-   foundation supports this trivially), but per PDL-011's own rule this must be an explicit decision
-   recorded in Brainstorm 1's output, not silently inferred here.
+> **ALL NINE RESOLVED 2026-08-19 — PDL-020.** §5.3.1→minimal deterministic SKU identity (SKU/Item
+> Code, Product Name, Unit, Category/Family, Tally Stock Item reference; no duplication of the full
+> Stock Item). §5.3.2→Catalogue Product references the Stock Item but remains a BUDCOM-owned
+> presentation entity; Tally stays the accounting/product-master source; no direct Tally write-back.
+> §5.3.3→locked lifecycle Tally Stock Item → Catalogue Draft → Review → Published; an edit never
+> auto-publishes. §5.3.4→one canonical Excel interchange contract, not the operational
+> database/source of truth/Room replacement; stable identifiers prevent duplicate products on
+> round-trip. §5.3.5→reuse the Business Profile asset-storage abstraction pattern where appropriate,
+> outside Room, in controlled app-private storage with allowlist/size limits/path-traversal
+> defense/company isolation/deterministic ownership/safe deletion-replacement/recovery. §5.3.6→
+> visitor-facing Resources is not a full MVP-1.4 dependency; the owner-side foundation and publishing
+> model ships first; published state must exist architecturally even though the visitor-facing
+> surface itself is deferred; no marketplace/social-network behavior. §5.3.7→no Desktop Catalogue UI
+> in MVP-1.4; Desktop/Connector are not modified for symmetry alone. §5.3.8→sharing reuses the
+> existing proven Android sharing mechanism (WhatsApp/WhatsApp Business) with a controlled catalogue
+> representation; no exposure of internal Room structures or filesystem paths; no Vartalap
+> dependency. §5.3.9→strict company scoping across products, drafts, review state, publication
+> state, assets, Excel import/export context, and sharing context — never inferred solely from the
+> UI's currently-selected company. The per-question text below is preserved as the reasoning record.
+
+1. **Product/SKU field list. — RESOLVED — PDL-020:** minimal deterministic identity only — SKU/Item
+   Code, Product Name, Unit, Category/Family, and a Tally Stock Item reference; the full Stock Item
+   is not duplicated into the Catalogue product. What fields does a Catalogue product actually
+   carry (name, price, description, category, unit, tax/HSN reuse from Stock Item, multiple images,
+   stock-on-hand display)? No locked list existed before PDL-020, unlike Business Profile's
+   already-locked 12-field set (PDL-019 §5.2).
+2. **Relationship to Tally Stock Items. — RESOLVED — PDL-020:** a Catalogue Product references its
+   Tally Stock Item but remains a distinct, BUDCOM-owned presentation entity; Tally stays the
+   accounting/product-master source; BUDCOM owns presentation, description, photos, assets, and
+   publication state; there is no direct Tally write-back. Does a Catalogue product always
+   originate as a *draft* from an existing Stock Item (§2.2's `StockItemEntity`)? Can a product exist
+   with no Stock Item link at all? If linked, is the link one-to-one, optional, or many-to-one (e.g. a
+   bundled/kit product)? What happens to a published product if its source Stock Item is later
+   renamed, deactivated, or deleted in Tally?
+3. **Branch/draft/review/publish state machine. — RESOLVED — PDL-020:** the lifecycle is locked as
+   Tally Stock Item → Catalogue Draft → Review → Published; editing a published product never
+   auto-publishes the edit. Exact states, allowed transitions, who may act at each transition, and
+   whether "branch" becomes a first-class concept above `companyId` the way the MVP-1.3 architecture
+   document's own §6.1(c) speculated it might (that document explicitly flagged this as "should only
+   be chosen if Catalogue's own eventual branch model is already reasonably well understood, which it
+   currently is not" — still true; PDL-020 does not introduce a branch concept).
+4. **Excel import/export exact contract. — RESOLVED — PDL-020:** Excel is one canonical interchange
+   contract — not the operational database, not the source of truth, not a Room replacement; stable
+   identifiers are required to prevent duplicate products on round-trip. Column schema, validation
+   rules, and the exact re-import-vs-local-edit conflict/precedence rule remain implementation-level
+   detail for MVP-1.4-B, not re-litigated here.
+5. **Image/asset storage mechanism. — RESOLVED — PDL-020:** reuse the Business Profile
+   asset-storage *abstraction* where appropriate, kept outside Room, in controlled app-private
+   storage — allowlist, size limits, path-traversal defense, company isolation, deterministic
+   ownership, safe deletion/replacement, and recovery all required. Whether the concrete
+   store/table is literally the same one Business Profile uses, or a distinct but
+   architecturally-consistent store sized for more/larger images, remains an implementation-level
+   choice for MVP-1.4-B — §2.1 confirms the *pattern* is reusable; PDL-020 does not mandate table
+   reuse.
+6. **Visitor-facing "Resources"/Catalogue view timing. — RESOLVED — PDL-020:** not a full MVP-1.4
+   dependency; the owner-side foundation and publishing model ships first; published state must
+   exist architecturally even if the visitor-facing surface itself is deferred; no
+   marketplace/social-network behavior. This mirrors PDL-019 §5.5's precedent for Business Profile,
+   which similarly deferred visitor-facing scope — the same access-control-surface risk PDL-019
+   flagged for 1.3 remains true here: this codebase has still never shipped a genuine
+   multi-permission-level view of anything, so the foundation must be built correctly even while the
+   surface is deferred.
+7. **Desktop surface. — RESOLVED — PDL-020:** no Desktop Catalogue UI in MVP-1.4; Desktop and
+   Connector are not modified for symmetry alone. This holds the same Android-only precedent MVP-1.2
+   and MVP-1.3 already established, even though Excel import/export might plausibly be a
+   Desktop-side operation in a later milestone.
+8. **Sharing/distribution mechanism. — RESOLVED — PDL-020:** use the existing proven Android sharing
+   mechanism first — a controlled catalogue representation, not internal Room structures or
+   filesystem paths; no new Vartalap dependency; support existing WhatsApp/WhatsApp Business
+   sharing. This closes UI Decisions §7's previously-unlocked "shared product/catalogue/resource
+   link" question in favor of the same PDF-share pattern already proven for Ledger/Voucher sharing,
+   rather than inventing a new QR/deep-link/web-hosted mechanism for MVP-1.4.
+9. **Company isolation shape. — RESOLVED — PDL-020:** strictly company-scoped — products, drafts,
+   review state, publication state, assets, Excel import/export context, and sharing context must
+   never rely only on the currently-selected company in UI state. This is the same `companyId`
+   isolation boundary §2.1's foundation already supports trivially, now made an explicit PDL-011-
+   compliant decision rather than a silently-inferred one.
 
 ---
 
@@ -312,9 +355,11 @@ mechanically force it (this task's own governing instruction).
 Catalogue implementation of any kind beyond what an explicit PDL entry authorizes; a visitor-facing
 Resources view unless §5.3.6 explicitly authorizes it; any Desktop/Connector/Tally-write change; any
 AI/cloud/marketplace feature (§5.1); pulling Prospect→Ledger linking (a separate, unrelated future
-Connect capability, `docs/planning/BUDCOM-NOT-NOW.md`) into this milestone; reversing TD-035's
-Connector defense-in-depth decision as a side effect of Catalogue work without its own explicit
-product decision.
+Connect capability, `docs/planning/BUDCOM-NOT-NOW.md`) into this milestone; restoring StockItems'
+still-excluded `PARENT`/`BASEUNITS`/`GSTAPPLICABLE` TDL fields (TD-035 was resolved for Ledgers only,
+2026-08-19 — see `docs/technical-debt/registry.md` TD-035; StockItems' identical fields remain
+excluded, deliberately out of scope, and require their own safety investigation, not a Catalogue-work
+side effect) as a side effect of Catalogue work without its own explicit product decision.
 
 ---
 
@@ -328,9 +373,12 @@ product decision.
    anticipate from Business Profile, and that remains true here.
 3. **§5.3.6 (visitor-facing timing)** — repeats MVP-1.3's own highest access-control risk; this
    codebase has still never shipped a genuine multi-permission-level view of anything.
-4. **TD-035 spillover** — if Brainstorm 1 wants Stock-Group-based product organization, it will hit
-   the same Connector `PARENT`-exclusion gap Connect's Party classification hit; worth flagging
-   before, not after, a design commits to it.
+4. **TD-035 spillover (partial — StockItems only)** — TD-035 was resolved for Ledgers' `PARENT`
+   field 2026-08-19 (safe; see `docs/technical-debt/registry.md`), so Connect's Party classification
+   is no longer affected. StockItems' `PARENT`/`BASEUNITS`/`GSTAPPLICABLE` remain deliberately
+   excluded from the Connector's TDL FETCH list (out of scope this session). If Brainstorm 1 wants
+   Stock-Group-based product organization, it will hit that still-open gap and need its own safety
+   investigation before a design commits to it.
 5. **Marketplace/social-feed drift** — the Master Plan names this exclusion specifically and
    repeatedly across every downstream milestone; worth naming as its own risk here too.
 

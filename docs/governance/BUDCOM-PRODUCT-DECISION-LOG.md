@@ -277,6 +277,92 @@ which should be inferred from MVP-1.3's own code.
 
 ---
 
+### PDL-020 — MVP-1.4 Catalogue: SKU identity, Stock Item relationship, lifecycle, Excel, assets, visitor scope, Desktop, sharing, company isolation
+
+**Date:** 2026-08-19
+**Area:** MVP-1.4 — Catalogue
+**Decision:** Resolves the nine open product decisions
+`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` §5.3 flagged as requiring Brainstorm 1,
+per an explicit ChatGPT/Product Owner review:
+
+1. **SKU / product identity (§5.3.1):** a minimal, deterministic catalogue identity — SKU/Item
+   Code, Product Name, Unit, Category/Family, and a Tally Stock Item reference, plus whatever
+   stable identifiers publishing requires. Do not duplicate the complete Tally Stock Item record
+   into the catalogue — the catalogue product is its own, smaller, presentation-oriented record.
+2. **Stock Item relationship (§5.3.2):** a Catalogue Product references the relevant Tally Stock
+   Item but remains a **BUDCOM-owned presentation entity**. Tally remains the source of truth for
+   accounting/product-master identity; BUDCOM owns presentation, description, photographs,
+   catalogue assets, customer-facing information, and publication state. No direct Tally
+   write-back of any catalogue field.
+3. **Lifecycle (§5.3.3):** locked as **Tally Stock Item → Catalogue Draft → Review → Published**.
+   An edit must not automatically become a published customer-facing change — the
+   draft/review/publish approval boundary is intentional, not incidental.
+4. **Excel (§5.3.4):** one canonical Excel interchange contract. Excel is an import/export/
+   interchange format only — never the operational database, never the source of truth, never a
+   replacement for Room. Stable identifiers must be defined so an Excel round-trip cannot create
+   accidental duplicate catalogue products.
+5. **Assets (§5.3.5):** reuse the Business Profile asset-storage abstraction (MVP-1.3-A,
+   `BusinessProfileLogoStore`'s pattern) where technically appropriate, rather than inventing a
+   new arbitrary storage mechanism. Catalogue assets remain outside Room, in controlled
+   app-private storage initially, with the same allowlist, size limits, path-traversal defense,
+   company isolation, deterministic ownership, and safe deletion/replacement discipline that
+   abstraction already proved.
+6. **Visitor-facing Resources (§5.3.6):** **not** a full MVP-1.4 dependency. Build the owner-side
+   catalogue foundation and publishing model first. A published *state* must exist
+   architecturally even if the external visitor-facing surface itself is deferred — no
+   marketplace/social-network behavior of any kind.
+7. **Desktop (§5.3.7):** no Desktop catalogue UI in MVP-1.4. Do not modify Desktop or Connector
+   merely for symmetry — only touch those layers when a concrete, approved dependency is
+   demonstrated.
+8. **Sharing (§5.3.8):** use the existing proven Android sharing mechanism first (the same
+   `Intent.ACTION_SEND`/WhatsApp pattern Ledger/Voucher PDF sharing already established), over a
+   controlled catalogue representation — never expose internal Room structures or filesystem
+   paths directly. Do not introduce Vartalap as a dependency. Support the existing WhatsApp/
+   WhatsApp Business sharing architecture where applicable.
+9. **Company isolation (§5.3.9):** Catalogue is strictly `companyId`-scoped, matching every
+   existing table's discipline — products, drafts, review state, publication state, assets,
+   Excel import/export context, and sharing context must each carry a trustworthy company
+   boundary. Never rely only on the currently selected company in UI state.
+
+**Why:** These were the exact open questions this repository's own MVP-1.4 planning/recovery
+review (`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md`, 2026-08-19) identified as
+requiring a real product decision rather than a Claude judgment call (per PDL-010's own "ChatGPT
+plans architecture" rule) — now answered by explicit ChatGPT/Product Owner review, mirroring
+PDL-019's own precedent for MVP-1.3.
+
+**Alternatives rejected:** duplicating the full Tally Stock Item record into the catalogue table
+(rejected — unjustified complexity per PDL-012, and blurs which system owns which fields);
+allowing an edit to publish immediately without a review step (rejected — removes the intentional
+approval boundary between draft and customer-facing content); treating Excel as an operational
+database (rejected — Room remains the sole local source of truth, per the Master Plan §3's own
+cross-roadmap architecture principle); inventing a new, unrelated asset-storage mechanism instead
+of extending the proven Business Profile pattern (rejected — unjustified complexity per PDL-012);
+shipping visitor-facing Resources as an MVP-1.4 hard dependency (rejected — repeats the exact
+access-control risk PDL-019 §5.5 already flagged and deferred for Business Profile; this codebase
+has still never shipped a genuine multi-permission-level view of anything); adding a Desktop or
+Connector catalogue surface for symmetry alone (rejected — no concrete dependency demonstrated);
+building a new sharing mechanism instead of reusing the proven PDF/Intent-based pattern (rejected
+— unjustified complexity per PDL-012); an installation-global or ambient-selected-company
+catalogue scope (rejected — breaks the company-isolation invariant every other BUDCOM table
+relies on, same reasoning as PDL-019 §1).
+
+**Consequences:** an MVP-1.4-A implementation may proceed against this locked scope without a
+further product-brainstorm gate for these nine questions specifically. A future catalogue schema
+uses `companyId` as (part of) its natural key, mirroring `PartyEntity`/`BusinessProfileEntity`; no
+Tally-write endpoint is introduced anywhere; no visitor-facing route/screen/permission model is
+built until a separate, explicit decision authorizes it; asset storage extends the existing
+app-private abstraction rather than forking a second one; Excel import/export is additive/
+interchange-only, never a second source of truth.
+
+**Revisit trigger:** A dedicated future product session that explicitly wants a direct Tally
+write-back for catalogue fields, a visitor-facing Resources view earlier than planned, a Desktop
+catalogue surface, or a different sharing mechanism — none of which should be inferred from
+MVP-1.4's own code.
+
+**Status:** Locked
+
+---
+
 ## New decision template
 
 ### PDL-XXX — <Title>
