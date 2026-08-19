@@ -175,6 +175,25 @@ class SyncViewModelTest {
         assertFalse(vm.uiState.value.isBusy)
     }
 
+    /**
+     * Live-observed defect (real-device Connect validation, 2026-08-19): "Run available syncs"
+     * completed Ledgers -> Stock items -> Vouchers successfully, but Connect never showed any
+     * customers because [SyncViewModel] only ever reconciled Parties from whichever outcome was
+     * LAST in the sequence (always Vouchers for this screen's fixed ordering) — Ledgers being
+     * first meant its own success was silently never reconciled through this path, only through
+     * a lone per-target "Sync now" tap on Ledgers specifically.
+     */
+    @Test
+    fun `run available syncs triggers party reconciliation from the Ledgers outcome even though Vouchers is the last outcome shown`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+
+        vm.onEvent(SyncEvent.RunAvailableSyncs)
+        advanceUntilIdle()
+
+        assertEquals(1, partyRepository.reconcileCalls)
+    }
+
     @Test
     fun offlineDisablesStart() = runTest(dispatcher) {
         connectivity.online.value = false

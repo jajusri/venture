@@ -62,7 +62,14 @@ class LedgerRepositoryImpl @Inject constructor(
             when (val result = fetchPage(query)) {
                 is AppResult.Success -> {
                     persistSuccessfulPage(companyId, query, result.value, fetchPage)
-                    AppResult.Success(result.value)
+                    // Re-read from Room rather than returning the raw network page: the remote
+                    // page's own order/pagination boundary need not match Room's own
+                    // name-COLLATE-NOCASE sort (live-observed: after warmFullSnapshot persisted a
+                    // full company snapshot, the network's first page skipped several
+                    // alphabetically-earlier ledgers that Room's own query correctly includes).
+                    // Matches VoucherRepositoryImpl.persistAndReturn()'s identical precedent.
+                    val refreshed = companyId?.takeIf { it.isNotBlank() }?.let { localDataSource.query(it, query) }
+                    AppResult.Success(refreshed ?: result.value)
                 }
 
                 is AppResult.Failure -> {

@@ -180,6 +180,13 @@ class SyncViewModel @Inject constructor(
                     val agg = result.value
                     val last = agg.outcomes.lastOrNull()
                     if (last != null) applyOutcome(last)
+                    // applyOutcome(last) above only ever reconciles Parties when Ledgers happens
+                    // to be the LAST target run — never true for the fixed Ledgers -> Stock
+                    // items -> Vouchers sequence this screen always runs, so a Ledgers success
+                    // here would otherwise silently never reconcile. Find and apply its own
+                    // outcome from the aggregate independently of the UI-state outcome above.
+                    agg.outcomes.firstOrNull { it.target == SyncTarget.Ledgers }
+                        ?.let(::maybeReconcilePartiesFromLedgers)
                     val message = buildString {
                         append("Finished available syncs. ")
                         append("${agg.outcomes.size} target(s) attempted. ")

@@ -84,6 +84,34 @@ class LedgerRepositoryImplTest {
         assertEquals(1, remote.callCount)
     }
 
+    /**
+     * Live-observed defect (real-device Ledger Browser validation, 2026-08-19): a full-snapshot
+     * refresh persisted every page to Room correctly, but the OLD code returned the first
+     * network response's own `items` directly — a small, single-page slice in whatever order the
+     * Connector happened to return it, not Room's own name-COLLATE-NOCASE sort. On a real device
+     * this made an explicit Refresh visibly skip several alphabetically-earlier ledgers that a
+     * normal (Room-only) open displayed correctly, since only the normal-open path re-read Room.
+     * Matches `VoucherRepositoryImpl.persistAndReturn()`'s existing re-read-after-persist pattern.
+     */
+    @Test
+    fun `refreshLedgers returns the re-read Room page reflecting the full persisted snapshot, not the raw first network page`() = runTest(dispatcher) {
+        val local = FakeLedgerLocal()
+        val remote = FakeRemote(
+            ApiResult.Success(LedgerPage(listOf(sampleLedger(id = "guid:page1", name = "Aaa")), 1, 1, 2, 2, "t")),
+        )
+        remote.setLegacyPageResult(2, ApiResult.Success(LedgerPage(listOf(sampleLedger(id = "guid:page2", name = "Bbb")), 2, 1, 2, 2, "t2")))
+        val repo = repository(remote = remote, local = local)
+
+        val result = repo.refreshLedgers(LedgerQuery(pageSize = 1)) as AppResult.Success
+
+        assertEquals("both pages must be persisted to Room", 2, local.stored["co-1"]!!.size)
+        assertEquals(
+            "the returned page must reflect Room's own re-read, not just the first network page's single item",
+            2,
+            result.value.items.size,
+        )
+    }
+
     @Test
     fun `offline without cache maps failure`() = runTest(dispatcher) {
         val repo = repository(remote = FakeRemote(ApiResult.Failure(NetworkError.NoConnectivity)))
