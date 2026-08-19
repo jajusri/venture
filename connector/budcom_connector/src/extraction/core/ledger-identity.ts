@@ -15,12 +15,18 @@ export interface LedgerIdentityResult {
   readonly guid?: string;
 }
 
-/** Approved rich-fetch field list for ledger collection export. */
+/**
+ * Approved rich-fetch field list for ledger collection export. `PARENT` restored 2026-08-19
+ * (TD-035) -- see `docs/technical-debt/registry.md` and `master-data-templates.ts`'s own inline
+ * comment for the full history (removed 2026-08-03 for TD-001, safe again since TD-001's
+ * 2026-08-16 shared-parser sanitizer fix).
+ */
 export const LEDGER_RICH_FETCH_FIELDS = [
   'NAME',
   'GUID',
   'ALTERID',
   'MASTERID',
+  'PARENT',
   'OPENINGBALANCE',
   'CLOSINGBALANCE',
   'ISBILLWISEON',

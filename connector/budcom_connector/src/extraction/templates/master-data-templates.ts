@@ -81,6 +81,17 @@ export const MasterDataTemplates = {
         'GUID',
         'ALTERID',
         'MASTERID',
+        // TD-035 (2026-08-19): restored after TD-001's shared-parser sanitizer (2026-08-16,
+        // response-parser.ts's sanitizeXml10IllegalCharacters()) proved the field's only known
+        // failure mode -- the &#4; XML-1.0-illegal control-character artifact -- is now
+        // unconditionally neutralized before any field is read, for every collection. Removed
+        // 2026-08-03 (commit 8706a80) as a workaround predating that fix; restoring it is what
+        // makes Connect's Debtor/Creditor Party classification (LedgerPartyEligibilityPolicy)
+        // possible against real data. See docs/technical-debt/registry.md TD-035 for the full
+        // investigation and entity-mappers.test.ts's "mapLedger PARENT adversarial coverage
+        // (TD-035)" for the permanent regression proof (illegal references, entities, Unicode,
+        // long values, combinations).
+        'PARENT',
         'OPENINGBALANCE',
         'CLOSINGBALANCE',
         'ISBILLWISEON',

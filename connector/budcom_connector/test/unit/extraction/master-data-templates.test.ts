@@ -36,20 +36,24 @@ describe('MasterDataTemplates', () => {
     expect(xml).not.toContain('<DESC>List of Stock Items</DESC>');
   });
 
-  it('enriches ledgers collection with embedded read-only FETCH fields', () => {
+  it('enriches ledgers collection with embedded read-only FETCH fields, including PARENT (TD-035)', () => {
     const xml = builder.build(MasterDataTemplates.ledgers('ESTIMATION'));
     expect(xml).toContain('<COLLECTION NAME="List of Ledgers" ISMODIFY="Yes">');
-    expect(xml).toContain('Fetch : NAME, GUID, ALTERID, MASTERID, OPENINGBALANCE, CLOSINGBALANCE, ISBILLWISEON');
-    expect(xml).not.toMatch(/Fetch\s*:[^<]*\bPARENT\b/);
+    expect(xml).toContain('Fetch : NAME, GUID, ALTERID, MASTERID, PARENT, OPENINGBALANCE, CLOSINGBALANCE, ISBILLWISEON');
     expect(xml).not.toContain('<DESC>List of Ledgers</DESC>');
   });
 
   // TD-001 fix (2026-08-16): this exact "&#4;" shape -- observed live on ESTIMATION --
   // used to cause a hard parser rejection (xml_illegal_character); the shared parser now
-  // sanitizes it instead. The fields below remain deliberately excluded from the TDL
-  // FETCH lists regardless -- avoiding known-artifact-carrying fields is still sensible
-  // defense-in-depth even though a stray artifact no longer breaks the whole response.
-  it('does not request master fields proven to emit XML 1.0 sentinel references, even though they are now sanitized rather than rejected', () => {
+  // sanitizes it instead, for every collection unconditionally (proven directly below).
+  //
+  // TD-035 (2026-08-19): Ledgers' own PARENT field has since been restored to the FETCH list
+  // (see master-data-templates.ts) now that this sanitizer proves the original risk is fully
+  // neutralized -- see entity-mappers.test.ts's "mapLedger PARENT adversarial coverage
+  // (TD-035)" for the full live-pipeline regression proof. StockItems' PARENT/BASEUNITS/
+  // GSTAPPLICABLE remain deliberately excluded -- that decision was not investigated or
+  // reversed by TD-035, which was scoped to Ledgers/Connect classification only.
+  it('does not request StockItems fields proven to emit XML 1.0 sentinel references, even though they are now sanitized rather than rejected', () => {
     const parser = new TallyXmlResponseParser();
     const liveFailureShape = [
       '<ENVELOPE><BODY><DATA><COLLECTION>',

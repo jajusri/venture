@@ -59,4 +59,119 @@ describe('entity mappers', () => {
     });
     expect(item?.id).toBe('guid:6a2a5ccc-6394-4ccb-bb34-113991142c4f-0000040b');
   });
+
+  /**
+   * TD-035 permanent regression coverage. `PARENT` was excluded from the Ledgers TDL FETCH
+   * request (2026-08-03, commit 8706a80) as a workaround for TD-001 -- a Tally export artifact
+   * where a group/parent value can arrive as `&#4; <name>` (decimal numeric reference to the
+   * illegal C0 control character 0x04, EOT), which used to hard-fail XML structural parsing.
+   * TD-001 was properly fixed at the shared parsing layer (2026-08-16,
+   * `TallyXmlResponseParser`'s `sanitizeXml10IllegalCharacters()`, unconditional for every
+   * collection) -- these tests exist to prove, permanently, that restoring `PARENT` to the
+   * Ledgers FETCH request (this same commit) does not reintroduce that failure, and that every
+   * other adversarial character class a real Tally group name could plausibly contain survives
+   * the full live pipeline (`TallyXmlResponseParser.parse` -> `mapLedger`) intact and correct.
+   */
+  describe('mapLedger PARENT adversarial coverage (TD-035)', () => {
+    function ledgerWithParent(parentInnerXml: string): string {
+      return [
+        '<ENVELOPE><BODY><DATA><COLLECTION>',
+        `<LEDGER NAME="Test Ledger"><GUID>guid-1</GUID><PARENT>${parentInnerXml}</PARENT></LEDGER>`,
+        '</COLLECTION></DATA></BODY></ENVELOPE>',
+      ].join('');
+    }
+
+    function mapFirstLedger(rawXml: string) {
+      const document = collectionParser.parseDocument(rawXml);
+      const nodes = collectionParser.parseNodes(document, { nodeName: 'LEDGER' });
+      return mapLedger(collectionParser, nodes[0]!);
+    }
+
+    it('the exact TD-001/TD-035 failure class: decimal &#4; illegal reference is sanitized, not rejected', () => {
+      const ledger = mapFirstLedger(ledgerWithParent('&#4; Sundry Debtors'));
+      expect(ledger?.parentGroup).toBe('Sundry Debtors');
+    });
+
+    it('the hexadecimal &#x4; form of the same illegal reference is sanitized identically', () => {
+      const ledger = mapFirstLedger(ledgerWithParent('&#x4; Sundry Creditors'));
+      expect(ledger?.parentGroup).toBe('Sundry Creditors');
+    });
+
+    it('a literal 0x04 control byte (not a numeric reference) is also sanitized', () => {
+      const ledger = mapFirstLedger(ledgerWithParent(' Sundry Debtors'));
+      expect(ledger?.parentGroup).toBe('Sundry Debtors');
+    });
+
+    it('an ampersand, properly entity-encoded by Tally, decodes to a literal &', () => {
+      const ledger = mapFirstLedger(ledgerWithParent('R &amp; D Distributors'));
+      expect(ledger?.parentGroup).toBe('R & D Distributors');
+    });
+
+    it('angle brackets, properly entity-encoded, decode to literal < and > without being reparsed as markup', () => {
+      const ledger = mapFirstLedger(ledgerWithParent('Sundry Debtors &lt;Retail&gt;'));
+      expect(ledger?.parentGroup).toBe('Sundry Debtors <Retail>');
+    });
+
+    it('double and single quotes, properly entity-encoded, decode to literal quote characters', () => {
+      const ledger = mapFirstLedger(ledgerWithParent('Sundry Debtors &quot;VIP&quot; &amp; Distributor&apos;s Group'));
+      expect(ledger?.parentGroup).toBe(`Sundry Debtors "VIP" & Distributor's Group`);
+    });
+
+    it('legal XML whitespace -- newline and tab -- inside the value is preserved, not stripped', () => {
+      const ledger = mapFirstLedger(ledgerWithParent('Sundry Debtors\n\tRetail Division'));
+      expect(ledger?.parentGroup).toContain('\n');
+      expect(ledger?.parentGroup).toContain('\t');
+      expect(ledger?.parentGroup).toBe('Sundry Debtors\n\tRetail Division');
+    });
+
+    it('Unicode business-script text (Devanagari) round-trips exactly', () => {
+      const ledger = mapFirstLedger(ledgerWithParent('विक्रेता समूह'));
+      expect(ledger?.parentGroup).toBe('विक्रेता समूह');
+    });
+
+    it('unusual punctuation and symbols round-trip exactly', () => {
+      const value = 'Sundry Debtors — (Retail)/Wholesale @2026! #1 100%';
+      const ledger = mapFirstLedger(ledgerWithParent(escapeForXmlText(value)));
+      expect(ledger?.parentGroup).toBe(value);
+    });
+
+    it('nested-tag-looking text (a fully escaped literal tag) decodes to a plain string, never reparsed as XML', () => {
+      const ledger = mapFirstLedger(ledgerWithParent('&lt;PARENT&gt;Nested-looking text&lt;/PARENT&gt;'));
+      expect(ledger?.parentGroup).toBe('<PARENT>Nested-looking text</PARENT>');
+    });
+
+    it('a very long group name (500+ characters) is not truncated', () => {
+      const longName = 'Sundry Debtors ' + 'X'.repeat(500);
+      const ledger = mapFirstLedger(ledgerWithParent(longName));
+      expect(ledger?.parentGroup).toHaveLength(longName.length);
+      expect(ledger?.parentGroup).toBe(longName);
+    });
+
+    it('a combination of illegal references, entities, Unicode, and long text all resolve correctly together', () => {
+      const combined = '&#4;Sundry Debtors &amp; Co. &lt;विक्रेता&gt; ' + 'Y'.repeat(200) + '\n\t"end"';
+      const ledger = mapFirstLedger(ledgerWithParent(combined));
+      expect(ledger?.parentGroup).toBe('Sundry Debtors & Co. <विक्रेता> ' + 'Y'.repeat(200) + '\n\t"end"');
+    });
+
+    it('an empty PARENT element maps to undefined, not a crash or an empty string', () => {
+      const ledger = mapFirstLedger(ledgerWithParent(''));
+      expect(ledger?.parentGroup).toBeUndefined();
+    });
+
+    it('a wholly absent PARENT element (no tag at all) also maps to undefined', () => {
+      const rawXml = [
+        '<ENVELOPE><BODY><DATA><COLLECTION>',
+        '<LEDGER NAME="Test Ledger"><GUID>guid-1</GUID></LEDGER>',
+        '</COLLECTION></DATA></BODY></ENVELOPE>',
+      ].join('');
+      const document = collectionParser.parseDocument(rawXml);
+      const nodes = collectionParser.parseNodes(document, { nodeName: 'LEDGER' });
+      const ledger = mapLedger(collectionParser, nodes[0]!);
+      expect(ledger?.parentGroup).toBeUndefined();
+    });
+  });
 });
+
+function escapeForXmlText(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
