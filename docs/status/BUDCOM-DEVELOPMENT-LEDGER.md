@@ -814,18 +814,167 @@ re-confirmed nor disturbed.
 No version bump (validation + two small scoped fixes, not a milestone). Commit(s): see `git log`
 immediately following this entry. Working tree left clean; no unrelated files touched.
 
-**Exact NEXT TASK:** MVP-1.4 planning/recovery review (read-only architecture/gap-analysis review,
-matching the MVP-1.3 planning session's own precedent — not implementation). Do not begin MVP-1.4
-implementation without an explicit new go-ahead. Separately and not blocking it: a Connector-side
-investigation into missing Tally `parent_group` extraction (§26.C) is recommended before any future
-Party-seeding UI work is attempted.
+**Exact NEXT TASK (at the time):** MVP-1.4 planning/recovery review. Superseded by the git
+preservation, Connector investigation, and planning package produced in §28 below.
 
-## 27. Current source-of-truth references
+## 28. Phase 38 — Git Preservation, Connector `parent_group` Investigation, MVP-1.4 Planning
+
+Four-phase autonomous task, starting HEAD `b7e9377` (Phase 37's own final commit), working tree
+clean, `main` 4 commits ahead of `origin/main`.
+
+### A. Git preservation (Phases 1–2)
+
+Independently re-verified branch (`main`), HEAD (`b7e9377`), working tree (clean), and the exact
+4 unpushed commits (`e6c7327`, `5b30b09`, `38cbe2c`, `b7e9377` — all recognizable Phase 36/37
+Ledger/Sync/docs work, 18 files, 1,469 insertions / 676 deletions, matching what those two prior
+sessions actually produced). Scanned the full diff for secrets/credentials — the only matches were
+this repository's own documentation naming private RFC1918 LAN IPs (`192.168.29.x`), not a leak.
+Pushed with a plain `git push origin main` — genuine fast-forward (`2555c1d..b7e9377`), no force, no
+history rewrite. `git fetch` + direct SHA comparison confirmed local `HEAD` == `origin/main`
+(`b7e93771c2ba714518502411889dc6588e6d8b0d`) and the working tree remained clean throughout.
+
+### B. Connector `parent_group` investigation (Phase 3) — root cause found, fix deliberately withheld
+
+Traced the complete path Tally → Connector extraction request → XML parsing → Connector cache →
+sync payload → Android, in the main repository's own canonical Connector source
+(`connector/budcom_connector/`, distinct from and never touching the separate, standing-instruction-
+protected `D:\Projects\Budcom_connectivity_hardening\connector\budcom_connector\` worktree used for
+unrelated in-progress secure-pairing work).
+
+- **A/B — Tally extraction + XML parsing:** `tally-ledger-mapper.ts`'s `mapTallyLedgerToDomain()`
+  correctly reads `parser.getChildText(node, 'PARENT')` into `parentGroup` — the parsing code itself
+  has never been the problem.
+- **F — root cause, found at the request layer:** `MasterDataTemplates.ledgers()`
+  (`connector/budcom_connector/src/extraction/templates/master-data-templates.ts`)'s
+  `collectionModifyFetch` array — the explicit TDL FETCH field list sent *to* Tally — does not
+  include `'PARENT'`. Tally's XML response for the Ledgers collection therefore never contains a
+  `<PARENT>` element for any real ledger; the parser correctly returns `undefined` every time.
+  Confirmed at the data layer too: direct `sqlite3` inspection of the Connector's own
+  `connector-data/budcom-ledger.db` (`ledgers.parent_group`) shows `NULL` for all 941 real ledgers —
+  only a `test/helpers/master-data-fixtures.ts` fixture ("Acme Corp") has it populated, ruling out
+  any Android/transport-side loss.
+- **Why it's missing — not an oversight.** `git blame`/`git show 8706a80` ("fix(connector): stop
+  requesting Tally fields that emit XML-illegal control characters", 2026-08-03) shows `'PARENT'`
+  was deliberately removed from both Ledgers' and StockItems' FETCH lists as a workaround for TD-001
+  (Tally emitting the XML-1.0-illegal `&#4;` control-character reference inside group/parent text,
+  which used to hard-fail the whole response). **TD-001 was subsequently root-caused and properly
+  fixed at the shared parsing layer on 2026-08-16** (`TallyXmlResponseParser.parse()`'s
+  `sanitizeXml10IllegalCharacters()`, confirmed in code to run unconditionally for every collection,
+  not just Vouchers/Groups) — but `PARENT` was never reconsidered afterward. Worse, it wasn't merely
+  forgotten: the current `master-data-templates.test.ts` explicitly documents this as a **deliberate,
+  informed, post-sanitizer decision** — "The fields below remain deliberately excluded from the TDL
+  FETCH lists regardless — avoiding known-artifact-carrying fields is still sensible defense-in-depth
+  even though a stray artifact no longer breaks the whole response."
+
+**Concrete downstream cost, confirmed this session:** `LedgerPartyEligibilityPolicy` (MVP-1.1-A) can
+only classify a ledger as Customer/Supplier by matching `parentGroup` against "debtor"/"creditor" —
+with `parentGroup` permanently `NULL`, zero of ESTIMATION's real ledgers can ever be Party-auto-
+seeded, independent of Phase 37's own (unrelated, Android-side, already-fixed) reconciliation-
+trigger bug. The same gap would block any future MVP-1.4 Catalogue feature wanting to group products
+by Tally Stock Group (`StockItemEntity.parentGroup` has the identical `NULL` problem, same root
+cause).
+
+### C. Decision: fix withheld, not implemented (Phase 4)
+
+Phase 4's own gating conditions require the change to, among other things, not require an
+architectural redesign and to be adequately covered by existing tests. Re-adding `'PARENT'` fails
+neither of those *mechanically* — but the existing test suite's own explicit comment shows this is
+not a bug fix, it is **reversing a considered, evidenced, defense-in-depth architecture decision**
+made by the same governance process this task's own operating mode names as the architectural
+authority ("ChatGPT remains the architectural/product authority"). Two of the existing test
+assertions (`master-data-templates.test.ts`, Ledgers and StockItems) directly assert `PARENT`'s
+*absence* from the FETCH list — flipping them is not "small, local, tests already cover it," it is
+undoing a decision those very tests were written to lock in. **Per this task's own explicit
+instruction not to broaden into general Connector work and to treat an unsafe-to-contain fix as
+"document, don't implement," no Connector code was changed.** Recorded permanently as
+**TD-035** in `docs/technical-debt/registry.md` (full description, evidence, and the exact proposed
+fix if a Product Owner/ChatGPT decision approves re-enabling it), and referenced from the new
+MVP-1.4 planning document (§D below) since it would also affect any future Catalogue
+grouping-by-Stock-Group feature.
+
+**Real-device verification:** not attempted for a fix that was not made — the fix-decision itself
+(§C) is the deliverable for this phase, per the task's own "if not safely contained, document" branch.
+
+### D. Prospect → Ledger linking (Phase 5) — recorded, not implemented
+
+Recorded verbatim as specified, as a new entry in `docs/planning/BUDCOM-NOT-NOW.md` ("Prospect →
+existing Tally Ledger linking (Connect)"), using that file's own established template (Why
+valuable / Why not now / Dependencies / Potential release / Promotion trigger). Explicitly notes its
+own dependency on TD-035 (§C above) — Debtor/Creditor classification is meaningless against real
+data until that decision is made. No code, schema, or UI was written for this item.
+
+### E. MVP-1.4 planning/recovery review (Phases 6–8)
+
+Read and reconciled `BUDCOM-MASTER-PRODUCT-EXECUTION-PLAN.md`, `BUDCOM-PRODUCT-DECISION-LOG.md`
+(PDL-001 through PDL-019 in full), `BUDCOM-UI-DESIGN-DECISIONS.md`, `BUDCOM-SCREEN-INVENTORY.md`,
+`BUDCOM-NOT-NOW.md`, `BUDCOM-MVP-1-3-BUSINESS-PROFILE-ARCHITECTURE.md` (the direct structural
+precedent), `docs/ROADMAP.md`, this Development Ledger, and the Current Development Status
+checkpoint. Confirmed directly against source (not assumed): MVP-1.3 is frozen; zero Catalogue code
+exists anywhere (Android/Desktop/Connector); MVP-1.3's own `business_profile` table
+(`companyId`-keyed, matching PDL-019 §5.1 exactly) and app-private logo-storage abstraction are both
+genuinely present and reusable, confirmed by direct inspection of `DatabaseModule.kt`'s
+`MIGRATION_9_10`; the pre-existing MVP-1 `StockItemEntity`/`cached_stock_items` foundation is present
+and is the natural read-source for a future Catalogue, though the exact relationship is explicitly
+undecided.
+
+**Produced:** `docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` — a full planning package
+following this document's own structure precedent, separating LOCKED (ownership boundary, roadmap
+position, cross-cutting architecture principles, NOT-NOW exclusions, the confirmed MVP-1.3
+dependency) from PROPOSED (the Master Plan §10 "current direction" bullet list — master catalogue
+table, SKU IDs, Excel import/export, image-filename/SKU linkage, branch/draft/review/publish,
+image-organization workflow — explicitly labeled recovered intent, not locked scope) from nine OPEN
+PRODUCT DECISIONS requiring their own Brainstorm 1 (product/SKU field list; Stock Item relationship;
+branch/draft/review/publish state machine; Excel exact contract; asset-storage mechanism;
+visitor-facing "Resources" timing; Desktop surface; sharing mechanism; company-isolation
+confirmation), plus candidate (not decided) sections for company isolation, test strategy, offline
+behavior, migration, performance risk, and three candidate sub-milestones (1.4-A/B/C) offered only
+as a structural option. **No MVP-1.4 implementation was started or authorized.**
+
+### F. Tests / build
+
+No production code was changed this session (Connector fix withheld by decision, §C) — the existing
+1,259/1,259 (both variants) baseline from Phase 37 is unchanged. No Android/Desktop/Connector build
+was run this session since no source in any of those trees was modified; documentation-only changes.
+
+### G. Documentation updated this session
+
+`docs/technical-debt/registry.md` (new TD-035 + index entry), `docs/planning/BUDCOM-NOT-NOW.md` (new
+Prospect→Ledger entry), `docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` (new file),
+this Development Ledger entry, and the Current Development Status checkpoint (§ below this entry's
+commit).
+
+### H. Git / device safety
+
+No force push, no history rewrite anywhere this session. No unrelated production files touched —
+this phase is documentation-only (Phase 3's investigation read connector/Android/desktop source and
+the local Connector SQLite cache; it did not write to any of them). The Ledger candidate installed on
+`10BF44124K000E3` from Phase 37 was not touched this session — no `adb` command of any kind was run;
+its state (SHA-256 `a0e04343a0e48ace12f14fd6da9d0036a6894106842132e729c6fd23630ddf56`, data intact,
+Phase 37's offline/online Ledger behavior) is presumed unchanged because nothing in this session could
+have altered it, not re-verified live (no device action was part of this task's scope).
+
+**Exact NEXT TASK:** Two independent, non-blocking items, neither of which is MVP-1.4
+implementation:
+
+1. **MVP-1.4 Brainstorm 1** (User + ChatGPT), using
+   `docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` §5.3 as the exact input — the nine
+   open product decisions listed there. Only after that produces its own PDL entry (mirroring
+   PDL-019) should an MVP-1.4-A implementation prompt be issued.
+2. **TD-035 decision** (`docs/technical-debt/registry.md`): re-enable Connector `PARENT` fetch for
+   Ledgers (and separately evaluate StockItems) now that TD-001's sanitizer neutralizes the original
+   risk, or explicitly ratify the current defense-in-depth exclusion and accept the Party/Catalogue-
+   grouping limitation as permanent. Recommended to resolve before Prospect→Ledger linking
+   (`docs/planning/BUDCOM-NOT-NOW.md`) is ever scheduled.
+
+**Do not begin MVP-1.4 implementation without an explicit new go-ahead following Brainstorm 1.**
+
+## 29. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`
 - MVP-1.2 Relationship Timeline/Dincharya: `docs/status/BUDCOM-MVP-1-2-RELATIONSHIP-TIMELINE-DINCHARYA-STATUS.md`
 - MVP-1.3 Business Profile: `docs/status/BUDCOM-MVP-1-3-BUSINESS-PROFILE-STATUS.md`
+- MVP-1.4 Catalogue (planning only, not authorized): `docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md`
 - Controlled Pilot: `docs/planning/BUDCOM-MVP-1-CONTROLLED-PILOT-CLOSURE-STATUS.md`
 - Quality: `docs/governance/BUDCOM-QUALITY-SCORECARD.md`
 - Technical debt: `docs/technical-debt/registry.md`

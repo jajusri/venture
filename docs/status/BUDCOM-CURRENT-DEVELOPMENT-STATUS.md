@@ -68,6 +68,25 @@ byte-verified against the device. This also supersedes an earlier, now-confirmed
 this file (§7 prior revision) that device pairing had never been attempted — it plainly had been,
 independent of this session. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §26.
 
+**Phase 38 — Git Preservation, Connector `parent_group` Investigation, MVP-1.4 Planning
+(documentation-only; no production code changed).** Pushed Phase 36/37's 4 commits to
+`origin/main` as a clean fast-forward (`2555c1d..b7e9377`), confirmed no secrets and `HEAD ==
+origin/main`. Traced Phase 37's Connector `parent_group` gap to its exact root cause: Connector
+commit `8706a80` (2026-08-03) removed `PARENT` from the Ledgers/StockItems Tally FETCH request as a
+workaround for TD-001 (illegal `&#4;` control characters); TD-001 was properly fixed at the shared
+XML-parsing layer on 2026-08-16, but `PARENT` was never restored — and the current Connector test
+suite shows this is a **deliberate post-fix defense-in-depth decision**, not an oversight. Per this
+task's own instruction not to reverse an architecture-level decision unilaterally, **no Connector
+fix was implemented** — recorded as new **TD-035** (`docs/technical-debt/registry.md`) with the
+exact proposed fix, pending an explicit Product Owner/ChatGPT decision. Recorded the Prospect→
+existing-Ledger linking capability in `docs/planning/BUDCOM-NOT-NOW.md` per the exact specified
+concept, not implemented. Produced the MVP-1.4 planning/recovery review,
+`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md`, separating LOCKED scope (ownership
+boundary, roadmap position, confirmed MVP-1.3 dependency) from PROPOSED direction (Master Plan §10's
+own catalogue/SKU/branch-publish bullet list) from nine OPEN PRODUCT DECISIONS requiring their own
+Brainstorm 1 — no MVP-1.4 implementation started. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §28.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.
@@ -367,15 +386,26 @@ Real-Device Validation — §1 above, `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`
 complete** — bounded, explicitly-authorized side-quests, not a new milestone. Neither changes the
 item below.
 
-**Next task: MVP-1.4 planning/recovery review** (read-only architecture/gap-analysis review,
-matching the MVP-1.3 planning session's own precedent exactly — §2b/§3 above — not implementation).
-**Do NOT begin MVP-1.4 implementation** without an explicit new go-ahead, per this task's own final
-stop condition.
+**Phase 38 (Git Preservation, Connector Investigation, MVP-1.4 Planning — §1 above,
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §28) is complete.** Phase 36/37's commits are pushed
+(`origin/main` == local `HEAD`). The Connector `parent_group` gap (Phase 37 §26.C) is now fully
+root-caused — TD-035, `docs/technical-debt/registry.md` — but deliberately **not fixed**: it is a
+considered, documented, post-TD-001 defense-in-depth decision in the Connector's own test suite, not
+an oversight, so reversing it requires an explicit Product Owner/ChatGPT decision, not a unilateral
+Claude change. The MVP-1.4 planning/recovery review is done:
+`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md`.
 
-**Separately, not blocking MVP-1.4:** a Connector-side investigation into missing Tally
-`parent_group` extraction is recommended (Phase 37, `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`
-§26.C) before any future Party-seeding UI work — real ledgers for the `estimation` company
-currently have no group data for the Android app's Party-eligibility policy to classify against.
+**Next task: MVP-1.4 Brainstorm 1** (User + ChatGPT), using that document's §5.3 (nine open product
+decisions — product/SKU field list, Stock-Item relationship, branch/draft/review/publish state
+machine, Excel contract, asset-storage mechanism, visitor-facing timing, Desktop surface, sharing
+mechanism, company isolation) as the exact input. **Do NOT begin MVP-1.4 implementation** without an
+explicit new go-ahead following that Brainstorm, per this task's own final stop condition.
+
+**Separately, not blocking MVP-1.4:** the **TD-035 decision** itself (re-enable Connector `PARENT`
+fetch now that TD-001's sanitizer neutralizes the original risk, or formally ratify the current
+exclusion) is recommended before Prospect→Ledger linking
+(`docs/planning/BUDCOM-NOT-NOW.md`) is ever scheduled — that future capability's own Debtor/Creditor
+classification depends on it.
 
 Two independent items from prior sessions also remain open, unaffected by and not blocking the
 above:
