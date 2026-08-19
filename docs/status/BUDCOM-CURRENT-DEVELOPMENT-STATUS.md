@@ -178,6 +178,17 @@ history rewrite. Post-push verification via `git fetch origin` + `git rev-parse`
 HEAD and `origin/main` resolve to the identical commit, working tree clean. See the session's own
 final report for the exact resulting hash.
 
+### 2e. Push status (Phase 39 / TD-035 + PDL-020)
+
+**PUSHED (2026-08-19, explicit user request following the Phase 39 report).** Starting HEAD `141b92d`
+(Phase 38's own final commit, already on `origin/main`); this session's own final report initially
+left three new commits (`392e324`, `772e157`, `2feb9b2`) local-only pending explicit push
+authorization, per the governing task's own "not pushed" default. The user then explicitly asked to
+push. `git push origin main` completed as a normal fast-forward, no force flag, no history rewrite:
+`b7e9377..2feb9b2 main -> main`. Post-push verification via `git fetch origin` + `git rev-parse`
+confirmed local `HEAD` and `origin/main` both resolve to `2feb9b2bddc2838efafaf7de61e90e1ec33ffbc0`,
+working tree clean.
+
 ## 3. Recent session work (MVP-1.2-B through MVP-1.3-C)
 
 **Part B — Relationship Timeline, implemented and gate-passed.** New `PartyTimelineDao` merges
@@ -383,6 +394,31 @@ test-gate mechanism on a real persistent-install device, not something this sess
 tooling level. Future sessions should expect the same and plan to reinstall as a final step (exactly
 as this session did), or consider moving that gate to a disposable emulator/secondary device if a
 persistently-installed candidate needs to survive test runs.
+
+**Update (Phase 39 follow-up, TD-035 build install, 2026-08-19):** rebuilt `assembleDebug` from HEAD
+`2feb9b2` (TD-035 fix + `LedgerGroupClassification`, no version bump — versionCode/versionName
+unchanged at 29/`0.1.1-continuity.28`, same as the previously-installed build) and reinstalled over
+device `10BF44124K000E3` via `adb install -r`. Verified via `dumpsys package
+com.budcom.android.debug`: `lastUpdateTime` advanced to `2026-08-19 07:48:12` while
+`firstInstallTime` (`2026-08-18 18:29:20`) stayed unchanged — a genuine update over the existing
+install, not a fresh one (this is a same-version content update, so `firstInstallTime ==
+lastUpdateTime` does not apply here as it did for a true fresh install). Launched via `adb shell
+monkey -p com.budcom.android.debug -c android.intent.category.LAUNCHER 1` (the plain `am start
+-n .../MainActivity` component name used by earlier sessions no longer resolves — the real launcher
+activity is `com.budcom.android.app.MainActivity`, not `com.budcom.android.MainActivity`; recorded
+here for future sessions) — confirmed `mFocusedApp` became
+`com.budcom.android.debug/com.budcom.android.app.MainActivity`, no `FATAL EXCEPTION`/`AndroidRuntime`
+crash in logcat (two benign vendor SELinux `avc: denied ... proc_fas` warnings present, a known
+OEM/vivo-kernel artifact unrelated to app code, seen before on this same device). Deeper in-app
+navigation (Dashboard/Connect/Ledger/Dincharya/Business Profile) was **not** re-exercised — this was
+a launch-only smoke check, not a full walkthrough. New debug APK:
+`apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` — 15,185,874 bytes — SHA-256
+`7fd36811d69bb5565d838020af4f79f4f7a29f14558a0bb2513454d6caed4592` (supersedes the `601b248f…`
+build above as the byte-verified on-device state; the size/hash change vs. the MVP-1.3 freeze build
+reflects the TD-035 Android code addition, not a version bump). Commits `392e324`/`772e157`/`2feb9b2`
+(this session's three) also pushed to `origin/main` as a clean fast-forward
+(`b7e9377..2feb9b2`), confirmed via `git fetch` + `git rev-parse` that local `HEAD` and `origin/main`
+resolve identically.
 
 ## 6. Permanent rules
 

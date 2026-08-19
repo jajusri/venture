@@ -1111,11 +1111,49 @@ not merely documented); TD-035 regression evidence; the nine PDL-020 product dec
 status/decision documentation updates; and leaving the repository at a clean, unambiguous baseline for
 a future, separately-authorized MVP-1.4-A implementation prompt.
 
-**Exact NEXT TASK:** Issue an MVP-1.4-A implementation prompt using
-`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` §5.3 (now PDL-020-resolved) as the locked
-input — this is the first work item PDL-020 actually unblocks. Independently, StockItems'
-`PARENT`/`BASEUNITS`/`GSTAPPLICABLE` exclusion remains open and would need its own safety
-investigation (mirroring §B above) before any Catalogue feature groups products by Tally Stock Group.
+**Exact NEXT TASK (as recorded at the time of the Phase 39 report):** Issue an MVP-1.4-A
+implementation prompt using `docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` §5.3 (now
+PDL-020-resolved) as the locked input — this is the first work item PDL-020 actually unblocks.
+Independently, StockItems' `PARENT`/`BASEUNITS`/`GSTAPPLICABLE` exclusion remains open and would need
+its own safety investigation (mirroring §B above) before any Catalogue feature groups products by
+Tally Stock Group.
+
+### K. Follow-up: push + device install (2026-08-19, explicit user request)
+
+The Phase 39 report above (§I/§J) correctly stated "not pushed" and "no `adb` used" as of that
+report. Immediately afterward, the user explicitly asked to push TD-035 + PDL-020 and install the
+latest build on the real phone — both superseding those two statements, recorded here rather than
+edited into the original report text.
+
+**Push:** `git push origin main` — clean fast-forward `b7e9377..2feb9b2`, no force, no history
+rewrite. `git fetch origin` + `git rev-parse` confirmed local `HEAD` and `origin/main` both resolve to
+`2feb9b2bddc2838efafaf7de61e90e1ec33ffbc0`.
+
+**Device install:** Checked `adb devices -l` first (per this project's own ADB-disconnect protocol) —
+device `10BF44124K000E3` (I2407i) connected and authorized. Rebuilt `assembleDebug` from the pushed
+HEAD (`JAVA_HOME` pointed at Android Studio's bundled JBR/JDK 21 — the default `java` on `PATH` is a
+JDK 8 that cannot configure this project, the same environment issue found and worked around earlier
+in Phase 39 §F); Gradle reported the APK already up-to-date with current source. Compared against the
+already-installed package via `dumpsys package com.budcom.android.debug` before installing (versionCode
+29, `lastUpdateTime` already today from an earlier install this same calendar day whose provenance
+this session did not otherwise trace — not investigated further since a same-version reinstall is
+safe and was the correct action regardless). `adb install -r` → `Performing Streamed Install /
+Success`; `lastUpdateTime` advanced to `2026-08-19 07:48:12` while `firstInstallTime`
+(`2026-08-18 18:29:20`) stayed unchanged, confirming a genuine content update over the existing
+install (no version bump — this is a code-only Phase 39 update, not a freeze candidate). Launched via
+`adb shell monkey -p com.budcom.android.debug -c android.intent.category.LAUNCHER 1` (the
+`am start -n com.budcom.android/.MainActivity` component name used by earlier sessions no longer
+resolves; the real activity is `com.budcom.android.app.MainActivity` — recorded for future sessions).
+Confirmed `mFocusedApp` became `com.budcom.android.debug/com.budcom.android.app.MainActivity`; zero
+`FATAL EXCEPTION`/`AndroidRuntime` crash entries in logcat (two benign vendor SELinux `avc: denied
+... proc_fas` warnings, a known OEM/vivo-kernel artifact unrelated to app code). This was a
+launch-only smoke check — deeper in-app navigation was not re-exercised this follow-up. New debug
+APK: 15,185,874 bytes, SHA-256 `7fd36811d69bb5565d838020af4f79f4f7a29f14558a0bb2513454d6caed4592`.
+
+**Exact NEXT TASK (superseding the one recorded in §J above):** unchanged in substance — an
+MVP-1.4-A implementation prompt is still the next authorized-scope work item, still requiring its own
+separate go-ahead; the push and install just performed do not themselves authorize MVP-1.4
+implementation.
 
 ## 30. Current source-of-truth references
 
