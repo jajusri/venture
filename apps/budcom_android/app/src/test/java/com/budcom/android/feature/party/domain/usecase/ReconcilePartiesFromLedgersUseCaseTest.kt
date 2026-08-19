@@ -75,10 +75,83 @@ class ReconcilePartiesFromLedgersUseCaseTest {
 
         assertEquals("9876543210", repository.lastSeeds!!.single().alias)
     }
+
+    // ============================== Company isolation (TD-035, Part 5) ==============================
+
+    /**
+     * Two companies with an identical ledger natural key (same name, same parentGroup, same
+     * alias/phone) — only the ledgerId and companyId differ, exactly the adversarial shape Part 5
+     * asks for. Each invocation must see and reconcile only its own company's ledgers; the
+     * classification derived from the (shared) parentGroup text must never leak or merge across
+     * the companyId boundary this use case is always explicitly scoped by.
+     */
+    @Test
+    fun `identical ledger name, alias, and parent group across two companies never leak into each other's seed set`() = runTest {
+        val port = CompanyScopedFakeLedgerSnapshotPort(
+            mapOf(
+                "co-A" to listOf(ledger("guid:shared", "Shared Traders", "Sundry Debtors", alias = "9876543210")),
+                "co-B" to listOf(ledger("guid:shared", "Shared Traders", "Sundry Debtors", alias = "9876543210")),
+            ),
+        )
+        val repository = FakePartyRepository()
+        val useCase = ReconcilePartiesFromLedgersUseCase(port, repository)
+
+        useCase("co-A")
+        val seedsForA = repository.lastSeeds
+        useCase("co-B")
+        val seedsForB = repository.lastSeeds
+
+        assertEquals(1, seedsForA?.size)
+        assertEquals(1, seedsForB?.size)
+        assertEquals(listOf("co-A", "co-B"), port.requestedCompanyIds)
+        // Every seed carries the same identity-bearing fields either run would produce (same
+        // ledgerId/name/alias/classification, by natural-key construction) -- the real, separate
+        // guarantee this test exists to prove is that B's invocation used ONLY B's own port
+        // response (never A's, never a merged/union set), verified structurally below.
+        assertEquals(seedsForA!!.single().ledgerId, seedsForB!!.single().ledgerId)
+        assertEquals(1, port.callCountFor("co-A"))
+        assertEquals(1, port.callCountFor("co-B"))
+    }
+
+    /** A ledger present only in one company must never be visible to the other company's run. */
+    @Test
+    fun `a ledger unique to one company never appears in the other company's seed set`() = runTest {
+        val port = CompanyScopedFakeLedgerSnapshotPort(
+            mapOf(
+                "co-A" to listOf(ledger("guid:a-only", "A-Only Traders", "Sundry Debtors")),
+                "co-B" to listOf(ledger("guid:b-only", "B-Only Traders", "Sundry Creditors")),
+            ),
+        )
+        val repository = FakePartyRepository()
+        val useCase = ReconcilePartiesFromLedgersUseCase(port, repository)
+
+        useCase("co-A")
+        assertEquals(listOf("guid:a-only"), repository.lastSeeds!!.map { it.ledgerId })
+
+        useCase("co-B")
+        assertEquals(listOf("guid:b-only"), repository.lastSeeds!!.map { it.ledgerId })
+    }
 }
 
 private class FakeLedgerSnapshotPort(private val ledgers: List<Ledger>) : LedgerSnapshotPort {
     override suspend fun getCachedLedgers(companyId: String): List<Ledger> = ledgers
+}
+
+/** Company-aware fake — unlike [FakeLedgerSnapshotPort], only ever returns the ledgers registered
+ * for the exact [companyId] passed in, structurally ruling out any cross-company leakage at this
+ * fake's own boundary (the real [com.budcom.android.feature.masterdata.ledger.data.repository.LedgerSnapshotPortImpl]
+ * is equally scoped, via a `companyId`-filtered Room query). */
+private class CompanyScopedFakeLedgerSnapshotPort(
+    private val byCompany: Map<String, List<Ledger>>,
+) : LedgerSnapshotPort {
+    val requestedCompanyIds = mutableListOf<String>()
+
+    override suspend fun getCachedLedgers(companyId: String): List<Ledger> {
+        requestedCompanyIds += companyId
+        return byCompany[companyId].orEmpty()
+    }
+
+    fun callCountFor(companyId: String): Int = requestedCompanyIds.count { it == companyId }
 }
 
 private class FakePartyRepository : PartyRepository {
