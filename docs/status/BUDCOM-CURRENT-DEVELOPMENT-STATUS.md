@@ -44,9 +44,29 @@ side: `LedgerRepositoryImpl.loadLedgers()` was network-first for every normal Le
 split into cache-only `listLedgers()`/network `refreshLedgers()`. Also made Detailed Ledger sharing
 reachable by a normal tap (a "Ledger Summary / Detailed Ledger / More options…" menu) instead of
 requiring a hidden long-press. 1,257/1,257 unit tests both variants (+8 from the 1,249/1,249
-baseline), 0 lint errors, both assembles green; no device available this session for live/
-instrumented verification (documented limitation). Full detail:
-`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §24.
+baseline), 0 lint errors, both assembles green; no device available in that session for live/
+instrumented verification. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §24.
+
+**Phase 37 — Ledger Local-First + Connect Real-Device Validation (device
+`10BF44124K000E3`/I2407, real paired company `estimation`, 941 real Ledgers).** Closed Phase 36's
+no-device limitation: live-confirmed sub-second, genuinely zero-network Ledger Browser open/
+search/pagination, and a full offline test (WiFi disabled, verified via `dumpsys connectivity`)
+with real cached data — search, pagination, and a full transaction-bearing statement all worked
+identically offline. Found and fixed two genuine defects surfaced only by real data/real timing:
+(1) `refreshLedgers()` returned the raw first network page instead of re-reading Room after
+persisting a multi-page snapshot, visibly skipping several alphabetically-ordered ledgers after an
+explicit refresh; (2) `SyncViewModel.runAll()` ("Run available syncs") only ever examined the
+LAST of its three sequential outcomes for Party reconciliation, so a successful Ledgers sync's own
+outcome (always first, never last) silently never triggered Connect auto-population outside a lone
+per-target "Sync now" tap. Both fixed with regression tests, rebuilt, reinstalled, and
+live-re-verified. Also found — and correctly left unfixed, out of Android scope — that Connect
+still shows zero customers because the Desktop Connector's own local cache has never captured any
+real ledger's Tally `parent_group`, a Connector/Tally-extraction gap, not a seeding-policy or
+Android defect. 1,259/1,259 unit tests both variants, 0 lint errors, both assembles green, final
+installed APK SHA-256 `a0e04343a0e48ace12f14fd6da9d0036a6894106842132e729c6fd23630ddf56`
+byte-verified against the device. This also supersedes an earlier, now-confirmed-stale note in
+this file (§7 prior revision) that device pairing had never been attempted — it plainly had been,
+independent of this session. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §26.
 
 ## 2. Branch / HEAD
 
@@ -292,7 +312,16 @@ bypass pairing. These surfaces are verified only through the automated instrumen
 suite (real Room/real Compose on this same device, synthetic state) — a distinct and weaker form
 of evidence than genuine on-device navigation, stated as such rather than conflated with it.
 
-**Debug APK:** `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` — 14,562,380 bytes —
+**Update (Phase 37, `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §26):** the "no real paired Tally
+Connector" premise above no longer holds — a real, already-paired `estimation` company (941
+Ledgers, 247 Vouchers) was reached and genuinely exercised on this same device in that later
+session, including Dashboard, Ledger Browser/Statement, Sync, and Connect. Business Profile and
+Dincharya specifically were not separately re-checked in that session. This paragraph is left
+otherwise unedited as the historical record of what that earlier session's own environment
+supported.
+
+**Debug APK (as of the MVP-1.3 freeze candidate; superseded by two later, same-version rebuilds —
+see Phase 36/37 in the Development Ledger for their own SHA-256s):** `apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk` — 14,562,380 bytes —
 SHA-256 `601b248fb07da27da2d805ab4ed8c06681b02e3c01eaeab22fc3a2994896902f` — `com.budcom.android.debug`,
 versionCode 29, versionName `0.1.1-continuity.28`, debuggable (confirmed via `aapt dump badging` on
 the actual built APK, not source config alone).
@@ -333,13 +362,20 @@ version-bumped, built, installed, and smoke-tested (§3/§5; full evidence in
 milestone needed were supplied directly in its own governing prompt and locked as PDL-019.**
 
 **Phase 36 (Ledger Sharing Discoverability + Offline Performance Hardening — §1 above,
-`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §24) is complete** — a bounded, explicitly-authorized
-side-quest, not a new milestone. It does not change the item below.
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §24) and Phase 37 (Ledger Local-First + Connect
+Real-Device Validation — §1 above, `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §26) are both
+complete** — bounded, explicitly-authorized side-quests, not a new milestone. Neither changes the
+item below.
 
 **Next task: MVP-1.4 planning/recovery review** (read-only architecture/gap-analysis review,
 matching the MVP-1.3 planning session's own precedent exactly — §2b/§3 above — not implementation).
 **Do NOT begin MVP-1.4 implementation** without an explicit new go-ahead, per this task's own final
 stop condition.
+
+**Separately, not blocking MVP-1.4:** a Connector-side investigation into missing Tally
+`parent_group` extraction is recommended (Phase 37, `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`
+§26.C) before any future Party-seeding UI work — real ledgers for the `estimation` company
+currently have no group data for the Android app's Party-eligibility policy to classify against.
 
 Two independent items from prior sessions also remain open, unaffected by and not blocking the
 above:
@@ -347,12 +383,15 @@ above:
 1. **Obtain and configure production signing credentials** — the sole remaining blocker to public
    release, unrelated to and unchanged by MVP-1.1/1.2/1.3 work (see §4 and the gate matrix for exact
    steps). Human/external action; do not perform unilaterally.
-2. **Exercise a real Tally XML import by hand** against a real paired Tally company using the
-   installed `continuity.28` candidate (§5), per the human acceptance checklist in
-   `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Part E §E14 — device pairing has still never been
-   attempted (out of every installation-only task's scope so far); this is also the only way to
-   exercise Dashboard/Business Profile/Connect/Dincharya genuinely on-device, per §5's own honest
-   disclosure of what this milestone's own smoke test could and could not reach.
+2. **Exercise a real Tally XML import by hand**, per the human acceptance checklist in
+   `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md` Part E §E14 — **partially superseded by Phase 37**
+   (`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §26): device pairing is confirmed genuinely done
+   (device `10BF44124K000E3` against a real, already-paired `estimation` company with 941 real
+   Ledgers and 247 real Vouchers, not out of scope as this line previously and incorrectly stated),
+   and Dashboard/Ledger Browser/Ledger Statement/Sync/Connect were all genuinely exercised
+   on-device with real data during that session. Not independently re-checked against §E14's own
+   exact enumerated steps or against Business Profile/Dincharya specifically — treat this item as
+   narrowed, not closed, until someone walks §E14 itself end-to-end.
 
 **Not started:** MVP-1.4 (planning/recovery review is the next authorized step, not implementation);
 external/public distribution. Do not begin distribution before signing exists and the product owner

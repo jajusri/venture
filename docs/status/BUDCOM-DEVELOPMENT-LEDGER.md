@@ -657,11 +657,170 @@ No version bump — a focused polish task, not a milestone freeze point, per the
 instruction. Not installed to a device (none attached). Commit(s): see `git log` immediately
 following this entry.
 
+**Exact NEXT TASK (at the time):** MVP-1.4 planning/recovery review. Superseded temporarily by the
+real-device validation in §26 below.
+
+## 26. Phase 37 — Ledger Local-First + Connect Real-Device Validation
+
+Real-hardware validation of Phase 36 (§24), on device `10BF44124K000E3` (OnePlus/I2407, model
+`I2407`), against a genuinely live, already-paired environment: BUDCOM Desktop + Tally +
+TallyGatewayServer all running on the same Windows machine as this session (connector `trusted-lan`
+mode, `192.168.29.34:8080`; phone on the same LAN at `192.168.29.111`), company **estimation**,
+with a real, substantial local dataset — **941 Ledgers**, 247 Vouchers per the sync run, real
+customer/vendor names and transaction history (not synthetic fixtures). This corrects a stale
+claim in an earlier checkpoint (§Exact NEXT TASK, pre-Phase-37) that "device pairing has still
+never been attempted" — it plainly had been, well before this session; the note is superseded by
+this entry, not by further edits.
+
+### A. Ledger Browser — local-first, live-confirmed
+
+Rebuilt current HEAD (`5b30b09` at start) as debug APK, SHA-256 `1454064a85e2…`, and installed
+over the existing `continuity.28` build with `adb install -r` (`firstInstallTime` unchanged,
+confirming a genuine update, not a fresh install — app's own `budcom.db`/`datastore` preserved
+throughout). Live-confirmed on real data: Ledger Browser open, search, and pagination/scroll all
+render fully populated real content (real business names, real closing balances) within
+~750-800ms of the tap command including full ADB round-trip overhead, network throughput reading
+literally `0.00 KB/s` at the moment of render — genuinely local, not merely fast-over-network.
+Explicit pull-to-refresh, by contrast, showed real inflight network traffic (73–94 KB/s) while
+never blanking the already-visible cached list, and updated the "Data last synced" label
+correctly afterward — the exact local-vs-refresh distinction Phase 36 targeted.
+
+**Offline test (the most important test, per the task):** WiFi disabled via `adb shell svc wifi
+disable`, confirmed via `dumpsys connectivity` ("Active default network: none") and a failed ping
+to the connector host. Cold-relaunched the app fully offline: Home showed an honest
+"Offline · Never synced · Tally unavailable" status and a red "Device is offline. Showing last
+known operational data." banner; Ledger Browser opened fully populated (same real 941-ledger list,
+same sub-second render) with its own "Device is offline. Showing the most recently retained data."
+banner and the "Data last synced" timestamp still shown; search worked fully offline; a Ledger
+statement with two real Sales vouchers (Ah Traders Glb, ₹4,020 and ₹128,083.30) rendered its full
+transaction history and balances, byte-identical to the online render. A separate, genuinely
+never-locally-synced ledger (Adil Electrical Hw Zaheerabad) correctly showed "Closing balance: Not
+available" / "No transactions for this ledger in the selected period" rather than fabricating
+data — the honest no-cache-for-this-item path. WiFi re-enabled and connectivity independently
+re-confirmed before continuing.
+
+### B. Defect found and fixed: `refreshLedgers()` returned the raw network page, not Room
+
+**Live-observed:** after a real network refresh (Sync -> "Run available syncs", full snapshot
+warmed into Room, confirmed via direct `sqlite3` inspection of the pulled `budcom.db` — all rows
+correctly re-timestamped with the new sync's `dataFreshnessAt`), the Ledger Browser's displayed
+first page skipped four ledgers ("Aaijee Traders", "Aarti Sanitations Ramesh", "Abdul Hannan Khan
+Mir Alam Mandi Builder", "Abdul Mateen Builder") that sort correctly between "AAI MATA BHANUR" and
+"ABU BAKAR JI" — reproduced twice, including after a fully settled (non-mid-animation) screenshot,
+ruling out a rendering artifact. Root-caused by direct inspection of
+`LedgerRepositoryImpl.refreshLedgers()` (the renamed-but-logic-unchanged former `loadLedgers()`):
+it persisted the full multi-page snapshot to Room via `persistSuccessfulPage`/`warmFullSnapshot`
+correctly, but then returned `result.value` — the FIRST network response page's own `items`,
+whatever order/subset the Connector happened to return for page 1 — instead of re-reading Room's
+own name-COLLATE-NOCASE-sorted page, unlike `VoucherRepositoryImpl.persistAndReturn()`'s existing
+re-read-after-persist precedent. Confirmed via a JVM regression test reproducing the exact shape
+(2-page network fetch, assert the returned page reflects both persisted items, not just the first
+page's one item) — failed before the fix, passes after. **Fixed**: `refreshLedgers()` now re-reads
+`localDataSource.query(companyId, query)` after persisting and returns that (falling back to the
+raw network page only if the Room re-read is unexpectedly null, matching Voucher's own fallback
+pattern). Live re-verified after rebuild/reinstall: the same refresh now shows the complete,
+correctly-ordered list with no ledgers skipped.
+`apps/budcom_android/app/src/main/java/com/budcom/android/feature/masterdata/ledger/data/repository/LedgerRepositoryImpl.kt`
+(+9/-1), new test in `LedgerRepositoryImplTest.kt` (+28).
+
+### C. Defect found and fixed: "Run available syncs" never reconciled Parties from Ledgers
+
+**Live-observed:** Connect's Customers tab showed "No customers found yet" even after a genuine,
+fully successful "Run available syncs" (Ledgers -> Stock items -> Vouchers, all three "Completed",
+247/247 vouchers processed). Root-caused in `SyncViewModel.runAll()`: it calls
+`applyOutcome(agg.outcomes.lastOrNull())` — and `applyOutcome()` is the only place that invokes
+`maybeReconcilePartiesFromLedgers(outcome)`, which itself only proceeds when
+`outcome.target == SyncTarget.Ledgers`. Because this screen always runs Ledgers first and Vouchers
+last, `last` is always the Vouchers outcome, so the Ledgers-target check inside
+`maybeReconcilePartiesFromLedgers` can never pass through this path — Party reconciliation only
+ever fired for a lone per-target "Sync now" tap on Ledgers specifically, never for "Run available
+syncs", the more natural everyday action. Confirmed against the existing
+`SyncViewModelTest`."run available syncs reaches vouchers after ledgers and stock items" test,
+which asserted the target sequence but never asserted `partyRepository.reconcileCalls` for this
+exact path — a genuine, pre-existing coverage gap. **Fixed**: `runAll()` now independently finds
+the Ledgers-target outcome inside the aggregate (`agg.outcomes.firstOrNull { it.target ==
+SyncTarget.Ledgers }`) and reconciles from it directly, regardless of its position in the sequence
+— `applyOutcome(last)`'s own UI-state behavior (still showing the final/Vouchers outcome to the
+user) is unchanged. New regression test added and passing.
+`apps/budcom_android/app/src/main/java/com/budcom/android/feature/sync/presentation/SyncViewModel.kt`
+(+7 net), new test in `SyncViewModelTest.kt` (+19).
+
+**Live re-verified after this fix, rebuilt/reinstalled candidate:** ran "Run available syncs"
+again (Ledgers completed at a fresh timestamp) — **Connect's Customers tab still showed "No
+customers found yet."** Investigated further rather than assuming the fix was wrong: direct
+`sqlite3` inspection of the Android app's own `budcom.db` confirmed `cached_ledgers.parentGroup`
+is `NULL` for **all 941** real ledgers. Cross-checked the Desktop Connector's own independent
+local cache (`connector-data/budcom-ledger.db`, `ledgers.parent_group`) on the same machine: also
+`NULL` for all 941 real ledgers — only two non-real rows have it populated at all ("Cash" ->
+"Cash-in-Hand", and a "Acme Corp" test/seed ledger -> "Sundry Debtors"), proving the gap already
+exists in the Connector's own extracted data, before it ever reaches Android. Since
+`LedgerPartyEligibilityPolicy` (MVP-1.1-A, intentionally conservative and already documented as
+having exactly this class of limitation) can only classify a ledger as Customer/Supplier by
+matching `parentGroup` for "debtor"/"creditor", zero of this real company's ledgers can currently
+be eligible — through no defect in the Android app's own reconciliation trigger (now fixed) or
+classification logic (already correct and already honest). **Not fixed, and explicitly out of
+scope**: the root cause is upstream, in the Desktop Connector's Tally ledger-group extraction —
+outside this task's Android-only authorization ("do not touch Desktop Connector unless the
+investigation proves a direct dependency," and this investigation proves the opposite: no Android
+dependency). Recorded as a genuine, real finding for a future Connector-side task, not silently
+worked around and not used to justify broadening the (deliberately conservative) seeding policy.
+Confirmed the Prospects tab correctly shows zero fabricated Prospects ("No prospects yet...") —
+the dishonest-auto-seeding failure mode this task explicitly checked for did not occur.
+
+### D. Detailed Ledger sharing — live-confirmed, one self-caught tooling mistake along the way
+
+Tapping Share (no long-press) on a real Ledger statement (Ah Traders Glb, 2 real Sales vouchers)
+opened exactly the designed "Ledger Summary / Detailed Ledger / More options…" menu. The first
+"Detailed Ledger" attempt actually tapped "Ledger Summary" instead, due to an unscaled
+screenshot-coordinate arithmetic mistake in this session's own device-automation tooling (caught
+by noticing the resulting PDF — 69.23 KB, no item lines — didn't match known real inventory-line
+data for those vouchers, confirmed present via direct `sqlite3` query against
+`cached_voucher_inventory_lines`); corrected and re-verified. The corrected "Detailed Ledger" tap
+produced a 104 KB PDF (pulled from the device via `adb exec-out ... run-as ... cat`, binary-safe;
+an earlier `adb shell ... > file` pull method silently corrupted the binary and is not to be
+reused for binary pulls) containing full Item Name/Qty/Rate/Amount breakdowns for both vouchers,
+totals matching Room exactly (₹4,020.00 and ₹128,083.30), real Android system Share sheet
+including WhatsApp as a destination (not completed — deliberately dismissed rather than actually
+sending to a real contact). Long-press still opens the same Advanced Options sheet directly.
+
+### E. Tests / build
+
+Baseline at start of this validation session (HEAD `5b30b09`, before any of this session's fixes):
+1,258/1,258 both variants (Phase 36's own +8 already included), 0 failures. After both fixes:
+**1,259/1,259 both variants, 0 failures** (+1 net: `LedgerRepositoryImplTest` +1,
+`SyncViewModelTest` +1, no removals). `:app:lintDebug` 0 errors (87 pre-existing warnings,
+unchanged). `:app:assembleDebug`/`:app:assembleRelease` (R8-minified) both green. Final installed
+debug APK SHA-256 `a0e04343a0e48ace12f14fd6da9d0036a6894106842132e729c6fd23630ddf56`, byte-verified
+identical between the local build output and the APK pulled back off the device.
+`connectedDebugAndroidTest` was deliberately **not run** this session — its known
+uninstall-the-debug-build side effect would have discarded the validated candidate for no
+offsetting benefit, since live manual validation plus the full JVM suite already provided the
+evidence this task needed; the known 12 pre-existing instrumented failures were neither
+re-confirmed nor disturbed.
+
+### F. Accepted limitations / genuine findings requiring a future task
+
+1. **Connector-side**: real Tally ledgers extracted for company `estimation` carry no `parent_group`
+   in the Connector's own cache — Party auto-seeding (MVP-1.1-A) is currently a no-op for this
+   real company through no Android-side defect. Needs a Connector/Tally-extraction investigation,
+   out of this task's scope.
+2. Items 1–2 from the prior checkpoint's "two independent open items" (production signing
+   credentials; a by-hand Tally XML import acceptance walkthrough) remain open, unaffected.
+3. No architectural change was made to the Party seeding policy — intentionally, per this task's
+   own explicit instruction not to broaden it.
+
+### G. Git
+
+No version bump (validation + two small scoped fixes, not a milestone). Commit(s): see `git log`
+immediately following this entry. Working tree left clean; no unrelated files touched.
+
 **Exact NEXT TASK:** MVP-1.4 planning/recovery review (read-only architecture/gap-analysis review,
 matching the MVP-1.3 planning session's own precedent — not implementation). Do not begin MVP-1.4
-implementation without an explicit new go-ahead.
+implementation without an explicit new go-ahead. Separately and not blocking it: a Connector-side
+investigation into missing Tally `parent_group` extraction (§26.C) is recommended before any future
+Party-seeding UI work is attempted.
 
-## 25. Current source-of-truth references
+## 27. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`
