@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   activateView,
   bindCompanyActions,
+  refreshDashboardDataFreshness,
   renderCompanyList,
   renderDashboard,
   renderLogs,
@@ -13,7 +14,7 @@ import {
   setLoading,
   type DesktopView,
 } from '../../src/renderer/scripts/app.js';
-import type { DashboardState } from '../../src/application/types.js';
+import type { DashboardState, LedgerStatisticsResult, StockItemStatisticsResult } from '../../src/application/types.js';
 import { lifecycleStatusFixture, settingsFixture } from '../helpers/lifecycle-fixtures.js';
 
 const sampleState: DashboardState = {
@@ -423,5 +424,175 @@ describe('renderer integration refresh', () => {
     expect(document.activeElement).toBe(filter);
     expect(document.getElementById('view-logs')?.classList.contains('active')).toBe(true);
     expect(bridge.getDashboardState).toHaveBeenCalledTimes(181);
+  });
+});
+
+// UX polish: the Dashboard's "Sync"/"Last Sync" fields (header + card) used to be driven by
+// state.syncLabel/state.lastSync — the Connector's own dead SyncEngine placeholder and session-
+// validation time, never actual Ledger/Stock Item data-sync freshness (see renderDashboard()'s own
+// comment). refreshDashboardDataFreshness() replaces that with the real, already-tracked
+// per-module last-synced timestamps.
+describe('refreshDashboardDataFreshness', () => {
+  beforeEach(() => {
+    document.body.innerHTML = `
+      <div id="app-title"></div>
+      <div id="header-version"></div>
+      <div id="header-company"></div>
+      <div id="header-sync"></div>
+      <div id="header-last-sync"></div>
+      <div id="header-connection-label"></div>
+      <div id="connection-indicator"></div>
+      <div id="dashboard-health"></div>
+      <div id="dashboard-company-name"></div>
+      <div id="dashboard-erp-name"></div>
+      <div id="dashboard-last-refresh"></div>
+      <div id="dashboard-sync"></div>
+      <div id="dashboard-last-sync"></div>
+      <div id="dashboard-version"></div>
+      <div id="dashboard-desktop-version"></div>
+      <div id="connection-detail-reachable"></div>
+      <div id="connection-detail-health"></div>
+      <div id="connection-detail-session"></div>
+      <span id="footer-connection-indicator" class="status-dot status-unknown"></span>
+      <strong id="footer-connection-status"></strong>
+      <span id="footer-company"></span>
+      <strong id="footer-license"></strong>
+      <div id="app-notification" class="app-notification hidden"></div>
+      <button id="btn-sync-ledgers"></button>
+      <button id="btn-sync-stock-items"></button>
+    `;
+    // Every test in this block starts from a known "has an active company" baseline (not left to
+    // whatever a previous test in this file happened to leave latestDashboardState at) — the
+    // dedicated 'no company selected' test below then explicitly overrides it.
+    renderDashboard({ ...sampleState, sessionStatus: 'ACTIVE', companyName: 'ESTIMATION' });
+  });
+
+  const ledgerStats = (lastSyncedAt: string | null): LedgerStatisticsResult => ({
+    schemaVersion: '1.0.0',
+    statistics: { totalLedgers: 5, activeLedgers: 5, inactiveLedgers: 0, reservedLedgers: 0, deletedLedgers: 0, withGst: 0, withOpeningBalance: 0, lastSyncedAt },
+  });
+  const stockStats = (lastSyncedAt: string | null): StockItemStatisticsResult => ({
+    schemaVersion: '1.0.0',
+    statistics: { totalStockItems: 3, withBaseUnit: 3, incompleteData: 0, withHsn: 0, withGst: 0, withOpeningBalance: 0, deletedStockItems: 0, lastSyncedAt },
+  });
+
+  it('reports "Not synced yet" / "Never" when neither module has ever synced', async () => {
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => ledgerStats(null)),
+      getStockItemStatistics: vi.fn(async () => stockStats(null)),
+    } as unknown as typeof window.budcomDesktop;
+
+    await refreshDashboardDataFreshness();
+
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('Not synced yet');
+    expect(document.getElementById('dashboard-last-sync')?.textContent).toBe('Never');
+    expect(document.getElementById('header-sync')?.textContent).toBe('Not synced yet');
+  });
+
+  it('reports "Partially synced" when only one module has ever synced, using its real timestamp', async () => {
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z')),
+      getStockItemStatistics: vi.fn(async () => stockStats(null)),
+    } as unknown as typeof window.budcomDesktop;
+
+    await refreshDashboardDataFreshness();
+
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('Partially synced');
+    expect(document.getElementById('dashboard-last-sync')?.textContent).toBe('2026-08-22T10:00:00.000Z');
+  });
+
+  it('reports "Synced" with the more recent of the two real timestamps once both modules have synced', async () => {
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z')),
+      getStockItemStatistics: vi.fn(async () => stockStats('2026-08-22T12:30:00.000Z')),
+    } as unknown as typeof window.budcomDesktop;
+
+    await refreshDashboardDataFreshness();
+
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('Synced');
+    expect(document.getElementById('dashboard-last-sync')?.textContent).toBe('2026-08-22T12:30:00.000Z');
+    expect(document.getElementById('header-last-sync')?.textContent).toBe('2026-08-22T12:30:00.000Z');
+  });
+
+  it('never fails the dashboard when a statistics call fails or the bridge lacks the method entirely', async () => {
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => { throw new Error('connector unreachable'); }),
+      // Intentionally omit getStockItemStatistics entirely — an older bridge shape must not throw.
+    } as unknown as typeof window.budcomDesktop;
+
+    await expect(refreshDashboardDataFreshness()).resolves.toBeUndefined();
+  });
+
+  it('preserves an already-shown freshness summary when a later refresh fails on both calls, rather than reverting to "Checking…"', async () => {
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z')),
+      getStockItemStatistics: vi.fn(async () => stockStats('2026-08-22T12:30:00.000Z')),
+    } as unknown as typeof window.budcomDesktop;
+    await refreshDashboardDataFreshness();
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('Synced');
+
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => { throw new Error('connector unreachable'); }),
+      getStockItemStatistics: vi.fn(async () => { throw new Error('connector unreachable'); }),
+    } as unknown as typeof window.budcomDesktop;
+    await refreshDashboardDataFreshness();
+
+    // A transient failure must not blank a previously-shown, still-useful freshness summary —
+    // the same "refresh started, so wipe the good state" defect fixed for Ledgers/Stock Items.
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('Synced');
+    expect(document.getElementById('dashboard-last-sync')?.textContent).toBe('2026-08-22T12:30:00.000Z');
+  });
+
+  it('never lets an older, slower call overwrite a newer, already-rendered result', async () => {
+    let resolveOlder: ((value: LedgerStatisticsResult) => void) | null = null;
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn()
+        .mockImplementationOnce(() => new Promise<LedgerStatisticsResult>((resolve) => { resolveOlder = resolve; }))
+        .mockResolvedValueOnce(ledgerStats('2026-08-22T10:00:00.000Z')),
+      getStockItemStatistics: vi.fn(async () => stockStats('2026-08-22T10:00:00.000Z')),
+    } as unknown as typeof window.budcomDesktop;
+
+    const olderCall = refreshDashboardDataFreshness(); // starts first, stays pending
+    await refreshDashboardDataFreshness(); // starts later, resolves immediately
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('Synced');
+
+    resolveOlder?.(ledgerStats(null)); // the older call's stale result must not win
+    await olderCall;
+
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('Synced');
+  });
+
+  // Real-Desktop validation against a live Tally instance caught this: the Connector's statistics
+  // endpoints require an active company and reject outright without one. Before this fix, that
+  // completely normal state (right after cold launch, before any company is picked) left the
+  // Sync card stuck on an indefinite "Checking…" that could never resolve.
+  it('shows "No company selected" without even attempting the doomed-to-fail statistics calls', async () => {
+    renderDashboard({ ...sampleState, sessionStatus: 'NO_COMPANY_SELECTED', companyName: '—' });
+    const getLedgerStatistics = vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z'));
+    const getStockItemStatistics = vi.fn(async () => stockStats('2026-08-22T10:00:00.000Z'));
+    window.budcomDesktop = { getLedgerStatistics, getStockItemStatistics } as unknown as typeof window.budcomDesktop;
+
+    await refreshDashboardDataFreshness();
+
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('No company selected');
+    expect(document.getElementById('dashboard-last-sync')?.textContent).toBe('Never');
+    expect(document.getElementById('header-sync')?.textContent).toBe('No company selected');
+    expect(getLedgerStatistics).not.toHaveBeenCalled();
+    expect(getStockItemStatistics).not.toHaveBeenCalled();
+  });
+
+  it('re-attempts the real fetch once a company becomes active again, rather than getting stuck on "No company selected"', async () => {
+    renderDashboard({ ...sampleState, sessionStatus: 'NO_COMPANY_SELECTED', companyName: '—' });
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z')),
+      getStockItemStatistics: vi.fn(async () => stockStats('2026-08-22T10:00:00.000Z')),
+    } as unknown as typeof window.budcomDesktop;
+    await refreshDashboardDataFreshness();
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('No company selected');
+
+    renderDashboard({ ...sampleState, sessionStatus: 'ACTIVE', companyName: 'ESTIMATION' });
+    await refreshDashboardDataFreshness();
+
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('Synced');
   });
 });

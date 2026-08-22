@@ -47,6 +47,21 @@ describe('renderer XSS-safe rendering', () => {
         }],
         pagination: { page: 1, pageSize: 25, totalItems: 1, totalPages: 1 },
       },
+      statistics: {
+        schemaVersion: '1.0.0',
+        statistics: {
+          totalLedgers: 1,
+          activeLedgers: 1,
+          inactiveLedgers: 0,
+          reservedLedgers: 0,
+          deletedLedgers: 0,
+          withGst: 0,
+          withOpeningBalance: 0,
+          lastSyncedAt: '2026-07-25T00:00:00.000Z',
+        },
+      },
+      progress: null,
+      storage: null,
     };
     renderLedgers(state);
     const list = document.getElementById('ledger-list');

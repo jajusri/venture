@@ -3,7 +3,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { handleClearCompany, handleCompanySelection, loadCompanies } from '../../src/renderer/scripts/app.js';
+import { handleClearCompany, handleCompanySelection, loadCompanies, renderLedgers } from '../../src/renderer/scripts/app.js';
+import type { LedgerPageState } from '../../src/application/types.js';
 import { lifecycleStatusFixture, settingsFixture } from '../helpers/lifecycle-fixtures.js';
 
 describe('renderer company selection', () => {
@@ -164,6 +165,59 @@ describe('renderer company selection', () => {
     const notification = document.getElementById('app-notification');
     expect(notification?.textContent).toContain('Company selection cleared.');
     expect(notification?.className).not.toContain('hidden');
+  });
+
+  it('self-hardening: a failed ledger refresh after switching companies never shows the previous company\'s stale ledgers as if they belonged to the new one', async () => {
+    document.body.innerHTML += `
+      <span id="ledger-stat-total"></span>
+      <span id="ledger-stat-active"></span>
+      <span id="ledger-stat-gst"></span>
+      <span id="ledger-stat-last-sync"></span>
+      <span id="ledger-sync-status"></span>
+      <span id="ledger-sync-duration"></span>
+      <span id="ledger-storage-status"></span>
+      <span id="ledger-migration-status"></span>
+      <button id="btn-sync-ledgers"></button>
+      <button id="btn-cancel-ledger-sync" class="hidden"></button>
+      <span id="ledger-list-meta"></span>
+      <div id="ledger-list"></div>
+      <span id="ledger-page-label"></span>
+    `;
+    // Company A's ledger list is already showing real data.
+    const companyAState: LedgerPageState = {
+      ok: true,
+      userMessage: null,
+      list: { schemaVersion: '1.0.0', dataFreshnessAt: '2026-08-22T00:00:00.000Z', items: [{ id: 'a', name: 'CompanyALedger', normalizedName: 'a', status: 'active', balanceNature: 'debit', syncedAt: '2026-08-22T00:00:00.000Z' }], pagination: { page: 1, pageSize: 25, totalItems: 1, totalPages: 1 } },
+      statistics: { schemaVersion: '1.0.0', statistics: { totalLedgers: 1, activeLedgers: 1, inactiveLedgers: 0, reservedLedgers: 0, deletedLedgers: 0, withGst: 0, withOpeningBalance: 0, lastSyncedAt: '2026-08-22T00:00:00.000Z' } },
+      progress: null,
+      storage: null,
+    };
+    renderLedgers(companyAState);
+    expect(document.getElementById('ledger-list')?.textContent).toContain('CompanyALedger');
+
+    document.getElementById('company-list')!.innerHTML = `
+      <button data-company-id="company-b" role="radio" aria-checked="false">Company B</button>
+    `;
+    window.budcomDesktop = {
+      selectCompany: vi.fn(async () => ({ ok: true, userMessage: 'Company selected successfully.' })),
+      getDashboardState: vi.fn(),
+      getLogs: vi.fn(async () => []),
+      getSettings: vi.fn(async () => settingsFixture),
+      getLifecycleStatus: vi.fn(async () => lifecycleStatusFixture),
+      getCompanies: vi.fn(),
+    } as unknown as typeof window.budcomDesktop;
+
+    await handleCompanySelection('company-b');
+    // Switching companies must clear the outgoing company's ledger list immediately.
+    expect(document.getElementById('ledger-list')?.textContent).not.toContain('CompanyALedger');
+
+    // Company B's first ledger load then fails — this must show a plain failure, never resurrect
+    // Company A's rows under a misleading "showing previously loaded data" for Company B.
+    renderLedgers({ ok: false, userMessage: 'Unable to load ledgers.', list: null, statistics: null, progress: null, storage: null });
+
+    expect(document.getElementById('ledger-list')?.textContent).not.toContain('CompanyALedger');
+    expect(document.getElementById('ledger-list-meta')?.textContent).toBe('Unable to load ledgers.');
+    expect(document.getElementById('ledger-list-meta')?.textContent).not.toContain('Showing previously loaded data.');
   });
 
   it('shows a visible error when clearing the company selection fails', async () => {

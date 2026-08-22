@@ -227,3 +227,24 @@ describe('advanced user interface sections', () => {
     expect(advanced.isConnected).toBe(true);
   });
 });
+
+// UX polish: a critical state must never be communicated through color alone. The header
+// connection-indicator dot's className changes with connection state but it carries no updating
+// text signal of its own — the adjacent header-connection-label span (real text, already read by
+// assistive tech) is the actual semantic source of truth, matching the footer's own
+// footer-connection-indicator/footer-connection-status pair. The dot must therefore be
+// aria-hidden, not carry a stale/static aria-label that never reflects the live state.
+describe('connection-indicator accessibility', () => {
+  beforeEach(loadRendererMarkup);
+
+  it('hides the decorative header connection dot from assistive tech instead of exposing a static, non-updating label', () => {
+    const dot = document.getElementById('connection-indicator');
+    expect(dot?.getAttribute('aria-hidden')).toBe('true');
+    expect(dot?.hasAttribute('aria-label')).toBe(false);
+  });
+
+  it('marks the footer connection dot the same way, consistent with the header', () => {
+    const dot = document.getElementById('footer-connection-indicator');
+    expect(dot?.getAttribute('aria-hidden')).toBe('true');
+  });
+});
