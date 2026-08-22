@@ -839,7 +839,14 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 960,
     minHeight: 640,
     title: DESKTOP_WINDOW_TITLE,
-    show: true,
+    // Stay hidden until 'ready-to-show' below actually reveals it — showing eagerly here would
+    // display the OS's default blank/white frame for the gap between window creation and the
+    // renderer's first paint (loadFile() + CSS + initial script execution), which is exactly the
+    // unstable/flashing first screen this app must avoid. backgroundColor matches the renderer's
+    // own --bg token (main.css) so even that hidden initial frame, if ever glimpsed (e.g. via the
+    // OS task switcher before ready-to-show fires), is the app's real theme rather than white.
+    show: false,
+    backgroundColor: '#0b1428',
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,

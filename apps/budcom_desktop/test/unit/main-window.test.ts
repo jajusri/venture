@@ -32,6 +32,7 @@ vi.mock('electron', () => {
   class BrowserWindow {
     public id = 1;
     public webPreferences: unknown;
+    public constructorOptions: { show?: boolean; backgroundColor?: string };
     public webContents = {
       on: vi.fn(),
       once: vi.fn((_event: string, callback: () => void) => {
@@ -41,8 +42,9 @@ vi.mock('electron', () => {
       reload: vi.fn().mockResolvedValue(undefined),
       send: vi.fn(),
     };
-    constructor(options: { webPreferences?: unknown }) {
+    constructor(options: { webPreferences?: unknown; show?: boolean; backgroundColor?: string }) {
       this.webPreferences = options.webPreferences;
+      this.constructorOptions = { show: options.show, backgroundColor: options.backgroundColor };
     }
     loadFile = vi.fn().mockResolvedValue(undefined);
     show = vi.fn();
@@ -80,6 +82,25 @@ describe('main window creation', () => {
       nodeIntegration: false,
       sandbox: true,
     });
+  });
+
+  it('stays hidden until ready-to-show, with a themed background instead of a blank flash', async () => {
+    // Regression guard for the startup-stabilization fix: showing eagerly (show: true) displays
+    // Electron's default blank/white frame for the gap between window creation and the renderer's
+    // first paint. Staying hidden until 'ready-to-show' (already wired below to call .show())
+    // eliminates that flash; backgroundColor covers the case where the hidden frame is still
+    // glimpsed (e.g. via the OS task switcher) before ready-to-show fires.
+    const { createMainWindow } = await import('../../src/main/main.js');
+    const window = createMainWindow() as unknown as {
+      constructorOptions: { show?: boolean; backgroundColor?: string };
+      show: ReturnType<typeof vi.fn>;
+    };
+    expect(window.constructorOptions.show).toBe(false);
+    expect(window.constructorOptions.backgroundColor).toBe('#0b1428');
+    // The mocked 'ready-to-show' handler (registered via window.once) fires synchronously in this
+    // test harness, so by the time createMainWindow() returns, show() must already have been
+    // called through that handler — proving the window isn't left permanently hidden.
+    expect(window.show).toHaveBeenCalled();
   });
 });
 
