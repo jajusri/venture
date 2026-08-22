@@ -30,6 +30,28 @@ android {
         buildConfigField("String", "APP_NAME", "\"BudCom\"")
     }
 
+    // DEV isolation (infrastructure only — see docs/status/BUDCOM-DEVELOPMENT-LEDGER.md's DEV
+    // isolation phase). "prod" adds no suffix and no overrides at all, so prodDebug/prodRelease
+    // are byte-identical in application ID and identity to what this module produced before this
+    // flavor dimension existed (com.budcom.android[.debug]) — the already-installed device app is
+    // never orphaned or altered by introducing this dimension. "dev" is a distinct, coexisting
+    // application ID/label so a developer build can be installed, launched, and debugged
+    // independently without ever touching the existing installation's package or data (Room/
+    // DataStore/SharedPreferences are already scoped per-applicationId by the Android OS itself —
+    // no storage-layer change was needed or made for this).
+    flavorDimensions += "environment"
+    productFlavors {
+        create("prod") {
+            dimension = "environment"
+        }
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            buildConfigField("String", "APP_NAME", "\"BUDCOM DEV\"")
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"

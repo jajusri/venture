@@ -181,10 +181,23 @@ configuration remains available only in debug builds for development and automat
 
 ## Commands
 
-From `apps/budcom_android`:
+From `apps/budcom_android`. The module has two product flavors (dimension `environment`):
+`prod` (application ID `com.budcom.android`, unchanged from before this dimension existed — this
+is the flavor used for the existing production/testing device install) and `dev` (application ID
+`com.budcom.android.dev`, label "BUDCOM DEV" — installs and coexists alongside `prod` without
+touching its package or data). Combined with the existing `debug`/`release` build types, task names
+are flavor-qualified:
 
 ```bash
-./gradlew :app:assembleDebug
-./gradlew :app:testDebugUnitTest
-./gradlew :app:compileDebugAndroidTestKotlin
+# Production/testing (matches the existing device install exactly — com.budcom.android.debug)
+./gradlew :app:assembleProdDebug
+./gradlew :app:testProdDebugUnitTest
+./gradlew :app:compileProdDebugAndroidTestKotlin
+
+# DEV (isolated — com.budcom.android.dev.debug — safe to install/uninstall/clear independently)
+./gradlew :app:assembleDevDebug
+./gradlew :app:testDevDebugUnitTest
+./gradlew :app:compileDevDebugAndroidTestKotlin
+./gradlew :app:installDevDebug          # installs alongside prod, never replaces it
+adb uninstall com.budcom.android.dev.debug   # safe: only ever targets DEV
 ```
