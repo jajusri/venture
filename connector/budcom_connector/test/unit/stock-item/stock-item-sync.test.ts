@@ -58,12 +58,12 @@ describe('StockItemSyncServiceImpl', () => {
     );
 
     await service.start();
-    expect(service.getSyncProgress().totalExpected).toBeNull();
+    expect((await service.getSyncProgress()).totalExpected).toBeNull();
     const result = await service.syncStockItems();
     expect(result.status).toBe('completed');
     expect(result.statistics.totalStockItems).toBe(1);
     expect(result.progress.totalExpected).toBe(1);
-    expect(service.getSyncProgress().totalExpected).toBe(1);
+    expect((await service.getSyncProgress()).totalExpected).toBe(1);
 
     const items = await service.getStockItems({ page: 1, pageSize: 10 });
     expect(items.items[0]?.name).toBe('Widget');
@@ -116,5 +116,109 @@ describe('StockItemSyncServiceImpl', () => {
     await service.cancelSync();
     const result = await syncPromise;
     expect(['cancelled', 'completed']).toContain(result.status);
+  });
+
+  it('a sync in flight for one company never blocks or is visible to a different company (TD-036)', async () => {
+    const { storage, basePath } = await createTestSqliteStorage();
+    let releaseCompanyA: (() => void) | undefined;
+    const companyAGate = new Promise<void>((resolve) => {
+      releaseCompanyA = resolve;
+    });
+    const readPort: ErpReadPort = {
+      isReady: () => true,
+      discoverCompanies: vi.fn(),
+      getGroups: vi.fn(),
+      getCompanyInfo: vi.fn(),
+      readLedgerGroups: vi.fn(),
+      readLedgers: vi.fn(),
+      readStockGroups: vi.fn(),
+      readStockCategories: vi.fn(),
+      readStockItems: vi.fn(async (companyName: string) => {
+        if (companyName === 'company-a') {
+          await companyAGate;
+        }
+        return {
+          items: [
+            sampleNormalizedStockItem({
+              id: `${companyName}-item`,
+              name: `${companyName} Item`,
+              normalizedName: `${companyName} item`,
+            }),
+          ],
+          durationMs: 1,
+          rawByteLength: 100,
+        };
+      }),
+      readGodowns: vi.fn(),
+      readCostCategories: vi.fn(),
+      readCostCentres: vi.fn(),
+      readVoucherTypes: vi.fn(),
+      readGstRegistrations: vi.fn(),
+      getReadDiagnostics: vi.fn(() => []),
+    };
+    const companyResolver = {
+      resolveName: vi.fn(async (companyId: string) => companyId),
+    } as unknown as CompanyResolver;
+    let currentCompanyId = 'company-a';
+    const session = createPermissiveSessionMock({
+      getSession: () => ({
+        session: {
+          connectorVersion: '0.3.1',
+          erpType: 'tally' as never,
+          connectionStatus: 'connected',
+          selectedCompany: { id: currentCompanyId, name: currentCompanyId },
+          selectedAt: new Date().toISOString(),
+          lastValidatedAt: new Date().toISOString(),
+        } as never,
+        contractVersion: '1',
+      }),
+      validateForOperation: async () => ({
+        status: 'SUCCESS',
+        session: undefined as never,
+        companyId: currentCompanyId,
+        companyName: currentCompanyId,
+      }),
+    });
+    const service = new StockItemSyncServiceImpl(
+      createTestConnectorConfig(basePath),
+      readPort,
+      companyResolver,
+      session,
+      createLogger({ service: 'test', level: 'error' }),
+      storage,
+    );
+    await service.start();
+
+    const companyASyncPromise = service.syncStockItems();
+    await vi.waitFor(async () => {
+      expect((await service.getSyncProgress()).status).toBe('running');
+    });
+
+    // Before TD-036's fix, this would be rejected with SYNC_CONFLICT purely because company A's
+    // sync happened to still be in flight in the same process — even though nothing in the
+    // database actually conflicts (A and B are different companies).
+    currentCompanyId = 'company-b';
+    const companyBResult = await service.syncStockItems();
+    expect(companyBResult.status).toBe('completed');
+    expect(companyBResult.statistics.totalStockItems).toBe(1);
+
+    const companyBProgress = await service.getSyncProgress();
+    expect(companyBProgress.companyId).toBe('company-b');
+    expect(companyBProgress.status).toBe('completed');
+
+    releaseCompanyA?.();
+    const companyAResult = await companyASyncPromise;
+    expect(companyAResult.status).toBe('completed');
+
+    currentCompanyId = 'company-a';
+    const companyAProgress = await service.getSyncProgress();
+    expect(companyAProgress.companyId).toBe('company-a');
+    expect(companyAProgress.status).toBe('completed');
+
+    const itemsA = await service.getStockItems({ page: 1, pageSize: 10 });
+    expect(itemsA.items.map((item) => item.name)).toEqual(['company-a Item']);
+    currentCompanyId = 'company-b';
+    const itemsB = await service.getStockItems({ page: 1, pageSize: 10 });
+    expect(itemsB.items.map((item) => item.name)).toEqual(['company-b Item']);
   });
 });

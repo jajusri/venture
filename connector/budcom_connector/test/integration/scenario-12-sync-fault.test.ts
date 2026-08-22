@@ -208,8 +208,8 @@ describe('Scenario 12 deterministic sync fault matrix', () => {
     await service.start();
 
     const syncPromise = service.syncLedgers({ maxAttempts: 1 });
-    await vi.waitFor(() => {
-      expect(service.getSyncProgress().status).toBe('running');
+    await vi.waitFor(async () => {
+      expect((await service.getSyncProgress()).status).toBe('running');
     });
     await service.cancelSync();
     const result = await syncPromise;

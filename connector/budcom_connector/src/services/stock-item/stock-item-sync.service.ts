@@ -36,7 +36,7 @@ export interface StockItemSyncService {
   getStockItems(params: StockItemSearchParams): Promise<StockItemSearchResult>;
   getStockItemById(stockItemId: string): Promise<StockItemDetails | null>;
   getStatistics(): Promise<StockItemStatistics>;
-  getSyncProgress(): StockItemSyncProgress;
+  getSyncProgress(): Promise<StockItemSyncProgress>;
   getStorageStatus(): StorageStatus;
   listSyncRuns(limit?: number): Promise<readonly StockItemSyncRunRecord[]>;
   getSyncRun(syncRunId: string): Promise<StockItemSyncRunRecord | null>;
@@ -56,10 +56,11 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
   private readonly repositoryOverride?: StockItemRepositoryPort;
   private readonly syncRunsOverride?: SyncRunRepository;
   private readonly storage: SqliteStorageService;
-  private progress: StockItemSyncProgress = createIdleProgress();
-  private activeAbort: AbortController | null = null;
-  private activeRun: StockItemSyncRunRecord | null = null;
-  private syncInFlight: Promise<StockItemSyncResult> | null = null;
+  // Company-scoped: see the identical rationale on LedgerSyncServiceImpl (TD-036).
+  private readonly progressByCompany = new Map<string, StockItemSyncProgress>();
+  private readonly activeAbortByCompany = new Map<string, AbortController>();
+  private readonly activeRunByCompany = new Map<string, StockItemSyncRunRecord>();
+  private readonly syncInFlightByCompany = new Map<string, Promise<StockItemSyncResult>>();
 
   constructor(
     private readonly config: ConnectorConfig,
@@ -84,12 +85,18 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
     return this.syncRunsOverride ?? this.storage.getBundle().syncRunRepository;
   }
 
+  private progressFor(companyId: string): StockItemSyncProgress {
+    return this.progressByCompany.get(companyId) ?? createIdleProgress(companyId);
+  }
+
   async start(): Promise<void> {
     this.running = true;
   }
 
   async stop(): Promise<void> {
-    this.activeAbort?.abort();
+    for (const abort of this.activeAbortByCompany.values()) {
+      abort.abort();
+    }
     this.running = false;
   }
 
@@ -102,7 +109,7 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
       name: 'StockItemSync',
       running: this.running,
       ready: this.running,
-      message: this.progress.status,
+      message: this.syncInFlightByCompany.size > 0 ? 'running' : 'idle',
     };
   }
 
@@ -125,8 +132,10 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
     return this.repository.getStatistics(companyId);
   }
 
-  getSyncProgress(): StockItemSyncProgress {
-    return { ...this.progress };
+  async getSyncProgress(): Promise<StockItemSyncProgress> {
+    const companyId = this.peekCompanyId();
+    if (!companyId) return createIdleProgress('');
+    return { ...this.progressFor(companyId) };
   }
 
   listSyncRuns(limit = 20): Promise<readonly StockItemSyncRunRecord[]> {
@@ -145,24 +154,28 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
   }
 
   async cancelSync(): Promise<StockItemSyncProgress> {
+    const companyId = this.peekCompanyId();
+    if (!companyId) return createIdleProgress('');
+    const activeRun = this.activeRunByCompany.get(companyId);
     const cancellable =
-      this.syncInFlight !== null &&
-      this.activeRun !== null &&
-      (this.activeRun.status === 'running' || this.activeRun.status === 'cancelling');
-    if (cancellable && this.activeRun) {
-      this.activeRun = {
-        ...this.activeRun,
+      this.syncInFlightByCompany.has(companyId) &&
+      activeRun !== undefined &&
+      (activeRun.status === 'running' || activeRun.status === 'cancelling');
+    if (cancellable && activeRun) {
+      const updatedRun: StockItemSyncRunRecord = {
+        ...activeRun,
         cancelRequested: true,
         status: 'cancelling',
         updatedAt: new Date().toISOString(),
       };
-      this.syncRuns.updateRun(this.activeRun);
-      this.activeAbort?.abort();
-      this.progress = {
-        ...this.progress,
+      this.activeRunByCompany.set(companyId, updatedRun);
+      this.syncRuns.updateRun(updatedRun);
+      this.activeAbortByCompany.get(companyId)?.abort();
+      this.progressByCompany.set(companyId, {
+        ...this.progressFor(companyId),
         cancelRequested: true,
         status: 'cancelling',
-      };
+      });
     }
     return this.getSyncProgress();
   }
@@ -185,15 +198,15 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
   async syncStockItems(
     options: { incremental?: boolean; maxAttempts?: number } = {},
   ): Promise<StockItemSyncResult> {
-    if (this.syncInFlight) {
+    const companyId = await this.requireCompanyId();
+    if (this.syncInFlightByCompany.has(companyId)) {
       throw new AppError(
         ErrorCodes.SYNC_CONFLICT,
-        'A stock item sync is already running for this connector.',
+        'A stock item sync is already running for the selected company.',
         409,
       );
     }
 
-    const companyId = await this.requireCompanyId();
     this.syncRuns.recoverAbandonedRuns(companyId, RESOURCE_KIND);
     const active = this.syncRuns.findActiveRun(companyId, RESOURCE_KIND);
     if (active) {
@@ -205,10 +218,11 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
       );
     }
 
-    this.syncInFlight = this.executeSync(companyId, options).finally(() => {
-      this.syncInFlight = null;
+    const inFlight = this.executeSync(companyId, options).finally(() => {
+      this.syncInFlightByCompany.delete(companyId);
     });
-    return this.syncInFlight;
+    this.syncInFlightByCompany.set(companyId, inFlight);
+    return inFlight;
   }
 
   private async executeSync(
@@ -218,10 +232,11 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
     const startedAt = Date.now();
     const companyName = await this.companyResolver.resolveName(companyId);
     const maxAttempts = options.maxAttempts ?? this.config.tallyRetryMaxAttempts;
-    this.activeAbort = new AbortController();
-    const signal = this.activeAbort.signal;
+    const abort = new AbortController();
+    this.activeAbortByCompany.set(companyId, abort);
+    const signal = abort.signal;
 
-    this.activeRun = this.syncRuns.createRun({
+    const initialRun = this.syncRuns.createRun({
       companyId,
       resourceKind: RESOURCE_KIND,
       syncType: options.incremental ? 'incremental' : 'full',
@@ -229,8 +244,9 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
       schemaVersion: String(STORAGE_SCHEMA_VERSION),
       predecessorSyncRunId: this.syncRuns.findRetryPredecessor(companyId, RESOURCE_KIND)?.syncRunId ?? null,
     });
+    this.activeRunByCompany.set(companyId, initialRun);
 
-    this.progress = toProgress(this.activeRun, this.storage.getStorageStatus().migrationStatus);
+    this.progressByCompany.set(companyId, toProgress(initialRun, this.storage.getStorageStatus().migrationStatus));
     const changes: StockItemChange[] = [];
 
     try {
@@ -242,12 +258,13 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
       const syncedAt = new Date().toISOString();
       const mapped = extraction.items.map((item) => mapNormalizedStockItemToDomain(item, syncedAt));
       const validation = validateStockItemCollection(mapped);
-      this.activeRun = {
-        ...this.activeRun,
+      const runWithTotal: StockItemSyncRunRecord = {
+        ...this.activeRunByCompany.get(companyId)!,
         totalExpected: mapped.length,
         updatedAt: new Date().toISOString(),
       };
-      this.syncRuns.updateRun(this.activeRun);
+      this.activeRunByCompany.set(companyId, runWithTotal);
+      this.syncRuns.updateRun(runWithTotal);
 
       // Full restart from index zero on every run. lastProcessedId is audit-only (TD-006).
       for (let index = 0; index < mapped.length; index += BATCH_SIZE) {
@@ -283,7 +300,7 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
 
         // Atomic batch: domain upserts + checkpoint counters commit together or roll back together.
         // Run creation and terminal status updates remain outside this boundary (deliberate).
-        const currentRun = this.activeRun;
+        const currentRun = this.activeRunByCompany.get(companyId);
         if (!currentRun) {
           throw new AppError(ErrorCodes.INTERNAL_ERROR, 'Stock item sync run missing during batch commit.', 500);
         }
@@ -303,11 +320,10 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
           }
           this.syncRuns.updateRun(nextRun);
         });
-        this.activeRun = nextRun;
-        this.progress = toProgress(
-          nextRun,
-          this.storage.getStorageStatus().migrationStatus,
-          Date.now() - startedAt,
+        this.activeRunByCompany.set(companyId, nextRun);
+        this.progressByCompany.set(
+          companyId,
+          toProgress(nextRun, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt),
         );
       }
 
@@ -318,30 +334,32 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
         return this.finalizeRun('cancelled', companyId, startedAt, changes, 0);
       }
       const normalizedFailure = normalizeSyncFailure(error);
-      if (this.activeRun) {
-        this.activeRun = {
-          ...this.activeRun,
+      const runOnFailure = this.activeRunByCompany.get(companyId);
+      if (runOnFailure) {
+        const failedRun: StockItemSyncRunRecord = {
+          ...runOnFailure,
           status: 'failed',
           failureCode: normalizedFailure.failureCode,
           failureSummary: normalizedFailure.failureSummary,
           updatedAt: new Date().toISOString(),
           completedAt: new Date().toISOString(),
         };
-        this.syncRuns.updateRun(this.activeRun);
+        this.activeRunByCompany.set(companyId, failedRun);
+        this.syncRuns.updateRun(failedRun);
       }
-      this.progress = {
-        ...this.progress,
+      this.progressByCompany.set(companyId, {
+        ...this.progressFor(companyId),
         status: 'failed',
         lastError: sanitizeSyncProgressError(error),
         completedAt: new Date().toISOString(),
         durationMs: Date.now() - startedAt,
-      };
+      });
       this.logger.error('stock_item_sync_failed', {
         component: 'stock-item-sync',
         code: normalizedFailure.failureCode,
         reasonCode: normalizedFailure.failureSummary,
       });
-      this.activeRun = null;
+      this.activeRunByCompany.delete(companyId);
       throw error instanceof AppError
         ? error
         : new AppError(
@@ -351,7 +369,7 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
             { feature: 'stock-item-sync' },
           );
     } finally {
-      this.activeAbort = null;
+      this.activeAbortByCompany.delete(companyId);
     }
   }
 
@@ -362,29 +380,31 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
     changes: StockItemChange[],
     validationIssueCount: number,
   ): Promise<StockItemSyncResult> {
-    const finishedRun = this.activeRun;
+    const finishedRun = this.activeRunByCompany.get(companyId);
+    let completedRun: StockItemSyncRunRecord | undefined;
     if (finishedRun) {
-      this.activeRun = {
+      completedRun = {
         ...finishedRun,
         status,
         completedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      this.syncRuns.updateRun(this.activeRun);
+      this.activeRunByCompany.set(companyId, completedRun);
+      this.syncRuns.updateRun(completedRun);
     }
-    this.progress = {
-      ...(finishedRun
-        ? toProgress(this.activeRun!, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt)
-        : this.progress),
+    this.progressByCompany.set(companyId, {
+      ...(completedRun
+        ? toProgress(completedRun, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt)
+        : this.progressFor(companyId)),
       status,
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
-    };
+    });
     const statistics = await this.repository.getStatistics(companyId);
     this.logger.info('stock_item_sync_completed', {
       component: 'stock-item-sync',
       status,
-      durationMs: this.progress.durationMs,
+      durationMs: this.progressFor(companyId).durationMs,
       stockItemCount: statistics.totalStockItems,
       incompleteData: statistics.incompleteData,
     });
@@ -394,11 +414,11 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
       extractionCompleteness: toExtractionCompleteness(status),
       deletionReconciliation: 'disabled',
       statistics,
-      progress: this.getSyncProgress(),
+      progress: { ...this.progressFor(companyId) },
       changes,
       validationIssueCount,
     };
-    this.activeRun = null;
+    this.activeRunByCompany.delete(companyId);
     return result;
   }
 
@@ -426,6 +446,17 @@ export class StockItemSyncServiceImpl implements StockItemSyncService {
       : new AppError(ErrorCodes.SERVICE_UNAVAILABLE, 'Stock item extraction failed after retries.', 503);
   }
 
+  /**
+   * A best-effort, never-throwing read of the currently selected company, for the two read-only/
+   * no-op-safe status methods ([getSyncProgress], [cancelSync]) that must remain safe to call
+   * before any company is ever selected (pre-existing contract predating company-scoped state —
+   * a fresh Connector with nothing selected yet must still answer "idle", not fail the request).
+   */
+  private peekCompanyId(): string | null {
+    if (!this.running) return null;
+    return this.connectorSession.getSession().session.selectedCompany?.id ?? null;
+  }
+
   private async requireCompanyId(): Promise<string> {
     if (!this.running) {
       throw new AppError(ErrorCodes.SERVICE_UNAVAILABLE, 'Stock item sync service is not running.', 503);
@@ -449,9 +480,10 @@ function toExtractionCompleteness(
   return 'partial';
 }
 
-function createIdleProgress(): StockItemSyncProgress {
+function createIdleProgress(companyId: string): StockItemSyncProgress {
   return {
     syncRunId: null,
+    companyId,
     status: 'idle',
     totalExpected: null,
     startedAt: null,
@@ -476,6 +508,7 @@ function toProgress(
 ): StockItemSyncProgress {
   return {
     syncRunId: run.syncRunId,
+    companyId: run.companyId,
     status: run.status,
     totalExpected: run.totalExpected,
     startedAt: run.startedAt,

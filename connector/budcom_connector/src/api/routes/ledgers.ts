@@ -110,7 +110,7 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
   router.get(
     '/sync/ledgers/status',
     asyncHandler(async (_req, res) => {
-      const progress = ledgerSync.getSyncProgress();
+      const progress = await ledgerSync.getSyncProgress();
       res.status(200).json({
         schemaVersion: '1.0.0',
         progress,

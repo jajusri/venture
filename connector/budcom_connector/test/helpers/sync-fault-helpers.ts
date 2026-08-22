@@ -119,7 +119,7 @@ export async function runLedgerSyncViaFaultServer(options: {
     syncStatus = result.status;
   } catch (error) {
     syncError = error;
-    syncStatus = service.getSyncProgress().status;
+    syncStatus = (await service.getSyncProgress()).status;
   }
 
   await service.stop();
@@ -172,7 +172,7 @@ export async function runStockSyncViaFaultServer(options: {
     syncStatus = result.status;
   } catch (error) {
     syncError = error;
-    syncStatus = service.getSyncProgress().status;
+    syncStatus = (await service.getSyncProgress()).status;
   }
 
   await service.stop();
@@ -224,7 +224,7 @@ export async function runLedgerSyncOnPort(options: {
     syncStatus = result.status;
   } catch (error) {
     syncError = error;
-    syncStatus = service.getSyncProgress().status;
+    syncStatus = (await service.getSyncProgress()).status;
   }
 
   await service.stop();

@@ -51,12 +51,27 @@ class SyncRepositoryImpl @Inject constructor(
 
     private var localActiveTarget: SyncTarget? = null
 
+    /**
+     * A company switch must discard every per-target `lastSuccessfulAt`/`statistics`/
+     * `liveProgress`/`lastOutcome` carried over from whichever company was previously bound —
+     * otherwise the newly-selected company's Dashboard/Sync screen can show the previous
+     * company's "Last synced at ..." as if it were its own (physically reproduced on a real
+     * device switching between two real companies, 2026-08-22). Repeated binds for the *same*
+     * company (this is called before every status/statistics/start call, not only on an actual
+     * switch) must keep the existing summary intact — only an actual change in [companyId]
+     * resets state.
+     */
     override fun bindCompany(companyId: String?) {
-        _summary.update {
-            it.copy(
-                companyId = companyId,
-                lastUpdatedEpochMillis = timeProvider.nowEpochMillis(),
-            )
+        _summary.update { current ->
+            if (current.companyId == companyId) {
+                current.copy(lastUpdatedEpochMillis = timeProvider.nowEpochMillis())
+            } else {
+                localActiveTarget = null
+                emptySummary().copy(
+                    companyId = companyId,
+                    lastUpdatedEpochMillis = timeProvider.nowEpochMillis(),
+                )
+            }
         }
     }
 
@@ -205,10 +220,6 @@ class SyncRepositoryImpl @Inject constructor(
                 is AppResult.Failure -> auth
             }
         }
-    }
-
-    fun clearActiveIfCompanyChanged() {
-        localActiveTarget = null
     }
 
     private fun mapStartFailure(target: SyncTarget, error: NetworkError): SyncOutcome {

@@ -82,7 +82,7 @@ export function createStockItemsRouter(stockItemSync: StockItemSyncService): Rou
   router.get(
     '/sync/stock-items/status',
     asyncHandler(async (_req, res) => {
-      const progress = stockItemSync.getSyncProgress();
+      const progress = await stockItemSync.getSyncProgress();
       res.status(200).json({
         schemaVersion: '1.0.0',
         progress,

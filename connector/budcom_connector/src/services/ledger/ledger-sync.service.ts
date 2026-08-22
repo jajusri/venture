@@ -66,7 +66,7 @@ export interface LedgerSyncService extends SyncEngineService {
   getLedgerById(ledgerId: string): Promise<LedgerDetails | null>;
   getLedgerStatement(ledgerId: string, dateFrom: string, dateTo: string): Promise<LedgerStatement | null>;
   getStatistics(): Promise<LedgerStatistics>;
-  getSyncProgress(): LedgerSyncProgress;
+  getSyncProgress(): Promise<LedgerSyncProgress>;
   getStorageStatus(): StorageStatus;
   listSyncRuns(limit?: number): Promise<readonly LedgerSyncRunRecord[]>;
   getSyncRun(syncRunId: string): Promise<LedgerSyncRunRecord | null>;
@@ -82,10 +82,14 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
   private readonly repositoryOverride?: LedgerRepositoryPort;
   private readonly syncRunsOverride?: SyncRunRepository;
   private readonly storage: SqliteStorageService;
-  private progress: LedgerSyncProgress = createIdleProgress();
-  private activeAbort: AbortController | null = null;
-  private activeRun: LedgerSyncRunRecord | null = null;
-  private syncInFlight: Promise<LedgerSyncResult> | null = null;
+  // Company-scoped: a process-wide singleton here would let one company's sync state (progress,
+  // active run, in-flight guard) bleed into another's status poll, or let a legitimate sync for
+  // Company B be rejected as "already running" purely because Company A's sync happens to be in
+  // flight in the same process. See TD-036.
+  private readonly progressByCompany = new Map<string, LedgerSyncProgress>();
+  private readonly activeAbortByCompany = new Map<string, AbortController>();
+  private readonly activeRunByCompany = new Map<string, LedgerSyncRunRecord>();
+  private readonly syncInFlightByCompany = new Map<string, Promise<LedgerSyncResult>>();
 
   constructor(
     private readonly config: ConnectorConfig,
@@ -114,12 +118,18 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     return this.syncRunsOverride ?? this.storage.getBundle().syncRunRepository;
   }
 
+  private progressFor(companyId: string): LedgerSyncProgress {
+    return this.progressByCompany.get(companyId) ?? createIdleProgress(companyId);
+  }
+
   async start(): Promise<void> {
     this.running = true;
   }
 
   async stop(): Promise<void> {
-    this.activeAbort?.abort();
+    for (const abort of this.activeAbortByCompany.values()) {
+      abort.abort();
+    }
     this.running = false;
   }
 
@@ -132,7 +142,7 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
       name: 'LedgerSync',
       running: this.running,
       ready: this.running,
-      message: this.progress.status,
+      message: this.syncInFlightByCompany.size > 0 ? 'running' : 'idle',
     };
   }
 
@@ -264,8 +274,10 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     return this.repository.getStatistics(companyId);
   }
 
-  getSyncProgress(): LedgerSyncProgress {
-    return { ...this.progress };
+  async getSyncProgress(): Promise<LedgerSyncProgress> {
+    const companyId = this.peekCompanyId();
+    if (!companyId) return createIdleProgress('');
+    return { ...this.progressFor(companyId) };
   }
 
   listSyncRuns(limit = 20): Promise<readonly LedgerSyncRunRecord[]> {
@@ -277,24 +289,28 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
   }
 
   async cancelSync(): Promise<LedgerSyncProgress> {
+    const companyId = this.peekCompanyId();
+    if (!companyId) return createIdleProgress('');
+    const activeRun = this.activeRunByCompany.get(companyId);
     const cancellable =
-      this.syncInFlight !== null &&
-      this.activeRun !== null &&
-      (this.activeRun.status === 'running' || this.activeRun.status === 'cancelling');
-    if (cancellable && this.activeRun) {
-      this.activeRun = {
-        ...this.activeRun,
+      this.syncInFlightByCompany.has(companyId) &&
+      activeRun !== undefined &&
+      (activeRun.status === 'running' || activeRun.status === 'cancelling');
+    if (cancellable && activeRun) {
+      const updatedRun: LedgerSyncRunRecord = {
+        ...activeRun,
         cancelRequested: true,
         status: 'cancelling',
         updatedAt: new Date().toISOString(),
       };
-      this.syncRuns.updateRun(this.activeRun);
-      this.activeAbort?.abort();
-      this.progress = {
-        ...this.progress,
+      this.activeRunByCompany.set(companyId, updatedRun);
+      this.syncRuns.updateRun(updatedRun);
+      this.activeAbortByCompany.get(companyId)?.abort();
+      this.progressByCompany.set(companyId, {
+        ...this.progressFor(companyId),
         cancelRequested: true,
         status: 'cancelling',
-      };
+      });
     }
     return this.getSyncProgress();
   }
@@ -315,15 +331,15 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
   }
 
   async syncLedgers(options: { incremental?: boolean; maxAttempts?: number } = {}): Promise<LedgerSyncResult> {
-    if (this.syncInFlight) {
+    const companyId = await this.requireCompanyId();
+    if (this.syncInFlightByCompany.has(companyId)) {
       throw new AppError(
         ErrorCodes.SYNC_CONFLICT,
-        'A ledger sync is already running for this connector.',
+        'A ledger sync is already running for the selected company.',
         409,
       );
     }
 
-    const companyId = await this.requireCompanyId();
     this.syncRuns.recoverAbandonedRuns(companyId, 'ledgers');
     const active = this.syncRuns.findActiveRun(companyId, 'ledgers');
     if (active) {
@@ -335,10 +351,11 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
       );
     }
 
-    this.syncInFlight = this.executeSync(companyId, options).finally(() => {
-      this.syncInFlight = null;
+    const inFlight = this.executeSync(companyId, options).finally(() => {
+      this.syncInFlightByCompany.delete(companyId);
     });
-    return this.syncInFlight;
+    this.syncInFlightByCompany.set(companyId, inFlight);
+    return inFlight;
   }
 
   private async executeSync(
@@ -348,10 +365,11 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     const startedAt = Date.now();
     const companyName = await this.companyResolver.resolveName(companyId);
     const maxAttempts = options.maxAttempts ?? this.config.tallyRetryMaxAttempts;
-    this.activeAbort = new AbortController();
-    const signal = this.activeAbort.signal;
+    const abort = new AbortController();
+    this.activeAbortByCompany.set(companyId, abort);
+    const signal = abort.signal;
 
-    this.activeRun = this.syncRuns.createRun({
+    const initialRun = this.syncRuns.createRun({
       companyId,
       resourceKind: 'ledgers',
       syncType: options.incremental ? 'incremental' : 'full',
@@ -359,8 +377,9 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
       schemaVersion: String(STORAGE_SCHEMA_VERSION),
       predecessorSyncRunId: this.syncRuns.findRetryPredecessor(companyId, 'ledgers')?.syncRunId ?? null,
     });
+    this.activeRunByCompany.set(companyId, initialRun);
 
-    this.progress = toProgress(this.activeRun, this.storage.getStorageStatus().migrationStatus);
+    this.progressByCompany.set(companyId, toProgress(initialRun, this.storage.getStorageStatus().migrationStatus));
     const changes: LedgerChange[] = [];
 
     try {
@@ -410,12 +429,13 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
           issueCount: validation.issues.length,
         });
       }
-      this.activeRun = {
-        ...this.activeRun,
+      const runWithTotal: LedgerSyncRunRecord = {
+        ...this.activeRunByCompany.get(companyId)!,
         totalExpected: mapped.length,
         updatedAt: new Date().toISOString(),
       };
-      this.syncRuns.updateRun(this.activeRun);
+      this.activeRunByCompany.set(companyId, runWithTotal);
+      this.syncRuns.updateRun(runWithTotal);
 
       // Full restart from index zero on every run. lastProcessedId is audit-only (TD-006).
       for (let index = 0; index < mapped.length; index += BATCH_SIZE) {
@@ -451,7 +471,7 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
 
         // Atomic batch: domain upserts + checkpoint counters commit together or roll back together.
         // Run creation and terminal status updates remain outside this boundary (deliberate).
-        const currentRun = this.activeRun;
+        const currentRun = this.activeRunByCompany.get(companyId);
         if (!currentRun) {
           throw new AppError(ErrorCodes.INTERNAL_ERROR, 'Ledger sync run missing during batch commit.', 500);
         }
@@ -471,8 +491,11 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
           }
           this.syncRuns.updateRun(nextRun);
         });
-        this.activeRun = nextRun;
-        this.progress = toProgress(nextRun, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt);
+        this.activeRunByCompany.set(companyId, nextRun);
+        this.progressByCompany.set(
+          companyId,
+          toProgress(nextRun, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt),
+        );
       }
 
       const finalStatus = signal.aborted ? 'cancelled' : 'completed';
@@ -484,30 +507,32 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
         return this.finalizeRun('cancelled', companyId, startedAt, changes, 0);
       }
       const normalizedFailure = normalizeSyncFailure(error);
-      if (this.activeRun) {
-        this.activeRun = {
-          ...this.activeRun,
+      const runOnFailure = this.activeRunByCompany.get(companyId);
+      if (runOnFailure) {
+        const failedRun: LedgerSyncRunRecord = {
+          ...runOnFailure,
           status: 'failed',
           failureCode: normalizedFailure.failureCode,
           failureSummary: normalizedFailure.failureSummary,
           updatedAt: new Date().toISOString(),
           completedAt: new Date().toISOString(),
         };
-        this.syncRuns.updateRun(this.activeRun);
+        this.activeRunByCompany.set(companyId, failedRun);
+        this.syncRuns.updateRun(failedRun);
       }
-      this.progress = {
-        ...this.progress,
+      this.progressByCompany.set(companyId, {
+        ...this.progressFor(companyId),
         status: 'failed',
         lastError: sanitizeSyncProgressError(error),
         completedAt: new Date().toISOString(),
         durationMs: Date.now() - startedAt,
-      };
+      });
       this.logger.error('ledger_sync_failed', {
         component: 'ledger-sync',
         code: normalizedFailure.failureCode,
         reasonCode: normalizedFailure.failureSummary,
       });
-      this.activeRun = null;
+      this.activeRunByCompany.delete(companyId);
       throw error instanceof AppError
         ? error
         : new AppError(
@@ -517,7 +542,7 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
             { feature: 'ledger-sync' },
           );
     } finally {
-      this.activeAbort = null;
+      this.activeAbortByCompany.delete(companyId);
     }
   }
 
@@ -528,40 +553,45 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     changes: LedgerChange[],
     validationIssueCount: number,
   ): Promise<LedgerSyncResult> {
-    const finishedRun = this.activeRun;
+    const finishedRun = this.activeRunByCompany.get(companyId);
+    let completedRun: LedgerSyncRunRecord | undefined;
     if (finishedRun) {
-      this.activeRun = {
+      completedRun = {
         ...finishedRun,
         status,
         completedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      this.syncRuns.updateRun(this.activeRun);
+      this.activeRunByCompany.set(companyId, completedRun);
+      this.syncRuns.updateRun(completedRun);
     }
-    this.progress = {
-      ...(finishedRun
-        ? toProgress(this.activeRun!, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt)
-        : this.progress),
+    this.progressByCompany.set(companyId, {
+      ...(completedRun
+        ? toProgress(completedRun, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt)
+        : this.progressFor(companyId)),
       status,
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
-    };
+    });
     const statistics = await this.repository.getStatistics(companyId);
     this.logger.info('ledger_sync_completed', {
       component: 'ledger-sync',
       status,
-      durationMs: this.progress.durationMs,
+      durationMs: this.progressFor(companyId).durationMs,
       ledgerCount: statistics.totalLedgers,
     });
     const result: LedgerSyncResult = {
       syncRunId: finishedRun?.syncRunId ?? '',
       status,
       statistics,
-      progress: this.getSyncProgress(),
+      // The result belongs to this run's own companyId, not whichever company happens to be
+      // currently selected by the time this resolves — read the map directly rather than going
+      // through getSyncProgress()'s requireCompanyId() re-resolution.
+      progress: { ...this.progressFor(companyId) },
       changes,
       validationIssueCount,
     };
-    this.activeRun = null;
+    this.activeRunByCompany.delete(companyId);
     return result;
   }
 
@@ -587,6 +617,17 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
     throw lastError instanceof Error
       ? lastError
       : new AppError(ErrorCodes.SERVICE_UNAVAILABLE, 'Ledger extraction failed after retries.', 503);
+  }
+
+  /**
+   * A best-effort, never-throwing read of the currently selected company, for the two read-only/
+   * no-op-safe status methods ([getSyncProgress], [cancelSync]) that must remain safe to call
+   * before any company is ever selected (pre-existing contract predating company-scoped state —
+   * a fresh Connector with nothing selected yet must still answer "idle", not fail the request).
+   */
+  private peekCompanyId(): string | null {
+    if (!this.running) return null;
+    return this.connectorSession.getSession().session.selectedCompany?.id ?? null;
   }
 
   private async requireCompanyId(): Promise<string> {
@@ -667,7 +708,7 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
       changes.push({ ledgerId: ledger.id, changeType: 'added' });
     }
 
-    const currentRun = this.activeRun;
+    const currentRun = this.activeRunByCompany.get(companyId);
     if (!currentRun) {
       throw new AppError(ErrorCodes.INTERNAL_ERROR, 'Ledger sync run missing during identity migration.', 500);
     }
@@ -686,8 +727,11 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
       void this.repository.replaceCompanyLedgersAtomically(companyId, mapped);
       this.syncRuns.updateRun(nextRun);
     });
-    this.activeRun = nextRun;
-    this.progress = toProgress(nextRun, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt);
+    this.activeRunByCompany.set(companyId, nextRun);
+    this.progressByCompany.set(
+      companyId,
+      toProgress(nextRun, this.storage.getStorageStatus().migrationStatus, Date.now() - startedAt),
+    );
 
     this.logger.info('ledger_identity_migration_completed', {
       component: 'ledger-sync',
@@ -740,9 +784,10 @@ function mapExtractedLedgers(
   });
 }
 
-function createIdleProgress(): LedgerSyncProgress {
+function createIdleProgress(companyId: string): LedgerSyncProgress {
   return {
     syncRunId: null,
+    companyId,
     status: 'idle',
     totalExpected: null,
     startedAt: null,
@@ -767,6 +812,7 @@ function toProgress(
 ): LedgerSyncProgress {
   return {
     syncRunId: run.syncRunId,
+    companyId: run.companyId,
     status: run.status,
     totalExpected: run.totalExpected,
     startedAt: run.startedAt,

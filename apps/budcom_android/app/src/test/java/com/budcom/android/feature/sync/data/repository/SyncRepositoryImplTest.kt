@@ -370,6 +370,62 @@ class SyncRepositoryImplTest {
         assertEquals(2, authenticated.startCallsFor(SyncTarget.Ledgers))
     }
 
+    // ============================== bindCompany company isolation (TD-037) ==============================
+
+    /**
+     * Physically reproduced on a real device (2026-08-22): switching from a synced company to a
+     * never-synced one showed the *previous* company's "Last synced at ..." on the new company's
+     * Dashboard/Sync screen, because `bindCompany` only ever overwrote `companyId` and left every
+     * per-target `lastOutcome`/`lastSuccessfulAt`/`statistics` from the old company in place.
+     */
+    @Test
+    fun `bindCompany with a new company clears the previous company's freshness summary`() = runTest {
+        val repository = repo(FakeRemote())
+
+        repository.bindCompany("company-a")
+        repository.startSync(SyncTarget.Ledgers)
+        assertEquals("company-a", repository.summary.value.companyId)
+        assertTrue(
+            repository.summary.value.targets.first { it.target == SyncTarget.Ledgers }.lastOutcome
+                is SyncOutcome.Succeeded,
+        )
+
+        repository.bindCompany("company-b")
+
+        assertEquals("company-b", repository.summary.value.companyId)
+        assertNull(repository.summary.value.targets.first { it.target == SyncTarget.Ledgers }.lastOutcome)
+        assertNull(repository.summary.value.targets.first { it.target == SyncTarget.Ledgers }.lastSuccessfulAt)
+        assertNull(repository.summary.value.latestSuccessfulAt)
+    }
+
+    /** `bindCompany` is called before every status/statistics/start call, not only on an actual
+     *  company switch — rebinding the same company must never wipe a summary that is still valid. */
+    @Test
+    fun `bindCompany with the same company again preserves the existing summary`() = runTest {
+        val repository = repo(FakeRemote())
+
+        repository.bindCompany("company-a")
+        repository.startSync(SyncTarget.Ledgers)
+        val outcomeBefore = repository.summary.value.targets.first { it.target == SyncTarget.Ledgers }.lastOutcome
+
+        repository.bindCompany("company-a")
+
+        assertEquals(
+            outcomeBefore,
+            repository.summary.value.targets.first { it.target == SyncTarget.Ledgers }.lastOutcome,
+        )
+    }
+
+    @Test
+    fun `bindCompany with no prior company bound does not crash and starts a fresh summary`() = runTest {
+        val repository = repo(FakeRemote())
+
+        repository.bindCompany("company-a")
+
+        assertEquals("company-a", repository.summary.value.companyId)
+        assertEquals(false, repository.summary.value.isAnySyncActive)
+    }
+
     // ============================== Non-Ledgers/StockItems failure preservation ==============================
 
     @Test

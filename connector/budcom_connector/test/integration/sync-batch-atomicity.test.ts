@@ -437,13 +437,13 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
     await service.start();
 
     const syncPromise = service.syncLedgers();
-    await vi.waitFor(() => {
+    await vi.waitFor(async () => {
       expect(readPort.readLedgers).toHaveBeenCalled();
-      expect(service.getSyncProgress().syncRunId).toBeTruthy();
+      expect((await service.getSyncProgress()).syncRunId).toBeTruthy();
     });
     // Cancel during extraction (supported cooperative boundary) before any batch commit.
     await service.cancelSync();
-    expect(service.getSyncProgress().status).toBe('cancelling');
+    expect((await service.getSyncProgress()).status).toBe('cancelling');
     releaseExtraction?.();
     const result = await syncPromise;
 
@@ -475,7 +475,7 @@ describe('sync batch atomicity (Reliability Step 1)', () => {
     );
     await service.start();
     await expect(service.syncStockItems()).rejects.toThrow();
-    const progress = service.getSyncProgress();
+    const progress = await service.getSyncProgress();
     expect(progress.status).toBe('failed');
     expect(progress.lastError).toBe('storage_failure');
     const run = storage.getBundle().syncRunRepository.listRuns('estimation', 'stock-items')[0]!;
