@@ -5,6 +5,10 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
+import com.budcom.android.feature.masterdata.ledger.domain.repository.LedgerRepository
+import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgersUseCase
 import com.budcom.android.feature.sync.domain.model.SyncCounts
 import com.budcom.android.feature.sync.domain.model.SyncMode
 import com.budcom.android.feature.sync.domain.model.SyncOutcome
@@ -58,13 +62,32 @@ class SyncUseCasesTest {
         totalPages = 1,
     )
 
+    private fun emptyLedgerPage() = LedgerPage(
+        items = emptyList(),
+        page = 1,
+        pageSize = 50,
+        totalItems = 0,
+        totalPages = 1,
+        dataFreshnessAt = null,
+    )
+
+    private fun useCase(
+        syncRepo: FakeSyncRepo,
+        company: FakeCompany = FakeCompany("estimation"),
+        voucherRepo: FakeVoucherRepo = FakeVoucherRepo(refreshResult = AppResult.Success(emptyPage())),
+        ledgerRepo: FakeLedgerRepo = FakeLedgerRepo(refreshResult = AppResult.Success(emptyLedgerPage())),
+    ) = StartTargetSyncUseCase(
+        syncRepo,
+        company,
+        RefreshVouchersUseCase(voucherRepo),
+        RefreshLedgersUseCase(ledgerRepo),
+    )
+
     @Test
     fun `voucher sync success followed by a successful window fetch reports the original success`() = runTest {
         val syncRepo = FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.Vouchers)))
         val voucherRepo = FakeVoucherRepo(refreshResult = AppResult.Success(emptyPage()))
-        val useCase = StartTargetSyncUseCase(syncRepo, FakeCompany("estimation"), RefreshVouchersUseCase(voucherRepo))
-
-        val result = useCase(SyncTarget.Vouchers)
+        val result = useCase(syncRepo, voucherRepo = voucherRepo)(SyncTarget.Vouchers)
 
         assertTrue(result is AppResult.Success)
         assertEquals(SyncTarget.Vouchers, (result as AppResult.Success).value.target)
@@ -78,9 +101,7 @@ class SyncUseCasesTest {
         val voucherRepo = FakeVoucherRepo(
             refreshResult = AppResult.Failure(AppError.Message("Room persistence failed")),
         )
-        val useCase = StartTargetSyncUseCase(syncRepo, FakeCompany("estimation"), RefreshVouchersUseCase(voucherRepo))
-
-        val result = useCase(SyncTarget.Vouchers)
+        val result = useCase(syncRepo, voucherRepo = voucherRepo)(SyncTarget.Vouchers)
 
         assertTrue(result is AppResult.Failure)
         assertEquals(1, voucherRepo.refreshCalls)
@@ -92,38 +113,78 @@ class SyncUseCasesTest {
             AppResult.Failure(AppError.Message("Connector extraction failed")),
         )
         val voucherRepo = FakeVoucherRepo(refreshResult = AppResult.Success(emptyPage()))
-        val useCase = StartTargetSyncUseCase(syncRepo, FakeCompany("estimation"), RefreshVouchersUseCase(voucherRepo))
-
-        val result = useCase(SyncTarget.Vouchers)
+        val result = useCase(syncRepo, voucherRepo = voucherRepo)(SyncTarget.Vouchers)
 
         assertTrue(result is AppResult.Failure)
         assertEquals(0, voucherRepo.refreshCalls)
     }
 
+    /**
+     * TD-039 fix regression test: before this fix, a Ledgers "Sync Now" left Android's Room cache
+     * (`cached_ledgers`) untouched, so Connect's Customer/Supplier population (which reads Room via
+     * `ReconcilePartiesFromLedgersUseCase`) silently stayed stale-or-empty after a "successful"
+     * sync — physically reproduced on a real device.
+     */
     @Test
-    fun `ledger and stock sync never touch the voucher window fetch`() = runTest {
+    fun `ledger sync success is followed by a Room refresh, mirroring the Voucher window fetch`() = runTest {
         val syncRepo = FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.Ledgers)))
+        val ledgerRepo = FakeLedgerRepo(refreshResult = AppResult.Success(emptyLedgerPage()))
         val voucherRepo = FakeVoucherRepo(refreshResult = AppResult.Success(emptyPage()))
-        val useCase = StartTargetSyncUseCase(syncRepo, FakeCompany("estimation"), RefreshVouchersUseCase(voucherRepo))
-
-        val result = useCase(SyncTarget.Ledgers)
+        val result = useCase(syncRepo, voucherRepo = voucherRepo, ledgerRepo = ledgerRepo)(SyncTarget.Ledgers)
 
         assertTrue(result is AppResult.Success)
+        assertEquals(SyncTarget.Ledgers, (result as AppResult.Success).value.target)
+        assertEquals(1, ledgerRepo.refreshCalls)
+        // Ledgers must never also trigger the unrelated Voucher window fetch.
+        assertEquals(0, voucherRepo.refreshCalls)
+    }
+
+    @Test
+    fun `ledger sync success followed by a failed Room refresh is reported as a failure, not Completed`() = runTest {
+        val syncRepo = FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.Ledgers)))
+        val ledgerRepo = FakeLedgerRepo(
+            refreshResult = AppResult.Failure(AppError.Message("Room persistence failed")),
+        )
+        val result = useCase(syncRepo, ledgerRepo = ledgerRepo)(SyncTarget.Ledgers)
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(1, ledgerRepo.refreshCalls)
+    }
+
+    @Test
+    fun `ledger extraction failure never attempts a Room refresh`() = runTest {
+        val syncRepo = FakeSyncRepo(AppResult.Failure(AppError.Message("Connector extraction failed")))
+        val ledgerRepo = FakeLedgerRepo(refreshResult = AppResult.Success(emptyLedgerPage()))
+        val result = useCase(syncRepo, ledgerRepo = ledgerRepo)(SyncTarget.Ledgers)
+
+        assertTrue(result is AppResult.Failure)
+        assertEquals(0, ledgerRepo.refreshCalls)
+    }
+
+    @Test
+    fun `stock item sync touches neither the ledger Room refresh nor the voucher window fetch`() = runTest {
+        val syncRepo = FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.StockItems)))
+        val ledgerRepo = FakeLedgerRepo(refreshResult = AppResult.Success(emptyLedgerPage()))
+        val voucherRepo = FakeVoucherRepo(refreshResult = AppResult.Success(emptyPage()))
+        val result = useCase(syncRepo, voucherRepo = voucherRepo, ledgerRepo = ledgerRepo)(SyncTarget.StockItems)
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(0, ledgerRepo.refreshCalls)
         assertEquals(0, voucherRepo.refreshCalls)
         assertEquals(1, syncRepo.startCalls)
     }
 
     @Test
-    fun `missing company blocks start before touching either repository`() = runTest {
+    fun `missing company blocks start before touching any repository`() = runTest {
         val syncRepo = FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.Vouchers)))
         val voucherRepo = FakeVoucherRepo(refreshResult = AppResult.Success(emptyPage()))
-        val useCase = StartTargetSyncUseCase(syncRepo, FakeCompany(null), RefreshVouchersUseCase(voucherRepo))
-
-        val result = useCase(SyncTarget.Vouchers)
+        val ledgerRepo = FakeLedgerRepo(refreshResult = AppResult.Success(emptyLedgerPage()))
+        val result = useCase(syncRepo, FakeCompany(null), voucherRepo, ledgerRepo)(SyncTarget.Vouchers)
 
         assertTrue(result is AppResult.Failure)
         assertEquals(0, syncRepo.startCalls)
         assertEquals(0, voucherRepo.refreshCalls)
+        assertEquals(0, ledgerRepo.refreshCalls)
     }
 }
 
@@ -155,6 +216,15 @@ private class FakeVoucherRepo(private val refreshResult: AppResult<VoucherPage>)
     override suspend fun refreshVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> =
         error("unused")
     override suspend fun getCachedVoucherSummary(companyId: String, voucherId: String): VoucherSummary? = null
+}
+
+private class FakeLedgerRepo(private val refreshResult: AppResult<LedgerPage>) : LedgerRepository {
+    var refreshCalls = 0
+    override suspend fun listLedgers(query: LedgerQuery): AppResult<LedgerPage> = error("unused")
+    override suspend fun refreshLedgers(query: LedgerQuery): AppResult<LedgerPage> {
+        refreshCalls++
+        return refreshResult
+    }
 }
 
 private class FakeCompany(initial: String?) : CompanySessionPort {

@@ -6,7 +6,11 @@ import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
+import com.budcom.android.feature.masterdata.ledger.domain.repository.LedgerRepository
+import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgersUseCase
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
 import com.budcom.android.feature.party.domain.model.Party
@@ -65,6 +69,7 @@ class SyncViewModelTest {
     private lateinit var connectivity: SyncVmFakeConnectivity
     private lateinit var statusPort: FakeObserveSyncStatus
     private lateinit var voucherRepository: SyncVmFakeVoucherRepository
+    private lateinit var ledgerRepository: SyncVmFakeLedgerRepository
     private lateinit var ledgerSnapshotPort: SyncVmFakeLedgerSnapshotPort
     private lateinit var partyRepository: SyncVmFakePartyRepository
 
@@ -76,6 +81,7 @@ class SyncViewModelTest {
         connectivity = SyncVmFakeConnectivity(true)
         statusPort = FakeObserveSyncStatus()
         voucherRepository = SyncVmFakeVoucherRepository()
+        ledgerRepository = SyncVmFakeLedgerRepository()
         ledgerSnapshotPort = SyncVmFakeLedgerSnapshotPort(
             listOf(
                 Ledger(
@@ -99,7 +105,12 @@ class SyncViewModelTest {
     }
 
     private fun startTargetSync() =
-        StartTargetSyncUseCase(repository, company, RefreshVouchersUseCase(voucherRepository))
+        StartTargetSyncUseCase(
+            repository,
+            company,
+            RefreshVouchersUseCase(voucherRepository),
+            RefreshLedgersUseCase(ledgerRepository),
+        )
 
     private fun createVm() = SyncViewModel(
         refreshOverview = RefreshSyncOverviewUseCase(repository, company),
@@ -209,6 +220,32 @@ class SyncViewModelTest {
         vm.onEvent(SyncEvent.StartTarget(SyncTarget.Ledgers))
         advanceUntilIdle()
         assertEquals(1, partyRepository.reconcileCalls)
+    }
+
+    /**
+     * TD-039 fix: a Ledgers "Sync Now" must refresh Android's own Room cache (via
+     * [StartTargetSyncUseCase]'s `completeLedgerRoomRefresh`), not just the Connector's database --
+     * otherwise Party reconciliation right afterward reads stale-or-absent Room data. Physically
+     * reproduced on a real device before this fix: Connect showed zero customers after a
+     * "successful" Ledgers sync.
+     */
+    @Test
+    fun `ledgers sync success refreshes the ledger Room cache before reconciliation reads it`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(SyncEvent.StartTarget(SyncTarget.Ledgers))
+        advanceUntilIdle()
+        assertEquals(1, ledgerRepository.refreshCalls)
+        assertEquals(SyncPhase.Success, vm.uiState.value.phase)
+    }
+
+    @Test
+    fun `stock item sync success never touches the ledger Room refresh`() = runTest(dispatcher) {
+        val vm = createVm()
+        advanceUntilIdle()
+        vm.onEvent(SyncEvent.StartTarget(SyncTarget.StockItems))
+        advanceUntilIdle()
+        assertEquals(0, ledgerRepository.refreshCalls)
     }
 
     @Test
@@ -325,6 +362,17 @@ private class SyncVmFakeVoucherRepository : VoucherRepository {
     override suspend fun refreshVoucherDetails(companyId: String, voucherId: String): AppResult<VoucherDetails> =
         error("unused")
     override suspend fun getCachedVoucherSummary(companyId: String, voucherId: String): VoucherSummary? = null
+}
+
+private class SyncVmFakeLedgerRepository(private val refreshResult: AppResult<LedgerPage>? = null) : LedgerRepository {
+    var refreshCalls = 0
+    override suspend fun listLedgers(query: LedgerQuery): AppResult<LedgerPage> = error("unused")
+    override suspend fun refreshLedgers(query: LedgerQuery): AppResult<LedgerPage> {
+        refreshCalls++
+        return refreshResult ?: AppResult.Success(
+            LedgerPage(items = emptyList(), page = 1, pageSize = 50, totalItems = 0, totalPages = 1, dataFreshnessAt = null),
+        )
+    }
 }
 
 private class SyncVmFakeConnectivity(initial: Boolean) : NetworkConnectivityObserver {
