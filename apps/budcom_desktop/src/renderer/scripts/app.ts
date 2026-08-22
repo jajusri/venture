@@ -8,6 +8,7 @@ import type {
   LedgerSyncProgressDto,
   LedgerSyncProgressResult,
   LedgerSyncResult,
+  SchedulerStateDto,
   SecurePairingCapability,
   SettingsMutationResult,
   StockItemPageState,
@@ -74,11 +75,13 @@ export interface DesktopBridge {
   cancelLedgerSync(): Promise<LedgerSyncProgressResult>;
   clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
   getLedgerStatistics(): Promise<LedgerStatisticsResult>;
+  getLedgerSyncProgress(): Promise<LedgerSyncProgressResult>;
   getStockItems(payload?: { query?: string; page?: number; pageSize?: number }): Promise<StockItemPageState>;
   syncStockItems(incremental?: boolean): Promise<StockItemSyncResult>;
   cancelStockItemSync(): Promise<StockItemSyncProgressResult>;
   clearStockItemCache(): Promise<{ ok: boolean; message: string }>;
   getStockItemStatistics(): Promise<StockItemStatisticsResult>;
+  getStockItemSyncProgress(): Promise<StockItemSyncProgressResult>;
   getSecurePairingCapability(): Promise<SecurePairingCapability>;
   enableSecurePairing(): Promise<SettingsMutationResult>;
   disableSecurePairing(): Promise<SettingsMutationResult>;
@@ -427,15 +430,39 @@ let dashboardFreshnessEverRendered = false;
  * "only one module has been synced" from "both are up to date" — never claims synchronization
  * happened when it did not, and never fabricates a timestamp neither module actually reports.
  */
+/**
+ * Maps the Connector's internal adaptive-sync stage to the two honest, non-technical phrases the
+ * governing architecture requires ("Checking regularly" / "Checking occasionally") — raw stage
+ * names and minute intervals are deliberately never shown here (see the architecture doc's UX
+ * section). `active_window` is the only "regularly" stage; any backoff stage reads as
+ * "occasionally", with no further distinction between 15/30/60 minutes surfaced to the user.
+ * Returns `null` when there is nothing honest to say yet (no scheduler state for either module,
+ * e.g. an older Connector, or nothing synced yet) — the caller leaves the line blank rather than
+ * guessing.
+ */
+function deriveCheckingFrequencyLabel(
+  ledgerScheduler: SchedulerStateDto | null | undefined,
+  stockItemScheduler: SchedulerStateDto | null | undefined,
+): string | null {
+  const stages = [ledgerScheduler?.stage, stockItemScheduler?.stage].filter(
+    (stage): stage is SchedulerStateDto['stage'] => Boolean(stage),
+  );
+  if (stages.length === 0) return null;
+  return stages.includes('active_window') ? 'Checking regularly' : 'Checking occasionally';
+}
+
 function renderDashboardDataFreshness(
   ledgerStats: LedgerStatisticsResult | null,
   stockItemStats: StockItemStatisticsResult | null,
+  ledgerProgress: LedgerSyncProgressResult | null,
+  stockItemProgress: StockItemSyncProgressResult | null,
 ): void {
   if (!ledgerStats && !stockItemStats) {
     if (!dashboardFreshnessEverRendered) {
       // Genuinely nothing known yet (e.g. still starting up) — say so plainly.
       setText('dashboard-sync', 'Checking…');
       setText('header-sync', 'Checking…');
+      setText('dashboard-checking-frequency', '');
     }
     // Otherwise: a transient failure on both calls — leave the previously-rendered, still-useful
     // freshness summary exactly as it was rather than replacing it with an "unknown" state.
@@ -460,6 +487,12 @@ function renderDashboardDataFreshness(
   setText('dashboard-last-sync', mostRecent ?? 'Never');
   setText('header-sync', label);
   setText('header-last-sync', mostRecent ?? 'Never');
+
+  const checkingFrequency = deriveCheckingFrequencyLabel(
+    ledgerProgress?.schedulerState,
+    stockItemProgress?.schedulerState,
+  );
+  setText('dashboard-checking-frequency', checkingFrequency ?? '');
 }
 
 /**
@@ -512,17 +545,20 @@ export async function refreshDashboardDataFreshness(): Promise<void> {
     setText('dashboard-last-sync', 'Never');
     setText('header-sync', '—');
     setText('header-last-sync', 'Never');
+    setText('dashboard-checking-frequency', '');
     return;
   }
   const bridge = window.budcomDesktop;
-  const [ledgerStats, stockItemStats] = await Promise.all([
+  const [ledgerStats, stockItemStats, ledgerProgress, stockItemProgress] = await Promise.all([
     safeBridgeCall(() => bridge.getLedgerStatistics()),
     safeBridgeCall(() => bridge.getStockItemStatistics()),
+    safeBridgeCall(() => bridge.getLedgerSyncProgress()),
+    safeBridgeCall(() => bridge.getStockItemSyncProgress()),
   ]);
   if (generation !== dashboardFreshnessGeneration) {
     return;
   }
-  renderDashboardDataFreshness(ledgerStats, stockItemStats);
+  renderDashboardDataFreshness(ledgerStats, stockItemStats, ledgerProgress, stockItemProgress);
 }
 
 function setInputValue(id: string, value: string | number | boolean): void {

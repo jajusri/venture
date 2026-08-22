@@ -1034,6 +1034,7 @@ function registerIpcHandlers(): void {
     return result;
   });
   registerIpcHandler('desktop:get-ledger-statistics', async () => ledgerService.getStatistics());
+  registerIpcHandler('desktop:get-ledger-sync-progress', async () => ledgerService.getSyncProgress());
   registerIpcHandler('desktop:clear-ledger-cache', async () => {
     const result = await ledgerService.clearCache();
     notifyRenderer();
@@ -1055,6 +1056,7 @@ function registerIpcHandlers(): void {
     return result;
   });
   registerIpcHandler('desktop:get-stock-item-statistics', async () => stockItemService.getStatistics());
+  registerIpcHandler('desktop:get-stock-item-sync-progress', async () => stockItemService.getSyncProgress());
   registerIpcHandler('desktop:clear-stock-item-cache', async () => {
     const result = await stockItemService.clearCache();
     notifyRenderer();

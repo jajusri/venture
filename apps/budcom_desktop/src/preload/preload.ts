@@ -57,11 +57,13 @@ export interface DesktopBridge {
   cancelLedgerSync(): Promise<LedgerSyncProgressResult>;
   clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
   getLedgerStatistics(): Promise<LedgerStatisticsResult>;
+  getLedgerSyncProgress(): Promise<LedgerSyncProgressResult>;
   getStockItems(payload?: { query?: string; page?: number; pageSize?: number }): Promise<StockItemPageState>;
   syncStockItems(incremental?: boolean): Promise<StockItemSyncResult>;
   cancelStockItemSync(): Promise<StockItemSyncProgressResult>;
   clearStockItemCache(): Promise<{ ok: boolean; message: string }>;
   getStockItemStatistics(): Promise<StockItemStatisticsResult>;
+  getStockItemSyncProgress(): Promise<StockItemSyncProgressResult>;
   getMobileAccessStatus(): Promise<MobileAccessStatus>;
   getSecurePairingCapability(): Promise<SecurePairingCapability>;
   enableSecurePairing(): Promise<SettingsMutationResult>;
@@ -109,11 +111,13 @@ const desktopBridge: DesktopBridge = {
   cancelLedgerSync: () => ipcRenderer.invoke('desktop:cancel-ledger-sync'),
   clearLedgerCache: () => ipcRenderer.invoke('desktop:clear-ledger-cache'),
   getLedgerStatistics: () => ipcRenderer.invoke('desktop:get-ledger-statistics'),
+  getLedgerSyncProgress: () => ipcRenderer.invoke('desktop:get-ledger-sync-progress'),
   getStockItems: (payload) => ipcRenderer.invoke('desktop:get-stock-items', payload),
   syncStockItems: (incremental = false) => ipcRenderer.invoke('desktop:sync-stock-items', { incremental }),
   cancelStockItemSync: () => ipcRenderer.invoke('desktop:cancel-stock-item-sync'),
   clearStockItemCache: () => ipcRenderer.invoke('desktop:clear-stock-item-cache'),
   getStockItemStatistics: () => ipcRenderer.invoke('desktop:get-stock-item-statistics'),
+  getStockItemSyncProgress: () => ipcRenderer.invoke('desktop:get-stock-item-sync-progress'),
   getMobileAccessStatus: () => ipcRenderer.invoke('desktop:get-mobile-access-status'),
   getSecurePairingCapability: () => ipcRenderer.invoke('desktop:get-secure-pairing-capability'),
   enableSecurePairing: () => ipcRenderer.invoke('desktop:enable-secure-pairing'),

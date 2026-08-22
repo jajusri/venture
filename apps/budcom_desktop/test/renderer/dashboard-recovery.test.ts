@@ -33,6 +33,7 @@ const DASHBOARD_MARKUP = `
   <div id="dashboard-last-refresh"></div>
   <div id="dashboard-sync"></div>
   <div id="dashboard-last-sync"></div>
+  <div id="dashboard-checking-frequency"></div>
   <div id="dashboard-version"></div>
   <div id="dashboard-desktop-version"></div>
   <div id="connection-detail-indicator"></div>

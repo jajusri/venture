@@ -461,10 +461,23 @@ export interface StorageStatusDto {
   readonly message: string | null;
 }
 
+/**
+ * The Connector's own adaptive-sync scheduler stage for one resource kind — raw internal state,
+ * never shown to the user directly (see `deriveFreshnessCheckingLabel()` in app.ts, which maps
+ * this to the two honest, non-technical phrases the UI actually displays: "Checking regularly" /
+ * "Checking occasionally"). `null` means the Connector has no scheduler (older Connector version)
+ * or nothing selected yet — the UI must degrade gracefully, not treat this as an error.
+ */
+export interface SchedulerStateDto {
+  readonly stage: 'active_window' | 'backoff_15' | 'backoff_30' | 'backoff_60';
+  readonly nextCheckDueAt: string;
+}
+
 export interface LedgerSyncProgressResult {
   readonly schemaVersion: string;
   readonly progress: LedgerSyncProgressDto;
   readonly storage?: StorageStatusDto;
+  readonly schedulerState?: SchedulerStateDto | null;
 }
 
 export interface LedgerSyncResult {
@@ -527,6 +540,7 @@ export interface StockItemSyncProgressResult {
   readonly schemaVersion: string;
   readonly progress: LedgerSyncProgressDto;
   readonly storage?: StorageStatusDto;
+  readonly schedulerState?: SchedulerStateDto | null;
 }
 
 export interface StockItemSyncResult {

@@ -14,7 +14,14 @@ import {
   setLoading,
   type DesktopView,
 } from '../../src/renderer/scripts/app.js';
-import type { DashboardState, LedgerStatisticsResult, StockItemStatisticsResult } from '../../src/application/types.js';
+import type {
+  DashboardState,
+  LedgerStatisticsResult,
+  LedgerSyncProgressResult,
+  SchedulerStateDto,
+  StockItemStatisticsResult,
+  StockItemSyncProgressResult,
+} from '../../src/application/types.js';
 import { lifecycleStatusFixture, settingsFixture } from '../helpers/lifecycle-fixtures.js';
 
 const sampleState: DashboardState = {
@@ -60,6 +67,7 @@ describe('renderer dashboard', () => {
       <div id="dashboard-last-refresh"></div>
       <div id="dashboard-sync"></div>
       <div id="dashboard-last-sync"></div>
+      <div id="dashboard-checking-frequency"></div>
       <div id="dashboard-version"></div>
       <div id="dashboard-desktop-version"></div>
       <div id="connection-detail-indicator"></div>
@@ -478,6 +486,7 @@ describe('refreshDashboardDataFreshness', () => {
       <div id="dashboard-last-refresh"></div>
       <div id="dashboard-sync"></div>
       <div id="dashboard-last-sync"></div>
+      <div id="dashboard-checking-frequency"></div>
       <div id="dashboard-version"></div>
       <div id="dashboard-desktop-version"></div>
       <div id="connection-detail-reachable"></div>
@@ -504,6 +513,26 @@ describe('refreshDashboardDataFreshness', () => {
   const stockStats = (lastSyncedAt: string | null): StockItemStatisticsResult => ({
     schemaVersion: '1.0.0',
     statistics: { totalStockItems: 3, withBaseUnit: 3, incompleteData: 0, withHsn: 0, withGst: 0, withOpeningBalance: 0, deletedStockItems: 0, lastSyncedAt },
+  });
+  const progressWithScheduler = (
+    schedulerState: SchedulerStateDto | null,
+  ): LedgerSyncProgressResult & StockItemSyncProgressResult => ({
+    schemaVersion: '1.0.0',
+    progress: {
+      status: 'idle',
+      totalExpected: null,
+      startedAt: null,
+      completedAt: null,
+      durationMs: null,
+      itemsProcessed: 0,
+      itemsAdded: 0,
+      itemsUpdated: 0,
+      itemsSkipped: 0,
+      itemsFailed: 0,
+      lastError: null,
+      cancelRequested: false,
+    },
+    schedulerState,
   });
 
   it('reports "Not synced yet" / "Never" when neither module has ever synced', async () => {
@@ -542,6 +571,56 @@ describe('refreshDashboardDataFreshness', () => {
     expect(document.getElementById('dashboard-sync')?.textContent).toBe('Synced');
     expect(document.getElementById('dashboard-last-sync')?.textContent).toBe('2026-08-22T12:30:00.000Z');
     expect(document.getElementById('header-last-sync')?.textContent).toBe('2026-08-22T12:30:00.000Z');
+  });
+
+  it('shows "Checking regularly" when either module is in the scheduler\'s active window', async () => {
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z')),
+      getStockItemStatistics: vi.fn(async () => stockStats('2026-08-22T10:00:00.000Z')),
+      getLedgerSyncProgress: vi.fn(async () =>
+        progressWithScheduler({ stage: 'active_window', nextCheckDueAt: '2026-08-22T10:05:00.000Z' }),
+      ),
+      getStockItemSyncProgress: vi.fn(async () =>
+        progressWithScheduler({ stage: 'backoff_60', nextCheckDueAt: '2026-08-22T11:00:00.000Z' }),
+      ),
+    } as unknown as typeof window.budcomDesktop;
+
+    await refreshDashboardDataFreshness();
+
+    expect(document.getElementById('dashboard-checking-frequency')?.textContent).toBe('Checking regularly');
+    // Raw internal stage names/minute intervals must never leak into this user-facing text.
+    expect(document.getElementById('dashboard-checking-frequency')?.textContent).not.toMatch(/active_window|backoff|minute/i);
+  });
+
+  it('shows "Checking occasionally" when every known module is in some backoff stage', async () => {
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z')),
+      getStockItemStatistics: vi.fn(async () => stockStats('2026-08-22T10:00:00.000Z')),
+      getLedgerSyncProgress: vi.fn(async () =>
+        progressWithScheduler({ stage: 'backoff_15', nextCheckDueAt: '2026-08-22T10:15:00.000Z' }),
+      ),
+      getStockItemSyncProgress: vi.fn(async () =>
+        progressWithScheduler({ stage: 'backoff_30', nextCheckDueAt: '2026-08-22T10:30:00.000Z' }),
+      ),
+    } as unknown as typeof window.budcomDesktop;
+
+    await refreshDashboardDataFreshness();
+
+    expect(document.getElementById('dashboard-checking-frequency')?.textContent).toBe('Checking occasionally');
+  });
+
+  it('leaves the checking-frequency line blank when the bridge/Connector has no scheduler state to report', async () => {
+    window.budcomDesktop = {
+      getLedgerStatistics: vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z')),
+      getStockItemStatistics: vi.fn(async () => stockStats('2026-08-22T10:00:00.000Z')),
+      // Intentionally omit getLedgerSyncProgress/getStockItemSyncProgress -- an older Connector
+      // or bridge shape must degrade gracefully, never show a broken or fabricated label.
+    } as unknown as typeof window.budcomDesktop;
+
+    await refreshDashboardDataFreshness();
+
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('Synced');
+    expect(document.getElementById('dashboard-checking-frequency')?.textContent).toBe('');
   });
 
   it('never fails the dashboard when a statistics call fails or the bridge lacks the method entirely', async () => {
