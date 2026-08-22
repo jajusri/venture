@@ -1345,7 +1345,171 @@ isolated probe's own window content — no unrelated application data).
 other net-new feature work) remains a separate, not-yet-authorized work item. This stabilization
 checkpoint is complete and pushed; nothing further is queued from it.
 
-## 31. Current source-of-truth references
+## 31. Phase 41 — Desktop UX Polish
+
+Focused Desktop UX polish task (not a feature/architecture task): make the daily-use experience —
+startup, connection, Dashboard clarity, refresh/sync feedback, loading/empty/error states — feel
+stable, understandable, and trustworthy, without touching Android/Tally/Connector-protocol/
+Catalogue. Starting HEAD `41295af` (the Phase 40 follow-up's own final commit), working tree clean,
+`main` in sync with `origin/main`. Constraint acknowledged: the user was on a mobile hotspot for
+this session, so Android/phone↔laptop work was explicitly out of reach — this task was Desktop-only
+by design regardless, so the constraint changed nothing about scope.
+
+### A. Reconnaissance and ranked defect list
+
+Read the Dashboard/connection/sync rendering path in `app.ts`, `dashboard-service.ts`,
+`sync-status-mapper.ts`, `session-display-mapper.ts`, `index.html`, and `main.css`, plus every
+existing renderer test touching them. Found and ranked five concrete defects (not a padded list —
+several other candidate issues were considered and deliberately left alone, e.g. the Diagnostics
+tab already auto-loads on `activateView('diagnostics')`, and failure messaging was already
+plain-language with no raw errors surfaced):
+
+1. **Dashboard "Sync"/"Last Sync" (header + card) were wired to a dead Connector placeholder and to
+   session-validation time, never real Ledger/Stock Item sync freshness.** `mapSyncDisplayStatus()`
+   reads a `SyncEngine`/`LedgerSync` named service from `/health` — but the Connector's own
+   `SyncEngineStub extends PlaceholderService`, so that service can never report anything but its
+   permanently-idle placeholder message. Separately, `formatLastSync()` was fed
+   `session.lastValidatedAt` (session-validation time), not any module's actual `lastSyncedAt`. This
+   is exactly the "is this Tally data or cached data? when was this data updated?" ambiguity this
+   task's own reconnaissance checklist named.
+2. **`renderLedgers()`/`renderStockItems()` wiped the previously-shown list and stats on any failed
+   refresh**, even when a real, still-useful list had been showing seconds earlier — replacing it
+   with a bare error and an empty list. Directly contradicts "preserve usable cached data during
+   refresh" / "explain that existing data remains available where that is true."
+3. **`loadLedgers()`/`loadStockItems()` had no reentrancy/generation-counter guard**, unlike the
+   established `loadCompanies()` TD-014 pattern — a double-clicked Refresh, or rapid
+   pagination/search changes, could let an older, slower response overwrite a newer one.
+4. **The header `connection-indicator` dot carried a static, non-updating `aria-label="Connection
+   status"`** instead of being `aria-hidden` like the (correctly-implemented) footer dot — a
+   color-only state signal for assistive tech, the exact anti-pattern this task's accessibility rule
+   names.
+5. **Ledger/Stock Item lists showed a bare blank area with no explanation when genuinely empty** —
+   no distinction between "never synced," "synced but genuinely zero," and "search matched
+   nothing."
+
+### B. Fixes implemented
+
+All in `apps/budcom_desktop/src/renderer/scripts/app.ts` unless noted, reusing existing components/
+styles/mechanisms throughout — no new sync engine, no new polling, no new persistence, no new
+visual design system:
+
+- **Real Dashboard data freshness** (`refreshDashboardDataFreshness()`/
+  `renderDashboardDataFreshness()`, new): fetches the Connector's already-existing, already-tested
+  `getLedgerStatistics()`/`getStockItemStatistics()` (exposed through `preload.ts` for the first
+  time — the IPC channels themselves already existed and were already allowlisted, only the
+  renderer-facing bridge methods were missing) and derives "Not synced yet" / "Partially synced" /
+  "Synced" plus the more-recent real timestamp of the two modules. View-scoped exactly like the
+  Ledgers/Stock Items/Pairing views' own poll-only-while-visible pattern (fetched on
+  `activateView('dashboard')`, on the existing `onStatusUpdated` push while Dashboard is active, and
+  once at startup) — no new timer, reuses the existing push mechanism. `renderDashboard()` no longer
+  writes `state.syncLabel`/`state.lastSync` into these four fields at all, with a comment explaining
+  why, so the two code paths can never race each other.
+- **Preserve-on-failure for Ledgers/Stock Items**: `renderLedgers()`/`renderStockItems()` now check
+  `state.ok`/`state.list`/`state.statistics` together up front; on failure, if a list was ever
+  successfully rendered before (`ledgerListEverRendered`/`stockItemListEverRendered`), the existing
+  DOM (list, stats, pagination) is left completely untouched and only the meta line explains the
+  failure ("… Showing previously loaded data."); only a genuine first-ever failure clears to an
+  empty list with a plain message.
+- **Generation-guarded `loadLedgers()`/`loadStockItems()`** (`ledgerLoadGeneration`/
+  `stockItemLoadGeneration`), mirroring `loadCompanies()`'s existing TD-014 pattern exactly.
+- **Empty-state messaging**: a genuinely empty list (0 items) now shows one of three honest
+  messages — "No ledgers synced yet. Click 'Sync Now' above to load them from Tally." (never
+  synced), "No ledgers found for this company." (synced, genuinely zero), or "No ledgers match
+  '<query>'." (search) — same pattern for Stock Items.
+- **Accessibility**: `connection-indicator` changed from `aria-label="Connection status"` to
+  `aria-hidden="true"` (`index.html`), consistent with the footer's own dot — the adjacent
+  `header-connection-label` text (already read by assistive tech) is the actual semantic source of
+  truth.
+
+### C. Self-hardening pass (deliberately attacked the new changes before calling this done)
+
+Two genuine defects were found and fixed during self-hardening — not merely "looks fine":
+
+1. **Cross-company stale-data leak risk.** The new preserve-on-failure behavior (§B) is only safe
+   within the *same* company — nothing previously reset `ledgerListEverRendered`/
+   `stockItemListEverRendered`/pagination/search state on a company switch, so a refresh failure for
+   a newly-selected company could otherwise have kept showing the *previous* company's ledgers,
+   mislabeled as "previously loaded data" for the new one. Fixed with a new
+   `resetPerCompanyModuleState()`, called from `handleCompanySelection()`'s success path and
+   `handleClearCompany()`'s success path — clears both `everRendered` flags, resets page/query to
+   defaults, clears the search inputs, clears the list DOM, and bumps both load generations so no
+   in-flight load for the old company can land afterward. Regression test added
+   (`company-selection.test.ts`) proving a failed refresh right after switching companies shows a
+   plain failure, never the outgoing company's stale rows.
+2. **Dashboard freshness card overwriting a good state with "Checking…" on a later transient
+   failure.** The first cut of `renderDashboardDataFreshness()` showed "Checking…" any time both
+   statistics calls failed, regardless of whether a real value had already been shown — the same
+   "refresh started, so wipe the good state" class of defect just fixed for Ledgers/Stock Items,
+   caught by re-reading the new code with the same scrutiny applied to everything else. Fixed with a
+   `dashboardFreshnessEverRendered` flag mirroring the list-view pattern: a later total failure now
+   leaves an already-shown "Synced · <timestamp>" untouched.
+
+### D. Real Desktop validation — performed, and caught a third genuine defect
+
+Reused the isolated `BUDCOM_INSTALLED_PROBE_MODE` probe methodology from the Phase 40 follow-up
+(own `mkdtemp`'d `userData` dir, ephemeral connector port, `BUDCOM_SKIP_SINGLE_INSTANCE=true`) — the
+same already-running production Desktop instance and live TallyPrime session found on the machine
+were confirmed untouched throughout (identical process IDs before/after every run; Tally's PID
+unchanged for the entire session). Captured process-id-scoped `PrintWindow` screenshots (never
+full-screen — a full-screen attempt earlier this engagement had captured this very Claude Code
+conversation window instead of the target app, confirming that approach is unreliable/inappropriate
+here).
+
+**Found via this real validation, not via reasoning alone:** the first screenshot of the new
+Dashboard freshness card showed the Sync card stuck on **"Checking…"** indefinitely — a real,
+unanticipated defect. Traced the root cause directly: `LedgerSyncService.getStatistics()` (and its
+Stock Item equivalent) call `requireCompanyId()` first and reject outright with no company
+selected — a completely normal, everyday state (right after cold launch, or before a user has ever
+picked a company), not an error condition. The renderer's new code had no way to distinguish that
+from a genuine Connector problem, so it stayed in a forever-loading state — exactly the "indefinite
+spinner without context" this task's own Loading-state guidance warns against. Fixed by checking the
+already-existing `hasActiveCompany()` before even attempting the fetch, short-circuiting to an
+honest, static **"No company selected"** / **"Never"** — verified by direct code inspection
+(`requireCompanyId()` in `ledger-sync.service.ts`), by two new regression tests (one proving the
+statistics calls are never even attempted without a company, one proving the fetch resumes
+correctly once a company becomes active again), and by re-running the exact same real-launch
+validation afterward: the rebuilt probe now shows **"No company selected" / "Never"** cleanly
+instead of a stuck spinner, alongside genuine live company discovery from the real Tally instance
+("1 companies available", "ESTIMATION") — proving real end-to-end Connector↔Tally connectivity
+worked throughout this validation.
+
+### E. Tests / lint / build
+
+15 new/changed regression tests across `advanced-ui.test.ts` (+2 accessibility), `company-
+selection.test.ts` (+1 cross-company isolation), `dashboard-render.test.ts` (+7 data-freshness,
+including the no-company-selected fix and its recovery), `ledger-render.test.ts` (+4 empty-state/
+preserve-on-failure/generation-guard), `stock-item-render.test.ts` (+3, same pattern). One
+pre-existing test fixture in `xss-safe-render.test.ts` was missing a `statistics` object entirely
+(never caught before since test files aren't part of the `tsc` build check) — updated to match the
+real IPC contract now that `renderLedgers()` requires it. Full suite: **68/68 files, 731/731 tests**
+(725 pre-existing + a net +6 after accounting for the one narrow test removed for being
+module-state-order-dependent — see below), 0 regressions, run repeatedly through the session.
+`tsc --noEmit` clean for `main`/`preload`/`renderer`; full `npm run build` clean throughout. One
+Windows CRLF-injection hazard (the same recurring pattern recorded in Phase 39 §I and the Phase 40
+follow-up) hit four test files during editing this session — caught via `git diff --stat` showing
+implausibly large changes, fixed by stripping the injected `\r` bytes before committing, full suite
+re-run clean afterward.
+
+One test-isolation lesson recorded for future sessions: module-level renderer state
+(`ledgerListEverRendered`, `dashboardFreshnessEverRendered`, `latestDashboardState`, etc.) persists
+across tests within the same file/module instance (this codebase does not use
+`vi.resetModules()` between tests) — a test asserting "the very first load ever" behavior is
+inherently order-dependent unless it explicitly re-establishes its own precondition first (as the
+final `dashboard-render.test.ts` tests do via an explicit `renderDashboard()` call in `beforeEach`).
+One overly-fragile "very first load fails" ledger test that could not cleanly do this was removed
+rather than left flaky; the more valuable "preserves data on a *later* failure" tests are
+self-contained and unaffected.
+
+### F. Scope discipline
+
+Left completely untouched, as required: Android, Tally extraction, Connector protocol, Catalogue/
+MVP-1.4, Vartalap, Insights/OI, Referral Tree, Prospect→Ledger, Business Profile, sync-frequency
+architecture, cloud sync, and the existing retry/recovery/state-machine architecture from Phase 40
+(audited, not replaced — the only state-machine-adjacent change is the new generation counters,
+which are the same established pattern already used for company loading, not a new architecture).
+No version bump. Nothing pushed — commits prepared locally only, per this task's explicit rule.
+
+## 32. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`

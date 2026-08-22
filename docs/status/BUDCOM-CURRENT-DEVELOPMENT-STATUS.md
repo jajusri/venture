@@ -143,6 +143,30 @@ confirmed correct, non-flashing, honestly-stated rendering at both the pre-conne
 states. No defect was found; no further code change was made. Full detail:
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §30-H.
 
+**Phase 41 — Desktop UX Polish (focused polish task, no version bump).** Fixed five real Desktop
+daily-use UX defects: (1) the Dashboard "Sync"/"Last Sync" fields (header + card) were wired to a
+dead Connector placeholder service and to session-validation time, never actual Ledger/Stock Item
+sync freshness — replaced with a real freshness summary sourced from the already-existing
+`getLedgerStatistics()`/`getStockItemStatistics()` endpoints (newly exposed through the preload
+bridge); (2) a failed Ledger/Stock Item refresh wiped the previously-shown list and stats instead of
+preserving them; (3) `loadLedgers()`/`loadStockItems()` had no reentrancy guard against rapid
+repeated Refresh/pagination/search, unlike the established `loadCompanies()` pattern; (4) the header
+connection-indicator dot carried a static, non-updating `aria-label` instead of being `aria-hidden`
+like the footer's correctly-implemented equivalent; (5) empty Ledger/Stock Item lists showed a bare
+blank area with no explanation. A self-hardening pass on the new code itself then caught and fixed
+two more defects (a cross-company stale-data leak risk, and the freshness card overwriting a good
+state with "Checking…" on a later transient failure) before any real validation was attempted.
+**Real Desktop launch validation** (same isolated probe-mode methodology as the Phase 40 follow-up,
+against the same live TallyPrime instance, zero disruption to the already-running production
+instance) then caught a **third** genuine defect the reasoning-only pass had missed: the new
+freshness card got stuck on an indefinite "Checking…" whenever no company was selected, because the
+Connector's statistics endpoints require an active company and reject without one — a completely
+normal, everyday state, not an error. Fixed by checking `hasActiveCompany()` before even attempting
+the fetch; re-validated live afterward showing a clean "No company selected" instead of a stuck
+spinner. Desktop: 731/731 tests (+15 new/changed), `tsc`/build clean throughout. No Android/Tally/
+Connector-protocol/Catalogue scope touched. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`
+§31.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.
