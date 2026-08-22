@@ -113,6 +113,20 @@ was investigation, resolution, decision-lock, and documentation only. Full detai
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §29; `docs/technical-debt/registry.md` TD-035;
 `docs/governance/BUDCOM-PRODUCT-DECISION-LOG.md` PDL-020.
 
+**Phase 40 — Desktop Startup & Connection Stabilization (focused polish/hardening task, no version
+bump).** Fixed two real Desktop launch/connection defects found by direct code audit (not a
+rewrite): (1) `createMainWindow()` used `show: true` alongside a redundant `ready-to-show` handler,
+showing the OS's default blank/white window frame before the renderer's first paint — fixed via
+`show: false` + a themed `backgroundColor` matching `main.css`'s `--bg` token; (2) the renderer's
+`onStatusUpdated` push-listener was registered only after the initial dashboard/company pull
+completed, so a fast lifecycle transition during that pull could be silently dropped and leave the
+UI stuck on a stale state (e.g. "Starting connector…") indefinitely on relaunch with an
+already-selected company — fixed by registering the listener before that pull, relying on
+`refreshUi()`'s existing reentrancy guard rather than any new locking/delay. Desktop: 713/713 tests
+(+2 new regression tests), `tsc`/build clean. No Tally/Connector/Android/Catalogue scope touched; no
+system tray exists in this codebase (confirmed by audit, not assumed). Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §30.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.

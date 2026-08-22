@@ -1155,7 +1155,116 @@ MVP-1.4-A implementation prompt is still the next authorized-scope work item, st
 separate go-ahead; the push and install just performed do not themselves authorize MVP-1.4
 implementation.
 
-## 30. Current source-of-truth references
+## 30. Phase 40 — Desktop Startup & Connection Stabilization
+
+Focused Desktop stabilization task (not a feature/architecture task, per this task's own explicit
+scope lock): audit and harden the launch → initialization → connection → Connected/idle experience
+in `apps/budcom_desktop`. Starting HEAD `0d91eac` (Phase 39's push-confirmation commit), working
+tree clean, `main` 1 commit ahead of `origin/main`.
+
+### A. Reconnaissance (read-only)
+
+Traced the full startup path before changing anything: `main.ts` (`bootstrapApp()` →
+`app.whenReady()` → `createMainWindow()` + fire-and-forget `startConnectorWithRouteResolution()`),
+the connector lifecycle state machine (`connector-lifecycle-service.ts`: `starting` / `connected` /
+`reconnecting` / `disconnected` / `failed`, already covered by extensive existing tests — bind-
+integrity mismatch detection, bounded restart attempts, trusted-LAN eligibility via a separate
+`TrustedLanRebindCoordinator`), the renderer state machine (`app.ts`'s `getDisplayConnectionState()`
+combining that lifecycle state with live `DashboardState` health), and the storage-gate first-run/
+timeout/unavailable screens (`storage-gate.ts`, already hardened by TD-025/TD-033). Confirmed via
+grep that this app has **no system tray implementation at all** — Section 11 of the governing task
+(tray/window consistency) is not applicable to this codebase. Confirmed `lifecycle-error-mapper.ts`
+already produces plain-language failure messages with no raw stack traces reaching the primary UX,
+and no caller ever passes the raw-`detail` override path. This is a mature, already well-tested
+state machine (TD-014/TD-025/TD-033 hardening visible throughout) — the task was to find the actual
+remaining defects, not to rebuild what already works.
+
+### B. Root cause 1 — blank/white window flash at cold launch
+
+`createMainWindow()` (`src/main/main.ts`) constructed the `BrowserWindow` with `show: true` while
+*also* wiring a `ready-to-show → window.show()` handler — redundant, and the redundancy was the tell:
+with `show: true`, Electron displays the OS's default blank/white frame immediately at window
+creation, before `loadFile()` + CSS + the renderer's first paint complete, which is exactly the
+"first screen is not stable" / "blank screens" symptom this task was scoped to fix. Fixed by setting
+`show: false` (so the pre-existing `ready-to-show` handler is now the only thing that reveals the
+window, once real content has painted) and adding `backgroundColor: '#0b1428'`, matching the
+renderer's own `--bg` theme token (`main.css`), so even the hidden initial frame is the app's real
+dark theme rather than white if ever glimpsed (e.g. via the OS task switcher) before `ready-to-show`
+fires.
+
+### C. Root cause 2 — dropped lifecycle push during initial renderer load
+
+In `startDesktopShell()` (`src/renderer/scripts/app.ts`), the `window.budcomDesktop.onStatusUpdated`
+push-listener was registered **after** the initial `refreshUi()` + `loadCompanies()` pull completed.
+A fast main-process lifecycle transition (e.g. a connector reaching `'connected'` within the same
+window as the very first render — realistic for local-only mode with an already-warm connector) could
+push its `desktop:status-updated` event before any listener existed to receive it, silently dropping
+it. Tab navigation never re-polls, and if the session already had an active company selected (the
+common case on relaunch), TD-014's bounded-recovery loop is satisfied on unrelated criteria
+(`isDashboardHealthy()` only checks `connectorReachable`/`sessionStatus`, not the renderer's own
+`lifecycleStatus` mirror) and never retries — so nothing else would ever re-poll, and the renderer
+could stay stuck showing a stale state (e.g. "Starting connector…", overriding an otherwise-correct
+"Connected" dashboard read via `getDisplayConnectionState()`'s late `lifecycleStatus === 'starting'`
+override) indefinitely. Fixed by moving the `onStatusUpdated` registration to before the initial
+`refreshUi()`/`loadCompanies()` pull (but still after the blocking storage-gate resolution, so a push
+arriving mid-storage-gate can never race a second concurrent `renderStorageGate()` invocation). A push
+arriving during the initial pull now simply coalesces into it via `refreshUi()`'s own pre-existing
+`trailingRefreshQueued` reentrancy guard — no new locking, no delay-based workaround, matching this
+task's explicit "fix the underlying cause, not `setTimeout()`" rule.
+
+### D. Tests added
+
+- `test/unit/main-window.test.ts` — new case asserting `BrowserWindow` is constructed with
+  `show: false` and `backgroundColor: '#0b1428'`, and that the mocked `ready-to-show` handler still
+  reveals it (regression guard against the window being left permanently hidden).
+- `test/renderer/dashboard-recovery.test.ts` — new case simulating a `desktop:status-updated` push
+  firing as a side effect of the very first `getLifecycleStatus()` call (i.e. while the initial
+  startup pull is still in flight): asserts the push is not dropped (`getLifecycleStatus` is called
+  again) and the renderer converges on "Connected" rather than staying stuck on the stale
+  `'starting'` snapshot — proving the exact race in §C is closed.
+- One pre-existing Windows CRLF-injection hazard (recorded as a recurring pattern in Phase 39 §I too)
+  hit `main-window.test.ts` specifically during editing — caught via `git diff --stat` showing the
+  whole file rewritten, fixed by stripping the injected `\r` bytes before committing; re-verified the
+  cleaned diff is minimal and the tests still pass.
+
+### E. Full regression / build
+
+Connector untouched (zero files changed there). Desktop: **68/68 test files, 713/713 tests passing**
+(711 pre-existing + 2 new, 0 regressions); `tsc --noEmit` clean for the `main`/`preload`/`renderer`
+TypeScript projects; full production `npm run build` (main + preload + renderer + asset copy +
+build-info) clean. Android untouched (out of scope, not touched).
+
+### F. Real Desktop launch validation — attempted, environment-limited
+
+Attempted a live cold-launch validation (`node_modules/electron/dist/electron.exe .` against the dev
+build) per this task's own request. Two genuine environment constraints, honestly recorded rather
+than worked around with a fabricated result: (1) this session has no attached interactive Windows
+desktop/display — a direct screen-capture attempt (`System.Drawing.Graphics.CopyFromScreen`) failed
+with "the handle is invalid", so no screenshot could be taken even had the window opened; (2) this
+machine already has a **separate, pre-existing, currently-running installed instance** of
+`Budcom Desktop.exe` (`C:\Program Files\Budcom Desktop\`, PID 7000 + GPU/utility/renderer children),
+using the same `userData` directory (`%APPDATA%\@budcom\desktop`) the dev build would use — the dev
+launch attempt (PID 9916) almost certainly hit `requestDesktopSingleInstance()`'s existing "already
+running, quit immediately" path and exited cleanly on its own; this is correct designed behavior, not
+a bug, and that pre-existing instance was deliberately left completely undisturbed (not
+inspected further, not restarted, not killed) since it is not this session's to manage. Confirmed no
+stray process was left behind by the attempt (`tasklist` clean for `electron.exe` afterward). The
+window-chrome/first-paint fix (§B) is therefore verified at the code + automated-test level only
+(dedicated `show`/`backgroundColor`/`ready-to-show` regression test in §D) — not by direct visual
+observation. This limitation is stated explicitly per this task's own instruction rather than
+claiming a visual confirmation that did not happen.
+
+### G. Scope discipline
+
+Left completely untouched, as required: Android, Catalogue/MVP-1.4, Connector protocol/API contracts,
+Tally synchronization architecture, tray behavior (none exists), the Connector LAN-binding fix, and
+the existing IPC channel allowlist/contract. No version bump — per this task's own Section 17 and the
+repository's own established pattern (visible throughout this ledger: several `fix(desktop)` commits
+accumulate before a single later `chore: bump desktop X->Y` commit bundles them into a named release
+candidate), a version bump was deliberately deferred rather than performed opportunistically here.
+Nothing pushed — commits prepared locally only, per this task's explicit push rule.
+
+## 31. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`
