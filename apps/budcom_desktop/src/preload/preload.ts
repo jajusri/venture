@@ -14,11 +14,13 @@ import type {
   DiagnosticsSnapshot,
   HealthCheckResult,
   LedgerPageState,
+  LedgerStatisticsResult,
   LedgerSyncProgressResult,
   LedgerSyncResult,
   SecurePairingCapability,
   SettingsMutationResult,
   StockItemPageState,
+  StockItemStatisticsResult,
   StockItemSyncProgressResult,
   StockItemSyncResult,
   LogEntry,
@@ -54,10 +56,12 @@ export interface DesktopBridge {
   syncLedgers(incremental?: boolean): Promise<LedgerSyncResult>;
   cancelLedgerSync(): Promise<LedgerSyncProgressResult>;
   clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
+  getLedgerStatistics(): Promise<LedgerStatisticsResult>;
   getStockItems(payload?: { query?: string; page?: number; pageSize?: number }): Promise<StockItemPageState>;
   syncStockItems(incremental?: boolean): Promise<StockItemSyncResult>;
   cancelStockItemSync(): Promise<StockItemSyncProgressResult>;
   clearStockItemCache(): Promise<{ ok: boolean; message: string }>;
+  getStockItemStatistics(): Promise<StockItemStatisticsResult>;
   getMobileAccessStatus(): Promise<MobileAccessStatus>;
   getSecurePairingCapability(): Promise<SecurePairingCapability>;
   enableSecurePairing(): Promise<SettingsMutationResult>;
@@ -104,10 +108,12 @@ const desktopBridge: DesktopBridge = {
   syncLedgers: (incremental = false) => ipcRenderer.invoke('desktop:sync-ledgers', { incremental }),
   cancelLedgerSync: () => ipcRenderer.invoke('desktop:cancel-ledger-sync'),
   clearLedgerCache: () => ipcRenderer.invoke('desktop:clear-ledger-cache'),
+  getLedgerStatistics: () => ipcRenderer.invoke('desktop:get-ledger-statistics'),
   getStockItems: (payload) => ipcRenderer.invoke('desktop:get-stock-items', payload),
   syncStockItems: (incremental = false) => ipcRenderer.invoke('desktop:sync-stock-items', { incremental }),
   cancelStockItemSync: () => ipcRenderer.invoke('desktop:cancel-stock-item-sync'),
   clearStockItemCache: () => ipcRenderer.invoke('desktop:clear-stock-item-cache'),
+  getStockItemStatistics: () => ipcRenderer.invoke('desktop:get-stock-item-statistics'),
   getMobileAccessStatus: () => ipcRenderer.invoke('desktop:get-mobile-access-status'),
   getSecurePairingCapability: () => ipcRenderer.invoke('desktop:get-secure-pairing-capability'),
   enableSecurePairing: () => ipcRenderer.invoke('desktop:enable-secure-pairing'),

@@ -4,12 +4,14 @@ import type {
   DashboardState,
   DiagnosticsSnapshot,
   LedgerPageState,
+  LedgerStatisticsResult,
   LedgerSyncProgressDto,
   LedgerSyncProgressResult,
   LedgerSyncResult,
   SecurePairingCapability,
   SettingsMutationResult,
   StockItemPageState,
+  StockItemStatisticsResult,
   StockItemSyncProgressResult,
   StockItemSyncResult,
   LogEntry,
@@ -71,10 +73,12 @@ export interface DesktopBridge {
   syncLedgers(incremental?: boolean): Promise<LedgerSyncResult>;
   cancelLedgerSync(): Promise<LedgerSyncProgressResult>;
   clearLedgerCache(): Promise<{ ok: boolean; message: string }>;
+  getLedgerStatistics(): Promise<LedgerStatisticsResult>;
   getStockItems(payload?: { query?: string; page?: number; pageSize?: number }): Promise<StockItemPageState>;
   syncStockItems(incremental?: boolean): Promise<StockItemSyncResult>;
   cancelStockItemSync(): Promise<StockItemSyncProgressResult>;
   clearStockItemCache(): Promise<{ ok: boolean; message: string }>;
+  getStockItemStatistics(): Promise<StockItemStatisticsResult>;
   getSecurePairingCapability(): Promise<SecurePairingCapability>;
   enableSecurePairing(): Promise<SettingsMutationResult>;
   disableSecurePairing(): Promise<SettingsMutationResult>;
@@ -151,6 +155,17 @@ let stockItemProgressPollActive = false;
 let stockItemProgressPollTimer: number | null = null;
 let stockItemProgressRequestInFlight = false;
 let stockItemSyncActionInFlight = false;
+// Mirrors companyLoadGeneration (TD-014): guards loadLedgers()/loadStockItems() against an
+// older, slower call (a stale poll tick, a rapid double-click on Refresh/pagination/search)
+// overwriting a newer one's already-rendered result.
+let ledgerLoadGeneration = 0;
+let stockItemLoadGeneration = 0;
+// Tracks whether a list was ever successfully rendered, so a later failed refresh can preserve
+// the previously-shown (still potentially useful) data instead of blanking it — see renderLedgers/
+// renderStockItems: a transient refresh failure must not look identical to "there is no data".
+let ledgerListEverRendered = false;
+let stockItemListEverRendered = false;
+let dashboardFreshnessGeneration = 0;
 
 // TD-014: bounded automatic recovery for a transient dashboard/company failure that leaves no
 // further ConnectorLifecycleService state transition to hang a re-check off of. Never a
@@ -360,8 +375,13 @@ export function renderDashboard(
   setText('header-version', state.connectorVersion);
   const companyName = state.companyName !== '—' ? state.companyName : 'No company selected';
   setText('header-company', companyName);
-  setText('header-sync', state.syncLabel);
-  setText('header-last-sync', state.lastSync);
+  // header-sync/header-last-sync and dashboard-sync/dashboard-last-sync are deliberately NOT set
+  // from state.syncLabel/state.lastSync here — those fields reflect the Connector's own internal
+  // SyncEngine placeholder and session-validation time, neither of which is actual Ledger/Stock
+  // Item data-sync freshness (see refreshDashboardDataFreshness(), which owns these four fields
+  // exclusively with the real, per-module last-synced timestamps already tracked elsewhere in the
+  // app). Conflating "session was last checked" with "data was last synced" is exactly the kind of
+  // ambiguity ("is this Tally data or cached data? when was this data updated?") this must avoid.
 
   setText('dashboard-health', `Health: ${state.healthStatus}`);
   setText('dashboard-company-name', companyName);
@@ -369,8 +389,6 @@ export function renderDashboard(
   if (options.includeRefreshTimestamp ?? true) {
     setText('dashboard-last-refresh', state.lastRefresh);
   }
-  setText('dashboard-sync', state.syncLabel);
-  setText('dashboard-last-sync', state.lastSync);
   setText('dashboard-version', state.connectorVersion);
   setText('dashboard-desktop-version', state.desktopVersion);
 
@@ -388,6 +406,116 @@ export function renderDashboard(
       setBanner(null);
     }
   }
+}
+
+function mostRecentTimestamp(a: string | null | undefined, b: string | null | undefined): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b;
+}
+
+// Tracks whether this has ever successfully rendered real data — mirrors ledgerListEverRendered/
+// stockItemListEverRendered: a later transient failure (both calls fail, e.g. a brief Connector
+// hiccup) must leave an already-shown "Synced · <timestamp>" exactly as it was, never overwrite it
+// with "Checking…" — that would be the same "refresh started, so blank the useful state" defect
+// fixed elsewhere for the Ledgers/Stock Items lists.
+let dashboardFreshnessEverRendered = false;
+
+/**
+ * Renders genuine Ledger/Stock Item data-sync freshness into the four fields renderDashboard()
+ * deliberately leaves alone (see its comment). Distinguishes "data has never been synced" from
+ * "only one module has been synced" from "both are up to date" — never claims synchronization
+ * happened when it did not, and never fabricates a timestamp neither module actually reports.
+ */
+function renderDashboardDataFreshness(
+  ledgerStats: LedgerStatisticsResult | null,
+  stockItemStats: StockItemStatisticsResult | null,
+): void {
+  if (!ledgerStats && !stockItemStats) {
+    if (!dashboardFreshnessEverRendered) {
+      // Genuinely nothing known yet (e.g. still starting up) — say so plainly.
+      setText('dashboard-sync', 'Checking…');
+      setText('header-sync', 'Checking…');
+    }
+    // Otherwise: a transient failure on both calls — leave the previously-rendered, still-useful
+    // freshness summary exactly as it was rather than replacing it with an "unknown" state.
+    return;
+  }
+
+  dashboardFreshnessEverRendered = true;
+  const ledgerLast = ledgerStats?.statistics.lastSyncedAt ?? null;
+  const stockLast = stockItemStats?.statistics.lastSyncedAt ?? null;
+  const mostRecent = mostRecentTimestamp(ledgerLast, stockLast);
+
+  let label: string;
+  if (!ledgerLast && !stockLast) {
+    label = 'Not synced yet';
+  } else if (!ledgerLast || !stockLast) {
+    label = 'Partially synced';
+  } else {
+    label = 'Synced';
+  }
+
+  setText('dashboard-sync', label);
+  setText('dashboard-last-sync', mostRecent ?? 'Never');
+  setText('header-sync', label);
+  setText('header-last-sync', mostRecent ?? 'Never');
+}
+
+/**
+ * Calling an IPC bridge method that a caller's mock/older bridge shape doesn't define throws
+ * synchronously (TypeError: not a function) — before any Promise machinery exists to catch it via
+ * .catch()/allSettled(). Wrapping the call itself in try/catch (not just awaiting it) converts
+ * both that synchronous-throw case and an ordinary async rejection into the same safe `null`.
+ */
+async function safeBridgeCall<T>(call: () => Promise<T>): Promise<T | null> {
+  try {
+    return await call();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort, view-scoped (only fetched while the Dashboard is the active view — see
+ * activateView() and the onStatusUpdated handler in startDesktopShell(), matching the same
+ * "poll/fetch only while the relevant view is visible" pattern the Ledgers/Stock Items/Pairing
+ * views already use) refresh of real data-sync freshness. Generation-guarded so an older, slower
+ * call can never overwrite a newer one's result. A failure on either call leaves that module's
+ * half of the summary as "unknown" rather than throwing or blocking the rest of the dashboard —
+ * this is deliberately independent of refreshUi()'s own Promise.all so a Ledger/Stock Item
+ * statistics hiccup can never delay or fail the primary connection/session dashboard refresh.
+ *
+ * Real-Desktop validation (against a live Tally instance) caught a genuine defect here: the
+ * Connector's statistics endpoints require an active company selection and reject outright without
+ * one (LedgerSyncService.getStatistics() calls requireCompanyId() first) — a completely normal,
+ * everyday state (right after cold launch, or before the user has picked a company at all), not an
+ * error. Without this check, that state showed an indefinite "Checking…" that could never resolve —
+ * exactly the "indefinite spinner with no context" this app must avoid. No company selected is
+ * therefore handled explicitly, without even attempting the doomed-to-fail fetch.
+ */
+export async function refreshDashboardDataFreshness(): Promise<void> {
+  const generation = ++dashboardFreshnessGeneration;
+  if (!hasActiveCompany()) {
+    if (generation !== dashboardFreshnessGeneration) {
+      return;
+    }
+    dashboardFreshnessEverRendered = false;
+    setText('dashboard-sync', 'No company selected');
+    setText('dashboard-last-sync', 'Never');
+    setText('header-sync', 'No company selected');
+    setText('header-last-sync', 'Never');
+    return;
+  }
+  const bridge = window.budcomDesktop;
+  const [ledgerStats, stockItemStats] = await Promise.all([
+    safeBridgeCall(() => bridge.getLedgerStatistics()),
+    safeBridgeCall(() => bridge.getStockItemStatistics()),
+  ]);
+  if (generation !== dashboardFreshnessGeneration) {
+    return;
+  }
+  renderDashboardDataFreshness(ledgerStats, stockItemStats);
 }
 
 function setInputValue(id: string, value: string | number | boolean): void {
@@ -687,6 +815,9 @@ export function activateView(view: DesktopView): void {
   document.getElementById(`view-${view}`)?.classList.add('active');
   document.querySelector(`.nav-btn[data-view="${view}"]`)?.classList.add('active');
 
+  if (view === 'dashboard') {
+    void refreshDashboardDataFreshness();
+  }
   if (view === 'diagnostics') {
     void refreshDiagnostics();
   }
@@ -899,6 +1030,34 @@ export function reconcileBoundedRecovery(): void {
   scheduleDashboardRecoveryAttempt(generation, 0);
 }
 
+/**
+ * Self-hardening finding: renderLedgers()/renderStockItems() now preserve previously-rendered
+ * data across a failed refresh (see their own doc comments) — genuinely useful for "the same
+ * company's data, momentarily stale", but dangerous if left unreset across a company switch: a
+ * refresh failure for the NEWLY selected company could otherwise silently keep showing the
+ * PREVIOUS company's ledgers/stock items, mislabeled as "previously loaded data" for the current
+ * one. Bump both load generations too, so any in-flight load for the old company can never land
+ * after this point and repopulate the now-stale everRendered flags.
+ */
+function resetPerCompanyModuleState(): void {
+  ledgerListEverRendered = false;
+  stockItemListEverRendered = false;
+  ledgerPage = 1;
+  stockItemPage = 1;
+  ledgerQuery = '';
+  stockItemQuery = '';
+  ledgerLoadGeneration += 1;
+  stockItemLoadGeneration += 1;
+  const ledgerSearchInput = document.getElementById('ledger-search-input') as HTMLInputElement | null;
+  if (ledgerSearchInput) ledgerSearchInput.value = '';
+  const stockItemSearchInput = document.getElementById('stock-item-search-input') as HTMLInputElement | null;
+  if (stockItemSearchInput) stockItemSearchInput.value = '';
+  const ledgerList = document.getElementById('ledger-list');
+  if (ledgerList) clearElement(ledgerList);
+  const stockItemList = document.getElementById('stock-item-list');
+  if (stockItemList) clearElement(stockItemList);
+}
+
 export async function handleCompanySelection(companyId: string): Promise<void> {
   if (companySelectionInFlight) {
     return;
@@ -930,6 +1089,7 @@ export async function handleCompanySelection(companyId: string): Promise<void> {
         (button) => button.dataset.companyId === companyId,
       )?.textContent?.trim();
       confirmedCompanyName = selectedCompany || null;
+      resetPerCompanyModuleState();
       if (latestDashboardState) {
         latestDashboardState = {
           ...latestDashboardState,
@@ -963,6 +1123,7 @@ export async function handleClearCompany(): Promise<void> {
   setLoading({ selecting: true });
   try {
     await window.budcomDesktop.clearCompany();
+    resetPerCompanyModuleState();
     await refreshUi({ showLoading: false });
     await loadCompanies();
     setText('company-list-status', 'Company selection cleared.');
@@ -1301,12 +1462,31 @@ function formatSyncStatusLabel(status: string | undefined): string {
 }
 
 export function renderLedgers(state: LedgerPageState): void {
-  const stats = state.statistics?.statistics;
+  const list = document.getElementById('ledger-list');
+  const meta = document.getElementById('ledger-list-meta');
+
+  // A failed refresh must not look identical to "there is no data" (§9/§12): once a real list has
+  // been shown at least once, preserve every previously-rendered field (stats, progress, list,
+  // pagination) exactly as-is and only surface the failure as an explanatory message — never wipe
+  // usable cached data just because the latest refresh attempt failed.
+  if (!state.ok || !state.list || !state.statistics) {
+    if (meta) {
+      meta.textContent = ledgerListEverRendered
+        ? `${state.userMessage ?? 'Unable to refresh ledgers.'} Showing previously loaded data.`
+        : (state.userMessage ?? 'Unable to load ledgers.');
+    }
+    if (!ledgerListEverRendered) {
+      list && clearElement(list);
+    }
+    return;
+  }
+
+  const stats = state.statistics.statistics;
   const syncStatus = state.progress?.progress.status;
-  setText('ledger-stat-total', stats ? String(stats.totalLedgers) : '—');
-  setText('ledger-stat-active', stats ? String(stats.activeLedgers) : '—');
-  setText('ledger-stat-gst', stats ? String(stats.withGst) : '—');
-  setText('ledger-stat-last-sync', stats?.lastSyncedAt ?? 'Never');
+  setText('ledger-stat-total', String(stats.totalLedgers));
+  setText('ledger-stat-active', String(stats.activeLedgers));
+  setText('ledger-stat-gst', String(stats.withGst));
+  setText('ledger-stat-last-sync', stats.lastSyncedAt ?? 'Never');
   setText('ledger-sync-status', formatSyncStatusLabel(syncStatus));
   setText(
     'ledger-sync-duration',
@@ -1320,7 +1500,7 @@ export function renderLedgers(state: LedgerPageState): void {
   );
   setText('ledger-migration-status', state.storage?.migrationStatus ?? state.progress?.progress.migrationStatus ?? '—');
   if (state.progress) {
-    renderModuleSyncProgress('ledger', state.progress.progress, stats?.lastSyncedAt ?? null);
+    renderModuleSyncProgress('ledger', state.progress.progress, stats.lastSyncedAt ?? null);
   }
 
   const cancelButton = document.getElementById('btn-cancel-ledger-sync');
@@ -1331,34 +1511,45 @@ export function renderLedgers(state: LedgerPageState): void {
     startLedgerProgressPolling();
   }
 
-  const list = document.getElementById('ledger-list');
-  const meta = document.getElementById('ledger-list-meta');
   if (!list || !meta) {
     return;
   }
 
-  if (!state.ok || !state.list) {
-    meta.textContent = state.userMessage ?? 'Unable to load ledgers.';
-    clearElement(list);
-    return;
-  }
-
-  meta.textContent = `${state.list.pagination.totalItems} ledgers · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
+  ledgerListEverRendered = true;
   clearElement(list);
-  for (const ledger of state.list.items) {
-    const row = document.createElement('div');
-    row.className = 'ledger-row';
-    row.setAttribute('role', 'row');
-    appendTextElement(row, 'div', 'ledger-name', ledger.name).setAttribute('role', 'cell');
-    appendTextElement(row, 'div', 'ledger-meta', ledger.parentGroup ?? '—').setAttribute('role', 'cell');
-    appendTextElement(row, 'div', 'ledger-meta', ledger.status).setAttribute('role', 'cell');
-    list.appendChild(row);
+  if (state.list.items.length === 0) {
+    meta.textContent = `0 ledgers · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = ledgerQuery
+      ? `No ledgers match "${ledgerQuery}".`
+      : (stats.lastSyncedAt
+        ? 'No ledgers found for this company.'
+        : 'No ledgers synced yet. Click "Sync Now" above to load them from Tally.');
+    list.appendChild(empty);
+  } else {
+    meta.textContent = `${state.list.pagination.totalItems} ledgers · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
+    for (const ledger of state.list.items) {
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      row.setAttribute('role', 'row');
+      appendTextElement(row, 'div', 'ledger-name', ledger.name).setAttribute('role', 'cell');
+      appendTextElement(row, 'div', 'ledger-meta', ledger.parentGroup ?? '—').setAttribute('role', 'cell');
+      appendTextElement(row, 'div', 'ledger-meta', ledger.status).setAttribute('role', 'cell');
+      list.appendChild(row);
+    }
   }
 
   setText('ledger-page-label', `Page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`);
 }
 
+/**
+ * Generation-guarded (mirrors loadCompanies()/TD-014): rapid repeated triggers of this same
+ * function — a double-clicked Refresh, quick successive pagination/search changes — must never
+ * let an older, slower response overwrite a newer, already-rendered one.
+ */
 export async function loadLedgers(options: { readonly showLoading?: boolean } = {}): Promise<void> {
+  const generation = ++ledgerLoadGeneration;
   const showLoading = options.showLoading ?? true;
   if (showLoading) {
     setLoading({ ledgers: true });
@@ -1369,14 +1560,20 @@ export async function loadLedgers(options: { readonly showLoading?: boolean } = 
       page: ledgerPage,
       pageSize: ledgerPageSize,
     });
+    if (generation !== ledgerLoadGeneration) {
+      return;
+    }
     renderLedgers(state);
     if (state.userMessage) {
       setBanner(state.userMessage, 'warning');
     }
   } catch {
+    if (generation !== ledgerLoadGeneration) {
+      return;
+    }
     setBanner('Unable to load ledgers.', 'error');
   } finally {
-    if (showLoading) {
+    if (generation === ledgerLoadGeneration && showLoading) {
       setLoading({ ledgers: false });
     }
   }
@@ -1517,12 +1714,29 @@ export function bindLedgerActions(): void {
 }
 
 export function renderStockItems(state: StockItemPageState): void {
-  const stats = state.statistics?.statistics;
+  const list = document.getElementById('stock-item-list');
+  const meta = document.getElementById('stock-item-list-meta');
+
+  // See renderLedgers' matching comment: a failed refresh must not look identical to "there is no
+  // data" — preserve previously-shown data and surface the failure as an explanatory message.
+  if (!state.ok || !state.list || !state.statistics) {
+    if (meta) {
+      meta.textContent = stockItemListEverRendered
+        ? `${state.userMessage ?? 'Unable to refresh stock items.'} Showing previously loaded data.`
+        : (state.userMessage ?? 'Unable to load stock items.');
+    }
+    if (!stockItemListEverRendered) {
+      list && clearElement(list);
+    }
+    return;
+  }
+
+  const stats = state.statistics.statistics;
   const syncStatus = state.progress?.progress.status;
-  setText('stock-item-stat-total', stats ? String(stats.totalStockItems) : '—');
-  setText('stock-item-stat-unit', stats ? String(stats.withBaseUnit) : '—');
-  setText('stock-item-stat-incomplete', stats ? String(stats.incompleteData) : '—');
-  setText('stock-item-stat-last-sync', stats?.lastSyncedAt ?? 'Never');
+  setText('stock-item-stat-total', String(stats.totalStockItems));
+  setText('stock-item-stat-unit', String(stats.withBaseUnit));
+  setText('stock-item-stat-incomplete', String(stats.incompleteData));
+  setText('stock-item-stat-last-sync', stats.lastSyncedAt ?? 'Never');
   setText('stock-item-sync-status', formatSyncStatusLabel(syncStatus));
   setText(
     'stock-item-sync-duration',
@@ -1539,7 +1753,7 @@ export function renderStockItems(state: StockItemPageState): void {
     state.storage?.migrationStatus ?? state.progress?.progress.migrationStatus ?? '—',
   );
   if (state.progress) {
-    renderModuleSyncProgress('stock-item', state.progress.progress, stats?.lastSyncedAt ?? null);
+    renderModuleSyncProgress('stock-item', state.progress.progress, stats.lastSyncedAt ?? null);
   }
 
   const cancelButton = document.getElementById('btn-cancel-stock-item-sync');
@@ -1550,34 +1764,41 @@ export function renderStockItems(state: StockItemPageState): void {
     startStockItemProgressPolling();
   }
 
-  const list = document.getElementById('stock-item-list');
-  const meta = document.getElementById('stock-item-list-meta');
   if (!list || !meta) {
     return;
   }
 
-  if (!state.ok || !state.list) {
-    meta.textContent = state.userMessage ?? 'Unable to load stock items.';
-    clearElement(list);
-    return;
-  }
-
-  meta.textContent = `${state.list.pagination.totalItems} stock items · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
+  stockItemListEverRendered = true;
   clearElement(list);
-  for (const item of state.list.items) {
-    const row = document.createElement('div');
-    row.className = 'ledger-row';
-    row.setAttribute('role', 'row');
-    appendTextElement(row, 'div', 'ledger-name', item.name).setAttribute('role', 'cell');
-    appendTextElement(row, 'div', 'ledger-meta', item.parentGroup ?? '—').setAttribute('role', 'cell');
-    appendTextElement(row, 'div', 'ledger-meta', item.baseUnit ?? item.dataQuality).setAttribute('role', 'cell');
-    list.appendChild(row);
+  if (state.list.items.length === 0) {
+    meta.textContent = `0 stock items · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = stockItemQuery
+      ? `No stock items match "${stockItemQuery}".`
+      : (stats.lastSyncedAt
+        ? 'No stock items found for this company.'
+        : 'No stock items synced yet. Click "Sync Now" above to load them from Tally.');
+    list.appendChild(empty);
+  } else {
+    meta.textContent = `${state.list.pagination.totalItems} stock items · page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`;
+    for (const item of state.list.items) {
+      const row = document.createElement('div');
+      row.className = 'ledger-row';
+      row.setAttribute('role', 'row');
+      appendTextElement(row, 'div', 'ledger-name', item.name).setAttribute('role', 'cell');
+      appendTextElement(row, 'div', 'ledger-meta', item.parentGroup ?? '—').setAttribute('role', 'cell');
+      appendTextElement(row, 'div', 'ledger-meta', item.baseUnit ?? item.dataQuality).setAttribute('role', 'cell');
+      list.appendChild(row);
+    }
   }
 
   setText('stock-item-page-label', `Page ${state.list.pagination.page} of ${state.list.pagination.totalPages}`);
 }
 
+/** Generation-guarded — see loadLedgers()'s matching doc comment. */
 export async function loadStockItems(options: { readonly showLoading?: boolean } = {}): Promise<void> {
+  const generation = ++stockItemLoadGeneration;
   const showLoading = options.showLoading ?? true;
   if (showLoading) {
     setLoading({ stockItems: true });
@@ -1588,14 +1809,20 @@ export async function loadStockItems(options: { readonly showLoading?: boolean }
       page: stockItemPage,
       pageSize: stockItemPageSize,
     });
+    if (generation !== stockItemLoadGeneration) {
+      return;
+    }
     renderStockItems(state);
     if (state.userMessage) {
       setBanner(state.userMessage, 'warning');
     }
   } catch {
+    if (generation !== stockItemLoadGeneration) {
+      return;
+    }
     setBanner('Unable to load stock items.', 'error');
   } finally {
-    if (showLoading) {
+    if (generation === stockItemLoadGeneration && showLoading) {
       setLoading({ stockItems: false });
     }
   }
@@ -2204,6 +2431,11 @@ export async function startDesktopShell(): Promise<void> {
       await refreshUi({ showLoading: false });
       await loadCompanies();
       reconcileBoundedRecovery();
+      // View-scoped, same as activateView('dashboard') — see refreshDashboardDataFreshness()'s
+      // own doc comment for why this isn't fetched unconditionally on every push.
+      if (activeView === 'dashboard') {
+        void refreshDashboardDataFreshness();
+      }
     })();
   });
 
@@ -2213,6 +2445,9 @@ export async function startDesktopShell(): Promise<void> {
   // hang a re-check off of (the defect's exact root cause) — reconcile decides right away
   // whether bounded automatic recovery is needed.
   reconcileBoundedRecovery();
+  // Dashboard is the default active view and activateView('dashboard') is never explicitly called
+  // for it at startup (the HTML already marks it active) — fetch its data freshness once here.
+  void refreshDashboardDataFreshness();
   window.addEventListener('beforeunload', () => {
     disposeSyncProgressPolling();
     stopBoundedRecovery();
