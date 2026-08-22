@@ -427,6 +427,45 @@ describe('TD-014 bounded dashboard/company auto-recovery', () => {
     expect(document.getElementById('footer-connection-status')?.textContent).toBe('Connected');
   });
 
+  // Startup-stabilization regression: a lifecycle transition pushed while the very first
+  // refreshUi()/loadCompanies() pull is still in flight must not be silently dropped. Before the
+  // fix, onStatusUpdated was registered only after that initial pull completed, so a push that
+  // fired during it (e.g. a connector reaching 'connected' within the same window as the first
+  // render) had no listener to catch it — and if the session already had an active company
+  // (satisfying TD-014's bounded-recovery health check on unrelated grounds), nothing else would
+  // ever re-poll, leaving the renderer stuck showing a stale 'starting' state indefinitely.
+  it('a lifecycle transition pushed while the initial startup pull is still in flight is not silently dropped', async () => {
+    const bridge = baseBridge();
+    const dashboard = mutableDashboardState(dashboardState());
+    const getCompanies = vi.fn(ok(SUCCESS_COMPANIES));
+    let lifecycleState = { ...lifecycleStatusFixture, state: 'starting' as const, stateLabel: 'Starting' as const };
+    let pushed = false;
+    const getLifecycleStatus = vi.fn(async () => {
+      const current = lifecycleState;
+      if (!pushed) {
+        pushed = true;
+        // Simulates the main process completing a fast 'starting' -> 'connected' transition and
+        // pushing desktop:status-updated at essentially the same moment this very call resolves
+        // with the still-'starting' snapshot — the exact race this fix closes.
+        lifecycleState = { ...lifecycleStatusFixture, state: 'connected' as const, stateLabel: 'Connected' as const };
+        bridge.__fireStatusUpdated();
+      }
+      return current;
+    });
+    window.budcomDesktop = {
+      ...bridge,
+      getDashboardState: dashboard.fn,
+      getCompanies,
+      getLifecycleStatus,
+    } as unknown as typeof window.budcomDesktop;
+
+    await startDesktopShell();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(getLifecycleStatus.mock.calls.length).toBeGreaterThan(1); // the push triggered a fresh pull
+    expect(document.getElementById('footer-connection-status')?.textContent).toBe('Connected');
+  });
+
   // 17. network endpoint transition + transient failure eventually recovers
   it('an endpoint-transition-shaped failure (unreachable, then reachable again with no exception) recovers within the bounded window', async () => {
     const bridge = baseBridge();

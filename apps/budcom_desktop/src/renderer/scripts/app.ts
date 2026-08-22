@@ -2174,12 +2174,16 @@ export async function startDesktopShell(): Promise<void> {
   bindSettingsActions();
   bindDiagnosticsActions();
   bindPairingActions();
-  await refreshUi({ showLoading: false });
-  await loadCompanies();
-  // TD-014: the initial pair above can transiently fail with no further lifecycle transition to
-  // hang a re-check off of (the defect's exact root cause) — reconcile decides right away
-  // whether bounded automatic recovery is needed.
-  reconcileBoundedRecovery();
+
+  // Registered before the initial refreshUi()/loadCompanies() pull below (previously this was
+  // wired up only after that pull completed) — a fast lifecycle transition on the main-process
+  // side (e.g. a connector that reaches 'connected' within the same window as the very first
+  // render) could push its desktop:status-updated event before any listener existed to receive
+  // it, silently dropping it. If the session already had an active company selected (the common
+  // case on relaunch), TD-014's bounded recovery below is satisfied on unrelated criteria and
+  // never retries, so nothing else would ever re-poll and the renderer could stay stuck on a
+  // stale state (e.g. "Starting connector…") indefinitely. A push arriving during the pull below
+  // now simply coalesces into it via refreshUi()'s own trailingRefreshQueued guard.
   window.budcomDesktop.onStatusUpdated(() => {
     // TD-014: a real lifecycle transition refreshes BOTH dashboard and company state together
     // (never just the Connection card), then reconciles — a fresh transition always takes
@@ -2202,6 +2206,13 @@ export async function startDesktopShell(): Promise<void> {
       reconcileBoundedRecovery();
     })();
   });
+
+  await refreshUi({ showLoading: false });
+  await loadCompanies();
+  // TD-014: the initial pair above can transiently fail with no further lifecycle transition to
+  // hang a re-check off of (the defect's exact root cause) — reconcile decides right away
+  // whether bounded automatic recovery is needed.
+  reconcileBoundedRecovery();
   window.addEventListener('beforeunload', () => {
     disposeSyncProgressPolling();
     stopBoundedRecovery();
