@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../infrastructure/errors/error-handler.js';
 import type { StockItemSearchParams } from '../../erp/stock-item/stock-item-domain.js';
 import type { StockItemSyncService } from '../../services/stock-item/stock-item-sync.service.js';
+import type { AdaptiveScheduler } from '../../services/scheduler/adaptive-scheduler.service.js';
 
 const ALLOWED_SORT = new Set(['name', 'parentGroup', 'category', 'baseUnit', 'syncedAt']);
 const MAX_PAGE_SIZE = 100;
@@ -28,7 +29,7 @@ function parseStockItemSearchParams(query: Record<string, unknown>): StockItemSe
   };
 }
 
-export function createStockItemsRouter(stockItemSync: StockItemSyncService): Router {
+export function createStockItemsRouter(stockItemSync: StockItemSyncService, scheduler?: AdaptiveScheduler): Router {
   const router = Router();
 
   router.get(
@@ -67,6 +68,7 @@ export function createStockItemsRouter(stockItemSync: StockItemSyncService): Rou
     asyncHandler(async (req, res) => {
       const incremental = Boolean(req.body?.incremental);
       const result = await stockItemSync.syncStockItems({ incremental });
+      scheduler?.recordManualSyncOutcome(result.progress.companyId, 'stock-items', result.status === 'completed');
       res.status(200).json({ schemaVersion: '1.0.0', ...result });
     }),
   );
@@ -87,6 +89,7 @@ export function createStockItemsRouter(stockItemSync: StockItemSyncService): Rou
         schemaVersion: '1.0.0',
         progress,
         storage: stockItemSync.getStorageStatus(),
+        schedulerState: scheduler?.getCurrentSchedulerState('stock-items') ?? null,
       });
     }),
   );

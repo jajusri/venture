@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../infrastructure/errors/error-handler.js';
 import type { LedgerSearchParams } from '../../erp/ledger/ledger-domain.js';
 import type { LedgerSyncService } from '../../services/ledger/ledger-sync.service.js';
+import type { AdaptiveScheduler } from '../../services/scheduler/adaptive-scheduler.service.js';
 import {
   businessDateIsoDaysBefore,
   businessTodayIso,
@@ -38,7 +39,7 @@ function parseLedgerSearchParams(query: Record<string, unknown>): LedgerSearchPa
   };
 }
 
-export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
+export function createLedgersRouter(ledgerSync: LedgerSyncService, scheduler?: AdaptiveScheduler): Router {
   const router = Router();
 
   router.get(
@@ -95,6 +96,11 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
     asyncHandler(async (req, res) => {
       const incremental = Boolean(req.body?.incremental);
       const result = await ledgerSync.syncLedgers({ incremental });
+      // Manual "Sync Now" feeds the same change-detection evaluation an automatic check would --
+      // no separate code path (architecture §5/§16). A thrown failure (e.g. SYNC_CONFLICT) never
+      // reaches this line, which is fine: scheduler state is simply left untouched, trivially
+      // satisfying "never advance or reset the ladder on failure."
+      scheduler?.recordManualSyncOutcome(result.progress.companyId, 'ledgers', result.status === 'completed');
       res.status(200).json({ schemaVersion: '1.0.0', ...result });
     }),
   );
@@ -115,6 +121,7 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService): Router {
         schemaVersion: '1.0.0',
         progress,
         storage: ledgerSync.getStorageStatus(),
+        schedulerState: scheduler?.getCurrentSchedulerState('ledgers') ?? null,
       });
     }),
   );

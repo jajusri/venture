@@ -25,6 +25,7 @@ export const ServiceTokens = {
   ApiServer: 'ApiServer',
   Licensing: 'Licensing',
   Scheduler: 'Scheduler',
+  SchedulerState: 'SchedulerState',
   HealthService: 'HealthService',
   ConnectorIdentity: 'ConnectorIdentity',
   TrustedDevices: 'TrustedDevices',

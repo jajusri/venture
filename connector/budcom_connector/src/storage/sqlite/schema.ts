@@ -1,4 +1,4 @@
-export const STORAGE_SCHEMA_VERSION = 12;
+export const STORAGE_SCHEMA_VERSION = 13;
 
 export const MIGRATION_001 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -673,4 +673,30 @@ CREATE TABLE pairing_device_credentials (
 
 CREATE INDEX idx_pairing_device_credentials_session
   ON pairing_device_credentials(pairing_session_id);
+`;
+
+/**
+ * Adaptive Tally Synchronization scheduler state (`docs/architecture/BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md`).
+ *
+ * One row per (company_id, resource_kind), mirroring the existing `voucher_active_snapshots`
+ * "current pointer" pattern rather than overloading the append-only `sync_runs` history table —
+ * this is deliberately mutable current-state, not a log. `stage` is one of `active_window` /
+ * `backoff_15` / `backoff_30` / `backoff_60`; `active_window_expires_at` is only meaningful while
+ * `stage = 'active_window'`. A corrupt or missing row must fail closed toward MORE freshness, not
+ * less — callers default to `active_window` on any read failure, never silently disable
+ * scheduling (see the architecture doc §15).
+ */
+export const MIGRATION_013 = `
+CREATE TABLE scheduler_state (
+  company_id                TEXT NOT NULL,
+  resource_kind              TEXT NOT NULL,
+  stage                       TEXT NOT NULL,
+  active_window_expires_at    TEXT,
+  next_check_due_at           TEXT NOT NULL,
+  updated_at                  TEXT NOT NULL,
+  PRIMARY KEY (company_id, resource_kind)
+);
+
+CREATE INDEX idx_scheduler_state_next_check_due
+  ON scheduler_state(next_check_due_at);
 `;

@@ -13,6 +13,7 @@ import type { ConnectorSessionService } from '../../src/services/interfaces/conn
 import type { MasterDataService } from '../../src/services/extraction/master-data.service.js';
 import type { LedgerSyncService } from '../../src/services/ledger/ledger-sync.service.js';
 import type { StockItemSyncService } from '../../src/services/stock-item/stock-item-sync.service.js';
+import type { AdaptiveScheduler } from '../../src/services/scheduler/adaptive-scheduler.service.js';
 import type { HealthService } from '../../src/services/health/health-service.js';
 import type { TallyDiagnosticsService } from '../../src/services/interfaces/tally-diagnostics.js';
 import type { Logger } from '../../src/infrastructure/logging/logger.js';
@@ -88,6 +89,10 @@ export function resolveApiServerDeps(context: ApplicationContext): Omit<ExpressA
   const masterData = context.container.resolve<MasterDataService>(ServiceTokens.MasterData);
   const ledgerSync = context.container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync);
   const stockItemSync = context.container.resolve<StockItemSyncService>(ServiceTokens.StockItemSync);
+  // Like connectorIdentity/transportIdentity below: SchedulerStateRepository only stores a lazy
+  // database-getter closure at construction time, so resolving it never requires LocalDatabase to
+  // have already started.
+  const scheduler = context.container.resolve<AdaptiveScheduler>(ServiceTokens.Scheduler);
   const tallyDiagnostics = context.container.resolve<TallyDiagnosticsService>(
     ServiceTokens.TallyDiagnostics,
   );
@@ -136,6 +141,7 @@ export function resolveApiServerDeps(context: ApplicationContext): Omit<ExpressA
     masterData,
     ledgerSync,
     stockItemSync,
+    scheduler,
     tallyDiagnostics,
     voucherApplication,
     trustedDevices,

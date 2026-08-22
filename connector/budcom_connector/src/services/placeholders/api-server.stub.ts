@@ -12,6 +12,7 @@ import type { ConnectorSessionService } from '../interfaces/connector-session.js
 import type { MasterDataService } from '../extraction/master-data.service.js';
 import type { LedgerSyncService } from '../ledger/ledger-sync.service.js';
 import type { StockItemSyncService } from '../stock-item/stock-item-sync.service.js';
+import type { AdaptiveScheduler } from '../scheduler/adaptive-scheduler.service.js';
 import type { ApiServerService } from '../interfaces/api-server.js';
 import type { TrustedDeviceRepository } from '../device/trusted-device-repository.js';
 import type { ConnectorIdentityRepository } from '../identity/connector-identity-repository.js';
@@ -29,6 +30,7 @@ export interface ApiServerDeps {
   readonly masterData: MasterDataService;
   readonly ledgerSync: LedgerSyncService;
   readonly stockItemSync: StockItemSyncService;
+  readonly scheduler?: AdaptiveScheduler;
   readonly tallyDiagnostics: TallyDiagnosticsService;
   readonly voucherApplication: VoucherApplicationService;
   readonly voucherSynchronization?: VoucherSnapshotSyncService;
@@ -63,6 +65,7 @@ export class ApiServerStub implements ApiServerService {
       masterData: deps.masterData,
       ledgerSync: deps.ledgerSync,
       stockItemSync: deps.stockItemSync,
+      scheduler: deps.scheduler,
       tallyDiagnostics: deps.tallyDiagnostics,
       voucherApplication: deps.voucherApplication,
       voucherSynchronization: deps.voucherSynchronization,

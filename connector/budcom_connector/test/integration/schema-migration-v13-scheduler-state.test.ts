@@ -27,9 +27,9 @@ afterEach(async () => {
   }
 });
 
-describe('schema migration to v12 (secure local pairing)', () => {
-  it('migrates an existing v1 database forward to v12, creating the pairing tables', () => {
-    const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-migrate-v12-'));
+describe('schema migration to v13 (adaptive-sync scheduler state)', () => {
+  it('migrates an existing v1 database forward to v13, creating the scheduler_state table', () => {
+    const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-migrate-v13-'));
     tempDirs.push(basePath);
     const databasePath = path.join(basePath, 'budcom-ledger.db');
 
@@ -42,74 +42,47 @@ describe('schema migration to v12 (secure local pairing)', () => {
     );
     v1.close();
 
-    const v12 = new SqliteDatabase({ databasePath });
-    v12.open();
-    const migrated = v12.getDatabase();
+    const v13 = new SqliteDatabase({ databasePath });
+    v13.open();
+    const migrated = v13.getDatabase();
     openDbs.push(migrated);
 
     const version = migrated
       .prepare('SELECT MAX(version) AS version FROM schema_migrations')
       .get() as { version: number };
-    // A v1 database migrates all the way to the current latest version (13, once the adaptive-sync
-    // scheduler-state migration was added) -- this test's own concern is only that the v12 pairing
-    // tables were created somewhere along that path, not that 12 is the final version.
     expect(version.version).toBe(STORAGE_SCHEMA_VERSION);
+    expect(STORAGE_SCHEMA_VERSION).toBe(13);
 
     const tables = migrated
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('pairing_sessions', 'pairing_device_credentials')")
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'scheduler_state'")
       .all() as Array<{ name: string }>;
-    expect(tables.map((t) => t.name).sort()).toEqual(['pairing_device_credentials', 'pairing_sessions']);
+    expect(tables.map((t) => t.name)).toEqual(['scheduler_state']);
   });
 
-  it('creates a clean database directly at schema version 12 with both pairing tables', async () => {
+  it('creates a clean database directly at schema version 13 with the scheduler_state table', async () => {
     const { storage } = await createTestSqliteStorage();
     const db = storage.getBundle().database.getDatabase();
 
     const version = db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as {
       version: number;
     };
-    expect(version.version).toBe(STORAGE_SCHEMA_VERSION);
+    expect(version.version).toBe(13);
 
-    const columns = db.prepare('PRAGMA table_info(pairing_sessions)').all() as Array<{ name: string }>;
-    const columnNames = columns.map((c) => c.name).sort();
-    expect(columnNames).toEqual(
+    const columns = db.prepare('PRAGMA table_info(scheduler_state)').all() as Array<{ name: string }>;
+    expect(columns.map((c) => c.name).sort()).toEqual(
       [
-        'cancelled_at',
-        'connector_id',
-        'connector_name',
-        'host',
-        'port',
-        'schema_version',
-        'created_at',
-        'expires_at',
-        'failed_attempts',
-        'pairing_session_id',
-        'redeemed_at',
-        'secret_hash',
-        'short_code_hash',
-      ].sort(),
-    );
-
-    const credentialColumns = db.prepare('PRAGMA table_info(pairing_device_credentials)').all() as Array<{
-      name: string;
-    }>;
-    expect(credentialColumns.map((c) => c.name).sort()).toEqual(
-      [
-        'credential_id',
-        'pairing_session_id',
-        'connector_id',
-        'device_id',
-        'token_hash',
-        'device_label',
-        'created_at',
-        'last_used_at',
-        'revoked_at',
+        'company_id',
+        'resource_kind',
+        'stage',
+        'active_window_expires_at',
+        'next_check_due_at',
+        'updated_at',
       ].sort(),
     );
   });
 
-  it('is idempotent when a v12 database is reopened', async () => {
-    const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-migrate-v12-idempotent-'));
+  it('is idempotent when a v13 database is reopened', async () => {
+    const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-migrate-v13-idempotent-'));
     tempDirs.push(basePath);
     const databasePath = path.join(basePath, 'budcom-ledger.db');
 
@@ -124,6 +97,25 @@ describe('schema migration to v12 (secure local pairing)', () => {
     const version = db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get() as {
       version: number;
     };
-    expect(version.version).toBe(STORAGE_SCHEMA_VERSION);
+    expect(version.version).toBe(13);
+  });
+
+  it('enforces one row per (company_id, resource_kind)', async () => {
+    const { storage } = await createTestSqliteStorage();
+    const db = storage.getBundle().database.getDatabase();
+
+    db.prepare(
+      `INSERT INTO scheduler_state (company_id, resource_kind, stage, active_window_expires_at, next_check_due_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('estimation', 'ledgers', 'active_window', '2026-01-01T00:15:00.000Z', '2026-01-01T00:05:00.000Z', '2026-01-01T00:00:00.000Z');
+
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO scheduler_state (company_id, resource_kind, stage, active_window_expires_at, next_check_due_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run('estimation', 'ledgers', 'backoff_15', null, '2026-01-01T00:20:00.000Z', '2026-01-01T00:00:00.000Z'),
+    ).toThrow();
   });
 });

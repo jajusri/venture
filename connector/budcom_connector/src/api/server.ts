@@ -11,6 +11,7 @@ import type { TallyDiagnosticsService } from '../services/interfaces/tally-diagn
 import type { MasterDataService } from '../services/extraction/master-data.service.js';
 import type { LedgerSyncService } from '../services/ledger/ledger-sync.service.js';
 import type { StockItemSyncService } from '../services/stock-item/stock-item-sync.service.js';
+import type { AdaptiveScheduler } from '../services/scheduler/adaptive-scheduler.service.js';
 import { createLedgersRouter } from './routes/ledgers.js';
 import { createStockItemsRouter } from './routes/stock-items.js';
 import { readOnlyMiddleware } from './middleware/read-only.js';
@@ -55,6 +56,8 @@ export interface ExpressAppDeps {
   readonly masterData: MasterDataService;
   readonly ledgerSync: LedgerSyncService;
   readonly stockItemSync: StockItemSyncService;
+  /** Optional so existing test call sites that build `ExpressAppDeps` directly need no change. */
+  readonly scheduler?: AdaptiveScheduler;
   readonly tallyDiagnostics: TallyDiagnosticsService;
   readonly voucherApplication: VoucherApplicationService;
   readonly voucherSynchronization?: VoucherSnapshotSyncService;
@@ -118,8 +121,8 @@ export function createExpressApp(deps: ExpressAppDeps): Express {
   app.use(createCompaniesRouter(deps.companyDiscovery));
   app.use(createSessionRouter(deps.connectorSession));
   app.use(createMasterDataRouter(deps.masterData));
-  app.use(createLedgersRouter(deps.ledgerSync));
-  app.use(createStockItemsRouter(deps.stockItemSync));
+  app.use(createLedgersRouter(deps.ledgerSync, deps.scheduler));
+  app.use(createStockItemsRouter(deps.stockItemSync, deps.scheduler));
   app.use(createVouchersRouter(
     deps.voucherApplication,
     deps.voucherSynchronization,

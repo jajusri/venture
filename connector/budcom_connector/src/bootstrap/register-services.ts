@@ -25,7 +25,8 @@ import { ConnectorTransportIdentityService } from '../services/transport/connect
 import { MdnsAdvertiser } from '../services/discovery/mdns-advertiser.js';
 import { createBonjourMdnsPublisherFactory } from '../services/discovery/bonjour-mdns-publisher.js';
 import { SqliteStorageService } from '../storage/sqlite/storage-service.js';
-import { SchedulerStub } from '../services/placeholders/scheduler.stub.js';
+import { AdaptiveSchedulerService } from '../services/scheduler/adaptive-scheduler.service.js';
+import { SchedulerStateRepository } from '../storage/sqlite/scheduler-state-repository.js';
 import { LedgerSyncServiceImpl } from '../services/ledger/ledger-sync.service.js';
 import type { LedgerSyncService } from '../services/ledger/ledger-sync.service.js';
 import { StockItemSyncServiceImpl } from '../services/stock-item/stock-item-sync.service.js';
@@ -269,7 +270,24 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
     container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync),
   );
   container.registerFactory(ServiceTokens.Licensing, () => new LicensingStub(logger));
-  container.registerFactory(ServiceTokens.Scheduler, () => new SchedulerStub(logger));
+  container.registerFactory(
+    ServiceTokens.SchedulerState,
+    () =>
+      new SchedulerStateRepository(
+        () => container.resolve<SqliteStorageService>(ServiceTokens.LocalDatabase).getBundle().database,
+      ),
+  );
+  container.registerFactory(
+    ServiceTokens.Scheduler,
+    () =>
+      new AdaptiveSchedulerService(
+        container.resolve<SchedulerStateRepository>(ServiceTokens.SchedulerState),
+        container.resolve<ConnectorSessionService>(ServiceTokens.ConnectorSession),
+        container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync),
+        container.resolve<StockItemSyncService>(ServiceTokens.StockItemSync),
+        logger.child({ service: 'Scheduler' }),
+      ),
+  );
 
   container.registerFactory(
     ServiceTokens.HealthService,
@@ -304,6 +322,7 @@ export function registerServices(options: RegisterServicesOptions = {}): Applica
         masterData: container.resolve<MasterDataService>(ServiceTokens.MasterData),
         ledgerSync: container.resolve<LedgerSyncService>(ServiceTokens.LedgerSync),
         stockItemSync: container.resolve<StockItemSyncService>(ServiceTokens.StockItemSync),
+        scheduler: container.resolve<AdaptiveSchedulerService>(ServiceTokens.Scheduler),
         tallyDiagnostics: container.resolve<TallyDiagnosticsService>(ServiceTokens.TallyDiagnostics),
         voucherApplication: container.resolve<VoucherApplicationService>(
           ServiceTokens.VoucherApplication,
