@@ -90,6 +90,26 @@ class LedgerBrowserViewModelTest {
         assertEquals(1, repository.refreshCalls)
     }
 
+    /**
+     * A company that has never synced has no cache for `listLedgers` to fall back to, so it
+     * fails every time with the same message — the Retry button shown in that exact state
+     * (`state.error != null && !state.hasContent`) must escalate to a real network refresh, or
+     * it is a permanent dead end. Physically reproduced on a real never-synced company
+     * (2026-08-22 real-device validation) before this fix.
+     */
+    @Test
+    fun `retry with no cached content escalates to network refresh`() = runTest(dispatcher) {
+        repository.result = AppResult.Failure(AppError.Message("No offline data available."))
+        val vm = createVm()
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.ledgers.isEmpty())
+        assertEquals(0, repository.refreshCalls)
+
+        vm.onEvent(LedgerBrowserEvent.Retry)
+        advanceUntilIdle()
+        assertEquals(1, repository.refreshCalls)
+    }
+
     @Test
     fun `empty result`() = runTest(dispatcher) {
         repository.result = AppResult.Success(

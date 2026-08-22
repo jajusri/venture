@@ -107,7 +107,13 @@ class VoucherBrowserViewModel @Inject constructor(
         when (event) {
             VoucherBrowserEvent.Load -> load(page = 1, append = false, refreshing = false)
             VoucherBrowserEvent.Refresh -> load(page = 1, append = false, refreshing = true)
-            VoucherBrowserEvent.Retry -> load(page = 1, append = false, refreshing = false)
+            // Retry's error block is only ever shown when there is no cached content to fall
+            // back to (see VoucherBrowserScreen's `state.error != null && !state.hasContent`
+            // branch) — for a company that has never synced, a cache-only load fails
+            // identically forever, so this specific case must go through the network-backed
+            // refresh. When content already exists, preserve the existing cache-first Retry
+            // behavior.
+            VoucherBrowserEvent.Retry -> load(page = 1, append = false, refreshing = !_uiState.value.hasContent)
             VoucherBrowserEvent.LoadNextPage -> {
                 val state = _uiState.value
                 if (!state.canLoadMore || state.isBusy) return

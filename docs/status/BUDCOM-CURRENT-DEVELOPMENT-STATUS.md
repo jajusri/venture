@@ -214,6 +214,24 @@ kept as a separately-scoped, unvalidated **OPEN** future investigation rather th
 Android/Desktop/Connector/Tally-protocol production code touched; no schema change; no version bump;
 MVP-1.4 not started. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §33.
 
+**Phase 44 — TD-035 Real-Device Validation (previously blocked, now unblocked) + Ledger/Voucher
+Browser Retry Dead-End Fix (2026-08-22).** Phone and laptop now on the same ordinary Wi-Fi router
+(`192.168.29.x`) instead of the mobile-hotspot SSID that blocked [[project_budcom_td035_physical_validation]]'s
+deferred walkthrough. **TD-035 physically confirmed for the first time against real data**: real
+company ESTIMATION (949 ledgers) synced live, Connector's `GET /ledgers` and Android's Room cache
+both confirmed real `parentGroup` values, Connect → Customers showed 873 real customer rows (53
+suppliers confirmed at the data layer; no dedicated Suppliers UI tab exists — pre-existing scope).
+Company isolation re-proven with a second real company (Jaju Sanitations, 21 ledgers) — zero
+cross-contamination at the Room/database layer in either direction. Two new findings surfaced by
+physical validation and recorded as **TD-036**/**TD-037** (Connector singleton sync-progress state;
+Android's dead `clearActiveIfCompanyChanged()` — the latter physically reproduced live, confirmed
+display-only, not a data leak) — both flagged as Phase 2 prerequisite fixes, not fixed this phase.
+A third, newly-discovered defect (**TD-038**: Ledger/Voucher Browser "Retry" was a permanent dead
+end for a never-synced company) was fixed same-session per explicit user direction ahead of Phase 2.
+Android: 1,268/1,268 tests both variants (+2), 0 lint errors, both assembles green. No MVP-1.4,
+Desktop, or Connector production code touched. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`
+§34; `docs/technical-debt/registry.md` TD-036/TD-037/TD-038, TD-035 real-device confirmation update.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.

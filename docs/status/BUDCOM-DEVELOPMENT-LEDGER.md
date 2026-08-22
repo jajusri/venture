@@ -1762,3 +1762,92 @@ pushed — commits prepared locally only, per this task's explicit rule.
 - Release/runbooks: `docs/architecture/controlled-pilot-release.md`, `docs/operations/`
 - Historical evidence: `docs/milestones/`, `docs/stage-updates/`, `docs/diagnostics/`,
   `docs/PROJECT_PROGRESS.md`
+
+## 34. Phase 44 — TD-035 Real-Device Validation (previously blocked, now unblocked) + Ledger/Voucher Browser Retry Dead-End Fix
+
+Starting HEAD `380ce85` (Phase 43's own final commit), working tree clean, 3 commits ahead of
+`origin/main`. Continuation of [[project_budcom_td035_physical_validation]]'s deferred physical
+walkthrough — phone and laptop are now on the same ordinary Wi-Fi router (`192.168.29.x`,
+JioFiber), not the mobile-hotspot SSID that previously blocked device-to-device traffic.
+
+### A. Real-device path confirmed working end to end
+
+Confirmed live, in order: ADB authorization (phone required an unlock + accept, a transient
+condition per [[feedback_adb_disconnect_protocol]], not a defect); phone (`192.168.29.111`) and
+laptop (`192.168.29.34`) on the same subnet, real TCP reachability proven via `adb shell curl` from
+the phone directly hitting the Connector's `/health`; Desktop `0.4.20`/Connector `0.4.6` launched
+(the installed production build already running in `C:\Program Files\Budcom Desktop`, bound
+`trusted-lan` on `192.168.29.34:8080` — a separate local dev-build launch attempt correctly
+deferred to it via Electron's single-instance lock); TallyPrime opened with real company
+**ESTIMATION** (949 real ledgers), `tallyReachable: true`.
+
+Ledger sync (Sync screen → Ledgers card → Sync Now) completed against live Tally: 949 processed, 0
+failed. Connector's own `GET /ledgers` confirmed real `parentGroup` values ("Sundry Debtors",
+"Sundry Creditors") on real ledgers — **TD-035's Connector-side fix confirmed working against real
+data for the first time** (previously resolved at the code/test level only, per that entry's own
+"no real-device re-verification was performed" note). Android's Room cache required one additional,
+previously-undocumented step to reflect this (see §B) — once done, `cached_ledgers`: 949/949 rows
+with non-null `parentGroup` (873 "Sundry Debtors", 53 "Sundry Creditors"); Party reconciliation
+produced `cached_parties`: 873 customers + 53 suppliers, exact match. Connect → Customers visually
+confirmed real rows with working Call/WhatsApp/View Ledger/View Vouchers actions — **first-ever
+physical proof that TD-035 actually populates Connect against real Tally data**, closing the gap
+Phase 37/39 left open. No dedicated Suppliers tab exists in Connect (Customers/Prospects only, an
+existing MVP-1.1-A scope decision, not new) — supplier classification verified directly at the data
+layer instead.
+
+Company isolation re-proven with a second real company opened live in Tally, **Jaju Sanitations**
+(21 real ledgers): synced and classified independently; zero cross-contamination with ESTIMATION in
+either direction at the Room/database layer, confirmed by direct `sqlite3` inspection after
+switching both ways.
+
+### B. Two new findings surfaced by physical validation (not visible from source reading alone)
+
+1. **The Sync screen's "Sync Now" does not populate Android's Room cache.** It only tells the
+   Connector to re-extract from Tally into the Connector's own SQLite database. Room
+   (`cached_ledgers`, which Party reconciliation and Connect both depend on) is populated only by
+   `LedgerRepositoryImpl.refreshLedgers()`, triggered exclusively by the Ledger Browser's
+   pull-to-refresh gesture — a separate, undocumented manual step the previously-recorded "exact
+   validated tap sequence" in [[project_budcom_td035_physical_validation]] had not accounted for.
+   Logged as **TD-037**'s sibling context, not a separate TD entry itself — see the architecture
+   doc's own §13 assumption ("a background-triggered sync writes into the same tables a manual sync
+   would") this contradicts; the correction is noted here and does not change any of Phase 43's
+   LOCKED decisions, since the adaptive scheduler (Phase 2) is Connector-side only and does not
+   depend on or worsen this pre-existing, orthogonal Android-side mechanic.
+2. **Reproduced live, exactly as Phase 43's architecture research had predicted from source reading
+   alone**: switching companies (ESTIMATION → Jaju Sanitations → ESTIMATION) leaked the previous
+   company's "Last synced at ..." freshness timestamp onto the newly-selected company's Dashboard
+   and Sync screen, bidirectionally. Confirmed by direct `sqlite3` inspection to be a **display-only
+   leak** — `cached_ledgers`/`cached_parties` remained correctly company-scoped throughout. Logged as
+   **TD-037**, open, flagged as a Phase 2 prerequisite fix (matches Phase 43 §8's own recommendation).
+3. **New, previously-undiscovered defect**: for a company with a completely empty Room cache (a
+   genuinely new company, e.g. Jaju Sanitations before its first successful refresh), the Ledger/
+   Voucher Browser's "Retry" button was a **permanent dead end** — it re-ran the same cache-only load
+   that had just failed, forever, and Compose's pull-to-refresh gesture had no scrollable child to
+   hook into in that exact empty-state render, so swipe-to-refresh was also unreachable. Physically
+   reproduced on Jaju Sanitations (repeated Retry taps and swipe attempts confirmed via `sqlite3` to
+   leave `cached_ledgers` at 0 rows throughout). Logged and **fixed same-session** as **TD-038** —
+   user-directed, ahead of Phase 2 (see §C).
+
+### C. TD-038 fix
+
+`LedgerBrowserEvent.Retry`/`VoucherBrowserEvent.Retry` now escalate to the network-backed
+`refreshLedgers()`/`refreshVouchers()` path exactly when `!state.hasContent` (the identical
+condition that makes the Retry button appear at all), and keep the existing cache-first behavior
+whenever content already exists — preserving the Phase 36/Phase 3E "Load/search/retry/pagination
+never touch the network — only explicit Refresh does" invariant for the case it was written to
+protect (verified: that exact existing test still passes unmodified). Two new regression tests
+added (one per browser), both physically evidenced by the real Jaju Sanitations reproduction above.
+Android: **1,268/1,268 tests both variants** (+2 from the 1,266 baseline), 0 lint errors, both
+assembles green (see the session's final report for the full lint run). Files: `LedgerBrowserViewModel.kt`,
+`VoucherBrowserViewModel.kt`, `LedgerBrowserViewModelTest.kt`, `VoucherBrowserViewModelTest.kt`,
+`docs/technical-debt/registry.md` (TD-036, TD-037, TD-038 added; TD-035 updated with real-device
+confirmation).
+
+### D. Scope discipline
+
+No MVP-1.4 Catalogue work performed. No Desktop/Connector production code touched (Connector's
+already-running production build was used as-is; no rebuild was needed or performed). No
+StockItem Browser change (its `loadStockItems()` is already network-first, a different,
+pre-existing, already-documented inconsistency, out of scope here). Adaptive Tally Synchronization
+Phase 2 (the scheduler implementation) begins in the next session/continuation, gated on this
+phase's real-device evidence per the governing task's own Phase 1 → Phase 2 sequencing.

@@ -55,7 +55,14 @@ class LedgerBrowserViewModel @Inject constructor(
         when (event) {
             LedgerBrowserEvent.Load -> load(page = 1, append = false, refreshing = false)
             LedgerBrowserEvent.Refresh -> load(page = 1, append = false, refreshing = true)
-            LedgerBrowserEvent.Retry -> load(page = 1, append = false, refreshing = false)
+            // Retry's error block is only ever shown when there is no cached content to fall
+            // back to (see LedgerBrowserScreen's `state.error != null && !state.hasContent`
+            // branch) — for a company that has never synced, a cache-only load fails
+            // identically forever, so this specific case must go through the network-backed
+            // refresh. When content already exists, preserve the existing cache-first Retry
+            // behavior (offline-first invariant covered by
+            // `Load, search, retry, and pagination never touch the network path`).
+            LedgerBrowserEvent.Retry -> load(page = 1, append = false, refreshing = !_uiState.value.hasContent)
             LedgerBrowserEvent.LoadNextPage -> {
                 val state = _uiState.value
                 if (!state.canLoadMore || state.isBusy) return
