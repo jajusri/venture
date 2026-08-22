@@ -281,6 +281,36 @@ describe('renderer integration refresh', () => {
     expect(bridge.getDashboardState).toHaveBeenCalledTimes(2);
   });
 
+  it('re-pulls dashboard/connection state when the user navigates back to Dashboard, so a health change that occurred while elsewhere is never left stale', async () => {
+    document.body.innerHTML += `
+      <button class="nav-btn active" data-view="dashboard"></button>
+      <button class="nav-btn" data-view="logs"></button>
+      <section id="view-dashboard" class="view active"></section>
+      <section id="view-logs" class="view"></section>
+    `;
+    const bridge = {
+      getDashboardState: vi.fn(async () => sampleState),
+      getLogs: vi.fn(async () => []),
+      getSettings: vi.fn(async () => settingsFixture),
+      getLifecycleStatus: vi.fn(async () => lifecycleStatusFixture),
+    };
+    window.budcomDesktop = bridge as unknown as typeof window.budcomDesktop;
+    const { activateView: activate, refreshUi } = await import('../../src/renderer/scripts/app.js');
+
+    await refreshUi({ showLoading: false });
+    expect(bridge.getDashboardState).toHaveBeenCalledTimes(1);
+
+    // The Connector can stay lifecycle-"connected" (so no desktop:status-updated push fires) while
+    // its own /health genuinely degrades in between pushes — e.g. Tally itself disconnects but the
+    // Connector process keeps running. Navigating away and back to Dashboard is the one moment that
+    // must always re-check, independent of any push.
+    activate('logs');
+    activate('dashboard');
+    expect(bridge.getDashboardState).toHaveBeenCalledTimes(2);
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
   it('keeps background refresh visually silent', async () => {
     const bridge = {
       getDashboardState: vi.fn(async () => sampleState),
@@ -566,7 +596,7 @@ describe('refreshDashboardDataFreshness', () => {
   // endpoints require an active company and reject outright without one. Before this fix, that
   // completely normal state (right after cold launch, before any company is picked) left the
   // Sync card stuck on an indefinite "Checking…" that could never resolve.
-  it('shows "No company selected" without even attempting the doomed-to-fail statistics calls', async () => {
+  it('shows "—" (not a duplicate of the Company card\'s own message) without even attempting the doomed-to-fail statistics calls', async () => {
     renderDashboard({ ...sampleState, sessionStatus: 'NO_COMPANY_SELECTED', companyName: '—' });
     const getLedgerStatistics = vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z'));
     const getStockItemStatistics = vi.fn(async () => stockStats('2026-08-22T10:00:00.000Z'));
@@ -574,21 +604,21 @@ describe('refreshDashboardDataFreshness', () => {
 
     await refreshDashboardDataFreshness();
 
-    expect(document.getElementById('dashboard-sync')?.textContent).toBe('No company selected');
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('—');
     expect(document.getElementById('dashboard-last-sync')?.textContent).toBe('Never');
-    expect(document.getElementById('header-sync')?.textContent).toBe('No company selected');
+    expect(document.getElementById('header-sync')?.textContent).toBe('—');
     expect(getLedgerStatistics).not.toHaveBeenCalled();
     expect(getStockItemStatistics).not.toHaveBeenCalled();
   });
 
-  it('re-attempts the real fetch once a company becomes active again, rather than getting stuck on "No company selected"', async () => {
+  it('re-attempts the real fetch once a company becomes active again, rather than getting stuck on "—"', async () => {
     renderDashboard({ ...sampleState, sessionStatus: 'NO_COMPANY_SELECTED', companyName: '—' });
     window.budcomDesktop = {
       getLedgerStatistics: vi.fn(async () => ledgerStats('2026-08-22T10:00:00.000Z')),
       getStockItemStatistics: vi.fn(async () => stockStats('2026-08-22T10:00:00.000Z')),
     } as unknown as typeof window.budcomDesktop;
     await refreshDashboardDataFreshness();
-    expect(document.getElementById('dashboard-sync')?.textContent).toBe('No company selected');
+    expect(document.getElementById('dashboard-sync')?.textContent).toBe('—');
 
     renderDashboard({ ...sampleState, sessionStatus: 'ACTIVE', companyName: 'ESTIMATION' });
     await refreshDashboardDataFreshness();

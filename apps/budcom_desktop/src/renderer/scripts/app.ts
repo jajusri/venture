@@ -501,9 +501,16 @@ export async function refreshDashboardDataFreshness(): Promise<void> {
       return;
     }
     dashboardFreshnessEverRendered = false;
-    setText('dashboard-sync', 'No company selected');
+    // Not "No company selected" here too: that phrase already belongs to the adjacent Company
+    // card/badge, and repeating it verbatim under the Sync heading reads as if sync itself has a
+    // status called "no company selected" rather than "nothing to report yet, and here's why" —
+    // real-Desktop validation also showed the repeated long string overflowing the header's fixed
+    // three-column layout. "—" matches this app's own established placeholder for "nothing yet"
+    // (header-version, dashboard-last-refresh, etc.) and reads correctly given the Company card's
+    // own message sits right next to it.
+    setText('dashboard-sync', '—');
     setText('dashboard-last-sync', 'Never');
-    setText('header-sync', 'No company selected');
+    setText('header-sync', '—');
     setText('header-last-sync', 'Never');
     return;
   }
@@ -816,6 +823,16 @@ export function activateView(view: DesktopView): void {
   document.querySelector(`.nav-btn[data-view="${view}"]`)?.classList.add('active');
 
   if (view === 'dashboard') {
+    // The connection/health card is otherwise push-driven only (desktop:status-updated fires on
+    // coarse lifecycle transitions, not on every health poll tick) — a live Connector that stays
+    // "connected" while its own /health reports 'degraded' (e.g. Tally itself disconnects but the
+    // Connector process keeps running) never triggers that push, so returning to this view is the
+    // one moment a stale card can be corrected without waiting on an unrelated action. Mirrors the
+    // same "fetch fresh data when this view becomes visible" pattern already used by
+    // refreshDiagnostics()/loadLedgers()/loadStockItems()/loadPairingPanel() below. Caught, not
+    // awaited: several tests reuse activateView('dashboard') as a neutral reset step against a
+    // bridge mock that only implements the methods their own scenario needs.
+    void refreshUi({ showLoading: false }).catch(() => {});
     void refreshDashboardDataFreshness();
   }
   if (view === 'diagnostics') {
