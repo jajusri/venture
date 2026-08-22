@@ -685,6 +685,23 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-039 — Ledgers "Sync Now" never refreshed Android's own Room cache, unlike Vouchers (FIXED)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-039 |
+| **Description** | Found while investigating a limitation flagged (but not root-caused) at the end of Phase 45: "Sync Now" for Ledgers told the Connector to re-extract from Tally into the Connector's own SQLite database, but never triggered the follow-up fetch that populates Android's own Room cache (`cached_ledgers`). `StartTargetSyncUseCase` already had exactly this second step for Vouchers (`completeVoucherWindowFetch`, added historically per commit `028c650`, scoped to Vouchers only) — Ledgers simply never received the equivalent step, which was not a deliberate "Ledgers should stay different" decision, just an unfinished mirror. Because Connect's Customer/Supplier population (`ReconcilePartiesFromLedgersUseCase`) reads Room's `cached_ledgers`, not the Connector directly, a Ledgers "Sync Now" alone left Connect showing stale-or-absent customers/suppliers until a separate, undiscoverable Ledger Browser pull-to-refresh was also performed — the same class of gap TD-038 fixed for the empty-cache case, but here reproducible even with a previously-populated cache. **Physically reproduced on a real device (2026-08-22/23, `10BF44124K000E3`, company ESTIMATION, 949 real ledgers):** a Sync-Now-only tap left `cached_ledgers.syncedAt`/`dataFreshnessAt` at their stale pre-tap values (`...T16:28:15.513Z`/`...T16:41:54.202Z`) with no Ledger Browser visit; Connect's Customer tab showed the same stale set. |
+| **Impact** | The Sync tab's "Sync Now" for Ledgers did not do what its label promised for the one surface (Connect) most likely to depend on it being complete — a real defect, not a documentation gap, since the same action already fully worked for Vouchers via the identical pattern. |
+| **Priority** | P1 — directly undermines the adaptive-sync feature's own promise that "Sync Now" produces fresh, queryable data. |
+| **Target milestone** | Adaptive Tally Synchronization hardening, fixed before MVP-1.4 resumed. |
+| **Status** | **FIXED (2026-08-23).** `StartTargetSyncUseCase` gained a 4th constructor dependency (`RefreshLedgersUseCase`) and a `completeLedgerRoomRefresh()` step mirroring `completeVoucherWindowFetch()` exactly: on a successful Ledgers extraction, it calls the existing `RefreshLedgersUseCase`/`GET /ledgers` path (the identical fetch-and-persist call the Ledger Browser's own explicit Refresh already uses) before reporting the sync as complete; a failure at this step is reported as the operation's own failure, matching the Voucher precedent's semantics exactly. No new Tally extraction, no second sync engine — only the Connector's existing read endpoint, called from the one place `StartTargetSyncUseCase` already orchestrates all "Sync Now" actions. StockItems is untouched (already network-first on every load, a separate pre-existing pattern). Re-verified live on the same real device: a Sync-Now-only tap (no Ledger Browser visit) updated `cached_ledgers.syncedAt`/`dataFreshnessAt` to the exact tap time (`...T21:29:47.406Z`/`...T21:29:52.445Z`), and Connect's Customer tab showed the full real, current list (873 customers) immediately after. |
+| **Introduced** | Same historical point as the Voucher fix (`028c650`) — that commit's own message scoped it to Vouchers only; Ledgers' equivalent step was never added afterward. |
+| **Fix implemented** | `apps/budcom_android/app/src/main/java/com/budcom/android/feature/sync/domain/usecase/SyncUseCases.kt`. |
+| **Regression tests** | 4 new/updated tests in `SyncUseCasesTest.kt` (Ledgers success → Room refresh called once, Vouchers refresh untouched; Ledgers success + failed refresh → reported as failure; Ledgers extraction failure → refresh never attempted; StockItems → neither Ledgers nor Vouchers refresh touched) and 2 new tests in `SyncViewModelTest.kt` (ledger sync success refreshes Room before Connect's reconciliation reads it; stock item sync never touches the ledger refresh). Android: 1,281/1,281 → **1,286/1,286 tests both variants** (+5 net after consolidating one renamed case), 0 lint errors, both assembles green. |
+| **Evidence** | Real-device reproduction and re-verification 2026-08-22/23 (device `10BF44124K000E3`, company `estimation`, direct `run-as ... sqlite3` inspection of `cached_ledgers`/`cached_parties` before and after the fix). |
+
+---
+
 ## TD-038 — Ledger/Voucher Browser "Retry" was a permanent dead end for a never-synced company (FIXED)
 
 | Field | Value |
@@ -704,6 +721,7 @@ Engineering-tracked compromises, defects, and deferred work.
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-039 | Ledgers "Sync Now" never refreshed Android's own Room cache (`cached_ledgers`), unlike Vouchers — left Connect's Customer/Supplier population stale after a "successful" sync | P1 | **FIXED (2026-08-23): `StartTargetSyncUseCase` gained a `completeLedgerRoomRefresh()` step mirroring the existing Voucher window-fetch pattern; re-verified live on a real device.** | Fixed — see entry |
 | TD-038 | Ledger/Voucher Browser "Retry" was a permanent dead end for a never-synced company (empty Room cache + Connector-only "Sync Now") | P1 | **FIXED (2026-08-22): Retry now escalates to network refresh exactly when there's no cached content; existing cache-first invariant preserved.** | Fixed — see entry |
 | TD-037 | Android `SyncRepositoryImpl` leaks the previous company's freshness summary after a company switch (cosmetic only — Room data confirmed correctly isolated) | P1 | **FIXED (2026-08-22): `bindCompany` resets the summary on an actual company change; dead `clearActiveIfCompanyChanged()` removed.** | Fixed — see entry |
 | TD-036 | Connector Ledger/Stock-Item sync progress state is a process-wide singleton, not company-scoped | P1 | **FIXED (2026-08-22): `progress`/`activeRun`/`activeAbort`/`syncInFlight` converted to `Map<companyId, T>` on both services; adversarial two-company tests added.** | Fixed — see entry |

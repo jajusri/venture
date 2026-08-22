@@ -264,6 +264,27 @@ total across TD-037 and the UX addition). All `tsc`/`eslint`/lint/build clean. N
 second sync engine anywhere. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §35;
 `docs/technical-debt/registry.md` TD-036/TD-037 marked FIXED.
 
+**Phase 46 — Adaptive Tally Synchronization Hardening (2026-08-23).** New session, explicitly
+bounded to closing out Phase 45 loose ends before MVP-1.4 resumes. First priority: root-caused the
+manual-sync/Room limitation Phase 45 had flagged but not diagnosed. Found a genuine defect, not
+expected architecture: `StartTargetSyncUseCase` already had a Room-refresh follow-up step for
+Vouchers (`completeVoucherWindowFetch`, pre-existing) but never received the equivalent for
+Ledgers, so a Ledgers "Sync Now" updated only the Connector's own database, leaving Android's
+`cached_ledgers` — and therefore Connect's Customer/Supplier population — stale. Logged and fixed
+as **TD-039**: added `completeLedgerRoomRefresh()` mirroring the Voucher pattern exactly (same
+existing `RefreshLedgersUseCase`/`GET /ledgers` path each browser's own Refresh already uses; no
+new Tally extraction, no second sync engine). Physically reproduced and then re-verified fixed live
+on the real device (`10BF44124K000E3`, ESTIMATION, 873 real customers) — a Sync-Now-only tap now
+refreshes Room without a separate Ledger Browser visit. Second priority (the "Finished working in
+Tally? Sync now" suggestion) was evaluated and **not implemented**: the only connection-state signal
+available (`TallyConnectionManager`'s `connected`/`disconnected`/`degraded`), already treated as
+routine/transient by this codebase's own retry policy and circuit breaker, would require exactly
+the invented "session ended" inference the governing task forbade — a documented STOP, not an
+oversight. Full regression re-run across all three subsystems with no scheduler/company-isolation
+code touched: Connector 1,471/1,471, Android 1,286/1,286 both variants (+5), Desktop 735/735 — all
+clean. No MVP-1.4 work; no scheduler-architecture change. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §36; `docs/technical-debt/registry.md` TD-039.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.

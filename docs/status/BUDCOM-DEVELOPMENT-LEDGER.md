@@ -2011,3 +2011,89 @@ existed before this phase. No StockItem Browser Android-side change (out of scop
 inconsistency). The OPEN cheap-signal investigation from Phase 43 (§17 item 10, a possible
 `ALTERID`-based pre-extraction change probe) was **not** touched — this phase's scheduler design
 does not depend on it, exactly as the architecture recommended.
+
+## 36. Phase 46 — Adaptive Tally Synchronization Hardening: Manual-Sync/Room Gap Investigation + Fix
+
+Continuation task, new session, explicitly bounded to hardening the Phase 45 work before MVP-1.4
+resumes. First priority: investigate the manual-sync/Room limitation Phase 45 flagged but did not
+root-cause. Second priority (conditional): the "Finished working in Tally? Sync now" suggestion.
+
+### A. Investigation: is the Ledgers manual-sync/Room gap expected architecture, a UI issue, or a defect?
+
+Traced the complete path (Android Sync Now → `StartTargetSyncUseCase` → Connector `POST
+/sync/ledgers` → Tally extraction → Connector SQLite → response → Android Room → Connect's
+Customer/Supplier reconciliation). Found that `StartTargetSyncUseCase` already had a
+`completeVoucherWindowFetch()` second step for Vouchers (added historically per commit `028c650`,
+explicitly scoped to Vouchers only in its own commit message — not a "Ledgers should stay
+different" decision) that re-fetches from the Connector into Room after a successful extraction.
+Ledgers had no equivalent step. **Verdict: genuine defect (not expected architecture, not a pure
+UI issue)** — the same user action ("Sync Now") already fully completed its promise for Vouchers
+via an established, accepted pattern; Ledgers simply never received the mirror. Logged as
+**TD-039** (`docs/technical-debt/registry.md`).
+
+### B. Real-device validation
+
+Real device `10BF44124K000E3`, company ESTIMATION, phone+laptop on the same Wi-Fi (no hotspot
+client-isolation this time — an ordinary router). Confirmed pre-fix via `run-as ... sqlite3` that a
+Sync-Now-only tap (no separate Ledger Browser visit) left `cached_ledgers.syncedAt`/
+`dataFreshnessAt` at stale values, and Connect's Customer tab showed the stale set. No Tally
+business data was altered to manufacture this — the existing real, already-synced ESTIMATION
+company was used as-is, and the gap was observed from its genuine pre-existing state.
+
+### C. Fix (smallest architecturally correct change)
+
+`StartTargetSyncUseCase` (`apps/budcom_android/.../sync/domain/usecase/SyncUseCases.kt`) gained a
+4th constructor dependency, the existing `RefreshLedgersUseCase`, and a `completeLedgerRoomRefresh()`
+step mirroring `completeVoucherWindowFetch()` exactly: on a successful Ledgers extraction, it calls
+the same `GET /ledgers` fetch-and-persist path the Ledger Browser's own explicit Refresh already
+uses, before reporting the sync complete; a refresh failure is reported as the operation's own
+failure. No new Tally extraction, no second sync engine, no new endpoint — reuses the identical
+Connector read path and the identical Android use case each browser screen already calls. Hilt
+auto-wired the new constructor parameter with no manual `@Provides` change needed.
+
+Re-verified live on the same real device: a Sync-Now-only tap updated `cached_ledgers.syncedAt`/
+`dataFreshnessAt` to the exact tap time, and Connect's Customer tab immediately showed the full
+real, current list (873 customers) with no separate Ledger Browser visit. See TD-039 for exact
+timestamps.
+
+New/updated tests: `SyncUseCasesTest.kt` (+4 covering success/failure/extraction-failure/
+StockItems-untouched) and `SyncViewModelTest.kt` (+2 covering the same at the ViewModel layer).
+Android: 1,281/1,281 → **1,286/1,286 tests both variants**, 0 lint errors, both assembles green.
+
+### D. "Finished working in Tally? Sync now" suggestion — not implemented, and why
+
+Section 5 of the governing task conditioned this feature on "legitimate connection-state evidence,"
+explicitly forbidding an invented "Tally session ended" detector. `TallyConnectionManager`
+(`connector/.../tally/connection/tally-connection-manager.ts`) exposes exactly one relevant signal:
+`state` (`connected`/`disconnected`/`degraded`/`reconnecting`), driven purely by whether the most
+recent Tally XML exchange succeeded or failed. This same state is already the input to this
+codebase's own retry policy and circuit breaker, both of which exist specifically because ordinary,
+frequent, transient failures (Tally momentarily busy, brief network blips) are treated as routine,
+not as meaningful events. Building a "user has finished working in Tally" suggestion on top of a
+`connected → disconnected/degraded` transition would silently reinterpret that same routine,
+frequent, transient signal as evidence of user intent — which is a session-end detector in
+substance, regardless of how the surfaced copy is worded. No other connection-state signal in
+either the Connector or Android exposes anything closer to actual Tally usage (e.g., data-entry
+activity, window focus, or an explicit close event) than this raw reachability flag. This is treated
+as the Section 18 STOP condition ("the suggestion requires inventing Tally-session detection") and
+the feature is **not implemented** — deliberately deferred, not rejected, consistent with the
+open item already on record in project memory. No product decision was overridden; none was made.
+
+### E. Re-verification (no scheduler or company-isolation code touched this session)
+
+Full regression run across all three subsystems: Connector **1,471/1,471** tests (162/162 files),
+Android **1,286/1,286** tests both variants, Desktop **735/735** tests — all clean, confirming no
+regression from this session's change. The TD-036/TD-037 company-isolation regression tests
+(`ledger-sync.test.ts`, `stock-item-sync.test.ts`, `SyncRepositoryImplTest.kt`) are part of these
+totals and passed unchanged. Company isolation, restart/recovery, and the scheduler's own operation
+were **not re-run physically** this session: the change is confined to `StartTargetSyncUseCase`'s
+Ledgers branch, does not touch `bindCompany`, the scheduler service, or any persisted scheduler
+state, and Phase 45's real-device scheduler evidence (§C above) already stands — repeating it here
+would not exercise anything this session's diff could plausibly have broken.
+
+### F. Scope discipline
+
+No MVP-1.4 Catalogue work. No second sync engine. No scheduler-architecture changes — the Phase 45
+design (ACTIVE_WINDOW/BACKOFF staging, per-company state, Manual Sync feeding scheduler state) is
+untouched and not re-litigated. The cheap Tally change-detection signal (`ALTERID`/similar) was not
+implemented, per the governing task's own instruction.
