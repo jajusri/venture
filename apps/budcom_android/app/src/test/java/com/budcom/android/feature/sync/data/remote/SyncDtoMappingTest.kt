@@ -62,6 +62,47 @@ class SyncDtoMappingTest {
     }
 
     @Test
+    fun statusResponseCarriesSchedulerStateIntoTheDomainProgress() {
+        val dto = json.decodeFromString(
+            SyncStatusResponseDto.serializer(),
+            """
+            {
+              "schemaVersion":"1.0.0",
+              "progress":{"syncRunId":"r1","status":"idle","totalExpected":null,"startedAt":null,"completedAt":null,"durationMs":null,"itemsProcessed":0,"itemsAdded":0,"itemsUpdated":0,"itemsSkipped":0,"itemsFailed":0,"lastError":null,"cancelRequested":false},
+              "schedulerState":{"stage":"active_window","nextCheckDueAt":"2026-08-22T10:05:00.000Z"}
+            }
+            """.trimIndent(),
+        )
+        val progress = dto.progress.toDomain(dto.schedulerState?.toDomain())
+        assertEquals(com.budcom.android.feature.sync.domain.model.SchedulerStage.ActiveWindow, progress.schedulerState?.stage)
+        assertEquals("2026-08-22T10:05:00.000Z", progress.schedulerState?.nextCheckDueAt)
+    }
+
+    @Test
+    fun statusResponseWithoutSchedulerStateMapsToNullGracefully() {
+        val dto = json.decodeFromString(
+            SyncStatusResponseDto.serializer(),
+            """
+            {
+              "schemaVersion":"1.0.0",
+              "progress":{"syncRunId":"r1","status":"idle","totalExpected":null,"startedAt":null,"completedAt":null,"durationMs":null,"itemsProcessed":0,"itemsAdded":0,"itemsUpdated":0,"itemsSkipped":0,"itemsFailed":0,"lastError":null,"cancelRequested":false}
+            }
+            """.trimIndent(),
+        )
+        val progress = dto.progress.toDomain(dto.schedulerState?.toDomain())
+        assertNull(progress.schedulerState)
+    }
+
+    @Test
+    fun unknownSchedulerStageStringMapsToUnknownRatherThanCrashing() {
+        val dto = json.decodeFromString(
+            SchedulerStateDto.serializer(),
+            """{"stage":"some_future_stage","nextCheckDueAt":null}""",
+        )
+        assertEquals(com.budcom.android.feature.sync.domain.model.SchedulerStage.Unknown, dto.toDomain().stage)
+    }
+
+    @Test
     fun stockPartialMapsPartialSuccess() {
         val dto = json.decodeFromString(
             StockSyncResultDto.serializer(),

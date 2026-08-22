@@ -25,6 +25,11 @@ import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatus
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorOperationalStatusPort
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
+import com.budcom.android.feature.sync.domain.model.SchedulerStage
+import com.budcom.android.feature.sync.domain.model.SchedulerState
+import com.budcom.android.feature.sync.domain.model.SyncCounts
+import com.budcom.android.feature.sync.domain.model.SyncProgress
+import com.budcom.android.feature.sync.domain.model.SyncRunStatus
 import com.budcom.android.feature.sync.domain.model.SyncStatusSummary
 import com.budcom.android.feature.sync.domain.model.SyncTarget
 import com.budcom.android.feature.sync.domain.model.SyncTargetSnapshot
@@ -163,6 +168,68 @@ class DashboardViewModelTest {
         assertEquals(probeCallsAfterLoss + 1, connector.probeCalls)
         assertEquals(DashboardOperationalMode.FullyOperational, viewModel.uiState.value.operationalMode)
         assertEquals(true, viewModel.uiState.value.connectorConnected)
+    }
+
+    @Test
+    fun `syncStatusLabel appends Checking regularly when a target is inside the scheduler active window`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        syncStatus.mutableSummary.value = syncStatus.mutableSummary.value.copy(
+            latestSuccessfulAt = "2026-08-22T10:00:00.000Z",
+            targets = syncStatus.mutableSummary.value.targets.map { snapshot ->
+                if (snapshot.target == SyncTarget.Ledgers) {
+                    snapshot.copy(
+                        liveProgress = samplePendingProgress(
+                            SchedulerState(SchedulerStage.ActiveWindow, "2026-08-22T10:05:00.000Z"),
+                        ),
+                    )
+                } else {
+                    snapshot
+                }
+            },
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.syncStatusLabel.endsWith("Checking regularly"))
+        assertTrue(viewModel.uiState.value.syncStatusLabel.startsWith("Last sync completed at"))
+    }
+
+    @Test
+    fun `syncStatusLabel appends Checking occasionally once every known target has backed off`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        syncStatus.mutableSummary.value = syncStatus.mutableSummary.value.copy(
+            latestSuccessfulAt = "2026-08-22T10:00:00.000Z",
+            targets = syncStatus.mutableSummary.value.targets.map { snapshot ->
+                when (snapshot.target) {
+                    SyncTarget.Ledgers -> snapshot.copy(
+                        liveProgress = samplePendingProgress(SchedulerState(SchedulerStage.Backoff15, "t")),
+                    )
+                    SyncTarget.StockItems -> snapshot.copy(
+                        liveProgress = samplePendingProgress(SchedulerState(SchedulerStage.Backoff60, "t")),
+                    )
+                    else -> snapshot
+                }
+            },
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.syncStatusLabel.endsWith("Checking occasionally"))
+    }
+
+    @Test
+    fun `syncStatusLabel omits the checking-frequency suffix when no scheduler state is known yet`() = runTest(dispatcher) {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        syncStatus.mutableSummary.value = syncStatus.mutableSummary.value.copy(
+            latestSuccessfulAt = "2026-08-22T10:00:00.000Z",
+        )
+        advanceUntilIdle()
+
+        assertEquals("Last sync completed at 2026-08-22T10:00:00.000Z", viewModel.uiState.value.syncStatusLabel)
     }
 
     @Test
@@ -713,7 +780,7 @@ private class FakeConnectivity(initiallyOnline: Boolean) : NetworkConnectivityOb
 }
 
 private class FakeSyncStatus : ObserveSyncStatusPort {
-    override val summary: StateFlow<SyncStatusSummary> = MutableStateFlow(
+    val mutableSummary = MutableStateFlow(
         SyncStatusSummary(
             companyId = null,
             isAnySyncActive = false,
@@ -733,7 +800,20 @@ private class FakeSyncStatus : ObserveSyncStatusPort {
             lastUpdatedEpochMillis = 0L,
         ),
     )
+    override val summary: StateFlow<SyncStatusSummary> = mutableSummary
 }
+
+private fun samplePendingProgress(schedulerState: SchedulerState?) = SyncProgress(
+    syncRunId = null,
+    status = SyncRunStatus.Idle,
+    counts = SyncCounts(0, 0, 0, 0, 0, null),
+    startedAt = null,
+    completedAt = null,
+    durationMs = null,
+    lastError = null,
+    cancelRequested = false,
+    schedulerState = schedulerState,
+)
 
 private fun sampleProbe(ready: Boolean) = ConnectorConnectionProbe(
     health = ConnectorHealth(

@@ -1,5 +1,6 @@
 package com.budcom.android.feature.sync.data.remote
 
+import com.budcom.android.feature.sync.domain.model.SchedulerState
 import com.budcom.android.feature.sync.domain.model.SyncCounts
 import com.budcom.android.feature.sync.domain.model.SyncMode
 import com.budcom.android.feature.sync.domain.model.SyncOutcome
@@ -8,8 +9,14 @@ import com.budcom.android.feature.sync.domain.model.SyncRunStatus
 import com.budcom.android.feature.sync.domain.model.SyncRunSummary
 import com.budcom.android.feature.sync.domain.model.SyncStatisticsSummary
 import com.budcom.android.feature.sync.domain.model.SyncTarget
+import com.budcom.android.feature.sync.domain.model.toSchedulerStage
 
-internal fun SyncProgressDto.toDomain(): SyncProgress = SyncProgress(
+internal fun SchedulerStateDto.toDomain(): SchedulerState = SchedulerState(
+    stage = stage.toSchedulerStage(),
+    nextCheckDueAt = nextCheckDueAt,
+)
+
+internal fun SyncProgressDto.toDomain(schedulerState: SchedulerState? = null): SyncProgress = SyncProgress(
     syncRunId = syncRunId,
     status = status.toSyncRunStatus(),
     counts = SyncCounts(
@@ -25,6 +32,7 @@ internal fun SyncProgressDto.toDomain(): SyncProgress = SyncProgress(
     durationMs = durationMs,
     lastError = lastError,
     cancelRequested = cancelRequested,
+    schedulerState = schedulerState,
 )
 
 internal fun String.toSyncRunStatus(): SyncRunStatus = when (this) {

@@ -82,7 +82,9 @@ class DefaultAuthenticatedSyncRemoteDataSource @Inject constructor(
             SyncTarget.StockItems -> AuthenticatedConnectorOperation.StockItemSyncStatus
             SyncTarget.Vouchers -> return AppResult.Failure(AppError.Message("Voucher sync status is unavailable."))
         }
-        return execute(operation) { rawJson -> json.decodeFromString(SyncStatusResponseDto.serializer(), rawJson).progress.toDomain() }
+        return execute(operation) { rawJson ->
+            json.decodeFromString(SyncStatusResponseDto.serializer(), rawJson).let { it.progress.toDomain(it.schedulerState?.toDomain()) }
+        }
     }
 
     override suspend fun fetchStatistics(target: SyncTarget): AppResult<SyncStatisticsSummary> {

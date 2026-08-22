@@ -41,11 +41,25 @@ data class SyncStorageDto(
     val message: String? = null,
 )
 
+/**
+ * The Connector's own adaptive-sync scheduler stage for one resource kind -- raw internal state,
+ * never shown to the user directly (see `deriveCheckingFrequencyLabel()` in SyncModels.kt, which
+ * maps this to the two honest, non-technical phrases the UI actually displays: "Checking
+ * regularly" / "Checking occasionally"). Absent/null means the Connector has no scheduler (older
+ * version) or nothing selected yet -- the UI must degrade gracefully, never treat this as an error.
+ */
+@Serializable
+data class SchedulerStateDto(
+    val stage: String,
+    val nextCheckDueAt: String? = null,
+)
+
 @Serializable
 data class SyncStatusResponseDto(
     val schemaVersion: String? = null,
     val progress: SyncProgressDto,
     val storage: SyncStorageDto? = null,
+    val schedulerState: SchedulerStateDto? = null,
 )
 
 @Serializable

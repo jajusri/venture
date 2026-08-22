@@ -52,6 +52,50 @@ data class SyncCounts(
         get() = totalExpected != null && totalExpected > 0
 }
 
+/**
+ * The Connector's own adaptive-sync scheduler stage for one target -- raw internal state, never
+ * shown to the user directly. See [checkingFrequencyLabel], which maps this to the two honest,
+ * non-technical phrases the UI actually displays: "Checking regularly" / "Checking occasionally".
+ */
+enum class SchedulerStage {
+    ActiveWindow,
+    Backoff15,
+    Backoff30,
+    Backoff60,
+    Unknown,
+}
+
+fun String.toSchedulerStage(): SchedulerStage = when (this) {
+    "active_window" -> SchedulerStage.ActiveWindow
+    "backoff_15" -> SchedulerStage.Backoff15
+    "backoff_30" -> SchedulerStage.Backoff30
+    "backoff_60" -> SchedulerStage.Backoff60
+    else -> SchedulerStage.Unknown
+}
+
+data class SchedulerState(
+    val stage: SchedulerStage,
+    val nextCheckDueAt: String?,
+)
+
+/**
+ * Combines whichever targets' scheduler state is currently known into the one two-word phrase
+ * the architecture's UX section allows -- "Checking regularly" while any of them is inside the
+ * active window, "Checking occasionally" once all known ones have backed off. `null` when nothing
+ * is known yet (older Connector, nothing synced yet, or a transient failure) -- the caller must
+ * leave this blank rather than guessing, exactly like Desktop's equivalent
+ * `deriveCheckingFrequencyLabel()`.
+ */
+fun checkingFrequencyLabel(vararg states: SchedulerState?): String? {
+    val known = states.filterNotNull()
+    if (known.isEmpty()) return null
+    return if (known.any { it.stage == SchedulerStage.ActiveWindow }) {
+        "Checking regularly"
+    } else {
+        "Checking occasionally"
+    }
+}
+
 data class SyncProgress(
     val syncRunId: String?,
     val status: SyncRunStatus,
@@ -61,6 +105,7 @@ data class SyncProgress(
     val durationMs: Long?,
     val lastError: String?,
     val cancelRequested: Boolean,
+    val schedulerState: SchedulerState? = null,
 )
 
 data class SyncStatisticsSummary(

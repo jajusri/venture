@@ -9,6 +9,8 @@ import com.budcom.android.feature.dashboard.domain.usecase.ObserveDashboardConte
 import com.budcom.android.feature.dashboard.domain.usecase.ProbeConnectorConnectionUseCase
 import com.budcom.android.feature.dashboard.domain.usecase.RefreshDashboardUseCase
 import com.budcom.android.feature.dashboard.domain.usecase.ValidateDashboardSessionUseCase
+import com.budcom.android.feature.sync.domain.model.SyncTarget
+import com.budcom.android.feature.sync.domain.model.checkingFrequencyLabel
 import com.budcom.android.feature.sync.domain.port.ObserveSyncStatusPort
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -147,7 +149,18 @@ class DashboardViewModel @Inject constructor(
                     !summary.latestFailedMessage.isNullOrBlank() -> "Last sync failed"
                     else -> "Never synced"
                 }
-                _uiState.update { it.copy(syncStatusLabel = label) }
+                // Combines whichever of Ledgers/StockItems has known scheduler state (Vouchers
+                // has no scheduler concept -- excluded from this scheduler design, see the
+                // architecture doc §7) into the same honest, non-technical phrase Desktop shows.
+                // Blank (not appended) whenever nothing is known yet, exactly like Desktop's
+                // equivalent -- never a guess, never raw stage names.
+                val schedulerStates = summary.targets
+                    .filter { it.target == SyncTarget.Ledgers || it.target == SyncTarget.StockItems }
+                    .map { it.liveProgress?.schedulerState }
+                    .toTypedArray()
+                val checkingFrequency = checkingFrequencyLabel(*schedulerStates)
+                val labelWithFrequency = if (checkingFrequency != null) "$label · $checkingFrequency" else label
+                _uiState.update { it.copy(syncStatusLabel = labelWithFrequency) }
             }
         }
         refresh(isInitial = true)

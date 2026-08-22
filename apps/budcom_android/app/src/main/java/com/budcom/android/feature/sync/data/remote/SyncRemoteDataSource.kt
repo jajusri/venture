@@ -57,8 +57,8 @@ class DefaultSyncRemoteDataSource @Inject constructor(
         withRetry(retryPolicy) {
             safeApiCall(errorMapper, connectivityObserver) {
                 when (target) {
-                    SyncTarget.Ledgers -> api.ledgerSyncStatus().progress.toDomain()
-                    SyncTarget.StockItems -> api.stockItemSyncStatus().progress.toDomain()
+                    SyncTarget.Ledgers -> api.ledgerSyncStatus().let { it.progress.toDomain(it.schedulerState?.toDomain()) }
+                    SyncTarget.StockItems -> api.stockItemSyncStatus().let { it.progress.toDomain(it.schedulerState?.toDomain()) }
                     SyncTarget.Vouchers -> error("Voucher sync status is not publicly available.")
                 }
             }
