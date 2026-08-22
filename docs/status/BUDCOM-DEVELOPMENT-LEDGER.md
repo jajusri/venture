@@ -1652,7 +1652,100 @@ information is shown more prominently in the cards directly below it. Recommende
 MVP-1.4 Catalogue implementation planning/execution, per Phase 39's PDL-020 decision lock — **not
 started here**, per this task's explicit instruction.
 
-## 33. Current source-of-truth references
+## 33. Phase 43 — Adaptive Tally Synchronization Strategy: Research, Architecture & Product Decision Research
+
+Read-only research/architecture task, explicitly not an implementation task: investigate whether an
+adaptive (frequent-when-active, backed-off-when-idle) Tally synchronization strategy is feasible,
+recover the real current sync architecture across Desktop/Connector/Android/Tally by direct source
+inspection rather than assumption, and produce a documented recommendation with an explicit
+LOCKED/RECOMMENDED/OPEN decision split. Starting HEAD `4b0b8ff` (Phase 42's own final commit), working
+tree clean. No production code touched — verified by `git diff --stat` at the end covering exactly the
+new architecture document plus this ledger entry and the status-doc pointer below.
+
+### A. Investigation method
+
+Parallelized two independent, thoroughly-cited investigations (each producing an 800-1500+ word report
+with exact file:line evidence, explicitly noting anything that could not be confirmed rather than
+guessing) alongside first-party investigation of the Desktop side and the Connector's technical-debt
+history:
+
+- A general-purpose research agent traced the Connector's sync endpoints, extraction pipeline,
+  scheduler/throttling infrastructure, sync-state persistence, company-boundary handling, and failure
+  semantics directly from `connector/budcom_connector/src`.
+- A second traced Android's sync triggers, Room caching, company-scoped state, local-first behavior,
+  reentrancy guards, and connection-lifecycle indicators directly from
+  `apps/budcom_android/app/src/main/java/com/budcom/android`.
+- Desktop's connector-lifecycle health-poll cadence, manual sync/progress-poll wiring, and freshness UX
+  were traced directly (already well understood from Phase 41/42's own review earlier this session).
+- The project's own `docs/technical-debt/registry.md` was read directly for TD-006 ("Durable
+  interrupted sync resume") and TD-007 ("Extraction-phase cancellation") — both materially inform
+  failure/concurrency semantics for any scheduler design — and to confirm TD-001/TD-035's actual scope
+  (XML sanitization and `PARENT`-group extraction respectively, not sync-state isolation as the
+  governing task's phrasing might suggest).
+
+### B. Headline finding: no automatic sync, no cheap change-detection, anywhere in the system today
+
+Confirmed directly, not assumed: the Connector's own `SchedulerService` is implemented only by
+`SchedulerStub extends PlaceholderService` — a literal no-op, never implemented. Desktop has zero
+`setInterval` triggering data sync (only a private-storage watchdog and the 5-second connector-health
+poll, which checks reachability only). Android has zero `WorkManager`/`AlarmManager` usage anywhere
+(confirmed by a repo-wide search for `.enqueue(` returning zero matches, matching the README's own
+"WorkManager / automatic sync | Out of scope" note). Every sync on every platform is manual,
+user-tapped, and always a full extraction — `ALTERID` is fetched and stored per-record but only as one
+field inside the same full pull, never as a standalone cheap pre-check; the existing post-extraction
+SHA-256 content fingerprint (`computeLedgerFingerprint()`/`computeStockItemFingerprint()`) already
+skips redundant database writes but only after paying the full Tally/XML cost. The project's own
+TD-006 explicitly documents that a reliable resume/watermark mechanism is not currently safe to
+assume, because Tally's export order is not guaranteed and no snapshot identity exists — this is the
+existing, authoritative project position, not a new conclusion invented for this task.
+
+### C. Two genuine, previously-undocumented defects found (not fixed — read-only task)
+
+Both investigations independently surfaced a company-isolation gap of the identical shape, in
+in-memory (not database) state:
+
+1. **Connector**: `LedgerSyncServiceImpl`/`StockItemSyncServiceImpl` are process-wide singletons whose
+   `progress`/`activeRun`/`syncInFlight` fields are not keyed by `companyId` — `GET
+   /sync/ledgers/status` takes no company parameter and can return a stale company's leftover
+   progress after a company switch; the single-flight guard is also global, so Company B's sync can be
+   spuriously rejected as "already running" while Company A's is in flight, even though the underlying
+   per-company database check would allow it.
+2. **Android**: `SyncRepositoryImpl.bindCompany()` doesn't clear a previously-selected company's cached
+   sync-target summaries, and `clearActiveIfCompanyChanged()` — a method that appears purpose-built to
+   fix exactly this — is never called anywhere (dead code).
+
+Neither was fixed, per this task's explicit read-only/no-production-code constraint. Both are
+documented in the new architecture doc as **prerequisite fixes** for the eventual scheduler
+implementation task, not incidental notes — a background scheduler ticking automatically will exercise
+these gaps far more often than today's manual-tap-only usage does.
+
+### D. Deliverable
+
+New document: `docs/architecture/BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md` (19 sections, matching
+the governing task's own report structure) covering: the recovered current architecture per platform;
+the critical cheap-change-detection question answered honestly (not achievable today without a
+separately-scoped Tally-API validation spike this task did not perform); a five-strategy comparison;
+a two-state (staged-backoff) synchronization state machine preserving the originally-proposed 15/60
+concept, refined into a 15→30→60-minute staged ladder with 5-minute checks during the active window;
+an explicit definition of "change" per module; the multi-company isolation model (`companyId` alone,
+Map-not-singleton, directly evidenced by §C's findings); failure semantics (a failed check never
+advances or resets the backoff ladder); manual Sync Now behavior including a debounced, honestly-worded
+connection-loss-based suggestion (not an invented "session ended" detector); a real-numbers-anchored
+performance model across five scenarios; confirmation the existing local-first read path is untouched;
+a state-storage recommendation (a new small company-scoped table in the Connector's existing SQLite
+database, not Room/DataStore, not overloading `sync_runs`); a security/integrity review; a concurrency
+model reusing the existing sync-execution path with no second state machine; and an explicit
+LOCKED (4 items) / RECOMMENDED (5 items) / OPEN (4 items) decision split — most notably keeping the
+cheap-Tally-signal question genuinely OPEN rather than silently assumed either way.
+
+### E. Scope discipline
+
+No Android, Desktop, Connector, or Tally-protocol production code was modified — confirmed by
+`git status`/`git diff --stat` covering exactly the new architecture document plus this ledger entry
+and the status-doc summary/pointer. No schema change, no version bump, no MVP-1.4 work. Nothing
+pushed — commits prepared locally only, per this task's explicit rule.
+
+## 34. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`

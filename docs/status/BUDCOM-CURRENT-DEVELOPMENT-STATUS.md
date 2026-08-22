@@ -192,6 +192,28 @@ touched. **MVP-1.4 readiness gate: A — READY** (the one open cosmetic defect a
 secondary, redundant header badge, not the primary Dashboard cards). Full detail:
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §32.
 
+**Phase 43 — Adaptive Tally Synchronization Strategy: Research, Architecture & Product Decision
+Research (read-only research task, no production code touched).** Investigated whether an adaptive
+(frequent-when-active, backed-off-when-idle) Tally sync strategy is feasible, by direct source
+inspection of Desktop, Connector, Android, and the project's own technical-debt history rather than
+assumption. Headline finding: **no automatic sync exists anywhere in BUDCOM today** — the Connector's
+own `SchedulerService` is a literal no-op placeholder, Desktop has no data-sync timer, and Android has
+zero `WorkManager`/`AlarmManager` usage; every sync on every platform is manual and always a full
+extraction. **No cheap pre-extraction "did Tally change" signal exists either** — Tally's `ALTERID` is
+already captured per-record but only inside the same full pull, and the project's own TD-006 already
+documents that a reliable resume/watermark mechanism isn't safe to assume (Tally's export order isn't
+guaranteed, no snapshot identity exists). The investigation also surfaced two genuine,
+previously-undocumented company-isolation gaps in in-memory (not database) sync state — one in the
+Connector's ledger/stock-item sync services (process-wide singletons, not keyed by company), one in
+Android's `SyncRepositoryImpl` (a `clearActiveIfCompanyChanged()` method that exists but is dead code,
+never called) — documented as prerequisite fixes for the next task, not fixed here. Produced
+`docs/architecture/BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md`: a staged time-based backoff state
+machine (preserving the original 15/60-minute concept, refined into a 15→30→60-minute ladder) as the
+recommended near-term default, with the originally-hoped-for cheap-change-detection strategy honestly
+kept as a separately-scoped, unvalidated **OPEN** future investigation rather than assumed. No
+Android/Desktop/Connector/Tally-protocol production code touched; no schema change; no version bump;
+MVP-1.4 not started. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §33.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.
