@@ -1509,7 +1509,150 @@ architecture, cloud sync, and the existing retry/recovery/state-machine architec
 which are the same established pattern already used for company loading, not a new architecture).
 No version bump. Nothing pushed — commits prepared locally only, per this task's explicit rule.
 
-## 32. Current source-of-truth references
+## 32. Phase 42 — Desktop UX Polish: Final Review, Real-Use Hardening & Next-Lineup Gate
+
+Explicit continuation of Phase 41 — a review-and-hardening gate, not a new feature pass: re-audit
+the Desktop user journey (launch, connection, company, sync, offline) with fresh eyes ("do not trust
+the previous report — inspect the actual current source"), fix only genuine defects found, then
+render an explicit MVP-1.4-readiness decision without starting MVP-1.4 itself. Starting HEAD
+`9ca8c7b` (Phase 41's own commits `264c797`/`3ceebf1`/`aed8ce0` plus the Android DEV-isolation commit
+from a separate, unrelated task in the same session), working tree clean.
+
+### A. Fresh-eyes source re-audit
+
+Re-read `app.ts` end to end (all ~40 exported/internal functions, via a full function-signature
+outline plus targeted deep reads of `getDisplayConnectionState()`, `renderConnectionDisplay()`,
+`renderDashboard()`, `refreshUi()`, `activateView()`, `handleCompanySelection()`,
+`startDesktopShell()`), `main.css`'s full token/layout system, and the main-process side of the
+connection lifecycle (`connector-lifecycle-service.ts`, `dashboard-service.ts`) to understand exactly
+when the renderer's connection/health display does and does not get refreshed. Confirmed Phase 41's
+own defect list and fixes are intact and unregressed (28 bare `catch {}` blocks — the established
+error-swallowing pattern — zero TODO/FIXME/console.log/console.error, matching the prior audit
+exactly).
+
+### B. Genuine defect found and fixed: Dashboard connection/health card can go silently stale
+
+Traced the full push/pull chain for the Dashboard's connection card: `desktop:status-updated` only
+fires on a *coarse* 5-value lifecycle transition (`starting`/`connected`/`reconnecting`/
+`disconnected`/`failed`) or a handful of explicit user actions (settings save, company select/clear,
+lifecycle buttons) — never on every health-poll tick. But the Connector's own `/health` `status` field
+is a *finer* signal (`ok`/`degraded`/`unavailable`) that can legitimately read `'degraded'` while the
+coarse lifecycle stays `'connected'` — confirmed at the source
+(`connector/budcom_connector/src/services/health/health-service.ts`: `status = 'degraded'` whenever
+any sub-service including `tallyConnection` isn't ready, e.g. **Tally itself disconnects while the
+Connector process keeps running**). The Desktop's own `HttpHealthChecker.checkHealthDetails()` treats
+`ready = body.status !== 'unavailable'` — so a degraded-but-still-`ready` response makes
+`refreshHealthState()` call `markHealthy()` → `transitionState('connected')`, a no-op (no push) when
+already connected. Since `activateView('dashboard')` only ever called
+`refreshDashboardDataFreshness()` (Ledger/Stock Item freshness only, by explicit design — see Phase
+41 §B) and never re-pulled `getDashboardState()`, a user sitting on or returning to the Dashboard
+while Tally is disconnected but the Connector survives could see a stale "Connected"/"Working
+normally" indefinitely — a real, deterministic staleness gap, not a hypothetical one, and squarely
+inside this task's own "no false transitions" / "user always knows whether data is current" charter.
+
+**Fix** (`activateView()`, `app.ts`): also call `refreshUi({ showLoading: false })` (caught, not
+awaited) whenever the Dashboard view is (re-)activated — mirroring the exact "fetch fresh data when
+this view becomes visible" pattern already used by `refreshDiagnostics()`/`loadLedgers()`/
+`loadStockItems()`/`loadPairingPanel()`. Bounds the staleness window to "since the user last left and
+returned to Dashboard" instead of indefinite. Deliberately narrower than adding a new
+Dashboard-visible polling timer (the more complete fix): `dashboard-recovery.test.ts` has an
+extensively fake-timer-tuned bounded-recovery suite (including one test asserting exactly 181
+`getDashboardState()` calls across a simulated 15-minute heartbeat) that a new independent timer
+risked destabilizing for a benefit — a 5-second-scale staleness window — that didn't justify the
+added architecture or risk; the task's own instructions to prefer minimal, in-architecture fixes and
+avoid new background-polling machinery. The `.catch(() => {})` guard is required, not decorative —
+`sync-progress.test.ts`/`pairing-render.test.ts` both reuse `activateView('dashboard')` as a neutral
+reset step against bridge mocks that don't implement `getDashboardState` et al.; verified by adding a
+new `dashboard-render.test.ts` regression test and re-running both files clean.
+
+### C. Genuine defect found and fixed: Sync card/header duplicated the Company card's own wording
+
+`refreshDashboardDataFreshness()`'s no-active-company short-circuit (added in Phase 41 to fix a stuck
+"Checking…" state) set the Sync card headline and header Sync badge to the literal string `'No
+company selected'` — identical to the adjacent Company card's own headline. Real-Desktop validation
+screenshot (isolated probe against a live TallyPrime instance, no company selected — the actual
+default state on cold launch) showed this rendered as **"SYNC / No company selected"** directly next
+to **"COMPANY / No company selected"** — reads as if sync itself has a status called "no company
+selected" rather than "nothing to report, and here's why," and is exactly the kind of avoidable
+technical/confusing wording this task's audit targets. Fixed to `'—'` (`dashboard-sync`/
+`header-sync`), matching this app's own established placeholder convention for "nothing yet" used
+everywhere else (`header-version`, `dashboard-last-refresh`, etc.) — no invented vocabulary, and
+unambiguous given the Company card's own message sits immediately adjacent. Two existing
+`dashboard-render.test.ts` assertions updated to match (test titles corrected to describe what they
+now verify); no other test referenced the old string in this context.
+
+### D. Investigated, attempted, and honestly reverted: header badge overflow
+
+The same no-company-selected screenshot also showed the header's fixed 3-column `Company: / Sync: /
+Last Sync:` badge grid (`.header-meta { grid-template-columns: repeat(3, auto) }`, `main.css`)
+overflowing past the window's right edge at the app's own default launch size (1200×800, confirmed
+in `main.ts`'s `createMainWindow()`) — `"Company: No company selected"` alone is long enough to push
+the still-undisclosed Sync/Last Sync badges entirely off-screen with no wrap, ellipsis, or scrollbar.
+Confirmed the fix in §C alone doesn't resolve it (the overflow is driven by `header-company`'s
+"No company selected" fallback in `renderDashboard()`, a separate, correct-as-is field). Attempted
+three rounds of CSS truncation (`max-width`/`overflow:hidden`/`text-overflow:ellipsis` on the value,
+then `min-width: 0` on the containing grid item, then on `.header-meta`/`.header-status` themselves —
+the standard nested-flex/grid truncation chain) and rebuilt/re-probed after each; all three produced
+byte-for-byte the same clipped screenshot, with no diagnostic tooling available in this session to
+inspect live computed styles and confirm the actual cause. Rather than leave in place three rounds of
+CSS that could not be verified to work — and per this project's own standing "never overclaim a fix
+that doesn't provide a demonstrated guarantee" principle — **all three attempts were reverted**;
+`git diff` on `main.css` is empty. This remains a real, screenshot-confirmed, unresolved cosmetic
+defect, deferred with an honest account rather than shipped unverified; see §H below for its
+practical severity. Recommended follow-up: reproduce with Chromium DevTools attached (not available
+in this headless probe session) to inspect actual computed grid/flex track widths.
+
+### E. Real Desktop validation
+
+Reused the isolated `BUDCOM_INSTALLED_PROBE_MODE` probe methodology from Phase 40/41 (own `mkdtemp`'d
+`userData` dir, ephemeral connector port, `BUDCOM_SKIP_SINGLE_INSTANCE=true`) against the same live
+TallyPrime instance on the machine, five independent launches across this task (baseline, then one
+per fix/attempt), zero disruption to the already-running production Desktop instance found on the
+machine. Every run: clean cold launch (dark background from first paint, no flash), `'starting' ->
+'connected'` within ~1s, real company discovery ("1 companies available", "ESTIMATION"). Directly
+confirmed via screenshot: the §C wording fix (Sync card correctly shows "—" instead of duplicating
+"No company selected"); the §D overflow remains present and unresolved (documented, not fabricated as
+fixed). The §B staleness fix could not be directly observed live within this session — reproducing it
+requires a running Tally instance that then gets closed/disconnected while the Connector process
+keeps running, a scenario this isolated, non-interactive probe (screenshot + log observation only,
+no click/UI-interaction capability) was not built to induce; it is verified instead by direct source
+tracing (§B) and a targeted regression test.
+
+### F. Tests / lint / build
+
+Full suite: **68/68 files, 732/732 tests** (731 Phase-41 baseline + 1 new regression test; 2 existing
+assertions updated in place for the §C wording change, no count change from those). `tsc --noEmit`
+clean for `main`/`preload`/`renderer` (via `npm run build`); `npm run lint` (tsc + full suite) clean.
+Re-ran the full suite after every source edit in this session, including after reverting §D's CSS, to
+confirm the revert left no residue. `git diff --stat` checked before every save for the
+session's known CRLF-injection hazard — none occurred this session.
+
+### G. Scope discipline
+
+Left completely untouched, as required and directly confirmed by `git status`/`git diff --stat`
+covering exactly two files (`app.ts`, `dashboard-render.test.ts`): Android, Tally extraction,
+Connector protocol, Catalogue/MVP-1.4, Vartalap, Insights/OI, Referral Tree, Prospect→Ledger,
+Business Profile. `main.css` shows zero diff (§D's attempt fully reverted). No version bump. Nothing
+pushed — commits prepared locally only, per this task's explicit rule; the pre-existing Android
+DEV-isolation commit (`9ca8c7b`, unrelated prior task) also remains unpushed, unchanged from before
+this task.
+
+### H. MVP-1.4 readiness gate — **A. READY**
+
+Two real, verified Dashboard connection/trust defects found via fresh-eyes source audit (not
+superficial) and fixed with narrow, low-risk changes; one cosmetic header-overflow defect found,
+genuinely investigated, and honestly deferred rather than shipped unverified. Full regression clean
+throughout. The final self-review question — *can a user understand within a few seconds whether
+BUDCOM is ready, whether Tally is connected, which company they're working with, whether data is
+current, and whether a requested action happened* — is answered **yes** via the primary Dashboard
+cards (Connection/Company/Sync), which are fully legible and correctly worded in every state
+observed; the one open defect (§D) affects only a secondary, redundant header badge in one specific
+state at the smallest supported window width, and does not block understanding since the same
+information is shown more prominently in the cards directly below it. Recommended next task:
+MVP-1.4 Catalogue implementation planning/execution, per Phase 39's PDL-020 decision lock — **not
+started here**, per this task's explicit instruction.
+
+## 33. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`
 - MVP-1.1 Connect/Universal Party: `docs/status/BUDCOM-MVP-1-1-CONNECT-STATUS.md`

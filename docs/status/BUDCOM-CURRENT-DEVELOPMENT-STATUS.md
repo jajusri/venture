@@ -167,6 +167,31 @@ spinner. Desktop: 731/731 tests (+15 new/changed), `tsc`/build clean throughout.
 Connector-protocol/Catalogue scope touched. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`
 §31.
 
+**Phase 42 — Desktop UX Polish: Final Review, Real-Use Hardening & Next-Lineup Gate (review/hardening
+task, no version bump).** Explicit continuation of Phase 41 with a "do not trust the previous
+report — inspect the source fresh" mandate. Fresh-eyes re-audit of the full connection/health push
+chain found a real, deterministic staleness gap: the Dashboard's connection card is refreshed only on
+a coarse 5-value lifecycle transition or a handful of explicit user actions, never on every health
+poll — but the Connector's own `/health` can legitimately report `'degraded'` (e.g. Tally itself
+disconnects while the Connector process keeps running) without the coarse lifecycle changing, so the
+Dashboard could silently keep showing a stale "Connected"/"Working normally" indefinitely. Fixed by
+re-pulling dashboard state whenever the Dashboard view is (re-)activated, mirroring the same
+fetch-on-activation pattern already used by every other view; deliberately not a new polling timer, to
+avoid destabilizing `dashboard-recovery.test.ts`'s extensively fake-timer-tuned bounded-recovery
+suite for a benefit that didn't justify the added architecture. Real-Desktop validation (same
+isolated probe methodology, live TallyPrime instance) then caught a second genuine defect: the Sync
+card/header duplicated the Company card's own "No company selected" wording verbatim, reading as if
+sync itself had a status called "no company selected" — fixed to this app's own established "—"
+placeholder convention. A third, cosmetic finding (the header's fixed 3-column badge grid overflowing
+past the window's right edge at the app's own default 1200×800 size, in the same no-company-selected
+state) was investigated with three rounds of CSS truncation attempts, none of which could be verified
+to work via the screenshots available in this session — all three were honestly reverted rather than
+shipped unproven; `main.css` carries zero diff. Desktop: 732/732 tests (+1 new, 2 updated for the
+wording fix), `tsc`/`lint`/build clean throughout. No Android/Tally/Connector-protocol/Catalogue scope
+touched. **MVP-1.4 readiness gate: A — READY** (the one open cosmetic defect affects only a
+secondary, redundant header badge, not the primary Dashboard cards). Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §32.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.
