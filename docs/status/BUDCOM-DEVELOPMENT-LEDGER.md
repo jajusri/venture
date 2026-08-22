@@ -1264,6 +1264,87 @@ accumulate before a single later `chore: bump desktop X->Y` commit bundles them 
 candidate), a version bump was deliberately deferred rather than performed opportunistically here.
 Nothing pushed — commits prepared locally only, per this task's explicit push rule.
 
+### H. Follow-up: push + real launch validation (2026-08-22, explicit user request)
+
+The Phase 40 report above (§F) correctly stated the window-flash fix was "verified at the code +
+automated-test level only — not by direct visual observation." The user reviewed and approved the
+three commits, then explicitly asked to push and perform real Desktop launch validation — both
+superseding that statement, recorded here rather than edited into the original text.
+
+**Push:** re-verified branch (`main`), HEAD (`4b75ed7`), clean working tree, and all three approved
+commits (`2a62a6e`, `22126e7`, `4b75ed7`) by direct `git show` inspection before touching anything —
+confirmed unchanged from what was reported and reviewed, no unrelated files. `git fetch origin` first
+confirmed `origin/main` was still at the prior `2feb9b2` with zero divergence (`0	4` ahead/behind).
+`git push origin main` — clean fast-forward `2feb9b2..4b75ed7`, no force, no history rewrite.
+Post-push `git fetch origin` + `git rev-parse` confirmed local `HEAD` and `origin/main` both resolve
+to `4b75ed7f59383aff7add0a7923da64d6711df571` — exact match, working tree clean.
+
+**Real launch validation — performed successfully, with genuine care taken around a live machine.**
+Before touching anything, discovered this machine had (1) a real, currently-running installed
+`Budcom Desktop.exe` instance (pre-existing, pre-fix build, `C:\Program Files\Budcom Desktop\`) using
+the production `userData` directory, and (2) a live, actively-being-used TallyPrime session (company
+`ESTIMATION`) — a full-screen screenshot taken to orient caught an in-progress, unsaved Sales Voucher
+entry that visibly changed between two screenshots seconds apart, proving real concurrent activity on
+the machine. Per this task's explicit instruction ("do not terminate an existing user process
+blindly"), the production instance and Tally were **never touched, closed, or interacted with** —
+no window focus was stolen, no clicks/keystrokes were sent to anything on the machine.
+
+Instead, used the repository's own pre-existing, purpose-built isolation mechanism
+(`BUDCOM_INSTALLED_PROBE_MODE`/`BUDCOM_USER_DATA_DIR`, `src/application/release/startup-environment.ts`,
+already exercised by `scripts/lifecycle/installed-first-launch-probe.mjs`) to launch the **dev build
+with both fixes** in a fully isolated profile: its own `mkdtemp`'d `userData` directory under the OS
+temp root, `BUDCOM_SKIP_SINGLE_INSTANCE=true` (no interaction with the production instance's lock),
+and an ephemeral connector port — so the probe could never collide with, adopt, or in any way affect
+the production instance, its Connector, or Tally. A `private-storage-locator.json` was pre-seeded
+with `mode: 'standard'` to simulate a returning user's second+ launch (this task's own most-requested
+scenario) without any UI interaction. Ran **four** such isolated launches in total; all four were
+headless (log/timestamp observation only, no GUI interaction) except the last two, which added a
+**targeted** `PrintWindow(PW_RENDERFULLCONTENT)` capture scoped to the probe's own window handle by
+process id — proven immune to whichever window has OS focus (a full-screen `CopyFromScreen` attempt
+was tried first and once captured this very Claude Code conversation window instead of the probe,
+confirming full-screen capture is unreliable/inappropriate in this environment and was abandoned).
+
+Real evidence obtained, all four runs consistent (no flakiness):
+- **Cold-launch window timing** (proving the `show:false` fix's actual mechanism, not just its
+  config): `window_created` → `ready_to_show` gaps of 390ms/311ms/etc. across runs — the window is
+  provably hidden for that entire span before Electron's own `ready-to-show` reveals it, exactly the
+  window during which the old `show:true` code would have exposed a blank/white frame.
+- **The exact race window this task's second fix closes is real, not hypothetical**: `'starting' ->
+  'connected'` transitioned in ~1.05s–1.07s across runs, and the renderer's `loadCompanies()` (logged
+  as "Discovered N companies") completed only ~93–102ms after that — a tight, realistic window
+  matching the root-cause analysis in §C exactly.
+- **Real Tally connectivity succeeded** every run: the isolated Connector genuinely reached the live
+  TallyPrime instance and repeatedly discovered real companies from it (read-only "list companies"
+  calls; nothing was written to Tally).
+- **Two targeted screenshots** (process-id-scoped, capturing only the probe's own 1200x800 window,
+  never anything else on the machine): the early-state capture showed a fully-rendered, correctly
+  dark-themed dashboard with an honest "Unknown" connection state and neutral placeholders — never a
+  false "Connected" claim; the post-connection capture (taken 800ms after the log-observed
+  `'starting'->'connected'` transition — precisely astride the fixed race window) showed a correctly
+  rendered "Connected" state: green indicator dot, "Version 0.4.6 · Connected", "Health: ok", "No
+  company selected" (accurate for a fresh isolated profile), no layout corruption, no stale/
+  contradictory text anywhere.
+- **Deterministic across repeats**: all four launches followed the identical stage ordering with no
+  hangs, no crashes, no orphaned processes.
+
+**No defect was found.** Both fixes behave exactly as designed under real conditions against a real
+Tally instance; the pre-existing (untouched) connection-lifecycle machinery continues to work
+correctly end-to-end. Per this task's own Section 10 ("only fix a defect if... reproducible... a
+genuine correctness or UX-state problem"), no code change was made this follow-up — nothing to fix.
+
+**Cleanup verified exhaustively after every run**: `tasklist` confirmed zero stray `electron.exe`
+processes, the production `Budcom Desktop.exe` instance's four process IDs were byte-identical before
+and after every probe run (never restarted, never touched), Tally's process ID was likewise unchanged
+throughout, and every isolated probe's temp `userData` directory was removed. The two screenshot files
+were reviewed then deleted from the local scratch directory after use (they contained only the
+isolated probe's own window content — no unrelated application data).
+
+**Version:** not bumped — same reasoning as §G, unchanged by this follow-up.
+
+**Exact NEXT TASK:** unchanged in substance from §G — an MVP-1.4-A implementation prompt (or any
+other net-new feature work) remains a separate, not-yet-authorized work item. This stabilization
+checkpoint is complete and pushed; nothing further is queued from it.
+
 ## 31. Current source-of-truth references
 
 - Current checkpoint: `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`

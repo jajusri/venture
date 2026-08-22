@@ -127,6 +127,22 @@ already-selected company — fixed by registering the listener before that pull,
 system tray exists in this codebase (confirmed by audit, not assumed). Full detail:
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §30.
 
+**Phase 40 follow-up (2026-08-22) — pushed + real launch validation.** User reviewed and approved
+the three Phase 40 commits; pushed to `origin/main` as a clean fast-forward
+(`2feb9b2..4b75ed7`), confirmed local `HEAD` byte-identical to `origin/main`
+(`4b75ed7f59383aff7add0a7923da64d6711df571`). Performed real Desktop launch validation on the actual
+development machine using the repository's own isolated probe-mode mechanism
+(`BUDCOM_INSTALLED_PROBE_MODE`/`BUDCOM_USER_DATA_DIR`) — four independent launches of the dev build
+against a real, live TallyPrime instance, fully isolated from (and never touching) an already-running
+production Desktop instance found on the machine. Real timestamp evidence confirmed the window stays
+hidden for the entire gap before `ready-to-show` (the fixed flash window) and that `'starting' ->
+'connected'` genuinely happens in ~1.05–1.07s with company discovery completing ~100ms later — the
+exact race window the second fix closes, proven real rather than hypothetical. Two targeted,
+process-scoped screenshots (never full-screen, to avoid capturing unrelated content on a live machine)
+confirmed correct, non-flashing, honestly-stated rendering at both the pre-connection and Connected
+states. No defect was found; no further code change was made. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §30-H.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.
@@ -202,6 +218,20 @@ push. `git push origin main` completed as a normal fast-forward, no force flag, 
 `b7e9377..2feb9b2 main -> main`. Post-push verification via `git fetch origin` + `git rev-parse`
 confirmed local `HEAD` and `origin/main` both resolve to `2feb9b2bddc2838efafaf7de61e90e1ec33ffbc0`,
 working tree clean.
+
+### 2f. Push status (Phase 40 + real launch validation)
+
+**PUSHED (2026-08-22, explicit user request following review/approval of the Phase 40 commits).**
+Starting HEAD `4b75ed7` (Phase 40's own final commit, three commits ahead of `origin/main`'s then-tip
+`2feb9b2`). Re-verified branch/HEAD/clean-tree/commit-contents directly before acting — no unrelated
+changes found. `git push origin main` completed as a normal fast-forward, no force flag, no history
+rewrite: `2feb9b2..4b75ed7 main -> main`. Post-push verification via `git fetch origin` + `git
+rev-parse` confirmed local `HEAD` and `origin/main` both resolve to
+`4b75ed7f59383aff7add0a7923da64d6711df571`, working tree clean. Real Desktop launch validation was
+then performed against this exact pushed state (four isolated probe-mode launches against a live
+TallyPrime instance, zero disruption to an already-running production Desktop instance found on the
+machine) — see `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §30-H for full detail. No defect found, no
+further commit was necessary, so `HEAD` remains `4b75ed7` (== `origin/main`) after this follow-up.
 
 ## 3. Recent session work (MVP-1.2-B through MVP-1.3-C)
 
