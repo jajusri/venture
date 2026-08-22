@@ -232,6 +232,38 @@ Android: 1,268/1,268 tests both variants (+2), 0 lint errors, both assembles gre
 Desktop, or Connector production code touched. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`
 §34; `docs/technical-debt/registry.md` TD-036/TD-037/TD-038, TD-035 real-device confirmation update.
 
+**Phase 45 — Adaptive Tally Synchronization Implementation (Phase 2, 2026-08-22/23).** Same
+session as Phase 44, continued after its real-device evidence passed. Fixed the two Phase-2
+prerequisite company-isolation gaps first (**TD-036** Connector singleton sync-progress state →
+`Map<companyId, T>`; **TD-037** Android's dead `clearActiveIfCompanyChanged()` → activated inside
+`bindCompany()`), then implemented the LOCKED staged-backoff scheduler from
+`docs/architecture/BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md`: a pure state machine (5-minute
+checks in a 15-minute active window; 15→30→60-minute backoff once idle; a failed check never
+advances or resets the ladder) driving a Connector-only scheduler service that triggers the exact
+same `syncLedgers()`/`syncStockItems()` path manual Sync Now already uses — no second sync engine.
+New migration v13 (`scheduler_state`, one row per company+resource, lazy-database-getter
+constructor pattern). `GET /sync/ledgers|stock-items/status` gained a `schedulerState` field (no
+new endpoint); manual syncs feed their own outcome back into the scheduler exactly as an automatic
+check would. **Real-device verification**: a standalone build of the new Connector run against the
+same live TallyPrime instance from Phase 44 confirmed `/health`'s Scheduler reporting `"active"`
+(previously the permanent placeholder). A real manual Ledger sync (949 real ledgers) opened the
+active window; left running unattended, the Connector then fired **three further real automatic
+checks on its own schedule** (no human action) against the same real data, each a genuine
+incremental sync correctly finding no change — and when the third of these landed after the
+15-minute active window had genuinely expired (real elapsed time), the state machine correctly
+staged down live: `active_window → backoff_15` at `18:51:14`, next check ~15 minutes later exactly
+as designed. This is complete real-device proof of the scheduler's entire core mechanism, not just
+the 26 deterministic unit/integration tests that also cover it. The further `backoff_15 →
+backoff_30 → backoff_60` staged climb (another ~45 real minutes) was not additionally observed
+live — that rests on the same deterministic tests, honestly documented as such. Desktop (first, per the
+task's explicit ordering) and Android both gained a minimal, non-technical "Checking regularly" /
+"Checking occasionally" freshness line consuming this same field — pure UI consumers, no new
+polling or second scheduler on either client. Connector: 162/162 test files, 1,471/1,471 tests
+(+30). Desktop: 68/68 files, 735/735 tests (+3). Android: 1,281/1,281 tests both variants (+13
+total across TD-037 and the UX addition). All `tsc`/`eslint`/lint/build clean. No MVP-1.4 work; no
+second sync engine anywhere. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §35;
+`docs/technical-debt/registry.md` TD-036/TD-037 marked FIXED.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.

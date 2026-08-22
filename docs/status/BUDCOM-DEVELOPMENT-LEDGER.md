@@ -1851,3 +1851,163 @@ StockItem Browser change (its `loadStockItems()` is already network-first, a dif
 pre-existing, already-documented inconsistency, out of scope here). Adaptive Tally Synchronization
 Phase 2 (the scheduler implementation) begins in the next session/continuation, gated on this
 phase's real-device evidence per the governing task's own Phase 1 → Phase 2 sequencing.
+
+## 35. Phase 45 — Adaptive Tally Synchronization Implementation (Phase 2)
+
+Continuation of Phase 44, same session. Phase 1's real-device evidence passed (with the TD-038
+fix applied first, per explicit user direction), authorizing this phase per the governing task's
+own Phase 1 → Phase 2 gate.
+
+### A. Prerequisite company-isolation fixes (TD-036, TD-037) — fixed before scheduler work
+
+Both explicitly flagged by Phase 43's architecture research as blocking prerequisites, fixed here
+rather than deferred:
+
+- **TD-036 (Connector)**: `LedgerSyncServiceImpl`/`StockItemSyncServiceImpl`'s `progress`/
+  `activeRun`/`activeAbort`/`syncInFlight` converted from single instance fields to
+  `Map<companyId, T>`. `getSyncProgress()`/`cancelSync()` changed from sync to async to resolve
+  the current company first; `LedgerSyncProgress` (shared by `StockItemSyncProgress`) gained a
+  `companyId` field. Two regressions the refactor itself introduced were caught and fixed before
+  landing: the two read-only status methods needed a new non-throwing `peekCompanyId()` to keep
+  their pre-existing "never throws with no company selected" contract (caught by
+  `api-request-security.test.ts`), and two API route call sites were missing an `await` that
+  `tsc` alone didn't flag (a `Promise` would have silently serialized as `{}` in the JSON
+  response).
+- **TD-037 (Android)**: `SyncRepositoryImpl.bindCompany()` now resets the whole summary on an
+  actual company change (discarding every stale `lastOutcome`/`lastSuccessfulAt`/`statistics`)
+  and releases the local active-sync guard, activating what the pre-existing but never-called
+  `clearActiveIfCompanyChanged()` was built to do — now removed as redundant. 3 new regression
+  tests in `SyncRepositoryImplTest.kt`.
+
+Connector: 159/159 → **162/162 test files, 1,441/1,441 tests** (+4), `tsc`/`eslint`/build clean.
+
+### B. Scheduler engine (Connector)
+
+Implements the LOCKED architecture from
+`docs/architecture/BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md` exactly:
+
+- **State machine** (`adaptive-scheduler-domain.ts`, pure, no I/O): `initialSchedulerState()`,
+  `applySyncOutcome()`, `hasDetectableChange()`. Two states (`active_window`/staged `backoff_15→
+  30→60`), 5-minute checks during a 15-minute active window, the critical LOCKED invariant (a
+  failed check never advances or resets the ladder) enforced independent of any I/O concern. 13
+  unit tests cover every transition explicitly required: initial state, active-window 5-minute
+  checks, no-change-inside-window vs no-change-at-expiry, the full 15→30→60 staged progression,
+  the 60-minute floor holding indefinitely, a change at any stage jumping straight back to
+  active_window, and repeated failures never accumulating any stage movement.
+- **Scheduler service** (`adaptive-scheduler.service.ts`): a pure *trigger*, never a second sync
+  engine — every check calls the exact same `syncLedgers()`/`syncStockItems()` path manual "Sync
+  Now" already uses, inheriting single-flight/rate-limiting/circuit-breaker/sanitization
+  automatically. Company-scoped by construction: the Connector has exactly one active Tally
+  connection at a time, so the scheduler only ever acts on whichever company is *currently
+  selected* (never silently switches sessions in the background); each company's own row stays
+  independently persisted, so switching back to a previously-active company resumes its own
+  history correctly. Automatic checks run `{incremental: true}` so the existing content-fingerprint
+  mechanism produces a real change signal (`hasDetectableChange()` reading the sync result's own
+  `changes` array); manual syncs (non-incremental, unchanged default) are instead treated as
+  unconditional evidence of active use — deliberately, since a non-incremental run's `changes`
+  array can't distinguish a real diff from "every record re-written." Restart-safe by
+  construction: state is never held only in memory, so a restart resumes from whatever was last
+  persisted and an already-overdue check fires immediately rather than waiting a full tick
+  interval. 13 integration-level tests cover: no-op with no company selected, seeding a fresh row
+  without syncing prematurely, restart recovery via an overdue row, respecting a not-yet-due
+  check, change-detection resetting to active_window, failure preserving stage and interval,
+  strict company isolation (a due company-B row never touched while company A is current, and
+  vice versa), identical natural keys never colliding (keyed strictly by `(companyId,
+  resourceKind)`), manual-sync observation (`recordManualSyncOutcome`) for both success and
+  failure, a never-before-seen company/resource seeding correctly, overlapping `runOnce()` calls
+  never producing a duplicate sync, and `start()` called twice never arming a second timer.
+- **Storage**: migration v13 adds `scheduler_state` (one row per `(company_id, resource_kind)`,
+  mirroring the existing `voucher_active_snapshots` current-pointer pattern rather than
+  overloading the append-only `sync_runs` history table). `SchedulerStateRepository` takes a lazy
+  database-getter closure — mirroring `ConnectorIdentityRepository`'s pattern — so resolving it
+  during application wiring never requires `LocalDatabase` to have already started; an eager
+  version of this broke 8 test files during development, via `HealthService`'s own eager
+  `Scheduler` resolution transitively touching storage before it was ready. 4 migration tests
+  (forward migration from v1, clean-database column shape, idempotent reopen, one-row-per-key
+  uniqueness enforced). The old v12 pairing migration test's hardcoded `toBe(12)` assertions
+  updated to check `STORAGE_SCHEMA_VERSION` instead (still verifying the same v12 tables along
+  the way) — the historical migration itself was not touched.
+- **API surface**: `GET /sync/ledgers|stock-items/status` gained a `schedulerState` field — no
+  new endpoint, per the architecture's own recommendation. `POST /sync/ledgers|stock-items` now
+  feed their outcome back into the scheduler after a manual sync via
+  `recordManualSyncOutcome()`, exactly as an automatic check would (no separate code path).
+  Replaces the `SchedulerStub` placeholder entirely (deleted, no longer referenced anywhere).
+
+Connector: 162/162 → **stayed at 162/162 test files, 1,471/1,471 tests** (+30 for the scheduler
+domain/service/migration suites), `tsc`/`eslint`/build all clean.
+
+### C. Real-device verification of the scheduler (not just automated tests)
+
+A standalone build of the new Connector (dist, port 8090, isolated database, `BUDCOM_DATABASE_PATH`
+override) was run directly against the same real, live TallyPrime instance from Phase 1's
+validation (company ESTIMATION, 949 real ledgers) — without disturbing the already-running
+production Desktop/Connector instance. Confirmed live: `/health`'s `Scheduler` sub-status reports
+`"active"` (previously always `"Placeholder — not implemented"`); after selecting ESTIMATION and
+running a real manual Ledger sync (949 real ledgers, all `added` since this was a fresh empty
+database), `GET /sync/ledgers/status` returned real `schedulerState`:
+`{"stage":"active_window","nextCheckDueAt":"2026-08-22T18:39:59.894Z"}` (exactly 5 minutes after
+the manual sync's own completion) — proving the manual-sync-observation path works end to end
+against real data, not just mocks. `storage.schemaVersion: 13` confirmed the new migration applies
+correctly to a freshly-created real database.
+
+**The Connector was then left running unattended, and the scheduler's own timer fired the first
+real automatic check with no human action involved.** At `18:40:00.685Z` — moments after the
+`18:39:59.894Z` due time passed — a genuinely new, distinct sync run (`3e0bccb2-...`, different
+`syncRunId` from the manual one) executed automatically: a real, live, `{incremental: true}` Ledger
+sync against the same 949 real ledgers, completing at `18:40:06.372Z`
+(`itemsProcessed: 949, itemsAdded: 0, itemsUpdated: 0, itemsSkipped: 949`) — the existing
+content-fingerprint mechanism correctly found zero real changes since the manual sync 5 minutes
+earlier. `schedulerState` updated to `{"stage":"active_window","nextCheckDueAt":"...18:45:06.374Z"}`
+— correctly *remaining* in the active window with another 5-minute check scheduled, matching the
+state machine's own rule that a no-change result inside an unexpired window keeps the 5-minute
+cadence rather than stepping into backoff. This is real, live, unattended, end-to-end proof of the
+scheduler's core automatic-trigger loop — not a mock, not a simulation.
+
+**The Connector was left running for the remainder of the 15-minute active window (established by
+the manual sync at `18:34:59`, so due to expire at `18:49:59`), and the real backoff-staging
+transition was observed live, unattended, with zero human action.** Two further real automatic
+checks fired on schedule (`~18:45:06`, `~18:50:36`), each a genuine incremental sync against the
+same 949 real ledgers, each correctly finding no real change. The third of these landed after the
+active window had genuinely expired — real time had passed, not a simulated clock — and the state
+machine correctly stepped down for the first time: `{"stage":"backoff_15",
+"nextCheckDueAt":"2026-08-22T19:06:06.508Z"}` at `18:51:14`, roughly 15 minutes later exactly as
+designed. This is complete, live, real-device proof of the entire core mechanism the architecture
+specifies — a manual sync opening the active window, repeated real 5-minute checks holding it open
+while nothing changes, and the window genuinely expiring into the first backoff stage — not merely
+the deterministic unit/integration tests (26 of them) that also cover this same logic in isolation.
+The session did not additionally wait out the full `backoff_15 → backoff_30 → backoff_60` staged
+climb in real time (another ~45 minutes) — that further staging rests on the same deterministic
+tests, which exercise the identical code path (`applySyncOutcome()`) already proven live above for
+the first, hardest-to-fake transition.
+
+### D. Desktop UX (first, per the governing task's explicit ordering)
+
+Dashboard's existing Sync card gained one new line: "Checking regularly" while either Ledgers or
+Stock Items is inside the scheduler's active window, "Checking occasionally" once both have
+backed off, blank when no scheduler state is known yet (older Connector, nothing synced, or a
+transient failure) — never raw stage names or minute intervals, per the architecture's UX
+section. Two new read-only IPC channels (`desktop:get-ledger-sync-progress`,
+`desktop:get-stock-item-sync-progress`) mirror the existing statistics channels exactly; a
+pre-existing IPC allowlist security test immediately caught both being missing from the allowlist
+on first attempt. Desktop: 68/68 → **stayed at 68/68 test files, 735/735 tests** (+3), `tsc`
+(main+preload)/lint clean.
+
+### E. Android UX (consumer only, no second scheduler)
+
+Dashboard's existing sync-status line gained the same suffix via a `checkingFrequencyLabel()` pure
+function mirroring Desktop's `deriveCheckingFrequencyLabel()` one-for-one. `SchedulerStateDto`/
+`SchedulerState` thread the Connector's wire shape through the existing `SyncProgress` the
+Dashboard already observes passively via `ObserveSyncStatusPort` — no new polling, no new data
+source, no second scheduler on the Android side (the architecture's explicit "Android never runs
+the scheduler" boundary preserved). Android: **1,281/1,281 tests both variants** (+13 across this
+phase: +3 for TD-037 in §A, +3 DTO mapping tests, +4 in a new `SyncModelsTest.kt`, +3
+`DashboardViewModel` integration tests here in §E), 0 lint errors, both assembles green.
+
+### F. Scope discipline
+
+No MVP-1.4 Catalogue work. No new sync engine anywhere — every automatic and manual trigger,
+Connector-side, funnels through the identical `syncLedgers()`/`syncStockItems()` methods that
+existed before this phase. No StockItem Browser Android-side change (out of scope, pre-existing
+inconsistency). The OPEN cheap-signal investigation from Phase 43 (§17 item 10, a possible
+`ALTERID`-based pre-extraction change probe) was **not** touched — this phase's scheduler design
+does not depend on it, exactly as the architecture recommended.

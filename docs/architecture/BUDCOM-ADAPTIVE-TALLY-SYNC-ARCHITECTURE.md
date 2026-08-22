@@ -1,8 +1,17 @@
 # BUDCOM — Adaptive Tally Synchronization — Architecture & Product Decision Research
 
-**Status:** Research/architecture only. No production code was changed to produce this document.
-Nothing here is implemented. See `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §33 for the session
-record and `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` for the current-state pointer.
+**Status:** Originally research/architecture only (no production code changed to produce this
+document). **Implemented 2026-08-22/23** (Phase 45) — the LOCKED decisions in §17 below were built
+essentially as recommended: the staged-backoff state machine (§5-§6), the company-scoped
+Connector-only scheduler (§8, §14), the same-sync-engine trigger with no parallel implementation
+(§16), and the `scheduler_state` migration/table shape (§14). The two RECOMMENDED prerequisite
+fixes (§17 item 8: Connector singleton sync-progress state, Android's dead
+`clearActiveIfCompanyChanged()`) were fixed first, as this document itself insisted. The OPEN items
+(§17 items 10-13: the cheap pre-extraction signal, the removed voucher `already_current` fast path,
+exact timing-value tuning, and UI prominence) remain genuinely open — none were resolved or
+silently assumed by the implementation. See `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §33 for this
+document's own research session record, and §35 for the implementation session record;
+`docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` for the current-state pointer.
 
 **Investigation date:** 2026-08-22.
 
