@@ -4,15 +4,19 @@ import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.party.domain.model.PartyClassification
 
-/** Connect's two primary sections (architecture §11/§29 — Customer/Prospect only in the UI). */
+/** Connect's primary sections. Originally Customer/Prospect only (architecture §11/§29); Creditors
+ * (Supplier classification, already reconciled from eligible Tally ledgers — see
+ * `LedgerPartyEligibilityPolicy`) added as a third tab on explicit user request. */
 enum class ConnectTab {
     Customers,
     Prospects,
+    Creditors,
 }
 
 internal fun ConnectTab.toClassification(): PartyClassification = when (this) {
     ConnectTab.Customers -> PartyClassification.Customer
     ConnectTab.Prospects -> PartyClassification.Prospect
+    ConnectTab.Creditors -> PartyClassification.Supplier
 }
 
 data class ConnectUiState(

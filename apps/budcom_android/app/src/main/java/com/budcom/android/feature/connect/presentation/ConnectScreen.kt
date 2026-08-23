@@ -169,6 +169,12 @@ fun ConnectScreen(
                         text = { Text(stringResource(R.string.connect_tab_prospects)) },
                         modifier = Modifier.testTag("connect_tab_prospects"),
                     )
+                    Tab(
+                        selected = state.selectedTab == ConnectTab.Creditors,
+                        onClick = { onEvent(ConnectEvent.TabChanged(ConnectTab.Creditors)) },
+                        text = { Text(stringResource(R.string.connect_tab_creditors)) },
+                        modifier = Modifier.testTag("connect_tab_creditors"),
+                    )
                 }
 
                 Column(
@@ -203,14 +209,20 @@ fun ConnectScreen(
                     val emptyMessage = when {
                         state.isSearching -> stringResource(R.string.connect_empty_search)
                         state.selectedTab == ConnectTab.Customers -> stringResource(R.string.connect_empty_customers)
+                        state.selectedTab == ConnectTab.Creditors -> stringResource(R.string.connect_empty_creditors)
                         else -> stringResource(R.string.connect_empty_prospects)
                     }
 
                     when {
                         state.isInitialLoading && !state.hasContent -> {
+                            val tabLabel = when (state.selectedTab) {
+                                ConnectTab.Customers -> "customers"
+                                ConnectTab.Creditors -> "creditors"
+                                ConnectTab.Prospects -> "prospects"
+                            }
                             MasterDataLoadingIndicator(
                                 testTag = "connect_loading",
-                                contentDescription = "Loading ${if (state.selectedTab == ConnectTab.Customers) "customers" else "prospects"}",
+                                contentDescription = "Loading $tabLabel",
                             )
                         }
                         state.error != null && !state.hasContent -> {

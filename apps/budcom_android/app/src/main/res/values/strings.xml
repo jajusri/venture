@@ -167,9 +167,11 @@
     <string name="connect_title">Connect</string>
     <string name="connect_tab_customers">Customers</string>
     <string name="connect_tab_prospects">Prospects</string>
+    <string name="connect_tab_creditors">Creditors</string>
     <string name="connect_search_hint">Search name or phone</string>
     <string name="connect_empty_customers">No customers found yet. They appear once eligible Tally ledgers have synced.</string>
     <string name="connect_empty_prospects">No prospects yet. Prospects you create in BUDCOM will appear here.</string>
+    <string name="connect_empty_creditors">No creditors found yet. They appear once eligible Tally supplier ledgers have synced.</string>
     <string name="connect_empty_search">No matches for this search.</string>
     <string name="connect_offline_banner">Device is offline. Showing the most recently synced Connect data.</string>
     <string name="connect_call_description">Call %1$s</string>

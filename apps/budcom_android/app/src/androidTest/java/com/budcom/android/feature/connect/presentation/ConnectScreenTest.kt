@@ -66,6 +66,16 @@ class ConnectScreenTest {
     }
 
     @Test
+    fun creditorsEmptyState() {
+        composeRule.setContent {
+            BudcomTheme {
+                ConnectScreen(state = ConnectUiState(isInitialLoading = false, selectedTab = ConnectTab.Creditors), onEvent = {})
+            }
+        }
+        composeRule.onNodeWithTag("connect_empty").assertIsDisplayed()
+    }
+
+    @Test
     fun contentStateShowsRowWithBalanceAndDeepLinkActions() {
         composeRule.setContent {
             BudcomTheme { ConnectScreen(state = ConnectUiState(isInitialLoading = false, rows = listOf(row())), onEvent = {}) }
@@ -158,6 +168,26 @@ class ConnectScreenTest {
         }
         composeRule.onNodeWithTag("connect_tab_prospects").performClick()
         assertEquals(ConnectEvent.TabChanged(ConnectTab.Prospects), lastEvent)
+    }
+
+    @Test
+    fun switchingToCreditorsTabEmitsTabChanged() {
+        var lastEvent: ConnectEvent? = null
+        composeRule.setContent {
+            BudcomTheme { ConnectScreen(state = ConnectUiState(isInitialLoading = false), onEvent = { lastEvent = it }) }
+        }
+        composeRule.onNodeWithTag("connect_tab_creditors").performClick()
+        assertEquals(ConnectEvent.TabChanged(ConnectTab.Creditors), lastEvent)
+    }
+
+    @Test
+    fun creditorsTabHasNoAddFab() {
+        composeRule.setContent {
+            BudcomTheme {
+                ConnectScreen(state = ConnectUiState(isInitialLoading = false, selectedTab = ConnectTab.Creditors), onEvent = {})
+            }
+        }
+        composeRule.onNodeWithTag("connect_add_prospect").assertDoesNotExist()
     }
 
     @Test
