@@ -44,7 +44,13 @@ function downloadNodeArchive(targetZip) {
 function extractNodeArchive(zipPath, extractRoot) {
   fs.rmSync(extractRoot, { recursive: true, force: true });
   fs.mkdirSync(extractRoot, { recursive: true });
-  execSync(`tar -xf "${zipPath}" -C "${extractRoot}"`, { stdio: 'inherit', shell: true });
+  // Explicit absolute path, not a bare `tar` PATH lookup: when Git for Windows' usr/bin
+  // (GNU tar) precedes System32 on PATH, GNU tar misparses a Windows "D:\..." archive/dest
+  // path as a remote "host:path" spec ("Cannot connect to D: resolve failed") and fails
+  // outright -- it also can't extract .zip natively anyway. Windows' own System32/tar.exe is
+  // bsdtar (libarchive), which both extracts .zip correctly and has no such parsing issue.
+  const systemTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+  execSync(`"${systemTar}" -xf "${zipPath}" -C "${extractRoot}"`, { stdio: 'inherit', shell: true });
   const extractedDir = path.join(extractRoot, NODE_DIST_BASENAME);
   if (!fs.existsSync(extractedDir)) {
     throw new Error(`Expected extracted Node directory missing: ${extractedDir}`);
