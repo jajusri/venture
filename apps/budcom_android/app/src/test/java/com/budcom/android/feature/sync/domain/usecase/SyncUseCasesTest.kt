@@ -5,10 +5,18 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
+import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerDataQuality
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatus
+import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.masterdata.ledger.domain.repository.LedgerRepository
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgersUseCase
+import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
+import com.budcom.android.feature.party.domain.model.Party
+import com.budcom.android.feature.party.domain.repository.PartyRepository
+import com.budcom.android.feature.party.domain.usecase.ReconcilePartiesFromLedgersUseCase
 import com.budcom.android.feature.sync.domain.model.SyncCounts
 import com.budcom.android.feature.sync.domain.model.SyncMode
 import com.budcom.android.feature.sync.domain.model.SyncOutcome
@@ -76,11 +84,16 @@ class SyncUseCasesTest {
         company: FakeCompany = FakeCompany("estimation"),
         voucherRepo: FakeVoucherRepo = FakeVoucherRepo(refreshResult = AppResult.Success(emptyPage())),
         ledgerRepo: FakeLedgerRepo = FakeLedgerRepo(refreshResult = AppResult.Success(emptyLedgerPage())),
+        reconcileParties: ReconcilePartiesFromLedgersUseCase = ReconcilePartiesFromLedgersUseCase(
+            FakeLedgerSnapshotPort(emptyList()),
+            FakePartyRepo(),
+        ),
     ) = StartTargetSyncUseCase(
         syncRepo,
         company,
         RefreshVouchersUseCase(voucherRepo),
         RefreshLedgersUseCase(ledgerRepo),
+        reconcileParties,
     )
 
     @Test
@@ -186,6 +199,84 @@ class SyncUseCasesTest {
         assertEquals(0, voucherRepo.refreshCalls)
         assertEquals(0, ledgerRepo.refreshCalls)
     }
+
+    /**
+     * TD-041 fix: Party reconciliation used to be a `viewModelScope.launch` fire-and-forget
+     * triggered from [com.budcom.android.feature.sync.presentation.SyncViewModel] AFTER this
+     * use-case already returned "Completed" — live-reproduced on a real device as silently
+     * cancelled by navigating away from the Sync screen within the few seconds a real
+     * reconciliation takes, leaving Connect's Party data stale with no error surfaced anywhere.
+     * Reconciliation now happens inside this use-case's own suspend chain, so it is awaited
+     * before [StartTargetSyncUseCase.invoke] can return at all — there is no longer a separate,
+     * independently-cancellable job for a caller's coroutine scope to lose.
+     */
+    @Test
+    fun `ledger sync success reconciles parties before this call returns`() = runTest {
+        val syncRepo = FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.Ledgers)))
+        val ledgerRepo = FakeLedgerRepo(refreshResult = AppResult.Success(emptyLedgerPage()))
+        val partyRepo = FakePartyRepo()
+        val reconcile = ReconcilePartiesFromLedgersUseCase(
+            FakeLedgerSnapshotPort(listOf(eligibleLedger())),
+            partyRepo,
+        )
+        val result = useCase(syncRepo, ledgerRepo = ledgerRepo, reconcileParties = reconcile)(SyncTarget.Ledgers)
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(1, partyRepo.reconcileCalls)
+    }
+
+    @Test
+    fun `stock item and voucher syncs never reconcile parties`() = runTest {
+        val partyRepo = FakePartyRepo()
+        val reconcile = ReconcilePartiesFromLedgersUseCase(FakeLedgerSnapshotPort(listOf(eligibleLedger())), partyRepo)
+
+        useCase(
+            FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.StockItems))),
+            reconcileParties = reconcile,
+        )(SyncTarget.StockItems)
+        useCase(
+            FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.Vouchers))),
+            reconcileParties = reconcile,
+        )(SyncTarget.Vouchers)
+
+        assertEquals(0, partyRepo.reconcileCalls)
+    }
+
+    @Test
+    fun `ledger sync success followed by a failed Room refresh never reconciles parties`() = runTest {
+        val syncRepo = FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.Ledgers)))
+        val ledgerRepo = FakeLedgerRepo(refreshResult = AppResult.Failure(AppError.Message("Room persistence failed")))
+        val partyRepo = FakePartyRepo()
+        val reconcile = ReconcilePartiesFromLedgersUseCase(FakeLedgerSnapshotPort(listOf(eligibleLedger())), partyRepo)
+
+        useCase(syncRepo, ledgerRepo = ledgerRepo, reconcileParties = reconcile)(SyncTarget.Ledgers)
+
+        assertEquals(0, partyRepo.reconcileCalls)
+    }
+
+    @Test
+    fun `party reconciliation failure never turns a completed ledger sync into a failure`() = runTest {
+        val syncRepo = FakeSyncRepo(AppResult.Success(succeeded(SyncTarget.Ledgers)))
+        val ledgerRepo = FakeLedgerRepo(refreshResult = AppResult.Success(emptyLedgerPage()))
+        val partyRepo = FakePartyRepo(shouldThrow = true)
+        val reconcile = ReconcilePartiesFromLedgersUseCase(FakeLedgerSnapshotPort(listOf(eligibleLedger())), partyRepo)
+
+        val result = useCase(syncRepo, ledgerRepo = ledgerRepo, reconcileParties = reconcile)(SyncTarget.Ledgers)
+
+        assertTrue(result is AppResult.Success)
+        assertEquals(1, partyRepo.reconcileCalls)
+    }
+
+    private fun eligibleLedger() = Ledger(
+        id = "guid:eligible",
+        name = "ABC Traders",
+        alias = null,
+        parentGroup = "Sundry Debtors",
+        status = LedgerStatus.Active,
+        closingBalance = null,
+        dataQuality = LedgerDataQuality.Complete,
+        syncedAt = "t",
+    )
 }
 
 private class FakeSyncRepo(private val startResult: AppResult<SyncOutcome>) : SyncRepository {
@@ -233,4 +324,145 @@ private class FakeCompany(initial: String?) : CompanySessionPort {
     override suspend fun readSelectedCompany(): AppResult<SelectedCompanyStatus> =
         AppResult.Success(SelectedCompanyStatus(selected.value, selected.value))
     override suspend fun validateSessionStatus(): AppResult<SessionValidationStatus> = error("unused")
+}
+
+private class FakeLedgerSnapshotPort(private val ledgers: List<Ledger> = emptyList()) : LedgerSnapshotPort {
+    override suspend fun getCachedLedgers(companyId: String): List<Ledger> = ledgers
+}
+
+/** Only [reconcilePartiesFromEligibleLedgers] is exercised by [StartTargetSyncUseCase] — every
+ * other member exists solely to satisfy [PartyRepository] and is unused here. */
+private class FakePartyRepo(private val shouldThrow: Boolean = false) : PartyRepository {
+    var reconcileCalls = 0
+
+    override suspend fun getPartyById(companyId: String, partyId: String): Party? = error("unused")
+    override suspend fun getPartyForLedger(companyId: String, ledgerId: String): Party? = error("unused")
+    override suspend fun listByClassification(
+        companyId: String,
+        classification: com.budcom.android.feature.party.domain.model.PartyClassification,
+        page: Int,
+        pageSize: Int,
+    ): com.budcom.android.feature.party.domain.model.PartyPage = error("unused")
+    override suspend fun searchParties(
+        companyId: String,
+        query: String,
+        classification: com.budcom.android.feature.party.domain.model.PartyClassification?,
+        page: Int,
+        pageSize: Int,
+    ): com.budcom.android.feature.party.domain.model.PartyPage = error("unused")
+    override suspend fun getContactPersons(companyId: String, partyId: String): List<com.budcom.android.feature.party.domain.model.PartyContactPerson> =
+        error("unused")
+    override suspend fun getTagsForParty(companyId: String, partyId: String): List<com.budcom.android.feature.party.domain.model.Tag> = error("unused")
+    override suspend fun getSourceLinksForCompany(companyId: String): List<com.budcom.android.feature.party.domain.model.PartySourceLink> = error("unused")
+    override suspend fun getTagsForCompany(companyId: String): Map<String, List<com.budcom.android.feature.party.domain.model.Tag>> = error("unused")
+    override suspend fun getFieldProvenance(companyId: String, partyId: String): List<com.budcom.android.feature.party.domain.model.PartyFieldProvenance> =
+        error("unused")
+    override suspend fun updateBudcomOnlyField(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        value: String?,
+    ): com.budcom.android.feature.party.domain.model.FieldProvenanceState = error("unused")
+    override suspend fun confirmFieldFromTally(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        tallyValue: String?,
+    ): com.budcom.android.feature.party.domain.model.FieldProvenanceState = error("unused")
+
+    override suspend fun reconcilePartiesFromEligibleLedgers(
+        companyId: String,
+        seeds: List<EligibleLedgerSeed>,
+    ): List<Party> {
+        reconcileCalls++
+        if (shouldThrow) error("boom")
+        return emptyList()
+    }
+
+    override suspend fun createProspect(
+        companyId: String,
+        draft: com.budcom.android.feature.party.domain.model.ProspectDraft,
+    ): Party = error("unused")
+    override suspend fun getSourceLinkForParty(companyId: String, partyId: String): com.budcom.android.feature.party.domain.model.PartySourceLink? =
+        error("unused")
+    override suspend fun upsertContactPerson(
+        companyId: String,
+        partyId: String,
+        contactPersonId: String?,
+        name: String,
+        designation: String?,
+        mobile: String?,
+        whatsappNumber: String?,
+        email: String?,
+        isPrimary: Boolean,
+    ): com.budcom.android.feature.party.domain.model.PartyContactPerson = error("unused")
+    override suspend fun deleteContactPerson(companyId: String, contactPersonId: String): Unit = error("unused")
+    override suspend fun getAllTags(): List<com.budcom.android.feature.party.domain.model.Tag> = error("unused")
+    override suspend fun createOrGetTag(name: String, parentTagId: String?): com.budcom.android.feature.party.domain.model.Tag = error("unused")
+    override suspend fun assignTag(companyId: String, partyId: String, tagId: String): Unit = error("unused")
+    override suspend fun unassignTag(companyId: String, partyId: String, tagId: String): Unit = error("unused")
+    override suspend fun addNote(
+        companyId: String,
+        partyId: String,
+        body: String,
+        linkedVoucherId: String?,
+        type: com.budcom.android.feature.party.domain.model.NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): com.budcom.android.feature.party.domain.model.PartyNote = error("unused")
+    override suspend fun editNote(
+        companyId: String,
+        noteId: String,
+        body: String,
+        type: com.budcom.android.feature.party.domain.model.NoteType,
+        dueAt: Long?,
+        issueId: String?,
+    ): com.budcom.android.feature.party.domain.model.PartyNote? = error("unused")
+    override suspend fun setNoteCompletion(companyId: String, noteId: String, completedAt: Long?): com.budcom.android.feature.party.domain.model.PartyNote? =
+        error("unused")
+    override suspend fun deleteNote(companyId: String, noteId: String): Unit = error("unused")
+    override suspend fun createIssue(companyId: String, partyId: String, title: String): com.budcom.android.feature.party.domain.model.PartyIssue =
+        error("unused")
+    override suspend fun resolveIssue(companyId: String, issueId: String): com.budcom.android.feature.party.domain.model.PartyIssue? = error("unused")
+    override suspend fun reopenIssue(companyId: String, issueId: String): com.budcom.android.feature.party.domain.model.PartyIssue? = error("unused")
+    override suspend fun getIssuesForParty(companyId: String, partyId: String): List<com.budcom.android.feature.party.domain.model.PartyIssue> =
+        error("unused")
+    override suspend fun getIssueActivitySummary(
+        companyId: String,
+        partyId: String,
+    ): Map<String, com.budcom.android.feature.party.domain.model.IssueActivitySummary> = error("unused")
+    override suspend fun getNotesForParty(
+        companyId: String,
+        partyId: String,
+        page: Int,
+        pageSize: Int,
+    ): com.budcom.android.feature.party.domain.model.PartyNotePage = error("unused")
+    override suspend fun getTimelineForParty(
+        companyId: String,
+        partyId: String,
+        page: Int,
+        pageSize: Int,
+        issueId: String?,
+    ): com.budcom.android.feature.party.domain.model.TimelineEntryPage = error("unused")
+    override suspend fun getExportCandidates(
+        companyId: String,
+        partyId: String,
+    ): List<com.budcom.android.feature.party.domain.model.TallyFieldExportCandidate> = error("unused")
+    override suspend fun recordExport(
+        companyId: String,
+        partyId: String,
+        outputFileName: String,
+        fieldNames: List<String>,
+    ): com.budcom.android.feature.party.domain.model.PartyExportEvent = error("unused")
+    override suspend fun reconcileExportedFieldFromTally(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        tallyRawValue: String?,
+    ): com.budcom.android.feature.party.domain.model.FieldProvenanceState = error("unused")
+    override suspend fun getExportHistory(
+        companyId: String,
+        partyId: String,
+        limit: Int,
+    ): List<com.budcom.android.feature.party.domain.model.PartyExportEvent> = error("unused")
 }

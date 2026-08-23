@@ -414,6 +414,29 @@ debug and release builds green. No Tally interaction beyond the existing, alread
 action; no Tally data modified; no experimental Electron/Connector bypass. Full detail:
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §43; `docs/technical-debt/registry.md` TD-041.
 
+**Phase 53 — TD-041 diagnostic instrumentation (2026-08-23).** Added `Timber.tag("TD041")` tracing
+(no behavior change), captured the first live repro trace, ran ~20 further live reproduction
+attempts across two hypotheses (both came back clean), and added a debug-only `TD041_SQL`
+`RoomDatabase.setQueryCallback` tracer as the closest reachable substitute for an attached debugger.
+Also shipped a defense-in-depth mitigation, user-approved: `PartyDao` count+page reads wrapped in one
+`@Transaction`, plus a one-shot stale-empty retry in `ConnectViewModel`. Root cause still not proven
+this phase. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §44.
+
+**Phase 54 — TD-041 FIXED (2026-08-23).** Real root cause found by code inspection and live-
+reproduced: Party reconciliation ran as a *detached* `SyncViewModel.viewModelScope.launch`, started
+only after the Sync screen already reported "Completed" — a fast Back-navigation away from Sync
+(a pattern no prior phase had systematically tried) silently cancelled it via `viewModelScope`'s
+cancellation-on-clear, with zero error surfaced. Fixed by moving reconciliation into
+`StartTargetSyncUseCase`'s already-awaited suspend chain (immediately after the Ledger Room refresh
+it was always structurally parallel to) — no longer a separately-cancellable job. Live-verified on
+the real device: reproduced the identical prior-failing tap-then-Back sequence post-fix and confirmed
+via a direct `sqlite3` query against the live `cached_parties` table that all 926 rows reconciled to
+completion despite the navigation. JVM: 1,317/1,317 (4 new tests, zero regressions). TD-041 closed —
+see `docs/technical-debt/registry.md` TD-041 for the honest caveat on scope (this fixes the proven
+detached-reconciliation mechanism; the Phase 53-G mitigation stays in place as defense-in-depth for
+any other, still-unproven transient-read mechanism). Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §45.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.

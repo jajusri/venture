@@ -2988,3 +2988,88 @@ one, once the Connector reconnects) just needs to reproduce Connect's empty-read
 (directly, or by watching for the mitigation's own `SUSPICIOUS EMPTY`/`RETRY result` log lines from
 section G firing) and pull the surrounding `TD041_SQL` trace to see the actual thread/transaction
 interleaving at the moment of failure.
+
+## 45. Phase 54 — TD-041 real root cause found, fixed, and live-verified: reconciliation was a
+detached `viewModelScope` job that a fast navigation away from Sync silently cancelled
+
+New session, user asked to resolve TD-041 outright. Restored the real environment first, since it had
+been down: started the Desktop app (`electron.exe` wasn't running, port 8080 closed), then found Tally
+itself wasn't running either (`Company discovery is unavailable`, later `Tally circuit breaker is
+open` — `tallyReachable: false`, nothing on port 9000). User started TallyPrime with ESTIMATION loaded
+and confirmed its HTTP/XML server (F12 Advanced Configuration) was bound to port 9000 after a restart;
+a real Ledgers "Sync Now" (949/949) then succeeded for the first time this phase.
+
+**Two clean repro attempts (post-sync, and a second immediate repeat sync) both came back correct**,
+matching every prior phase's experience — Connect showed 873 customers both times, `TD041`/`TD041_SQL`
+logs showing the atomic `@Transaction` count+page mitigation (Phase 53-G) executing correctly. A third
+attempt — deliberately racing a "Sync now" tap with an immediate Back-navigation, a pattern no prior
+phase had systematically tried, since every previous session's repro attempts (and this project's
+manual testing instinct generally) waited for the Sync screen to visibly finish before doing anything
+else — silently produced **zero** `reconcile START`/`END` log lines at all, even though the Ledgers
+sync itself completed normally (Connector confirmed `949/949`, Dashboard showed a new `Last sync
+completed at` timestamp).
+
+**Root cause, found by reading the code, not guessing**: `SyncViewModel.maybeReconcilePartiesFromLedgers`
+launched Party reconciliation as `viewModelScope.launch { reconcilePartiesFromLedgers(companyId) }` —
+a *separate, detached* coroutine, started only *after* `StartTargetSyncUseCase` had already returned
+"Completed" to the UI. `SyncViewModel`'s `viewModelScope` is cancelled when its `NavBackStackEntry` is
+popped (i.e., on Back from the Sync screen). A real reconciliation of ~926 records takes ~4 seconds
+end to end — an entirely human-plausible window to navigate away in, especially since the UI already
+says "Completed" the instant the *Ledgers* extraction and Room refresh finish, well before the
+detached Party reconciliation has. The Ledger Room refresh itself (`completeLedgerRoomRefresh`,
+TD-039's fix) never showed this because it's `await`ed *inside* the same `StartTargetSyncUseCase` call
+that reports "Completed" — there's no window in which it can be "done" from the UI's perspective but
+still running. This is exactly the asymmetry every phase since 52 observed ("Ledger doesn't show this,
+Party does") but had never mechanically explained.
+
+Whether this is *identical* to Phase 53's single captured `totalItems=0` trace is not proven — that
+symptom (a hard empty count on an already-populated table) doesn't follow automatically from a
+cancelled reconciliation, since `reconcileOne` only ever `INSERT OR REPLACE`s rows and never deletes;
+a cancelled pass leaves *stale* data (correct old rows, missing new/updated ones), not necessarily
+*zero* rows, except plausibly on a company's very first-ever reconciliation (cancelled before its
+first few upserts land). Recorded honestly rather than claimed as a confirmed match — but this is the
+first mechanism across four phases of investigation that is both fully explained by the code and
+directly, repeatably reproducible, and it sits in exactly the code path every prior phase already
+narrowed the bug to.
+
+**Fix**: moved Party reconciliation out of `SyncViewModel` entirely and into
+`StartTargetSyncUseCase.completeLedgerRoomRefresh` (`feature/sync/domain/usecase/SyncUseCases.kt`),
+awaited in the same suspend chain as the Ledger Room refresh, immediately after it succeeds — failure-
+isolated exactly as before (`runCatching`, a reconciliation failure can never turn a completed sync
+into a reported failure), just no longer a separately-cancellable job. This has a second, free benefit:
+`RunAvailableSyncsUseCase` calls `StartTargetSyncUseCase` once per target in its fixed Ledgers → Stock
+items → Vouchers sequence, so every Ledgers call now reconciles regardless of position in that
+sequence — the `runAll()`-specific workaround for "only the last outcome gets reconciled" (documented
+in `SyncViewModelTest`'s "run available syncs triggers party reconciliation..." test, originally a
+Phase-19-era live-observed defect) is now structurally unnecessary and was deleted along with the rest
+of `maybeReconcilePartiesFromLedgers`.
+
+**Tests**: `SyncUseCasesTest` gained 4 new cases directly on `StartTargetSyncUseCase` (reconciles on
+Ledgers success; never reconciles for Stock items/Vouchers; never reconciles if the Room refresh itself
+fails; a reconciliation failure never turns a completed sync into a failure) — 8 → 12 tests. The 6
+existing reconciliation-behavior tests in `SyncViewModelTest` needed only constructor-wiring fixes (the
+dependency moved to `StartTargetSyncUseCase`) and still pass unchanged, now exercising the new code
+path end-to-end. Full JVM suite: **1,317/1,317**, up from the known 1,313 baseline by exactly the 4 new
+cases, zero regressions.
+
+**Live-verified on the real device, not just JVM-tested.** Built `assembleProdDebug`, installed
+(`adb install -r`, existing 926-row data survived). Reproduced the *exact* prior-failing sequence —
+tap "Sync now" on Ledgers, confirm the tap registered (`Phase: Starting`), then Back immediately
+(~0.3s later) — and this time `TD041` logged `reconcile START` within the same second. The live logcat
+tail then went quiet for ~20s with no further progress lines or a `reconcile END` — initially looked
+like a stall, but this device's logcat ring buffer is known (Phase 53) to rotate fast under its own
+background noise, so instead of trusting the absence of a log line, checked ground truth directly:
+`adb shell run-as com.budcom.android.debug sqlite3 databases/budcom.db` against the real, live
+`cached_parties` table showed **926 rows** (873 customer / 53 supplier, matching the known real
+dataset exactly) with `MAX(updatedAt)` landing ~2.2s after the logged `reconcile START` timestamp —
+conclusive proof the full reconciliation ran to completion even though the Sync screen (and its
+`viewModelScope`) had already been navigated away from a fraction of a second after starting it.
+Connect's Customers tab was then confirmed showing all 873 customers correctly.
+
+**How to apply**: TD-041 is now closed as fixed for the mechanism this session actually proved and
+reproduced (reconciliation silently skipped/truncated by fast navigation away from Sync). The Phase
+53-G mitigation (atomic `@Transaction` count+page reads in `PartyDao`, plus `ConnectViewModel`'s one-
+shot stale-empty retry) is left in place unchanged — it's a legitimate defense-in-depth for any other,
+still-unproven transient-read mechanism, and removing it was never in scope. If a stale-empty Connect
+read is ever observed again after this fix, that would be strong evidence a *second*, independent
+mechanism exists — worth a fresh investigation rather than reopening this one.

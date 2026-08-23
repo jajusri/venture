@@ -5,6 +5,7 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
 import com.budcom.android.feature.masterdata.ledger.domain.usecase.RefreshLedgersUseCase
+import com.budcom.android.feature.party.domain.usecase.ReconcilePartiesFromLedgersUseCase
 import com.budcom.android.feature.sync.domain.SyncDefaults
 import com.budcom.android.feature.sync.domain.model.SyncMode
 import com.budcom.android.feature.sync.domain.model.SyncOutcome
@@ -21,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 class RefreshSyncOverviewUseCase @Inject constructor(
@@ -58,12 +60,26 @@ class RefreshSyncOverviewUseCase @Inject constructor(
  * does. A failure at this second step is reported as this operation's failure, even though the
  * Connector-side extraction itself already succeeded: a half-finished chain (Connector fresh, Room
  * stale) must never be presented to the user as a completed sync.
+ *
+ * TD-041: Party reconciliation from freshly-refreshed ledgers also happens here, awaited in this
+ * same suspend chain, rather than as a detached `viewModelScope.launch` fire-and-forget triggered
+ * from [com.budcom.android.feature.sync.presentation.SyncViewModel] (the original design). That
+ * detached launch was a real, live-reproduced defect: it started only AFTER this use-case already
+ * returned "Completed" to the Sync screen, so navigating away within the ~4s a 900+ ledger
+ * reconciliation takes silently cancelled it via `viewModelScope`'s cancellation-on-clear, leaving
+ * Connect's Party data stale with zero error surfaced anywhere. The Ledger Room refresh just above
+ * never showed this because it was always awaited inside the same call, before "Completed" is ever
+ * reported. Moving reconciliation into this already-awaited chain makes it equally robust, and as a
+ * side effect also fixes `RunAvailableSyncsUseCase`'s sequential Ledgers -> Stock items -> Vouchers
+ * run: every call to this use-case for [SyncTarget.Ledgers] now reconciles, not only a lone
+ * per-target "Sync now" tap.
  */
 class StartTargetSyncUseCase @Inject constructor(
     private val repository: SyncRepository,
     private val companySession: CompanySessionPort,
     private val refreshVouchers: RefreshVouchersUseCase,
     private val refreshLedgers: RefreshLedgersUseCase,
+    private val reconcilePartiesFromLedgers: ReconcilePartiesFromLedgersUseCase,
 ) {
     suspend operator fun invoke(
         target: SyncTarget,
@@ -79,7 +95,7 @@ class StartTargetSyncUseCase @Inject constructor(
         val started = repository.startSync(target, mode)
         return when (target) {
             SyncTarget.Vouchers -> completeVoucherWindowFetch(companyId, started)
-            SyncTarget.Ledgers -> completeLedgerRoomRefresh(started)
+            SyncTarget.Ledgers -> completeLedgerRoomRefresh(companyId, started)
             SyncTarget.StockItems -> started
         }
     }
@@ -97,13 +113,36 @@ class StartTargetSyncUseCase @Inject constructor(
         }
     }
 
-    private suspend fun completeLedgerRoomRefresh(started: AppResult<SyncOutcome>): AppResult<SyncOutcome> {
+    private suspend fun completeLedgerRoomRefresh(
+        companyId: String,
+        started: AppResult<SyncOutcome>,
+    ): AppResult<SyncOutcome> {
         val extraction = (started as? AppResult.Success)?.value as? SyncOutcome.Succeeded
             ?: return started
         return when (val refreshed = refreshLedgers(LedgerQuery())) {
-            is AppResult.Success -> AppResult.Success(extraction)
+            is AppResult.Success -> {
+                reconcilePartiesAfterLedgerRefresh(companyId)
+                AppResult.Success(extraction)
+            }
             is AppResult.Failure -> refreshed
         }
+    }
+
+    /**
+     * Best-effort and failure-isolated by design, matching the original ViewModel-level comment
+     * this replaces: a Party-reconciliation defect must never turn a genuinely completed Ledgers
+     * sync into a reported failure. Only the *scope* changed (awaited here vs. detached before) —
+     * this still can't fail the sync outcome.
+     */
+    private suspend fun reconcilePartiesAfterLedgerRefresh(companyId: String) {
+        val startedAt = System.currentTimeMillis()
+        Timber.tag("TD041").d("reconcile START company=$companyId at=$startedAt")
+        runCatching { reconcilePartiesFromLedgers(companyId) }
+            .onSuccess {
+                val elapsed = System.currentTimeMillis() - startedAt
+                Timber.tag("TD041").d("reconcile END company=$companyId count=${it.size} elapsedMs=$elapsed")
+            }
+            .onFailure { Timber.w(it, "Party reconciliation from ledgers failed; sync outcome is unaffected.") }
     }
 }
 

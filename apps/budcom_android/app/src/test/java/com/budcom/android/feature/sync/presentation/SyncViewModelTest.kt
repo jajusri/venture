@@ -110,6 +110,7 @@ class SyncViewModelTest {
             company,
             RefreshVouchersUseCase(voucherRepository),
             RefreshLedgersUseCase(ledgerRepository),
+            ReconcilePartiesFromLedgersUseCase(ledgerSnapshotPort, partyRepository),
         )
 
     private fun createVm() = SyncViewModel(
@@ -121,7 +122,6 @@ class SyncViewModelTest {
         syncStatusPort = statusPort,
         companySession = company,
         connectivityObserver = connectivity,
-        reconcilePartiesFromLedgers = ReconcilePartiesFromLedgersUseCase(ledgerSnapshotPort, partyRepository),
     )
 
     @Test
