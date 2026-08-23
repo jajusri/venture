@@ -2497,3 +2497,81 @@ components (default-null, zero behavior change for existing callers).
 
 Android: 1,307/1,307 → **1,313/1,313 tests both variants** (+6), 0 lint errors, `assembleProdDebug`
 green. `compileProdDebugAndroidTestKotlin` fails for a pre-existing, unrelated reason (§B).
+
+## 41. Phase 50 — Android Instrumented-Test Build Infrastructure Recovery
+
+New session, build-tooling/dependency-recovery task only, scoped to the `compileProdDebugAndroidTestKotlin`
+failure Phase 49 discovered and left undiagnosed. No Connect/product behavior touched.
+
+### A. Root cause — not a dependency problem at all
+
+Investigated the dependency graph before touching anything: `app:dependencies --configuration
+prodDebugAndroidTestCompileClasspath` showed `androidx.compose.ui:ui-test-junit4` resolving cleanly
+to `1.7.8` via the Compose BOM (`composeBom = "2025.02.00"`), no conflict, no missing artifact.
+Extracted the actual cached `ui-test-release.aar` (module `ui-test-android:1.7.8`) and disassembled
+its classes directly (`javap`) to settle the question with evidence rather than assumption:
+`assertDoesNotExist()`/`assertExists()` are **member methods of `SemanticsNodeInteraction`** (always
+have been, in every Compose UI Test version), never top-level extension functions in a `*Kt` file —
+so `import androidx.compose.ui.test.assertDoesNotExist` was never a valid import at all, in any
+version. `LedgerBrowserScreenTest.kt` had this exact invalid import; calling `.assertDoesNotExist()`
+on a `SemanticsNodeInteraction` needs no import whatsoever (ordinary member-method resolution). This
+was a genuine, pre-existing single-line source defect, not a build-tooling/version-compatibility
+issue — confirmed by checking every other androidTest file: none of them import `assertDoesNotExist`
+(including this session's own newly-added `ConnectScreenTest.kt` uses from Phase 49, which correctly
+never imported it), so nothing else in the codebase repeats this mistake.
+
+### B. Fix
+
+Deleted the single invalid import line from `LedgerBrowserScreenTest.kt`. No dependency version
+changed, no Gradle configuration changed, no Kotlin/AGP/Compose upgrade — the smallest possible
+correction. `compileProdDebugAndroidTestKotlin` now succeeds cleanly (two pre-existing, unrelated
+deprecation warnings in a different file, `AndroidInvoiceShareCoordinatorTest.kt`'s
+`getParcelableExtra` usage, left untouched as out of scope).
+
+### C. Full verification
+
+- JVM unit tests: unaffected, still **1,313/1,313 both variants** (Gradle correctly reported these
+  tasks `UP-TO-DATE` — the fix touched only an androidTest file, no dependency of the JVM test
+  source sets).
+- `lintProdDebug`: clean.
+- `assembleProdDebug` and `assembleProdRelease`: both green (release went through the full R8/
+  minify/shrink-resources pipeline successfully; still unsigned, as already known/expected — signing
+  credentials remain a separate, pre-existing, unrelated blocker).
+- **`connectedProdDebugAndroidTest` run live on the real device** (`10BF44124K000E3`) for the first
+  time this suite has ever successfully compiled: **358 tests, 345 passed, 13 failed.** Confirmed
+  `LedgerBrowserScreenTest` itself — including the two tests that specifically exercise
+  `assertDoesNotExist()`, the exact method blocked by the fixed import — has **zero failures**,
+  directly proving the fix works correctly at runtime, not merely at compile time.
+
+### D. The 13 newly-surfaced failures — pre-existing, unrelated to this fix, not investigated further (out of scope)
+
+None of the 13 failures are in the file this session touched. They span 9 unrelated feature areas
+(`DashboardScreenTest`, `DiagnosticsScreenTest`, `LedgerStatementScreenTest`,
+`SecurePairingScreenTest`, `ServerConfigScreenTest`, `SettingsScreenTest`, `SyncScreenTest`,
+`VoucherDetailsScreenTest`, and this session's own new `ConnectScreenTest.aliasIsShownOnItsOwnLineWhenTheLinkedLedgerHasOne`),
+with a mix of distinct failure shapes (`assertIsDisplayed` "component is not displayed", a
+scroll-to-index out-of-bounds error, a touch-input target not found, a text-content mismatch) — the
+signature of a large androidTest suite running against a specific real device's actual screen/theme
+configuration for the very first time (this suite could never successfully compile before this
+session, so none of it had ever been run against this or any device), not a single root cause and
+not something this build-recovery task's scope covers fixing. Documented as genuinely new findings,
+not silently ignored: worth a dedicated follow-up investigation, separate from this task.
+
+### E. Device consequence (expected, disclosed)
+
+`connectedProdDebugAndroidTest` uninstalled the `com.budcom.android.debug` package as part of its
+normal lifecycle (Gradle's own managed behavior, not something this session configured or triggered
+deliberately beyond running the task) — confirmed missing from `pm list packages` immediately after,
+exactly the risk flagged in advance. Reinstalled the already-built APK from this same session to
+restore a working app (confirmed via launch: opens correctly to the Secure Pairing / onboarding
+screen, no crash) — but the uninstall cleared the app's private data directory, so the previously-
+synced ESTIMATION company data and Desktop Connector pairing are gone from this device and would
+need to be re-established (re-pair, re-sync) before any future Connect/Ledger real-data UI
+validation on this device. No underlying Tally or Connector state was touched or lost — only this
+Android app's own local Room cache and pairing session.
+
+### F. Scope discipline
+
+No Tally interaction of any kind. No Connect/product/UI behavior changed. No Kotlin/AGP/Compose
+version changed. The only production-adjacent file touched is a pre-existing test file, and the
+change is a single deleted import line.

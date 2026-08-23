@@ -349,6 +349,28 @@ issue, outside Connect's scope). Android: 1,307/1,307 → 1,313/1,313 tests both
 errors, `assembleProdDebug` green. No MVP-1.4/Catalogue/Vartalap/CRM work; no Prospect→Ledger
 linking. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §40.
 
+**Phase 50 — Android Instrumented-Test Build Infrastructure Recovery (2026-08-23).** Build-tooling
+recovery only, no Connect/product changes. Root-caused `compileProdDebugAndroidTestKotlin`'s failure
+by disassembling the actual resolved `ui-test-android:1.7.8` AAR (`javap`) rather than assuming a
+version mismatch: `assertDoesNotExist()`/`assertExists()` are member methods of
+`SemanticsNodeInteraction`, never top-level extension functions, so `LedgerBrowserScreenTest.kt`'s
+`import androidx.compose.ui.test.assertDoesNotExist` was never valid in any version — a genuine,
+pre-existing single-line source defect, not a dependency-resolution problem. Fixed by deleting that
+one import line; no dependency/Kotlin/AGP/Compose version changed. Verified: JVM tests unaffected
+(1,313/1,313), lint clean, `assembleProdDebug`/`assembleProdRelease` both green, and — for the first
+time this suite has ever compiled — `connectedProdDebugAndroidTest` actually ran live on the real
+device: **358 tests, 345 passed, 13 failed**. `LedgerBrowserScreenTest` itself (including both tests
+that exercise the now-fixed `assertDoesNotExist()`) passed with zero failures, directly proving the
+fix works at runtime. The 13 failures span 9 unrelated feature screens with varied failure shapes —
+the signature of a large suite running against this real device's actual screen/theme configuration
+for the first time, not a single root cause — documented as genuinely new findings for a separate
+follow-up, not fixed here (out of this task's declared scope). Running the connected test suite
+uninstalled `com.budcom.android.debug` as Gradle's own managed lifecycle (flagged as a known risk in
+advance); reinstalled from the session's own build to restore a working app, but the previously-
+synced ESTIMATION data and Connector pairing are gone from this device and need re-establishing
+before any future real-data UI validation — no underlying Tally/Connector state was affected. Full
+detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §41.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.
