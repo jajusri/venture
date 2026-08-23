@@ -2321,3 +2321,92 @@ above is static: file timestamps, process state already observed in Phase 47, Wi
 WER report archive, git/source inspection, already-fetched Tally documentation). The TD-040 fix
 required zero live Tally interaction to implement or verify (unit/integration tests use the existing
 mock-fetch harness). Alias Intelligence work (Parts A/B of the governing task) follows in §39.
+
+## 39. Phase 48 (continued) — Connect Alias Intelligence (Parts A/B)
+
+### A. Part A (10-digit Alias -> mobile candidate): already implemented, verified only
+
+Investigation found this exact behavior already fully implemented and locked
+(`docs/architecture/BUDCOM-MVP-1-1-CONNECT-UNIVERSAL-PARTY-ARCHITECTURE.md` §8): a single canonical
+`PhoneNumberNormalizer.normalizeIndianMobile()` (exactly 10 digits, leading digit 6-9, only outer
+whitespace trimmed) gates `PartyRepositoryImpl.applyAliasPhoneSeeding()`, which non-destructively
+seeds `Party.primaryPhone` with full `FieldProvenanceState` tracking (`ConfirmedFromTally`/
+`Conflict`), never rewrites the original Tally Alias, and never overwrites an existing different
+phone value. Already covered by ~10 existing tests against exactly-10-digit, 9-digit, 11-digit,
+alphabetic, and punctuation-formatted aliases, plus cross-company isolation. Verified against the
+governing task's full adversarial list; the only gaps were three specific cases not present by name
+(`0123456789` leading-zero, explicit empty-string alias, explicit null alias) — added as 3 new tests
+in `PartyRepositoryImplTest.kt`, all passing against the unchanged existing implementation. **No
+production code changed for Part A** — it was already correct.
+
+### B. Part B (1-5 digit Alias -> ledger search shortcut): new work
+
+Genuinely new: the architecture doc's search section (§9) never anticipated a short-numeric-alias
+shortcut concept. New pure classifier `com.budcom.android.core.util.AliasSearchClassifier
+.isShortNumericAlias()` (1-5 digits, numeric-only after outer-whitespace trim) — deliberately
+separate from `PhoneNumberNormalizer`, since a 6-9 digit alias is correctly neither a mobile
+candidate nor a shortcut (too long for one, too short for the other; no special treatment, not a
+gap).
+
+**Ledger Browser**: `LedgerDao.queryPage()` gained one new leading `ORDER BY` tier
+(`CASE WHEN :exactAliasFirst = 1 AND alias = :query THEN 0 ELSE 1 END`), populated by
+`RoomLedgerLocalDataSource.query()` only when the query is a short numeric alias -- a pure no-op for
+every other search (name, parentGroup, longer numeric queries), verified by a new
+`queryPage_exactAliasFirst_zero_leavesNameOrderingUnchanged` test. Existing alias substring matching
+(already present in this DAO) is untouched; only exact-match ranking is new.
+
+**Connect**: `Party` has no Alias column (by design -- see `PartyModels.kt`), so rather than adding
+one (a schema migration the task's own STOP conditions require "clear justification" for, and this
+codebase's own documented convention is to avoid cross-table SQL JOINs -- see `PartyDao.findByIds`'s
+own comment), `PartyRepositoryImpl.searchParties()` resolves an exact alias shortcut via the
+*existing* cross-feature `SearchLedgersPort` (already used by Universal Search) + the existing
+`PartySourceLinkDao.findByExternalKey()` identity-resolution lookup, merging in Kotlin -- no JOIN, no
+migration, no new Room table. Scoped deliberately narrowly: only for page 1 (a "jump to it" shortcut,
+not a page-2+ ranking signal), respects the caller's classification filter, dedupes against the
+normal name/phone search results, and is a no-op for anything that isn't a 1-5 digit numeric query.
+7 new tests in `PartyRepositoryImplTest.kt` cover: found via shortcut when name/phone search would
+miss it; company isolation (never leaks another company's shortcut match); classification-filter
+respected; no duplication when normal search already found the same party; 6-digit query correctly
+gets no special treatment; shortcut only applies to page 1.
+
+Android: 1,307/1,307 tests both variants (+21: 12 `AliasSearchClassifierTest`, 3 Part-A boundary
+tests, 7 Connect alias-shortcut tests; some renumbering against the prior 1,286 baseline), plus 2 new
+`LedgerDaoTest` androidTest cases (real-Room SQL ordering proof, requires a device/emulator, not part
+of the unit-test count). 0 lint errors, both assembles green.
+
+### C. Real-device validation (Part G)
+
+Device `10BF44124K000E3`, company ESTIMATION. Direct inspection found **zero existing real ledgers
+have any Alias set at all** (949/949 `alias IS NULL`) -- this specific real business's Tally usage
+does not use the Alias field, a genuine fact about the environment, not a gap. Reconciliation
+(`ReconcilePartiesFromLedgersUseCase`) only re-runs on a successful Ledgers sync outcome
+(`SyncViewModel.onSyncOutcome`), and a real sync would immediately overwrite any locally-injected
+test Alias with the real (alias-less) data before reconciliation ran -- so exercising the
+Connect-side reconciliation live against a genuine alias would have required editing real Tally
+business data, which was deliberately not done (matching the governing task's own instruction not to
+alter real Tally data merely to manufacture a test).
+
+**What was verified live, with real code and real/local data:**
+- Installed the updated build; Connect (926 real customers, Call/WhatsApp buttons) and Ledger
+  Browser (949 real ledgers, search) both confirmed working with zero regression against real data.
+- A local-only Room fixture (`UPDATE cached_ledgers SET alias='777' WHERE id=...`, zero Tally/
+  Connector interaction, reverted immediately after) proved the Ledger Browser's new exact-alias
+  shortcut live: searching "777" surfaced "4m Plywood & Hw" with "Alias: 777" shown, confirmed via
+  screenshot, network indicator reading `0.00 KB/s` throughout (no network call). Fixture reverted;
+  device confirmed back to 0 aliases before finishing.
+
+**What relies on the unit test suite alone**, and why: the Connect-side Alias-phone-seeding
+(pre-existing, Part A) and the new Connect alias-shortcut merge (Part B) both require reconciliation
+to have actually run against aliased data, which -- per the architectural constraint above -- was not
+achievable without editing real Tally business data. Both are covered by the test counts in §B (81
+tests in `PartyRepositoryImplTest` after this phase, including the 10 new ones), which is considered
+sufficient given the alternative was a live Tally data mutation this task explicitly cautioned
+against making merely to manufacture a test. Company isolation for the new alias-shortcut search
+specifically is unit-tested (two-company adversarial test) but not re-proven live this session, since
+only one company's data is currently cached on this device.
+
+### D. Scope discipline
+
+No MVP-1.4 work. No schema migration. No cross-table SQL JOIN introduced (the established
+in-Kotlin-merge convention was followed). No live Tally interaction of any kind for this half of the
+session's work.

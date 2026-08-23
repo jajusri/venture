@@ -1,8 +1,12 @@
 package com.budcom.android.feature.party.data.repository
 
+import com.budcom.android.core.common.AppResult
+import com.budcom.android.core.util.AliasSearchClassifier
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.core.util.PhoneNumberNormalizer
 import com.budcom.android.core.util.TimeProvider
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
+import com.budcom.android.feature.masterdata.ledger.domain.port.SearchLedgersPort
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyDao
 import com.budcom.android.feature.party.data.local.PartyEntity
@@ -69,6 +73,7 @@ class PartyRepositoryImpl @Inject constructor(
     private val timelineDao: PartyTimelineDao,
     private val timeProvider: TimeProvider,
     private val dispatchers: DispatcherProvider,
+    private val searchLedgersPort: SearchLedgersPort,
 ) : PartyRepository {
 
     override suspend fun getPartyById(companyId: String, partyId: String): Party? =
@@ -107,7 +112,49 @@ class PartyRepositoryImpl @Inject constructor(
         val column = classification?.asColumn()
         val total = partyDao.countSearch(companyId, normalized, column)
         val items = partyDao.search(companyId, normalized, column, safeSize, (safePage - 1) * safeSize)
-        PartyPage(items.map { it.toDomain() }, safePage, safeSize, total)
+        val domainItems = items.map { it.toDomain() }
+
+        // Part B (Connect Alias Intelligence): a 1-5 digit numeric query is a ledger-lookup
+        // shortcut, not a phone/name search -- Party itself stores no Alias column (see
+        // PartyModels.kt), so an exact match is resolved via the existing SearchLedgersPort +
+        // PartySourceLink chain (the same cross-feature port ReconcilePartiesFromLedgersUseCase's
+        // sibling code already uses) rather than duplicating Alias data onto Party or introducing
+        // a cross-table SQL JOIN, which this DAO deliberately avoids elsewhere (see
+        // PartyDao.findByIds's own doc comment). Only attempted for the first page: this is a
+        // "jump to that ledger's Party" shortcut, not a general ranking signal for later pages.
+        if (safePage != 1 || !AliasSearchClassifier.isShortNumericAlias(normalized)) {
+            return@withContext PartyPage(domainItems, safePage, safeSize, total)
+        }
+        val shortcutParty = resolveAliasShortcutParty(companyId, normalized, column)
+            ?: return@withContext PartyPage(domainItems, safePage, safeSize, total)
+
+        val merged = (listOf(shortcutParty) + domainItems).distinctBy { it.partyId }
+        val addedCount = merged.size - domainItems.size
+        PartyPage(merged.take(safeSize), safePage, safeSize, total + addedCount)
+    }
+
+    /**
+     * Resolves the single Party, if any, whose linked Tally ledger has an Alias exactly equal to
+     * [normalizedQuery] -- company-scoped throughout ([searchLedgersPort] itself reads only the
+     * currently-selected company's Room cache; [sourceLinkDao]/[partyDao] are both explicitly
+     * scoped by [companyId]). Returns null on no match, no source link (a ledger not yet eligible
+     * as a Party -- see [com.budcom.android.feature.party.domain.model.LedgerPartyEligibilityPolicy]),
+     * or a classification mismatch, so the shortcut never surfaces a Party the caller's own filter
+     * would otherwise exclude.
+     */
+    private suspend fun resolveAliasShortcutParty(
+        companyId: String,
+        normalizedQuery: String,
+        classificationColumn: String?,
+    ): Party? {
+        val ledgerResult = searchLedgersPort.search(LedgerQuery(text = normalizedQuery))
+        val exactLedger = (ledgerResult as? AppResult.Success)?.value?.items
+            ?.firstOrNull { it.alias == normalizedQuery }
+            ?: return null
+        val link = sourceLinkDao.findByExternalKey(companyId, SOURCE_TYPE_TALLY_LEDGER, exactLedger.id) ?: return null
+        val party = partyDao.findById(companyId, link.partyId)?.toDomain() ?: return null
+        if (classificationColumn != null && party.classification.asColumn() != classificationColumn) return null
+        return party
     }
 
     override suspend fun getContactPersons(companyId: String, partyId: String): List<PartyContactPerson> =

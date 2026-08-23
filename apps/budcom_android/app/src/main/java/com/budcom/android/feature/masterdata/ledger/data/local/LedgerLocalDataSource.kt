@@ -1,5 +1,6 @@
 package com.budcom.android.feature.masterdata.ledger.data.local
 
+import com.budcom.android.core.util.AliasSearchClassifier
 import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.ledger.domain.model.AmountSide
 import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
@@ -55,6 +56,7 @@ class RoomLedgerLocalDataSource @Inject constructor(
             ascending = if (query.sortDirection == LedgerSortDirection.Asc) 1 else 0,
             limit = pageSize,
             offset = (page - 1) * pageSize,
+            exactAliasFirst = if (AliasSearchClassifier.isShortNumericAlias(normalized)) 1 else 0,
         )
         val freshness = entities.firstOrNull()?.dataFreshnessAt
         return LedgerPage(

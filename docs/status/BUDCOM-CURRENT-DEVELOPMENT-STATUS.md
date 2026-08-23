@@ -307,6 +307,28 @@ no existing defect, recorded as binding evidence for any future work. No product
 Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §37;
 `docs/architecture/BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md` §3.1, §17 item 10 now CLOSED.
 
+**Phase 48 — Real-Device Connect Hardening + Tally Incident Forensic Review (2026-08-23).** Two
+workstreams. (1) **Forensic review of the Phase 47 incident, no new live Tally requests.** Root
+cause confirmed via Tally's own documentation (missing `SUBTYPE`/`ID TYPE="Name"`); a Windows Event
+Log / WER check found no crash report exists for `tally.exe` on that date despite the pipeline being
+active (6 earlier `tally.exe` crashes/hangs on record), pointing to a Tally-side application fault
+rather than a proven OS-level crash. The same review found the identical broken shape is
+independently built by a real, unreachable-but-"production" Connector operation
+(`ApprovedOperationId.CompanyInfo`) — fixed by disabling it (**TD-040**) rather than re-guessing a
+shape, caught by its own pre-existing discovery-metadata fallback. (2) **Connect Alias Intelligence**:
+Part A (10-digit Alias → mobile candidate) was found already fully implemented and locked
+(architecture doc §8) — verified against the full adversarial list, 3 small boundary tests added, no
+production code changed. Part B (1-5 digit Alias → ledger search shortcut) was genuinely new: an
+exact-alias-first ranking tier added to the Ledger Browser's existing search query, and a
+no-migration, no-JOIN Connect-side extension reusing the existing `SearchLedgersPort` +
+`PartySourceLinkDao` lookup chain. Real-device validation found the actual ESTIMATION company has
+zero ledgers with any Alias set — validated live via a local-only Room fixture (reverted after) for
+the Ledger Browser path; Connect-side reconciliation behavior relies on the unit suite, since
+exercising it live would have required editing real Tally business data, which was deliberately not
+done. Android: 1,307/1,307 tests both variants (+21), 0 lint errors, both assembles green. No
+MVP-1.4 work, no schema migration, no cross-table SQL JOIN. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §38-39; `docs/technical-debt/registry.md` TD-040.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.

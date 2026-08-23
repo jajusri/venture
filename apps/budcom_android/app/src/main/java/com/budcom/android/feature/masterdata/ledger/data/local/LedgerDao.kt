@@ -45,6 +45,7 @@ interface LedgerDao {
             OR IFNULL(parentGroup, '') LIKE '%' || :query || '%' COLLATE NOCASE
           )
         ORDER BY
+          CASE WHEN :exactAliasFirst = 1 AND alias = :query THEN 0 ELSE 1 END ASC,
           CASE WHEN :sortBy = 'parentGroup' AND :ascending = 1 THEN parentGroup END COLLATE NOCASE ASC,
           CASE WHEN :sortBy = 'parentGroup' AND :ascending = 0 THEN parentGroup END COLLATE NOCASE DESC,
           CASE WHEN :sortBy = 'syncedAt' AND :ascending = 1 THEN syncedAt END ASC,
@@ -63,6 +64,11 @@ interface LedgerDao {
         ascending: Int,
         limit: Int,
         offset: Int,
+        // Only 1 for a 1-5 digit numeric query (see AliasSearchClassifier.isShortNumericAlias) --
+        // deterministically ranks an exact Alias match first without changing ordering for any
+        // other kind of search (0 is a pure no-op: the CASE collapses to a constant ELSE 1 for
+        // every row, so existing sortBy/ascending ordering is completely unaffected).
+        exactAliasFirst: Int,
     ): List<LedgerEntity>
 
     @Query(

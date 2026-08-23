@@ -1,7 +1,14 @@
 package com.budcom.android.feature.party.data.repository
 
+import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.core.util.TimeProvider
+import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerDataQuality
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatus
+import com.budcom.android.feature.masterdata.ledger.domain.port.SearchLedgersPort
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyContactPersonEntity
 import com.budcom.android.feature.party.data.local.PartyDao
@@ -46,9 +53,11 @@ class PartyRepositoryImplTest {
     private val exportEventDao = FakePartyExportEventDao()
     private val issueDao = FakePartyIssueDao()
     private val timelineDao = FakePartyTimelineDao(noteDao, exportEventDao, issueDao)
+    private val searchLedgersPort = FakeSearchLedgersPort()
 
     private fun repository() = PartyRepositoryImpl(
         partyDao, sourceLinkDao, fieldProvenanceDao, contactPersonDao, tagDao, noteDao, exportEventDao, issueDao, timelineDao, time, dispatchers,
+        searchLedgersPort,
     )
 
     private fun seed(
@@ -194,6 +203,102 @@ class PartyRepositoryImplTest {
         assertEquals(listOf("Dealer"), tagsByParty[party.partyId]?.map { it.name })
     }
 
+    // ============================== ALIAS SEARCH SHORTCUT (1-5 digits) ==============================
+
+    @Test
+    fun `searchParties finds a party via an exact 1-5 digit alias shortcut even when name and phone search would miss it`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers(
+            "co-1",
+            listOf(seed(ledgerId = "guid:shortcut", name = "Zephyr Traders", alias = "25")),
+        )
+        searchLedgersPort.ledgers += fakeLedger("guid:shortcut", "Zephyr Traders", alias = "25")
+
+        val result = repo.searchParties("co-1", "25", null, 1, 50)
+
+        assertEquals(1, result.items.size)
+        assertEquals("Zephyr Traders", result.items.single().displayName)
+        assertEquals(1, result.totalItems)
+    }
+
+    @Test
+    fun `searchParties alias shortcut never returns a party from another company`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers(
+            "co-B",
+            listOf(seed(ledgerId = "guid:shortcut", name = "Company B Party", alias = "25")),
+        )
+        searchLedgersPort.ledgers += fakeLedger("guid:shortcut", "Company B Party", alias = "25")
+
+        // co-A has never reconciled this ledger id, so no PartySourceLink exists for co-A.
+        val result = repo.searchParties("co-A", "25", null, 1, 50)
+
+        assertEquals(0, result.items.size)
+    }
+
+    @Test
+    fun `searchParties alias shortcut respects the classification filter`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers(
+            "co-1",
+            listOf(seed(ledgerId = "guid:shortcut", name = "Supplier Only", alias = "25", classification = PartyClassification.Supplier)),
+        )
+        searchLedgersPort.ledgers += fakeLedger("guid:shortcut", "Supplier Only", alias = "25")
+
+        val wrongFilter = repo.searchParties("co-1", "25", PartyClassification.Customer, 1, 50)
+        assertEquals(0, wrongFilter.items.size)
+
+        val rightFilter = repo.searchParties("co-1", "25", PartyClassification.Supplier, 1, 50)
+        assertEquals(1, rightFilter.items.size)
+    }
+
+    @Test
+    fun `searchParties does not duplicate a party the normal search already found`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers(
+            "co-1",
+            listOf(seed(ledgerId = "guid:25", name = "25 Traders", alias = "25")),
+        )
+        searchLedgersPort.ledgers += fakeLedger("guid:25", "25 Traders", alias = "25")
+
+        // The normal displayName LIKE search already matches "25 Traders" on name alone.
+        val result = repo.searchParties("co-1", "25", null, 1, 50)
+
+        assertEquals(1, result.items.size)
+        assertEquals(1, result.totalItems)
+    }
+
+    @Test
+    fun `searchParties alias shortcut does not apply to a 6-digit numeric query`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers(
+            "co-1",
+            listOf(seed(ledgerId = "guid:six", name = "Six Digit Co", alias = "123456")),
+        )
+        searchLedgersPort.ledgers += fakeLedger("guid:six", "Six Digit Co", alias = "123456")
+
+        // Alias matches exactly, but 6 digits is neither a mobile candidate nor a shortcut --
+        // the party is only found here because the normal substring search matches the alias too
+        // is NOT true (Party has no alias column), so this must return nothing.
+        val result = repo.searchParties("co-1", "123456", null, 1, 50)
+
+        assertEquals(0, result.items.size)
+    }
+
+    @Test
+    fun `searchParties alias shortcut only applies to the first page`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers(
+            "co-1",
+            listOf(seed(ledgerId = "guid:shortcut", name = "Zephyr Traders", alias = "25")),
+        )
+        searchLedgersPort.ledgers += fakeLedger("guid:shortcut", "Zephyr Traders", alias = "25")
+
+        val secondPage = repo.searchParties("co-1", "25", null, 2, 50)
+
+        assertEquals(0, secondPage.items.size)
+    }
+
     // ============================== PHONE / ALIAS SEEDING ==============================
 
     @Test
@@ -229,6 +334,24 @@ class PartyRepositoryImplTest {
     @Test
     fun `formatted alias is not seeded`() = runTest(dispatcher) {
         val party = repository().reconcilePartiesFromEligibleLedgers("co-1", listOf(seed(alias = "98765-43210"))).single()
+        assertNull(party.primaryPhone)
+    }
+
+    @Test
+    fun `10-digit alias starting with 0 is not seeded -- Indian mobiles never start 0-5`() = runTest(dispatcher) {
+        val party = repository().reconcilePartiesFromEligibleLedgers("co-1", listOf(seed(alias = "0123456789"))).single()
+        assertNull(party.primaryPhone)
+    }
+
+    @Test
+    fun `empty string alias is not seeded and never crashes reconciliation`() = runTest(dispatcher) {
+        val party = repository().reconcilePartiesFromEligibleLedgers("co-1", listOf(seed(alias = ""))).single()
+        assertNull(party.primaryPhone)
+    }
+
+    @Test
+    fun `null alias is not seeded and never crashes reconciliation`() = runTest(dispatcher) {
+        val party = repository().reconcilePartiesFromEligibleLedgers("co-1", listOf(seed(alias = null))).single()
         assertNull(party.primaryPhone)
     }
 
@@ -1064,6 +1187,37 @@ private class FakePartyDao : PartyDao {
     override suspend fun countMissingContactInfo(companyId: String): Int = error("unused")
     override suspend fun findByIds(companyId: String, partyIds: List<String>): List<PartyEntity> = error("unused")
 }
+
+/** Mirrors the real [SearchLedgersPortImpl]'s Room-only substring match, in-memory, for the
+ * alias-shortcut merge tests -- callers filter for an *exact* alias match themselves, exactly as
+ * [PartyRepositoryImpl.resolveAliasShortcutParty] does against the real port. */
+private class FakeSearchLedgersPort : SearchLedgersPort {
+    val ledgers = mutableListOf<Ledger>()
+    override suspend fun search(query: LedgerQuery): AppResult<LedgerPage> {
+        val text = query.text
+        val matched = if (text.isNullOrBlank()) {
+            ledgers
+        } else {
+            ledgers.filter {
+                it.name.contains(text, ignoreCase = true) || it.alias?.contains(text, ignoreCase = true) == true
+            }
+        }
+        return AppResult.Success(
+            LedgerPage(matched, page = 1, pageSize = matched.size.coerceAtLeast(1), totalItems = matched.size, totalPages = 1, dataFreshnessAt = null),
+        )
+    }
+}
+
+private fun fakeLedger(id: String, name: String, alias: String?) = Ledger(
+    id = id,
+    name = name,
+    alias = alias,
+    parentGroup = "Sundry Debtors",
+    status = LedgerStatus.Active,
+    closingBalance = null,
+    dataQuality = LedgerDataQuality.Complete,
+    syncedAt = "2026-01-01T00:00:00Z",
+)
 
 private class FakePartySourceLinkDao : PartySourceLinkDao {
     val store = mutableMapOf<Triple<String, String, String>, PartySourceLinkEntity>()

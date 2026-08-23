@@ -44,7 +44,7 @@ class LedgerDaoTest {
         )
         assertEquals(1, dao.countForCompany("co-a"))
         assertEquals(1, dao.countForCompany("co-b"))
-        assertEquals("Debtors", dao.queryPage("co-a", null, "name", 1, 10, 0).single().name)
+        assertEquals("Debtors", dao.queryPage("co-a", null, "name", 1, 10, 0, 0).single().name)
     }
 
     @Test
@@ -57,15 +57,48 @@ class LedgerDaoTest {
                 entity("co-a", "3", "Petty Cash"),
             ),
         )
-        val page = dao.queryPage("co-a", "cash", "name", 1, 10, 0)
+        val page = dao.queryPage("co-a", "cash", "name", 1, 10, 0, 0)
         assertEquals(2, page.size)
     }
 
-    private fun entity(companyId: String, id: String, name: String) = LedgerEntity(
+    /**
+     * Part B (Connect Alias Intelligence): a 1-5 digit numeric query is a ledger-lookup shortcut,
+     * not a substring search -- an exact Alias match must be deterministically ranked first, even
+     * though several other ledgers' names/aliases also contain "25" as a substring.
+     */
+    @Test
+    fun queryPage_exactAliasFirst_ranksExactMatchAheadOfSubstringMatches() = runBlocking {
+        dao.replaceAllForCompany(
+            "co-a",
+            listOf(
+                entity("co-a", "1", "AZ Traders 250", alias = "1250"),
+                entity("co-a", "2", "The 25 Corner Store", alias = null),
+                entity("co-a", "3", "Shortcut Target", alias = "25"),
+            ),
+        )
+        val page = dao.queryPage("co-a", "25", "name", 1, 10, 0, exactAliasFirst = 1)
+        assertEquals(3, page.size)
+        assertEquals("Shortcut Target", page.first().name)
+    }
+
+    @Test
+    fun queryPage_exactAliasFirst_zero_leavesNameOrderingUnchanged() = runBlocking {
+        dao.replaceAllForCompany(
+            "co-a",
+            listOf(
+                entity("co-a", "1", "AZ Traders 250", alias = "1250"),
+                entity("co-a", "2", "Shortcut Target", alias = "25"),
+            ),
+        )
+        val page = dao.queryPage("co-a", "25", "name", 1, 10, 0, exactAliasFirst = 0)
+        assertEquals(listOf("AZ Traders 250", "Shortcut Target"), page.map { it.name })
+    }
+
+    private fun entity(companyId: String, id: String, name: String, alias: String? = null) = LedgerEntity(
         companyId = companyId,
         id = id,
         name = name,
-        alias = null,
+        alias = alias,
         parentGroup = null,
         status = "active",
         closingAmount = null,
