@@ -371,6 +371,28 @@ synced ESTIMATION data and Connector pairing are gone from this device and need 
 before any future real-data UI validation — no underlying Tally/Connector state was affected. Full
 detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §41.
 
+**Phase 51 — Instrumented Test Failure Triage + Connect DEV Recovery (2026-08-23).** Root-caused and
+fixed the Connect failure from Phase 50's 13 with direct evidence, not a guess: a temporary
+`printToLog` diagnostic proved the row `Card`'s `onClick` auto-sets Compose's
+`mergeDescendants = true`, which collapses a plain `Text` leaf's own `testTag` out of the default
+merged query tree — the row's own merged text output (`'[..., Alias: 25]'`) directly proved the
+Alias renders correctly in production; only the test's query needed `useUnmergedTree = true`, the
+standard fix. No production code changed. Verified: full suite failure count dropped 13 → **12**,
+`ConnectScreenTest` now 16/16. Static-inspected a sample of the other 12 (Sync's and Dashboard's
+failing cards have no `onClick` at all, disproving a single shared root cause) and, per the
+governing task's own stop condition ("multiple failures have unclear causality"), deferred further
+diagnosis of the remaining 12 as a dedicated follow-up rather than force individual live-device
+investigations. Attempted DEV/Connector recovery via the ordinary workflow (`npm start` in
+`budcom_desktop`): build succeeded, but the real Electron GUI could not launch because
+`ELECTRON_RUN_AS_NODE=1` is set in this environment (an apparent sandboxing boundary, not
+circumvented); a standalone Connector alternative was considered but not pursued, since it would
+require enabling LAN network exposure and bypassing `requireDeviceAuthForLan`'s intentional gate.
+The Android app itself is confirmed fully functional (reinstalled, launches to an honest "Secure
+Pairing" screen) but full DEV recovery (re-paired Connector, re-synced real data) was **not**
+completed this session — a genuine, disclosed infrastructure limitation. No Tally interaction beyond
+the existing, already-proven connectivity check; no Tally data modified. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §42.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.

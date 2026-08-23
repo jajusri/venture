@@ -2575,3 +2575,86 @@ Android app's own local Room cache and pairing session.
 No Tally interaction of any kind. No Connect/product/UI behavior changed. No Kotlin/AGP/Compose
 version changed. The only production-adjacent file touched is a pre-existing test file, and the
 change is a single deleted import line.
+
+## 42. Phase 51 — Instrumented Test Failure Triage + Connect DEV Recovery
+
+New session, continuing directly from Phase 50's 13 newly-surfaced instrumented failures. Verified
+ground truth first: HEAD/branch/tree matched the prior report exactly; device Room was confirmed
+empty (`cached_ledgers`/`cached_parties` both 0 rows), `shared_prefs/` absent entirely (fresh
+install, no leftover pairing), Connector unreachable on 8080, Tally directly reachable on 9000 —
+all exactly as Phase 50 had disclosed.
+
+### A. Connect failure — root-caused and fixed with direct evidence, no guessing
+
+Reproduced `ConnectScreenTest.aliasIsShownOnItsOwnLineWhenTheLinkedLedgerHasOne` in isolation first
+(ruling out test-order/shared-state as the cause: it fails identically alone). Added a temporary
+`printToLog` diagnostic (removed before the final fix) to dump the actual semantics tree at the
+point of failure. The dump proved, unambiguously: the row `Card`'s `onClick` makes Compose
+automatically set `mergeDescendants = true` on that node (standard accessibility behavior, so
+TalkBack reads the whole row as one unit) — this collapses a plain, non-interactive `Text` leaf's
+own `testTag` out of the *default* (merged) semantics query tree. The row's own merged `Text` output
+in the dump read `'[ABC Traders, 1000.00 Dr, +919876543210, Alias: 25]'` — **direct proof the Alias
+text is genuinely composed, correct, and even correctly exposed to accessibility services** — only
+the *test's query technique* was wrong, not the production code. Fixed by querying with
+`useUnmergedTree = true` (the standard, documented Compose-testing technique for exactly this
+scenario) — no production code touched. Verified: `ConnectScreenTest` now passes 16/16 in isolation,
+and the full suite's failure count dropped from 13 to 12 with no new failures introduced.
+
+### B. The other 12 — confirmed NOT one shared root cause, deferred
+
+Static-code-inspected a sample from each apparent bucket to test the "one root cause" hypothesis
+before accepting it: `SyncScreenTest.idleShowsTargetsAndNoAutoBusy`'s target `Card` has **no**
+`onClick` at all, and `DashboardScreenTest.noCompanySelectedStateIsShown`'s company `Card` is
+likewise plain/non-clickable — neither shares Connect's exact merge-tree mechanism, despite an
+identical `assertIsDisplayed` "component is not displayed" failure message. This directly disproves
+a single unifying cause across the 8 "not displayed" failures, and the remaining failures are
+already known to differ in kind (a scroll-index-out-of-bounds error, a missing touch target, a
+text-content mismatch, two generic `Assert.fail()`). Per the governing task's own explicit stop
+condition ("multiple failures have unclear causality") and its explicit permission to defer
+environment/unclear-cause issues rather than force 12 more individual live-device diagnoses (each
+costing real instrumented-test cycles, each of which uninstalls/reinstalls the debug app), these 12
+were **not** further diagnosed or fixed this session — classified as a genuine mix of pre-existing,
+independent issues, recommended as a dedicated follow-up.
+
+### C. DEV/Connector recovery — partially achieved, one real infrastructure limitation found
+
+The Android app itself is confirmed fully functional: reinstalled cleanly, launches correctly to an
+honest "Secure Pairing" onboarding screen (no crash, no stale/misleading data) reflecting its
+genuinely-unpaired state truthfully. Attempted the ordinary recovery workflow (`npm start` in
+`apps/budcom_desktop`, which builds and launches the real Electron Desktop app that manages the
+Connector): the build succeeded, but `electron .` crashed immediately with `TypeError: Cannot read
+properties of undefined (reading 'isPackaged')` because **`ELECTRON_RUN_AS_NODE=1` is set in this
+shell environment**, forcing Electron's own binary to execute as plain Node (confirmed: the real
+`electron.exe` binary is present and correctly installed at
+`node_modules/electron/dist/electron.exe` — this is an environment/sandbox characteristic, not a
+missing dependency). This env var is treated as a deliberate sandboxing boundary of this execution
+environment (most plausibly intended to prevent an agent from unexpectedly spawning GUI
+applications) and was **not** unset/bypassed to force a real Electron window open, since (a)
+overriding an apparent safety boundary without explicit authorization is not this session's call to
+make unilaterally, and (b) even a successfully-launched Electron window could not be driven through
+its QR-code secure-pairing flow with this session's available tools regardless. A standalone,
+GUI-free Connector process (`npm run dev` in `connector/budcom_connector`) was considered as an
+alternative path (Android's existing `ServerConfig` manual-URL screen could in principle point at
+it, avoiding the QR flow entirely) but was not pursued to completion: doing so would require
+enabling `networkExposure: 'lan'` on the Connector, and `requireDeviceAuthForLan` exists
+specifically to gate unauthenticated LAN exposure — weakening or working around that gate merely to
+avoid the GUI limitation was judged the wrong tradeoff, not a genuine "ordinary existing workflow."
+**Full DEV recovery (re-paired Connector, re-synced real ESTIMATION data) was not completed this
+session** — documented honestly as a real, evidenced infrastructure limitation, not silently worked
+around.
+
+### D. Device hygiene note
+
+Each of the several `connectedProdDebugAndroidTest` invocations this session (full suite, isolated
+`ConnectScreenTest`, the single diagnostic test, the final full-suite re-verification) independently
+uninstalled `com.budcom.android.debug` as Gradle's own managed lifecycle — reinstalled from the
+already-built APK after every one, confirmed via `pm list packages` and a successful launch each
+time, ending the session with a working, launchable (if unpaired) app on the device.
+
+### E. Scope discipline
+
+No Tally interaction of any kind — Tally itself was only ever queried via the existing, already-
+proven `curl http://127.0.0.1:9000` connectivity check (identical to prior sessions' safe baseline
+checks), never a new/experimental shape. No Tally data modified. No MVP-1.4/Catalogue work. The only
+production-adjacent change is the one-line Connect test-query fix in §A; no Connect production
+behavior changed.
