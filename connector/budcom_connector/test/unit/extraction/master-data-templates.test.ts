@@ -36,10 +36,12 @@ describe('MasterDataTemplates', () => {
     expect(xml).not.toContain('<DESC>List of Stock Items</DESC>');
   });
 
-  it('enriches ledgers collection with embedded read-only FETCH fields, including PARENT (TD-035)', () => {
+  it('enriches ledgers collection with embedded read-only FETCH fields, including PARENT (TD-035) and ALIAS', () => {
     const xml = builder.build(MasterDataTemplates.ledgers('ESTIMATION'));
     expect(xml).toContain('<COLLECTION NAME="List of Ledgers" ISMODIFY="Yes">');
-    expect(xml).toContain('Fetch : NAME, GUID, ALTERID, MASTERID, PARENT, OPENINGBALANCE, CLOSINGBALANCE, ISBILLWISEON');
+    expect(xml).toContain(
+      'Fetch : NAME, GUID, ALTERID, MASTERID, ALIAS, PARENT, OPENINGBALANCE, CLOSINGBALANCE, ISBILLWISEON',
+    );
     expect(xml).not.toContain('<DESC>List of Ledgers</DESC>');
   });
 

@@ -3073,3 +3073,92 @@ shot stale-empty retry) is left in place unchanged — it's a legitimate defense
 still-unproven transient-read mechanism, and removing it was never in scope. If a stale-empty Connect
 read is ever observed again after this fix, that would be strong evidence a *second*, independent
 mechanism exists — worth a fresh investigation rather than reopening this one.
+
+## 46. Phase 55 — TD-042: real Ledger Alias data (mobile numbers) never reached Android at all,
+two independent gaps found and fixed, live-verified against real data
+
+Same session, immediately after Phase 54. User reported that ~80% of real ESTIMATION Debtors have
+a mobile-number Alias in Tally (some also carrying a second, short numeric shortcut alias), and
+asked for it to auto-fill Connect's phone/WhatsApp contact detail. Connect's Alias-driven phone
+seeding (`PartyRepositoryImpl.applyAliasPhoneSeeding`, MVP-1.1-A/Phase 48) and its 1-5 digit
+search shortcut already existed and were already tested — but only against synthetic Room
+fixtures. Real ESTIMATION had shown zero Aliases in every session up to and including Phase 54
+(confirmed again first thing this phase: `SELECT COUNT(*) FROM cached_ledgers WHERE alias IS NOT
+NULL` = 0, even right after a fresh full Ledgers sync).
+
+**First gap, found by reading the code**: `MasterDataTemplates.ledgers()`
+(`connector/budcom_connector/src/extraction/templates/master-data-templates.ts`) — the Ledgers TDL
+export's `collectionModifyFetch` field list — never included `ALIAS`. Stock Items' own field list
+already did. Fixed by adding it, and while there, removed a pre-existing duplication that's
+exactly how this went unnoticed: the "approved" field list lived in
+`extraction/core/ledger-identity.ts`'s `LEDGER_RICH_FETCH_FIELDS` (explicitly documented as the
+canonical list, with its own tests), but `master-data-templates.ts` maintained an independent
+duplicate literal instead of importing it — two copies to keep in sync, only one of which was ever
+checked against real Tally behavior. `master-data-templates.ts` now imports and spreads the one
+canonical constant.
+
+**Rebuilt, restarted the Connector, re-synced — still zero Aliases.** Rather than assume the fetch
+field was now sufficient, sent the Connector's *exact* request XML directly to the running Tally
+instance (`curl` to `localhost:9000`, bypassing both the Connector and Android entirely) to prove
+Tally's real behavior in isolation. Result: a 638KB response, 950 ledgers, **zero `<ALIAS>` tags
+anywhere** — even for ledgers independently confirmed (via a second raw request) to have a real
+Alias. Reading the raw XML directly revealed the actual mechanism: Tally never emits a flat
+`<ALIAS>` tag for Ledgers in this export shape at all. A ledger's Alias value(s) — entered as
+"Name (alias)" in the ledger master, one or several comma-separated — are folded into extra
+`<NAME>` siblings inside `LANGUAGENAME.LIST/NAME.LIST`, alongside the primary name as the first
+entry. Confirmed live and repeatedly: `LEDGER NAME="Balaji Kowkoor"` exports
+`<LANGUAGENAME.LIST><NAME.LIST><NAME>Balaji Kowkoor</NAME><NAME>7877685616</NAME>
+<NAME>616</NAME></NAME.LIST>...` — name, then a 10-digit mobile, then a 3-digit shortcut, both
+real Alias values Tally simply doesn't have a discrete tag for. Across the real 949 ledgers: 492
+had exactly one extra name (almost always the mobile), 19 had two or more (mobile + shortcut, or
+messier combinations) — this is precisely the "10-digit mobile for most Debtors, plus a 1-4 digit
+shortcut for some" pattern the user described, now with a confirmed mechanism. Also checked
+whether Tally's dedicated `MOBILENUMBER`/`PHONENUMBER` ledger contact fields were populated
+instead (would have been a much simpler fix) — confirmed empty across the board, consistent with
+the user having used the Alias field for this, not a dedicated contact field.
+
+**Second gap, fixed in `entity-mappers.ts`'s `mapLedger`** — the function actually wired into the
+live extraction path (via `extractor-registry.ts`; a second, unused duplicate mapper in
+`tally-ledger-mapper.ts` was confirmed dead code via a repo-wide grep for its call sites — none
+found outside its own file — and deliberately left untouched, out of scope). Added
+`CollectionEntityParser.getDescendantTexts(node, path)`, a small generic nested-path walker, and a
+`resolveLedgerAlias` helper: a flat `<ALIAS>` tag first if Tally ever does emit one (harmless,
+forward-compatible, matches Stock Items' own already-working field), else the
+`LANGUAGENAME.LIST/NAME.LIST/NAME` entries after the first, preferring whichever candidate matches
+Android's own strict `PhoneNumberNormalizer.normalizeIndianMobile` shape (exactly 10 digits,
+leading digit 6-9) since that's what Connect's phone seeding directly consumes, else simply the
+first remaining candidate (preserves the shortcut-only case for a ledger with just one non-phone
+alias). A ledger with both a phone and a shortcut can only keep one value in the existing
+single-string `alias` field — the phone wins, a deliberate, disclosed trade-off favoring the
+concrete, requested need (Call/WhatsApp) over the shortcut-search convenience, rather than a wider
+multi-value schema change nobody asked for this session.
+
+**Android-side phone-seeding and search-shortcut logic needed no changes at all** — already
+correct, just never fed real data. Added 5 new tests directly on `mapLedger` against a new
+realistic fixture (`SAMPLE_LEDGERS_WITH_LANGUAGENAME_ALIAS_RESPONSE`): single-alias, phone+shortcut
+correctly preferring the phone, shortcut-only, no-alias, and flat-`<ALIAS>`-still-wins-when-present.
+Connector suite: 1,106 → 1,111, all passing (full run, not just the new file).
+
+**Live-verified end to end, not just via tests.** Rebuilt the Connector; the crash-detection
+auto-restart observed in Phase 54 again did not actually respawn the child process on its own
+within a reasonable wait, so restarted the whole Desktop app cleanly (same safe, disclosed pattern
+as Phase 54) rather than force anything. Triggered a real Ledgers sync. Queried the *actual*
+private-vault Connector database directly (`node:sqlite`'s `DatabaseSync`, read-only, against
+`E:\BudcomPrivate\...\connector-data\budcom-ledger.db` — not the stale `%APPDATA%` copy from
+2026-08-19, found by checking the real configured storage path rather than assuming the first `.db`
+file found was the active one) and Android's Room `cached_ledgers`: **511 of 949 real ledgers now
+carry a real alias.** `cached_parties`: **486 of 873 real customers got a validated `primaryPhone`**
+(reconciliation ran automatically as part of the same sync, awaited synchronously — a direct,
+concrete benefit of Phase 54's fix landing first). Connect's Customers tab visually confirmed
+showing real phone numbers (e.g. "4m Plywood & Hw" → `8309814428`, Call/WhatsApp both active).
+
+**The shortfall from the user's ~80% estimate (486/873 ≈ 56%) is expected and correct, not a new
+bug**: some real Alias values are non-phone shortcuts (`"2"`, `"616"`, ...) or malformed near-phone
+entries (e.g. an 11-digit value on "A2Z BAZAAR GODAVARI KHANI" — visually confirmed on-device: the
+Alias line shows correctly, but no phone line renders and Call/WhatsApp correctly no-op) that the
+existing strict validation correctly declines, by its own documented design rationale (a plain
+digit string such as a pincode or account number must never be silently treated as a phone
+number). **How to apply**: if the user wants that shortfall narrowed, the next step is a real,
+disclosed conversation about relaxing the strict-10-digit rule (e.g. tolerating an 11-digit value
+with a leading 0/91) or a genuine multi-value alias schema (to stop losing the shortcut when a
+phone also exists) — neither was requested this session and neither was attempted speculatively.

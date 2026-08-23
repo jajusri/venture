@@ -89,6 +89,25 @@ export class CollectionEntityParser {
   resolveName(node: ParsedXmlNode): string | undefined {
     return resolveNodeName(this.parser, node);
   }
+
+  /**
+   * Text of every leaf element found by walking a nested path of element names in document
+   * order (e.g. `['LANGUAGENAME.LIST', 'NAME.LIST', 'NAME']`). Empty when any step of the path
+   * is absent. Needed because Tally represents a ledger's comma-separated Alias values (entered
+   * as "Name (alias)" in the ledger master) not as a discrete `<ALIAS>` tag but as extra `<NAME>`
+   * siblings alongside the primary name inside `LANGUAGENAME.LIST/NAME.LIST` -- see
+   * `resolveLedgerAlias` below for the full history.
+   */
+  getDescendantTexts(node: ParsedXmlNode, path: readonly string[]): string[] {
+    let current: readonly ParsedXmlNode[] = [node];
+    for (const step of path) {
+      const target = step.toUpperCase();
+      current = current.flatMap((n) => n.children.filter((child) => child.name.toUpperCase() === target));
+    }
+    return current
+      .map((leaf) => normalizeText(this.parser.getText(leaf)))
+      .filter((value): value is string => value !== undefined);
+  }
 }
 
 export function resolveNodeName(
@@ -145,6 +164,42 @@ export function mapLedgerGroup(
   };
 }
 
+/** Matches BUDCOM Android's PhoneNumberNormalizer.normalizeIndianMobile strict rule (exactly 10
+ * digits, leading digit 6-9) -- kept as a plain shape check here, not a normalization: this
+ * layer picks the right raw candidate string, the Android side is what normalizes/prefixes it. */
+const INDIAN_MOBILE_SHAPE = /^[6-9]\d{9}$/;
+
+/**
+ * 2026-08-23: real ESTIMATION ledgers have Alias values (a 10-digit mobile for ~80% of Debtors,
+ * some also carrying a second, short numeric shortcut alias) that were never surfacing anywhere
+ * downstream -- Connect's Alias-driven phone seeding and search shortcut were fully built and
+ * tested, but only against synthetic fixtures, because the live data was always empty. Root
+ * cause: Tally never emits a flat `<ALIAS>` tag for Ledgers in this export shape at all (proven
+ * directly against the running Tally instance -- zero `<ALIAS>` tags across 949 real ledgers,
+ * including ones with a confirmed real Alias). Instead, a ledger's Name (alias) value(s) are
+ * folded into extra `<NAME>` siblings inside `LANGUAGENAME.LIST/NAME.LIST`, alongside the primary
+ * name as the first entry. This resolves that structure into the single alias string the rest of
+ * the pipeline (Room's `cached_ledgers.alias`, Party phone-seeding, the 1-5 digit search
+ * shortcut) already expects: a flat `<ALIAS>` tag first if Tally ever does emit one (harmless,
+ * forward-compatible, matches StockItems' own working field), then a phone-shaped
+ * LANGUAGENAME.LIST candidate (what Connect's phone seeding directly needs), then simply the
+ * first extra name if no candidate looks like a phone (preserves the short-shortcut case for a
+ * ledger with only one non-phone alias). A ledger with both a phone and a shortcut alias
+ * (observed live, ~19 of 949) can only keep one value in this single-string field -- the phone
+ * wins, since Connect's WhatsApp/Call actions are the concrete, requested need; the shortcut
+ * search convenience is lost for those few ledgers, a deliberate, disclosed trade-off rather than
+ * a wider schema change.
+ */
+function resolveLedgerAlias(parser: CollectionEntityParser, node: ParsedXmlNode): string | undefined {
+  const flatAlias = parser.getChildText(node, 'ALIAS');
+  if (flatAlias) return flatAlias;
+
+  const names = parser.getDescendantTexts(node, ['LANGUAGENAME.LIST', 'NAME.LIST', 'NAME']);
+  const candidates = names.slice(1);
+  if (candidates.length === 0) return undefined;
+  return candidates.find((value) => INDIAN_MOBILE_SHAPE.test(value.trim())) ?? candidates[0];
+}
+
 function resolveLedgerStatus(parser: CollectionEntityParser, node: ParsedXmlNode): NormalizedLedger['status'] {
   const reserved = parser.getChildText(node, 'RESERVEDNAME');
   if (reserved) return 'reserved';
@@ -183,7 +238,7 @@ export function mapLedger(parser: CollectionEntityParser, node: ParsedXmlNode): 
     id: identity.id,
     name,
     normalizedName: normalizeName(name),
-    alias: parser.getChildText(node, 'ALIAS'),
+    alias: resolveLedgerAlias(parser, node),
     parentGroup: normalizeText(parser.getChildText(node, 'PARENT')),
     openingBalance,
     closingBalance,

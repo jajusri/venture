@@ -1,3 +1,4 @@
+import { LEDGER_RICH_FETCH_FIELDS } from '../core/ledger-identity.js';
 import type { TallyXmlRequestSpec } from '../../tally/xml/request-builder.js';
 
 /** Tally collection/object IDs for master data extraction. */
@@ -73,29 +74,14 @@ export const MasterDataTemplates = {
     buildObjectTemplate(TallyMasterDataObjects.Company, { companyName }),
   ledgerGroups: (companyName: string) =>
     buildCollectionTemplate(TallyMasterDataCollections.Groups, { companyName }),
+  // Field list lives in one place, `ledger-identity.ts`'s LEDGER_RICH_FETCH_FIELDS -- see its
+  // own doc comment for the field-by-field history (TD-001/TD-035/ALIAS). Previously duplicated
+  // here as an independent literal, which is exactly how the missing ALIAS field went unnoticed:
+  // two copies to keep in sync, only one of which was ever checked against real Tally behavior.
   ledgers: (companyName: string) =>
     buildCollectionTemplate(TallyMasterDataCollections.Ledgers, {
       companyName,
-      collectionModifyFetch: [
-        'NAME',
-        'GUID',
-        'ALTERID',
-        'MASTERID',
-        // TD-035 (2026-08-19): restored after TD-001's shared-parser sanitizer (2026-08-16,
-        // response-parser.ts's sanitizeXml10IllegalCharacters()) proved the field's only known
-        // failure mode -- the &#4; XML-1.0-illegal control-character artifact -- is now
-        // unconditionally neutralized before any field is read, for every collection. Removed
-        // 2026-08-03 (commit 8706a80) as a workaround predating that fix; restoring it is what
-        // makes Connect's Debtor/Creditor Party classification (LedgerPartyEligibilityPolicy)
-        // possible against real data. See docs/technical-debt/registry.md TD-035 for the full
-        // investigation and entity-mappers.test.ts's "mapLedger PARENT adversarial coverage
-        // (TD-035)" for the permanent regression proof (illegal references, entities, Unicode,
-        // long values, combinations).
-        'PARENT',
-        'OPENINGBALANCE',
-        'CLOSINGBALANCE',
-        'ISBILLWISEON',
-      ],
+      collectionModifyFetch: [...LEDGER_RICH_FETCH_FIELDS],
     }),
   stockGroups: (companyName: string) =>
     buildCollectionTemplate(TallyMasterDataCollections.StockGroups, { companyName }),

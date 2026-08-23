@@ -112,6 +112,84 @@ export const SAMPLE_EMPTY_COLLECTION_RESPONSE = `<ENVELOPE>
   </BODY>
 </ENVELOPE>`;
 
+/**
+ * Real Tally XML shape (2026-08-23 investigation, real ESTIMATION company): a ledger's Alias
+ * value(s) -- entered as "Name (alias)" in the ledger master, one or several comma-separated --
+ * never arrive as a flat `<ALIAS>` tag. Tally instead folds them into extra `<NAME>` siblings
+ * inside `LANGUAGENAME.LIST/NAME.LIST`, alongside the primary name as the first entry. Proved by
+ * sending the Connector's exact request directly to a live TallyPrime instance: zero `<ALIAS>`
+ * tags across 949 real ledgers, including ones with a confirmed real Alias.
+ */
+export const SAMPLE_LEDGERS_WITH_LANGUAGENAME_ALIAS_RESPONSE = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <LEDGER NAME="4m Plywood &amp; Hw" RESERVEDNAME="">
+          <PARENT TYPE="String">Sundry Debtors</PARENT>
+          <GUID TYPE="String">6a2a5ccc-6394-4ccb-bb34-113991142c4f-00000835</GUID>
+          <MASTERID TYPE="Number"> 2101</MASTERID>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>4m Plywood &amp; Hw</NAME>
+              <NAME>8309814428</NAME>
+            </NAME.LIST>
+            <LANGUAGEID> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </LEDGER>
+        <LEDGER NAME="Balaji Kowkoor" RESERVEDNAME="">
+          <PARENT TYPE="String">Sundry Debtors</PARENT>
+          <GUID TYPE="String">6a2a5ccc-6394-4ccb-bb34-113991142c4f-00000836</GUID>
+          <MASTERID TYPE="Number"> 2102</MASTERID>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Balaji Kowkoor</NAME>
+              <NAME>7877685616</NAME>
+              <NAME>616</NAME>
+            </NAME.LIST>
+            <LANGUAGEID> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </LEDGER>
+        <LEDGER NAME="Shortcut Only Traders" RESERVEDNAME="">
+          <PARENT TYPE="String">Sundry Debtors</PARENT>
+          <GUID TYPE="String">6a2a5ccc-6394-4ccb-bb34-113991142c4f-00000837</GUID>
+          <MASTERID TYPE="Number"> 2103</MASTERID>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Shortcut Only Traders</NAME>
+              <NAME>42</NAME>
+            </NAME.LIST>
+            <LANGUAGEID> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </LEDGER>
+        <LEDGER NAME="A2z" RESERVEDNAME="">
+          <PARENT TYPE="String">Sundry Creditors</PARENT>
+          <GUID TYPE="String">6a2a5ccc-6394-4ccb-bb34-113991142c4f-00000a9e</GUID>
+          <MASTERID TYPE="Number"> 2718</MASTERID>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>A2z</NAME>
+            </NAME.LIST>
+            <LANGUAGEID> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </LEDGER>
+        <LEDGER NAME="Flat Alias Traders" RESERVEDNAME="">
+          <PARENT TYPE="String">Sundry Debtors</PARENT>
+          <GUID TYPE="String">6a2a5ccc-6394-4ccb-bb34-113991142c4f-00000838</GUID>
+          <MASTERID TYPE="Number"> 2104</MASTERID>
+          <ALIAS>9000000000</ALIAS>
+          <LANGUAGENAME.LIST>
+            <NAME.LIST TYPE="String">
+              <NAME>Flat Alias Traders</NAME>
+              <NAME>111</NAME>
+            </NAME.LIST>
+            <LANGUAGEID> 1033</LANGUAGEID>
+          </LANGUAGENAME.LIST>
+        </LEDGER>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+
 export const SAMPLE_UNICODE_LEDGER_RESPONSE = `<ENVELOPE>
   <BODY>
     <DATA>

@@ -5,6 +5,7 @@ import { CollectionEntityParser, mapLedger, mapLedgerGroup, mapStockItem } from 
 import {
   SAMPLE_LEDGER_GROUPS_RESPONSE,
   SAMPLE_LEDGERS_RESPONSE,
+  SAMPLE_LEDGERS_WITH_LANGUAGENAME_ALIAS_RESPONSE,
   SAMPLE_STOCK_ITEMS_RESPONSE,
   SAMPLE_UNICODE_LEDGER_RESPONSE,
 } from '../../helpers/master-data-fixtures.js';
@@ -35,6 +36,38 @@ describe('entity mappers', () => {
     expect(ledgers[0]?.masterId).toBe('2001');
     expect(ledgers[0]?.isBillWiseOn).toBe(false);
     expect(ledgers[1]?.isBillWiseOn).toBe(true);
+  });
+
+  /**
+   * 2026-08-23: real ESTIMATION ledgers never export a flat `<ALIAS>` tag at all -- their Alias
+   * value(s) arrive as extra `<NAME>` siblings inside `LANGUAGENAME.LIST/NAME.LIST`, alongside
+   * the primary name as the first entry. See `resolveLedgerAlias` in entity-mappers.ts and
+   * SAMPLE_LEDGERS_WITH_LANGUAGENAME_ALIAS_RESPONSE's own doc comment for the full investigation.
+   */
+  describe('mapLedger resolves Alias from LANGUAGENAME.LIST (2026-08-23)', () => {
+    const document = collectionParser.parseDocument(SAMPLE_LEDGERS_WITH_LANGUAGENAME_ALIAS_RESPONSE);
+    const nodes = collectionParser.parseNodes(document, { nodeName: 'LEDGER' });
+    const byName = (name: string) => mapLedger(collectionParser, nodes.find((n) => n.attributes.NAME === name)!);
+
+    it('picks the single extra name as the alias when there is exactly one', () => {
+      expect(byName('4m Plywood & Hw')?.alias).toBe('8309814428');
+    });
+
+    it('prefers the phone-shaped candidate when a ledger has both a mobile and a short shortcut alias', () => {
+      expect(byName('Balaji Kowkoor')?.alias).toBe('7877685616');
+    });
+
+    it('falls back to the only candidate when none of them look like a phone number', () => {
+      expect(byName('Shortcut Only Traders')?.alias).toBe('42');
+    });
+
+    it('is undefined when the ledger has no extra name at all', () => {
+      expect(byName('A2z')?.alias).toBeUndefined();
+    });
+
+    it('still prefers a flat ALIAS tag over LANGUAGENAME.LIST when Tally ever does emit one', () => {
+      expect(byName('Flat Alias Traders')?.alias).toBe('9000000000');
+    });
   });
 
   it('handles unicode ledger names', () => {
