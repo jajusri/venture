@@ -2952,3 +2952,39 @@ natural next step once it reconnects. No new tests were added for the retry/atom
 in this pass — existing tests construct `PartyPage`/DAO results directly rather than driving through
 two-connection timing, so they can't exercise the race being mitigated; this is a known gap, not an
 oversight, consistent with why this bug needed live-device reproduction to find in the first place.
+
+### H. Option 3 started (user-requested, "option 3 first") — instrumentation shipped, live capture still blocked
+
+User asked to prioritize the debugger/root-cause track over further mitigation-validation. Since
+Android Studio's actual Database Inspector/debugger GUI isn't reachable from this CLI-only session,
+implemented the closest achievable equivalent: `DatabaseModule.provideAppDatabase` now registers a
+`RoomDatabase.Builder.setQueryCallback` (debug builds only, gated on `BuildConfig.DEBUG`, own
+single-thread executor) that logs every SQL statement touching `cached_parties` or marking a
+transaction boundary, tagged `TD041_SQL` with the executing thread name — the exact detail needed to
+see whether a reconciliation write and a Connect read were ever interleaved on separate
+connections/transactions at the instant a read came back empty.
+
+**A real scare, resolved by verification, not by trusting the first result.** The full JVM suite
+failed once (`VoucherRepositoryImplTest`'s 60,000-record pagination test, `UncompletedCoroutinesError`)
+immediately after this change landed. Did not accept "regression" at face value: isolated the test
+(failed again), then ran a true A/B — `git stash` the `DatabaseModule.kt` change, full clean
+`--rerun-tasks` rebuild both with and without it. **Both clean rebuilds passed 1,313/1,313.** Only the
+two non-clean/incremental runs flaked, both times on this same test, regardless of which side of the
+change they were on. Confirmed independently that no JVM test in this suite uses `@HiltAndroidTest` or
+Robolectric (`grep` came up empty), so `DatabaseModule` is never even loaded during these tests —
+there was never a plausible mechanism for this specific change to affect that test. Conclusion: a
+pre-existing, load-sensitive flaky test (real-dispatcher work racing a virtual-time test budget under
+system load), coincidentally surfaced by, but not caused by, this change. Recorded here as a known
+pre-existing quality gap, out of TD-041's scope to fix.
+
+Built (`assembleProdDebug`) and installed (`adb install -r`) onto the device — confirmed the existing
+926-row `cached_parties` data survived the reinstall. **Could not capture a live trace this pass**: the
+Diagnostics screen shows `Could not reach the Connector` — the same external LAN/Connector
+unavailability already hit in section G's mitigation work, not a new problem and not something to
+force around (no repeated blind retry-tapping; verified the real state once via Diagnostics and
+stopped, per this project's standing ADB/connectivity-drop protocol). **How to apply**: the
+`TD041_SQL`-tagged tracer is live and ready on the installed build — the next session (or later this
+one, once the Connector reconnects) just needs to reproduce Connect's empty-read symptom again
+(directly, or by watching for the mitigation's own `SUSPICIOUS EMPTY`/`RETRY result` log lines from
+section G firing) and pull the surrounding `TD041_SQL` trace to see the actual thread/transaction
+interleaving at the moment of failure.

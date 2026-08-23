@@ -2,6 +2,7 @@ package com.budcom.android.core.database
 
 import android.content.Context
 import androidx.room.Room
+import com.budcom.android.BuildConfig
 import com.budcom.android.feature.company.data.local.CompanyDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerDao
 import com.budcom.android.feature.masterdata.ledger.data.local.LedgerMovementDao
@@ -26,6 +27,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import java.util.concurrent.Executors
 import javax.inject.Singleton
 
 /**
@@ -35,18 +37,44 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
 
+    /**
+     * TD-041 root-cause instrumentation (debug builds only, gated by [BuildConfig.DEBUG] so it
+     * never ships to release): every SQL statement Room executes that touches `cached_parties`, or
+     * that marks a transaction boundary, is logged with the executing thread name -- the exact
+     * detail needed to see whether a reconciliation write and a Connect read were ever interleaved
+     * on separate connections/transactions at the moment a read came back transiently empty. Runs
+     * on its own single-thread executor so the callback itself never adds contention to Room's own
+     * query/transaction executors.
+     */
+    private val td041SqlLogExecutor = Executors.newSingleThreadExecutor()
+
+    private val td041RelevantSqlMarkers = listOf("cached_parties", "TRANSACTION", "PRAGMA")
+
+    private fun logTd041Query(sqlQuery: String, bindArgs: List<Any?>) {
+        if (td041RelevantSqlMarkers.none { sqlQuery.contains(it, ignoreCase = true) }) return
+        timber.log.Timber.tag("TD041_SQL").d(
+            "thread=${Thread.currentThread().name} sql=$sqlQuery args=$bindArgs",
+        )
+    }
+
     @Provides
     @Singleton
     fun provideAppDatabase(
         @ApplicationContext context: Context,
-    ): AppDatabase = Room.databaseBuilder(
-        context,
-        AppDatabase::class.java,
-        DatabaseConstants.NAME,
-    ).addMigrations(
-        MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-        MIGRATION_8_9, MIGRATION_9_10,
-    ).build()
+    ): AppDatabase {
+        val builder = Room.databaseBuilder(
+            context,
+            AppDatabase::class.java,
+            DatabaseConstants.NAME,
+        ).addMigrations(
+            MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+            MIGRATION_8_9, MIGRATION_9_10,
+        )
+        if (BuildConfig.DEBUG) {
+            builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
+        }
+        return builder.build()
+    }
 
     @Provides
     fun provideCompanyDao(db: AppDatabase): CompanyDao = db.companyDao()
