@@ -300,7 +300,13 @@ class SyncViewModel @Inject constructor(
         if (!succeeded) return
         val companyId = _uiState.value.companyId ?: return
         viewModelScope.launch {
+            val startedAt = System.currentTimeMillis()
+            Timber.tag("TD041").d("reconcile START company=$companyId at=$startedAt")
             runCatching { reconcilePartiesFromLedgers(companyId) }
+                .onSuccess {
+                    val elapsed = System.currentTimeMillis() - startedAt
+                    Timber.tag("TD041").d("reconcile END company=$companyId count=${it.size} elapsedMs=$elapsed")
+                }
                 .onFailure { Timber.w(it, "Party reconciliation from ledgers failed; sync outcome is unaffected.") }
         }
     }

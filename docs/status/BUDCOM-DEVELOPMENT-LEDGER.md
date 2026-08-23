@@ -2754,3 +2754,102 @@ identical to what TD-039 already covers) and the pre-existing connectivity check
 modified — read-only extraction via the Connector's own established sync path. No experimental
 Electron/Connector bypass: the single-instance-lock-respecting launch attempt caused zero disruption
 and was not repeated. No MVP-1.4/Catalogue work. No speculative production fix for the §B finding.
+
+## 44. Phase 53 — TD-041 diagnostic instrumentation: first live trace captured, two Phase 52 assumptions corrected
+
+New session, continuing directly from Phase 52's recommendation. Added targeted `Timber.tag("TD041")`
+debug logging (no behavior change) at three points: `ConnectViewModel.load()` (logs company, tab,
+`totalItems`/`items.size` after every query), `PartyRepositoryImpl.reconcilePartiesFromEligibleLedgers`
+(progress every 200 seeds), and `SyncViewModel`'s reconcile trigger (START/END with elapsed time).
+Built `assembleProdDebug` (required pointing `JAVA_HOME` at Android Studio's bundled JBR — the shell's
+default `java` is 1.8, and AGP 8.8.2/KSP require 11+), installed on the real device (`10BF44124K000E3`,
+`versionCode=29`), and captured a live repro. Full raw trace preserved outside the repo (session
+scratch dir, `td041-trace-2026-08-23.txt`) since the logcat ring buffer rotates it out within minutes
+under this device's background app noise.
+
+**The trace itself:**
+```
+10:28:40.789  reconcile START company=estimation
+10:28:44.157  reconcile END   company=estimation count=926 elapsedMs=3368
+10:28:59.362  connect load    totalItems=873 items=50   (correct)
+10:32:07.010  connect load    totalItems=873 items=50   (correct, 3m later)
+10:35:20.077  connect load    totalItems=0   items=0    (BROKEN)
+10:35:20.843  connect load    totalItems=0   items=0    (BROKEN, 766ms later)
+10:35:22.594  connect load    totalItems=873 items=50   (correct again, 1.75s after the break)
+10:35:25-34   connect load    177 / 31 / 25 / 13 / 13 / 1  (monotonic narrowing — reads as a search
+                                                             query typed character-by-character, not
+                                                             further instances of the bug)
+```
+Process pid 501 confirmed continuously alive from install (10:22:55) through the end of this capture
+(10:38+) via the `events` log buffer (`am_proc_start`/`am_kill`/`am_proc_died`, none for pid 501 in
+that window) — the whole trace is one uninterrupted process, no restart anywhere in it. A `sqlite3`
+query against the live `databases/budcom.db` at capture time confirmed 926 `cached_parties` rows for
+`companyId='estimation'` (`journal_mode=wal`), matching the reconcile count exactly — the DB was
+correct throughout, consistent with Phase 52's finding.
+
+**Two Phase 52 assumptions this trace corrects:**
+1. Phase 52 tied the break to *a second Ledgers sync*. This trace shows only **one** reconcile
+   cycle total, ~7 minutes before the break — the empty read at 10:35:20 happened with no second
+   sync/reconcile logged anywhere near it. A fresh sync is evidently not required to trigger it.
+2. Phase 52 reported "only a full app restart" recovers it. This trace shows the **same still-alive
+   process** self-recovering to the correct count 1.75s after the first empty read, with no logged
+   restart, pull-to-refresh, or Retry in between. Combined with #1, this now reads as a genuinely
+   racy, self-healing condition tied to *some* Connect-load-triggering UI interaction (most likely
+   re-entering/recomposing the Connect screen — exact trigger not captured this pass, since the
+   instrumentation added this phase logs only the query's outcome, not what UI event called `load()`)
+   rather than a durably "stuck" state requiring an app restart specifically.
+
+**Still not proven** (same limitation as Phase 52 — Room/SQLite connection-pool internals are beyond
+this session's ADB-only toolkit): why `PartyDao.countByClassification`/`pageByClassification` — plain,
+uncached, sequential suspend queries inside one `withContext(dispatchers.io)` block, same shape as
+`LedgerRepositoryImpl.listLedgers()` which does not exhibit this — return a genuine, real zero-row
+result while the underlying table demonstrably holds the correct rows. **Deliberately not given a
+speculative fix**, per the same governing instruction as Phase 52. **How to apply next**: the
+diagnostic logging is left in place (uncommitted) for the next reproduction attempt; the next useful
+step is capturing what UI event precedes the empty read (a fourth log point in `ConnectEvent` handling,
+or Android Studio's Database Inspector/debugger if available) rather than another blind trace capture.
+
+**Same-phase follow-up: added a `source` label to every `load()` call (which `ConnectEvent`/trigger
+fired it, plus whether an in-flight `loadJob` was cancelled) and attempted two live re-reproductions —
+neither reproduced TD-041.** Rebuilt (`assembleProdDebug`, 33s incremental) and reinstalled (`adb
+install -r`, data preserved: 926 `cached_parties` intact) on the same device. Attempt 1: back-button
+out of Connect to Dashboard and re-tap Connect, 3 cycles, ~3min gaps — every load was a fresh
+`ConnectViewModel` instance (`source=CompanySubscription`, confirming the Compose nav-controller pops
+and recreates the ViewModel on back-navigation), all 4 loads across ~9 minutes returned the correct 873.
+Attempt 2: same ViewModel instance kept alive, cycling `Customers → Prospects → Customers` taps
+in-screen (no back-navigation), 3 cycles, ~3min gaps — every `TabChanged(Customers)` load returned the
+correct 873. **A false lead caught and ruled out along the way**: every `TabChanged(Prospects)` load
+logged `totalItems=0`, which looked at first glance like another repro — a direct `sqlite3 SELECT
+classification, COUNT(*) FROM cached_parties GROUP BY classification` showed `customer|873,
+supplier|53`, zero rows classified `prospect`, so an empty Prospects tab is the **correct** result for
+this real dataset, not a TD-041 instance. **Net result this pass: 0/7 Customers-tab loads reproduced
+the bug**, across both a fresh-instance trigger and a same-instance/`TabChanged` trigger, each spaced
+similarly to Phase 52's original ~3-minute gaps. **Working hypothesis for the next attempt** (not yet
+tested): Phase 52's two reproductions both happened during/shortly after real sync activity (a Ledgers
+"Sync Now" and its reconciliation), while this pass's attempts were ~30+ minutes after the session's
+only sync — the trigger may correlate with proximity to actual sync/background work (WorkManager,
+Adaptive Sync's scheduler) rather than pure elapsed time or revisit count on its own. Next session
+should reproduce immediately following a real sync, not in a quiet steady-state window.
+
+**Tested that hypothesis live this same phase — also came back clean.** Triggered a real Ledgers
+"Sync Now" via the Sync screen (confirmed via a genuine `reconcile START`/`END` pair, 926 parties,
+elapsedMs=3401) and immediately opened Connect: correct (873) within 25s of reconcile end, then 5
+rapid back-and-reopen cycles over the next ~20s, all correct. A second attempt tried to catch the
+narrower window of an *active* sync (tapped Sync Now, then immediately hammered `TabChanged`
+Customers↔Prospects ~6x over 15s without waiting for completion) — no second `reconcile START` shows
+up in the log for that tap. Root cause identified afterward, not guessed: the Dashboard's own status
+banner shows the real Connector genuinely dropped to **"Connector is unavailable"** (Connection:
+Unavailable, Readiness: Ready) sometime between the two sync attempts — an external LAN/Connector
+connectivity loss, not a missed tap or a new defect (a subsequent navigation slip onto the unrelated
+"Master data" screen was a separate, minor artifact of driving the UI blind via `adb input tap`, not
+the cause of the missing reconcile). The second sync attempt simply had nothing to reconcile because
+it never reached Tally. Every
+Customers-tab load across all of today's live attempts (proximity-to-sync included) returned the
+correct 873; only `TabChanged(Prospects)` ever returned 0, which is the dataset's genuine, correct
+0-prospect count, not TD-041. **Net for the whole phase: 0 reproductions in ~20 live attempts across
+two different hypotheses** (elapsed-time/revisit-count, and proximity-to-sync). TD-041 remains a
+real, twice-proven (Phase 52), low-frequency, non-deterministic condition — this phase narrows what
+does NOT reliably trigger it but did not find what does. Further blind ADB-driven UI automation has
+hit diminishing returns; the standing recommendation to use Android Studio's Database Inspector or
+an attached debugger (not available to this session's ADB-only toolkit) is now the most promising
+next step rather than more live-reproduction attempts.

@@ -106,32 +106,36 @@ class ConnectViewModel @Inject constructor(
                         error = null,
                     )
                 }
-                onEvent(ConnectEvent.Load)
+                timber.log.Timber.tag("TD041").d(
+                    "connect company-subscription companyId=$companyId isRealSwitch=$isRealSwitch " +
+                        "at=${System.currentTimeMillis()}",
+                )
+                load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = true, source = "CompanySubscription(isRealSwitch=$isRealSwitch)")
             }
         }
     }
 
     fun onEvent(event: ConnectEvent) {
         when (event) {
-            ConnectEvent.Load -> load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = true)
-            ConnectEvent.Refresh -> load(page = 1, append = false, refreshing = true, forceEnrichmentRefresh = true)
-            ConnectEvent.Retry -> load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = true)
+            ConnectEvent.Load -> load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = true, source = "Load")
+            ConnectEvent.Refresh -> load(page = 1, append = false, refreshing = true, forceEnrichmentRefresh = true, source = "Refresh")
+            ConnectEvent.Retry -> load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = true, source = "Retry")
             ConnectEvent.LoadNextPage -> {
                 val state = _uiState.value
                 if (!state.canLoadMore || state.isBusy) return
-                load(page = state.page + 1, append = true, refreshing = false, forceEnrichmentRefresh = false)
+                load(page = state.page + 1, append = true, refreshing = false, forceEnrichmentRefresh = false, source = "LoadNextPage")
             }
             is ConnectEvent.TabChanged -> {
                 if (_uiState.value.selectedTab == event.tab) return
                 _uiState.update { it.copy(selectedTab = event.tab, rows = emptyList(), page = 1, error = null) }
-                load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = false)
+                load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = false, source = "TabChanged(${event.tab})")
             }
             is ConnectEvent.SearchChanged -> {
                 _uiState.update { it.copy(searchQuery = event.query) }
                 searchJob?.cancel()
                 searchJob = viewModelScope.launch {
                     delay(MasterDataBrowserDefaults.SEARCH_DEBOUNCE_MS)
-                    load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = false)
+                    load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = false, source = "SearchChanged(debounced)")
                 }
             }
             is ConnectEvent.RowTapped -> _effects.tryEmit(ConnectEffect.OpenPartyDetail(event.partyId))
@@ -166,9 +170,14 @@ class ConnectViewModel @Inject constructor(
         }
     }
 
-    private fun load(page: Int, append: Boolean, refreshing: Boolean, forceEnrichmentRefresh: Boolean) {
+    private fun load(page: Int, append: Boolean, refreshing: Boolean, forceEnrichmentRefresh: Boolean, source: String) {
         if (append && loadJob?.isActive == true) return
+        val cancelledInFlight = loadJob?.isActive == true
         loadJob?.cancel()
+        timber.log.Timber.tag("TD041").d(
+            "connect load START source=$source page=$page append=$append cancelledInFlight=$cancelledInFlight " +
+                "at=${System.currentTimeMillis()}",
+        )
         loadJob = viewModelScope.launch {
             val snapshot = _uiState.value
             val companyId = snapshot.companyId ?: companySession.observeSelectedCompanyId().first()
@@ -200,11 +209,16 @@ class ConnectViewModel @Inject constructor(
             }
 
             val query = snapshot.searchQuery.trim()
+            val queryStartedAt = System.currentTimeMillis()
             val result: PartyPage = if (query.isNotEmpty()) {
                 searchParties(companyId, query, snapshot.selectedTab.toClassification(), page, snapshot.pageSize)
             } else {
                 listPartiesByClassification(companyId, snapshot.selectedTab.toClassification(), page, snapshot.pageSize)
             }
+            timber.log.Timber.tag("TD041").d(
+                "connect load END source=$source company=$companyId tab=${snapshot.selectedTab} at=$queryStartedAt " +
+                    "totalItems=${result.totalItems} items=${result.items.size}",
+            )
 
             val newRows = result.items.map { it.toRowUi(sourceLinksByPartyId, ledgersById, tagsByPartyId) }
             _uiState.update { state ->

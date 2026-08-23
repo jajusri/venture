@@ -227,7 +227,12 @@ class PartyRepositoryImpl @Inject constructor(
         companyId: String,
         seeds: List<EligibleLedgerSeed>,
     ): List<Party> = withContext(dispatchers.io) {
-        seeds.map { seed -> reconcileOne(companyId, seed) }
+        seeds.mapIndexed { index, seed ->
+            if (index % 200 == 0) {
+                timber.log.Timber.tag("TD041").d("reconcile progress $index/${seeds.size} at=${System.currentTimeMillis()}")
+            }
+            reconcileOne(companyId, seed)
+        }
     }
 
     private suspend fun reconcileOne(companyId: String, seed: EligibleLedgerSeed): Party {
