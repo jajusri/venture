@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 
 @Dao
 interface PartyDao {
@@ -37,6 +38,24 @@ interface PartyDao {
     @Query("SELECT COUNT(*) FROM cached_parties WHERE companyId = :companyId AND classification = :classification")
     suspend fun countByClassification(companyId: String, classification: String): Int
 
+    /**
+     * TD-041 mitigation: [countByClassification] and [pageByClassification] used to run as two
+     * independent suspend calls, each free to land on its own Room-pooled connection/snapshot.
+     * Wrapping both in one [Transaction] forces them onto a single atomic read, removing that
+     * specific inconsistency window as a possible cause of the count/page ever disagreeing.
+     */
+    @Transaction
+    suspend fun pageWithCountByClassification(
+        companyId: String,
+        classification: String,
+        limit: Int,
+        offset: Int,
+    ): Pair<Int, List<PartyEntity>> {
+        val total = countByClassification(companyId, classification)
+        val items = pageByClassification(companyId, classification, limit, offset)
+        return total to items
+    }
+
     @Query(
         """
         SELECT * FROM cached_parties
@@ -64,6 +83,20 @@ interface PartyDao {
         """,
     )
     suspend fun countSearch(companyId: String, query: String, classification: String?): Int
+
+    /** Same TD-041 atomicity rationale as [pageWithCountByClassification], for the search path. */
+    @Transaction
+    suspend fun pageWithCountSearch(
+        companyId: String,
+        query: String,
+        classification: String?,
+        limit: Int,
+        offset: Int,
+    ): Pair<Int, List<PartyEntity>> {
+        val total = countSearch(companyId, query, classification)
+        val items = search(companyId, query, classification, limit, offset)
+        return total to items
+    }
 
     /**
      * MVP-1.2-D Dincharya Type C (Pending Contact Completion) — the first genuinely company-wide,

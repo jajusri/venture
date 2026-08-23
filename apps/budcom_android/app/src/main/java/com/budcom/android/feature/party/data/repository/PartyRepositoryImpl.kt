@@ -94,8 +94,7 @@ class PartyRepositoryImpl @Inject constructor(
         val safePage = page.coerceAtLeast(1)
         val safeSize = pageSize.coerceIn(1, 200)
         val column = classification.asColumn()
-        val total = partyDao.countByClassification(companyId, column)
-        val items = partyDao.pageByClassification(companyId, column, safeSize, (safePage - 1) * safeSize)
+        val (total, items) = partyDao.pageWithCountByClassification(companyId, column, safeSize, (safePage - 1) * safeSize)
         PartyPage(items.map { it.toDomain() }, safePage, safeSize, total)
     }
 
@@ -110,8 +109,7 @@ class PartyRepositoryImpl @Inject constructor(
         val safeSize = pageSize.coerceIn(1, 200)
         val normalized = query.trim()
         val column = classification?.asColumn()
-        val total = partyDao.countSearch(companyId, normalized, column)
-        val items = partyDao.search(companyId, normalized, column, safeSize, (safePage - 1) * safeSize)
+        val (total, items) = partyDao.pageWithCountSearch(companyId, normalized, column, safeSize, (safePage - 1) * safeSize)
         val domainItems = items.map { it.toDomain() }
 
         // Part B (Connect Alias Intelligence): a 1-5 digit numeric query is a ledger-lookup

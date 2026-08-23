@@ -34,6 +34,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** TD-041 mitigation: how long to wait before retrying a classification-listing read that came
+ * back empty for a company/tab known to have data -- long enough that the observed self-healing
+ * (previously seen recovering within ~1.75s) has room to resolve, short enough not to read as a
+ * stall. */
+private const val EMPTY_READ_RETRY_DELAY_MS = 500L
+
 /**
  * Connect Browser (MVP-1.1-B) — local-first, company-scoped Customers/Prospects list with
  * accounting deep links. Never performs a live Tally/Connector call: Party data comes from the
@@ -73,6 +79,16 @@ class ConnectViewModel @Inject constructor(
     private var tagsByPartyId: Map<String, List<Tag>> = emptyMap()
     private var enrichmentCompanyId: String? = null
     private var dataFreshnessAt: String? = null
+
+    // TD-041 mitigation: the classification-listing read (no search query) has been observed to
+    // transiently return totalItems=0 for a company/tab that provably has data, self-healing on a
+    // later read with no app-visible cause. Remembering the last known non-zero total per
+    // companyId+tab lets a later read recognise "this exact combination had data a moment ago" and
+    // retry once before showing an empty state -- deliberately scoped to only the no-query listing
+    // path (never the search path, where a genuine no-match zero is completely normal) and to only
+    // fire when we have a concrete prior non-zero reading to compare against (never on a tab/company
+    // we have no expectation for yet, e.g. a brand-new company or a genuinely-empty Prospects tab).
+    private val lastNonZeroTotalByKey = mutableMapOf<String, Int>()
 
     init {
         viewModelScope.launch {
@@ -210,11 +226,31 @@ class ConnectViewModel @Inject constructor(
 
             val query = snapshot.searchQuery.trim()
             val queryStartedAt = System.currentTimeMillis()
-            val result: PartyPage = if (query.isNotEmpty()) {
+            var result: PartyPage = if (query.isNotEmpty()) {
                 searchParties(companyId, query, snapshot.selectedTab.toClassification(), page, snapshot.pageSize)
             } else {
                 listPartiesByClassification(companyId, snapshot.selectedTab.toClassification(), page, snapshot.pageSize)
             }
+
+            if (query.isEmpty()) {
+                val nonZeroKey = "$companyId|${snapshot.selectedTab}"
+                if (result.totalItems == 0 && lastNonZeroTotalByKey.containsKey(nonZeroKey)) {
+                    timber.log.Timber.tag("TD041").w(
+                        "connect load SUSPICIOUS EMPTY source=$source company=$companyId " +
+                            "tab=${snapshot.selectedTab} previouslySeen=${lastNonZeroTotalByKey[nonZeroKey]} -- retrying once",
+                    )
+                    delay(EMPTY_READ_RETRY_DELAY_MS)
+                    result = listPartiesByClassification(companyId, snapshot.selectedTab.toClassification(), page, snapshot.pageSize)
+                    timber.log.Timber.tag("TD041").w(
+                        "connect load RETRY result source=$source company=$companyId tab=${snapshot.selectedTab} " +
+                            "totalItems=${result.totalItems} items=${result.items.size}",
+                    )
+                }
+                if (result.totalItems > 0) {
+                    lastNonZeroTotalByKey[nonZeroKey] = result.totalItems
+                }
+            }
+
             timber.log.Timber.tag("TD041").d(
                 "connect load END source=$source company=$companyId tab=${snapshot.selectedTab} at=$queryStartedAt " +
                     "totalItems=${result.totalItems} items=${result.items.size}",

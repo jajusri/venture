@@ -2853,3 +2853,102 @@ does NOT reliably trigger it but did not find what does. Further blind ADB-drive
 hit diminishing returns; the standing recommendation to use Android Studio's Database Inspector or
 an attached debugger (not available to this session's ADB-only toolkit) is now the most promising
 next step rather than more live-reproduction attempts.
+
+### F. Root-cause isolation attempt via code comparison, not live reproduction — one real structural finding
+
+With the Connector unavailable, switched from live reproduction to carefully re-verifying the "Ledger
+doesn't exhibit this, Party does" asymmetry every phase since Phase 52 has repeated without actually
+re-reading Ledger's current code. **That re-read overturns the asymmetry, not confirms it.**
+
+`RoomLedgerLocalDataSource.query()` (`LedgerLocalDataSource.kt:44`) calls `hasCache(companyId)` —
+`ledgerDao.countForCompany(companyId) > 0` — first, and returns `null` immediately if it's `false`,
+*before* ever running `countMatching`/`queryPage`. Its caller, `LedgerRepositoryImpl.listLedgers()`
+(`LedgerRepositoryImpl.kt:40-45`), turns a `null` into `AppResult.Failure(AppError.Message(
+NO_CACHE_MESSAGE))` — by design, per its own doc comment: *"A company with no cache at all (never
+synced) fails honestly with NO_CACHE_MESSAGE rather than silently reaching for the network."* The
+message shown is **"No offline data available. Connect to BUDCOM Desktop and synchronize once."** —
+worded as "you haven't synced," not "empty result."
+
+`PartyRepositoryImpl.listByClassification()` has no equivalent guard: it runs `countByClassification`
+then `pageByClassification` directly and returns whatever they report, wrapped in a plain `PartyPage`
+(not even an `AppResult` — Party's repository interface has no failure channel for this call at all).
+A transient zero from `countByClassification` becomes an ordinary-looking, silent `PartyPage(items=
+[], total=0)` success — which is exactly what Connect renders as "No customers found yet," right next
+to an otherwise-correct freshness line.
+
+**What this means**: if the same underlying transient-zero-count phenomenon that hits
+`PartyDao.countByClassification` also hits `LedgerDao.countForCompany` (both are structurally the
+same kind of plain `SELECT COUNT(*) ... WHERE companyId = :companyId [AND ...]` suspend query, on the
+same database, same dispatcher, same executor) — Ledger wouldn't show an empty list at all. It would
+show `NO_CACHE_MESSAGE`, an error state that reads as "not synced yet," not "empty." A tester or user
+seeing that flash briefly on a company they know has synced data would very plausibly write it off as
+a one-off UI glitch rather than recognize it as the same defect — which would fully explain why no
+Ledger-side report of this ever surfaced, without requiring Party's code to be doing anything
+differently at the SQL/Room level. **This does not prove they share one root cause** (that would need
+catching a live `NO_CACHE_MESSAGE` flash on Ledger for a company with real synced data, or a debugger
+on both paths at once) — but it removes the "Ledger is provably immune" evidence every prior phase's
+root-cause reasoning leaned on, and redirects suspicion toward a general Room/SQLite-level phenomenon
+(matching the standing suspicion already on record) rather than anything Party-specific.
+
+**Also checked and ruled out as a source of the false asymmetry**: web research for a matching known
+Room bug. One initially-promising lead (Google Issue Tracker b/340606803, "Room KMP can't receive
+invalidation callback") was checked and does **not** apply — it's about `Flow`/`LiveData` observers
+never re-emitting after a write, fixed in Room 2.7.0-rc02. This app (pinned to Room 2.6.1, no
+`setDriver()` override — the legacy framework `SQLiteOpenHelper` path) doesn't use a `Flow`-returning
+DAO method anywhere in Connect's or Ledger's read path; both use plain one-shot suspend `@Query`
+calls, which don't go through `InvalidationTracker` at all. Recording this explicitly so a future
+session doesn't re-discover the same lead and mistake it for a match.
+
+**How to apply**: next live session, watch Ledger Browser (not just Connect) around a real sync for a
+transient `NO_CACHE_MESSAGE` flash — catching one there, on a company definitely holding synced data,
+would be the strongest evidence yet that this is one shared Room-level phenomenon rather than a
+Party-specific bug, and would justify investigating a general fix (e.g., wrapping each feature's
+count+page reads in a single `@Transaction` so both queries observe one atomic snapshot) rather than
+a Party-only one.
+
+### G. Mitigation implemented (user-approved: atomic reads + scoped defensive retry, no Tally-side changes)
+
+Given root cause still isn't provable without a debugger, presented the user five options (atomic
+`@Transaction` reads; defensive retry-on-suspicious-empty; a proper debugger session; copying
+Ledger's `hasCache()`-style error-guard to Party; a Room version/driver upgrade), all scoped to the
+local Room/Party read path only — none touch Tally/Connector communication, since TD-041 is already
+proven local (data is correct in `cached_parties` at the exact moment of failure). User approved
+implementing the first two together now, treating the debugger session as a separate, later track.
+
+**1. Atomic count+page reads.** Added `PartyDao.pageWithCountByClassification` and
+`pageWithCountSearch` — `@Transaction`-annotated methods that run the existing `countByClassification`
++`pageByClassification` (and `countSearch`+`search`) pairs inside one atomic Room transaction instead
+of two independent suspend calls each free to land on its own connection/snapshot. `PartyRepositoryImpl
+.listByClassification`/`searchParties` now call these instead of the two separate DAO methods; all
+downstream logic (Alias-shortcut merge, `PartyPage` construction) is unchanged.
+
+**2. Scoped defensive retry.** `ConnectViewModel` now remembers the last known non-zero
+`totalItems` per `companyId|tab` (`lastNonZeroTotalByKey`). On the no-search classification-listing
+path only (never the search path, where a genuine no-match zero is normal), if a read comes back
+`totalItems=0` for a company/tab that's previously shown data, it's treated as suspicious: wait
+500ms (comfortably longer than the ~1.75s self-heal window observed live in Phase 53, short enough
+not to read as a stall — actually chosen below that window deliberately, see note below), retry the
+same read once, and use whichever result comes back. Deliberately scoped to never fire on a
+tab/company with no prior non-zero reading, so a genuinely-new company or a genuinely-empty Prospects
+tab is never masked. The existing `TD041`-tagged Timber logging (kept, not removed) now also logs
+every time this retry path fires and what it found, so future sessions can see in the wild whether
+it's actually catching anything — this doubles as the telemetry needed to eventually judge whether
+route G's mitigation addressed the real mechanism or just papered over it, informing section C's
+debugger-session track.
+
+*Correction while writing this up*: the retry delay (500ms) is shorter than the ~1.75s self-heal gap
+measured in one live trace (Phase 53, §44) — chosen as a reasonable middle ground (long enough to
+clear a brief race, short enough to feel instant) rather than matching that single data point exactly,
+since the true self-heal timing is not established with enough samples to treat 1.75s as a reliable
+floor. If live use shows the retry firing but still landing on a second zero, lengthening this delay
+(or adding a second retry) is the first thing to try before anything more invasive.
+
+**Verification**: `assembleProdDebug`/`compileProdDebugKotlin` both green. Full JVM suite:
+**1,313/1,313 passing** (matches the known-good baseline, zero regressions), including all 20
+`ConnectViewModelTest` and all 84 `PartyRepositoryImplTest` cases. Not yet validated on the real
+device — the Connector was still unavailable at the time of this change; a real-device confirmation
+(does Connect still behave correctly, does the retry path ever fire under real conditions) is the
+natural next step once it reconnects. No new tests were added for the retry/atomicity behavior itself
+in this pass — existing tests construct `PartyPage`/DAO results directly rather than driving through
+two-connection timing, so they can't exercise the race being mitigated; this is a known gap, not an
+oversight, consistent with why this bug needed live-device reproduction to find in the first place.
