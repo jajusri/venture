@@ -31,8 +31,9 @@ fun MasterDataOfflineBanner(
 fun MasterDataLoadingIndicator(
     modifier: Modifier = Modifier,
     testTag: String = "master_data_loading",
+    contentDescription: String? = null,
 ) {
-    FullScreenLoading(modifier = modifier.testTag(testTag))
+    FullScreenLoading(modifier = modifier.testTag(testTag), contentDescription = contentDescription)
 }
 
 @Composable

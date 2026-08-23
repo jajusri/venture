@@ -24,6 +24,7 @@ class ConnectScreenTest {
         balanceLabel: String? = "1000.00 Dr",
         linkedLedgerId: String? = "guid:abc",
         linkedLedgerName: String? = "ABC Traders",
+        linkedLedgerAlias: String? = null,
     ) = ConnectRowUi(
         partyId = partyId,
         displayName = name,
@@ -33,6 +34,7 @@ class ConnectScreenTest {
         balanceLabel = balanceLabel,
         linkedLedgerId = linkedLedgerId,
         linkedLedgerName = linkedLedgerName,
+        linkedLedgerAlias = linkedLedgerAlias,
     )
 
     @Test
@@ -72,6 +74,22 @@ class ConnectScreenTest {
         composeRule.onNodeWithTag("connect_row_p1").assertIsDisplayed()
         composeRule.onNodeWithTag("connect_view_ledger_p1").assertIsDisplayed()
         composeRule.onNodeWithTag("connect_view_vouchers_p1").assertIsDisplayed()
+    }
+
+    @Test
+    fun aliasIsShownOnItsOwnLineWhenTheLinkedLedgerHasOne() {
+        composeRule.setContent {
+            BudcomTheme { ConnectScreen(state = ConnectUiState(isInitialLoading = false, rows = listOf(row(linkedLedgerAlias = "25"))), onEvent = {}) }
+        }
+        composeRule.onNodeWithTag("connect_alias_p1").assertIsDisplayed()
+    }
+
+    @Test
+    fun aliasIsAbsentWhenTheLinkedLedgerHasNone() {
+        composeRule.setContent {
+            BudcomTheme { ConnectScreen(state = ConnectUiState(isInitialLoading = false, rows = listOf(row())), onEvent = {}) }
+        }
+        composeRule.onNodeWithTag("connect_alias_p1").assertDoesNotExist()
     }
 
     @Test
@@ -138,6 +156,27 @@ class ConnectScreenTest {
             BudcomTheme { ConnectScreen(state = ConnectUiState(isInitialLoading = false, isOnline = false), onEvent = {}) }
         }
         composeRule.onNodeWithTag("connect_offline_banner").assertIsDisplayed()
+    }
+
+    @Test
+    fun dataFreshnessShowsWhenContentExists() {
+        composeRule.setContent {
+            BudcomTheme {
+                ConnectScreen(
+                    state = ConnectUiState(isInitialLoading = false, rows = listOf(row()), dataFreshnessAt = "2026-08-23T10:00:00Z"),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("connect_data_freshness").assertIsDisplayed()
+    }
+
+    @Test
+    fun dataFreshnessIsAbsentWithNoContent() {
+        composeRule.setContent {
+            BudcomTheme { ConnectScreen(state = ConnectUiState(isInitialLoading = false, rows = emptyList()), onEvent = {}) }
+        }
+        composeRule.onNodeWithTag("connect_data_freshness").assertDoesNotExist()
     }
 
     @Test

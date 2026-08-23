@@ -72,6 +72,7 @@ class ConnectViewModel @Inject constructor(
     private var ledgersById: Map<String, Ledger> = emptyMap()
     private var tagsByPartyId: Map<String, List<Tag>> = emptyMap()
     private var enrichmentCompanyId: String? = null
+    private var dataFreshnessAt: String? = null
 
     init {
         viewModelScope.launch {
@@ -79,12 +80,25 @@ class ConnectViewModel @Inject constructor(
                 _uiState.update { it.copy(isOnline = online) }
             }
         }
+        var hasSeenCompany = false
         viewModelScope.launch {
             companySession.observeSelectedCompanyId().distinctUntilChanged().collect { companyId ->
+                val isRealSwitch = hasSeenCompany
+                hasSeenCompany = true
+                // A leftover search query from the previous company must never scope the new
+                // company's list: load() reads searchQuery straight off the current UiState
+                // snapshot, so leaving it set here would silently filter company B's very first
+                // load by whatever text was typed for company A -- not only during the debounce
+                // window, but on every switch where a search was active at all. Cancelling
+                // searchJob too prevents a pending debounced search from re-applying that same
+                // stale text a moment later. Only cleared on a genuine switch, not the initial
+                // subscription -- preserves Routes.connect(query)'s deep-link-with-a-query intent.
                 loadJob?.cancel()
+                if (isRealSwitch) searchJob?.cancel()
                 _uiState.update {
                     it.copy(
                         companyId = companyId,
+                        searchQuery = if (isRealSwitch) "" else it.searchQuery,
                         rows = emptyList(),
                         page = 1,
                         totalItems = 0,
@@ -203,6 +217,7 @@ class ConnectViewModel @Inject constructor(
                     totalItems = result.totalItems,
                     canLoadMore = result.page * result.pageSize < result.totalItems,
                     error = null,
+                    dataFreshnessAt = dataFreshnessAt,
                 )
             }
         }
@@ -210,9 +225,14 @@ class ConnectViewModel @Inject constructor(
 
     private suspend fun refreshEnrichmentCaches(companyId: String) {
         sourceLinksByPartyId = getPartySourceLinksForCompany(companyId).associateBy { it.partyId }
-        ledgersById = ledgerSnapshotPort.getCachedLedgers(companyId).associateBy { it.id }
+        val ledgers = ledgerSnapshotPort.getCachedLedgers(companyId)
+        ledgersById = ledgers.associateBy { it.id }
         tagsByPartyId = getPartyTagsForCompany(companyId)
         enrichmentCompanyId = companyId
+        // Connect has no independent "synced at" of its own -- Parties are reconciled from
+        // Ledgers, not synced directly -- so the most recent underlying Ledger sync timestamp is
+        // the honest freshness signal, mirroring Ledger Browser's own dataFreshnessAt display.
+        dataFreshnessAt = ledgers.maxOfOrNull { it.syncedAt }
     }
 }
 
@@ -237,5 +257,6 @@ internal fun Party.toRowUi(
         // even though today's Voucher schema has no stable ledger-id filter (documented
         // limitation, see BUDCOM-MVP-1-1-CONNECT-STATUS.md).
         linkedLedgerName = link?.let { displayName },
+        linkedLedgerAlias = ledger?.alias,
     )
 }

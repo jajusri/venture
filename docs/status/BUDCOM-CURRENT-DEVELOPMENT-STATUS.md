@@ -329,6 +329,26 @@ done. Android: 1,307/1,307 tests both variants (+21), 0 lint errors, both assemb
 MVP-1.4 work, no schema migration, no cross-table SQL JOIN. Full detail:
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §38-39; `docs/technical-debt/registry.md` TD-040.
 
+**Phase 49 — Connect UX Review & Hardening (2026-08-23).** Focused UX-trust audit now that real
+Ledger→Party population and Alias behavior are shipped. Found and fixed 4 real defects: (1) a
+company-switch search-leak — `ConnectViewModel` never cleared a leftover search query or cancelled
+the pending debounce job on a real company switch, so company A's search text could silently scope
+company B's very first load; (2) Connect showed no data-freshness cue at all (unlike Ledger Browser/
+Sync) — added, computed from the already-loaded Ledger enrichment cache, zero new queries; (3) Alias
+silently drove Connect's phone-seeding and search-shortcut behavior with zero visibility — added an
+"Alias: ..." line, deliberately kept separate from the phone display so a short numeric Alias is
+never confusable with a phone number; (4) the shared loading spinner had no accessibility label —
+added an optional, backward-compatible `contentDescription`. Left deliberately unchanged: the
+already-documented Voucher free-text-filter limitation, and the tab-only classification display
+(judged intentional, not a defect). Real-device validation (ESTIMATION, same local-fixture technique
+as Phase 48) confirmed the freshness and Alias-display fixes live; the search-leak fix is unit-tested
+(2 new adversarial tests) but not re-proven live, since only one company's data is cached on this
+device. Found `compileProdDebugAndroidTestKotlin` fails for a pre-existing, unrelated reason
+(confirmed via `git status` the failing file is untouched) — documented, not fixed (build-tooling
+issue, outside Connect's scope). Android: 1,307/1,307 → 1,313/1,313 tests both variants (+6), 0 lint
+errors, `assembleProdDebug` green. No MVP-1.4/Catalogue/Vartalap/CRM work; no Prospect→Ledger
+linking. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §40.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.

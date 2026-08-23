@@ -2410,3 +2410,90 @@ only one company's data is currently cached on this device.
 No MVP-1.4 work. No schema migration. No cross-table SQL JOIN introduced (the established
 in-Kotlin-merge convention was followed). No live Tally interaction of any kind for this half of the
 session's work.
+
+## 40. Phase 49 — Connect UX Review & Hardening
+
+New session, focused UX-trust audit of Connect now that real Ledger→Party population and Alias
+behavior are working. Ground truth traced end-to-end (`Ledger → classification → cached_party →
+Connect → Party Detail`) via a dedicated research pass before any change.
+
+### A. Defects found and fixed
+
+1. **A real, reproducible company-switch search-leak (fixed).** `ConnectViewModel`'s company-change
+   handler reset `rows`/`page`/etc. but never cleared `searchQuery` and never cancelled the
+   debounce `searchJob`. Since `load()` reads `searchQuery` straight off the current `UiState`
+   snapshot, this meant *any* non-empty search active in company A silently scoped company B's very
+   first load too — not only during the 350ms debounce window, but on every ordinary switch with an
+   active search. Fixed: `searchQuery` is cleared and `searchJob` cancelled on a genuine switch
+   (tracked via a local `hasSeenCompany` flag so the very first subscription — which could carry a
+   deep-link `Routes.connect(query)` value — is left untouched). 2 new regression tests
+   (`ConnectViewModelTest.kt`): a committed query never scoping the next company's load, and a
+   pending debounced search never firing against the new company.
+2. **Connect never showed data freshness (fixed).** Ledger Browser and Sync both show a "last
+   synced" cue; Connect showed only a binary online/offline banner. Connect has no independent sync
+   of its own (Parties are reconciled from Ledgers), so `dataFreshnessAt` is now computed as the
+   most recent `Ledger.syncedAt` across the already-loaded enrichment cache (no new query — reuses
+   the exact `ledgerSnapshotPort.getCachedLedgers()` call already made for balance enrichment) and
+   rendered identically to Ledger Browser's own line ("Data last synced: ..."), same style, same
+   `hasContent`-gated visibility. 4 new tests (2 ViewModel, 2 Screen).
+3. **Alias silently drove Connect behavior with zero visibility (fixed).** The already-shipped
+   Alias-phone-seeding and the Phase 48 search shortcut both depend on a Ledger's Alias, but Connect
+   never showed the word "Alias" anywhere — a user could reasonably wonder why a party appeared or
+   where its phone came from. `ConnectRowUi` gained `linkedLedgerAlias` (sourced from the same
+   already-loaded `ledgersById` enrichment map), rendered as its own dedicated line ("Alias: ...",
+   mirroring Ledger Browser's exact convention) — deliberately *never* merged into the phone/tags
+   line, so a short numeric Alias is never visually confusable with a phone number. 4 new tests (2
+   ViewModel, 2 Screen).
+4. **Loading spinner had no accessibility label (fixed, minimally).** `FullScreenLoading`/
+   `MasterDataLoadingIndicator` (shared components used by several feature screens, not
+   Connect-specific) gained an optional `contentDescription` parameter, default `null` — a pure,
+   backward-compatible addition with zero behavior change for every other existing caller. Connect's
+   own call site now passes "Loading customers"/"Loading prospects".
+
+### B. Found and deliberately left unchanged
+
+- **"View Vouchers" seeds a free-text party-name filter, not a stable ledger-id filter** — a
+  pre-existing, already-documented limitation (comment in `ConnectViewModel.toRowUi`,
+  `BUDCOM-MVP-1-1-CONNECT-STATUS.md`) that would require Voucher-schema changes outside Connect's
+  scope to fix. Not touched.
+- **Classification (Customer/Prospect) isn't shown per-row or by color** — conveyed only by which
+  tab is active. Judged an intentional, clean pattern, not a defect; changing it would add
+  terminology/visual noise without fixing a real trust problem, so left alone.
+- **Search-empty-state message doesn't name which tab you're on** ("No matches for this search.") —
+  judged honest and sufficient as-is; making it tab-specific was marginal benefit for the risk of
+  touching shared empty-state string resources unnecessarily.
+- **`compileProdDebugAndroidTestKotlin` fails** (`LedgerBrowserScreenTest.kt:4`, `Unresolved
+  reference 'assertDoesNotExist'`) — confirmed via `git status` that this file is untouched this
+  session; reproduced on a clean re-run, not transient. This is a pre-existing environment/
+  dependency-resolution issue, not something this session's changes caused, and fixing it would be
+  a build-tooling change outside Connect's scope. Documented, not fixed. New androidTest additions
+  this session (`ConnectScreenTest.kt`) could not be run against a real device/emulator as a result
+  — they compile as standalone Kotlin (verified by inspection, follow exactly the same patterns as
+  existing passing tests) but the full androidTest source set does not currently build.
+
+### C. Real-device validation
+
+Device `10BF44124K000E3`, company ESTIMATION (real data, 949 ledgers, 926 parties). Installed the
+updated build fresh. **Freshness fix confirmed live**: Connect now shows "Data last synced:
+2026-08-22T21:29:47.406Z" — the real Ledger sync timestamp, matching Ledger Browser's own value
+exactly, with zero regression to existing rows/Call/WhatsApp/View Ledger. **Alias-display fix
+confirmed live**: reusing the same local-only Room fixture technique as Phase 48 (`UPDATE
+cached_ledgers SET alias='777' WHERE id=...`, zero Tally/Connector interaction, reverted
+immediately after), "4m Plywood & Hw" now shows "Alias: 777" on its own line on the Connect screen
+itself (previously only visible in Ledger Browser) — confirmed via screenshot. Real ESTIMATION data
+still has zero ledgers with any Alias set, so — as in Phase 48 — this was validated via a reverted
+local fixture, not a live Tally mutation. The company-switch search-leak fix is unit-tested (2 new
+adversarial tests) but not re-proven live this session, since only one company's data is currently
+cached on this device and re-syncing a second company was judged unnecessary given the fix is a
+pure, deterministic ViewModel-state change with no real-device-only failure mode.
+
+### D. Scope discipline
+
+No MVP-1.4/Catalogue/Vartalap/CRM work. No Prospect→Ledger linking (remains future, per
+`BUDCOM-NOT-NOW.md`). No new Tally request of any kind — this entire phase touched only Android UI/
+ViewModel code. No architecture change outside Connect beyond the two small, backward-compatible,
+purely-additive parameter additions to the shared `FullScreenLoading`/`MasterDataLoadingIndicator`
+components (default-null, zero behavior change for existing callers).
+
+Android: 1,307/1,307 → **1,313/1,313 tests both variants** (+6), 0 lint errors, `assembleProdDebug`
+green. `compileProdDebugAndroidTestKotlin` fails for a pre-existing, unrelated reason (§B).

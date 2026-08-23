@@ -29,6 +29,15 @@ data class ConnectUiState(
     val canLoadMore: Boolean = false,
     val isOnline: Boolean = true,
     val error: MasterDataUiError? = null,
+    /**
+     * Freshness of the underlying local Ledger data Connect's balances/deep-links are derived
+     * from (the most recent [com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
+     * .syncedAt] across the currently-cached company) -- Connect has no independent "synced at"
+     * concept of its own since Parties are reconciled from Ledgers, not synced directly. Mirrors
+     * Ledger Browser's own `dataFreshnessAt` display so the two screens read consistently; null
+     * only when no Ledger data has ever been cached for this company yet.
+     */
+    val dataFreshnessAt: String? = null,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isLoadingMore
     val hasContent: Boolean get() = rows.isNotEmpty()
@@ -40,7 +49,11 @@ data class ConnectUiState(
  * source link) — never fabricated (architecture §4/§12). [phoneE164] is the strictly-validated
  * form used for Call/WhatsApp actions; [phoneDisplay] preserves the original value shown to the
  * user, which may differ (e.g. a phone that fails strict validation still displays but cannot be
- * dialed directly).
+ * dialed directly). [linkedLedgerAlias] is the linked Tally Ledger's raw Alias, shown separately
+ * from [phoneDisplay] and always explicitly labeled ("Alias: ...", mirroring Ledger Browser's own
+ * convention) so a short numeric Alias — which may have surfaced this very Party via the 1-5 digit
+ * search shortcut — is never mistaken for a phone number; null whenever no linked Ledger has an
+ * Alias, which is most of the time.
  */
 data class ConnectRowUi(
     val partyId: String,
@@ -51,6 +64,7 @@ data class ConnectRowUi(
     val balanceLabel: String?,
     val linkedLedgerId: String?,
     val linkedLedgerName: String?,
+    val linkedLedgerAlias: String? = null,
 ) {
     val hasAccountingLink: Boolean get() = linkedLedgerId != null
 }

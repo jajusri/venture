@@ -93,7 +93,7 @@ class ConnectViewModelTest {
         lastConfirmedAt = 0L,
     )
 
-    private fun ledger(id: String, amount: String, side: AmountSide) = Ledger(
+    private fun ledger(id: String, amount: String, side: AmountSide, syncedAt: String = "t") = Ledger(
         id = id,
         name = id,
         alias = null,
@@ -101,7 +101,7 @@ class ConnectViewModelTest {
         status = LedgerStatus.Active,
         closingBalance = MoneyAmount(amount, "INR", side),
         dataQuality = LedgerDataQuality.Complete,
-        syncedAt = "t",
+        syncedAt = syncedAt,
     )
 
     private fun createViewModel(
@@ -197,6 +197,108 @@ class ConnectViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf("B Traders"), vm.uiState.value.rows.map { it.displayName })
+    }
+
+    @Test
+    fun `a committed search query never scopes the next company's first load after switching`() = runTest(dispatcher) {
+        val repo = FakePartyRepository().apply {
+            partiesByClassification["co-A" to PartyClassification.Customer] = listOf(party("co-A", "pa", "Zephyr"))
+            partiesByClassification["co-B" to PartyClassification.Customer] = listOf(party("co-B", "pb", "B Traders"))
+            // Deliberately no entry for ("co-B", "zephyr", Customer) -- if the bug were present
+            // (leftover query leaking into company B's load), searchParties would be called with
+            // "zephyr" and return an empty page even though company B has real, unfiltered data.
+            searchResults[Triple("co-A", "zephyr", PartyClassification.Customer)] = listOf(party("co-A", "pa", "Zephyr"))
+        }
+        val company = FakeCompanySession("co-A")
+        val vm = createViewModel(repository = repo, company = company)
+        advanceUntilIdle()
+        vm.onEvent(ConnectEvent.SearchChanged("zephyr"))
+        advanceUntilIdle()
+        assertEquals(listOf("Zephyr"), vm.uiState.value.rows.map { it.displayName })
+
+        company.selected.value = "co-B"
+        advanceUntilIdle()
+
+        assertEquals("", vm.uiState.value.searchQuery)
+        assertEquals(listOf("B Traders"), vm.uiState.value.rows.map { it.displayName })
+    }
+
+    @Test
+    fun `a pending debounced search never re-applies the previous company's query after switching`() = runTest(dispatcher) {
+        val repo = FakePartyRepository().apply {
+            partiesByClassification["co-A" to PartyClassification.Customer] = listOf(party("co-A", "pa", "A Traders"))
+            partiesByClassification["co-B" to PartyClassification.Customer] = listOf(party("co-B", "pb", "B Traders"))
+        }
+        val company = FakeCompanySession("co-A")
+        val vm = createViewModel(repository = repo, company = company)
+        advanceUntilIdle()
+
+        vm.onEvent(ConnectEvent.SearchChanged("stale query"))
+        // Switch before the debounce delay elapses -- the pending job must never fire against co-B.
+        company.selected.value = "co-B"
+        advanceUntilIdle()
+
+        assertEquals("", vm.uiState.value.searchQuery)
+        assertEquals(listOf("B Traders"), vm.uiState.value.rows.map { it.displayName })
+    }
+
+    @Test
+    fun `dataFreshnessAt reflects the most recent synced Ledger, since Connect has no sync of its own`() = runTest(dispatcher) {
+        val repo = FakePartyRepository().apply {
+            partiesByClassification["co-1" to PartyClassification.Customer] = listOf(party("co-1", "pa", "A Traders"))
+            sourceLinks["co-1"] = listOf(link("co-1", "pa", "guid:a"))
+        }
+        val ledgerPort = FakeLedgerSnapshotPort(
+            mapOf(
+                "co-1" to listOf(
+                    ledger("guid:a", "500.00", AmountSide.Cr, syncedAt = "2026-08-23T10:00:00Z"),
+                    ledger("guid:b", "10.00", AmountSide.Dr, syncedAt = "2026-08-23T12:00:00Z"),
+                ),
+            ),
+        )
+        val vm = createViewModel(repository = repo, ledgerSnapshotPort = ledgerPort)
+        advanceUntilIdle()
+
+        assertEquals("2026-08-23T12:00:00Z", vm.uiState.value.dataFreshnessAt)
+    }
+
+    @Test
+    fun `dataFreshnessAt is null when no Ledger data has ever been cached`() = runTest(dispatcher) {
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        assertEquals(null, vm.uiState.value.dataFreshnessAt)
+    }
+
+    @Test
+    fun `a row's linkedLedgerAlias reflects its linked Ledger's Alias, shown separately from phone`() = runTest(dispatcher) {
+        val repo = FakePartyRepository().apply {
+            partiesByClassification["co-1" to PartyClassification.Customer] =
+                listOf(party("co-1", "pa", "A Traders", phone = "9876543210"))
+            sourceLinks["co-1"] = listOf(link("co-1", "pa", "guid:a"))
+        }
+        val ledgerPort = FakeLedgerSnapshotPort(
+            mapOf("co-1" to listOf(ledger("guid:a", "500.00", AmountSide.Cr).copy(alias = "25"))),
+        )
+        val vm = createViewModel(repository = repo, ledgerSnapshotPort = ledgerPort)
+        advanceUntilIdle()
+
+        val row = vm.uiState.value.rows.single()
+        assertEquals("25", row.linkedLedgerAlias)
+        assertEquals("9876543210", row.phoneDisplay)
+    }
+
+    @Test
+    fun `a row's linkedLedgerAlias is null when the linked Ledger has none`() = runTest(dispatcher) {
+        val repo = FakePartyRepository().apply {
+            partiesByClassification["co-1" to PartyClassification.Customer] = listOf(party("co-1", "pa", "A Traders"))
+            sourceLinks["co-1"] = listOf(link("co-1", "pa", "guid:a"))
+        }
+        val ledgerPort = FakeLedgerSnapshotPort(mapOf("co-1" to listOf(ledger("guid:a", "500.00", AmountSide.Cr))))
+        val vm = createViewModel(repository = repo, ledgerSnapshotPort = ledgerPort)
+        advanceUntilIdle()
+
+        assertEquals(null, vm.uiState.value.rows.single().linkedLedgerAlias)
     }
 
     @Test

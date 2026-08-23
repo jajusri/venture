@@ -180,6 +180,14 @@ fun ConnectScreen(
                     if (!state.isOnline) {
                         MasterDataOfflineBanner(testTag = "connect_offline_banner")
                     }
+                    if (state.hasContent) {
+                        Text(
+                            text = "Data last synced: ${state.dataFreshnessAt ?: "unknown"}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("connect_data_freshness"),
+                        )
+                    }
 
                     OutlinedTextField(
                         value = state.searchQuery,
@@ -200,7 +208,10 @@ fun ConnectScreen(
 
                     when {
                         state.isInitialLoading && !state.hasContent -> {
-                            MasterDataLoadingIndicator(testTag = "connect_loading")
+                            MasterDataLoadingIndicator(
+                                testTag = "connect_loading",
+                                contentDescription = "Loading ${if (state.selectedTab == ConnectTab.Customers) "customers" else "prospects"}",
+                            )
                         }
                         state.error != null && !state.hasContent -> {
                             MasterDataErrorBlock(
@@ -306,6 +317,18 @@ private fun ConnectRowCard(row: ConnectRowUi, onEvent: (ConnectEvent) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            // Kept on its own line, never merged into the phone/tags text above, so a short
+            // numeric Alias (which may be what surfaced this Party via the search shortcut) is
+            // never visually confusable with the phone number shown just above it.
+            row.linkedLedgerAlias?.let {
+                Text(
+                    text = "Alias: $it",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("connect_alias_${row.partyId}"),
                 )
             }
 
