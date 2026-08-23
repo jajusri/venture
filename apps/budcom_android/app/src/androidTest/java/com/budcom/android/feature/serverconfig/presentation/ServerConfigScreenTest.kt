@@ -11,6 +11,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorConnectionProbe
@@ -61,7 +62,10 @@ class ServerConfigScreenTest {
         }
         composeRule.onNodeWithTag("url_input").performTextClearance()
         composeRule.onNodeWithTag("url_input").performTextInput("ftp://bad")
-        composeRule.onNodeWithTag("url_validation_error").assertIsDisplayed()
+        // url_validation_error lives in OutlinedTextField's supportingText slot; the field merges
+        // descendants for accessibility (announced as one unit: label + value + error), so the
+        // default merged-tree query can't resolve the error Text's own bounds correctly.
+        composeRule.onNodeWithTag("url_validation_error", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test
@@ -111,7 +115,9 @@ class ServerConfigScreenTest {
             }
         }
         composeRule.onNodeWithTag("connection_success").assertIsDisplayed()
-        composeRule.onNodeWithTag("checked_at").assertIsDisplayed()
+        // checked_at is the last field in HealthResultContent, on a screen with its own
+        // verticalScroll -- can sit below the initially-visible area.
+        composeRule.onNodeWithTag("checked_at").performScrollTo().assertIsDisplayed()
     }
 
     @Test

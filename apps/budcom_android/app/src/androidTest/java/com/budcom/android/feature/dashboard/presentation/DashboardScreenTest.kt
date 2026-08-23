@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.budcom.android.feature.dashboard.domain.model.DashboardOperationalMode
 import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidity
 import com.budcom.android.ui.theme.BudcomTheme
@@ -60,7 +61,10 @@ class DashboardScreenTest {
             }
         }
         composeRule.onNodeWithTag("dashboard_banner_no_company").assertIsDisplayed()
-        composeRule.onNodeWithTag("dashboard_company_value").assertIsDisplayed()
+        // dashboard_content is a scrollable Column (verticalScroll); in the non-FullyOperational
+        // branch, CompanySessionCard sits well below the search entry/primary entries/banner
+        // stack, off-screen on first composition -- must scroll to it before asserting.
+        composeRule.onNodeWithTag("dashboard_company_value").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -181,8 +185,11 @@ class DashboardScreenTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("dashboard_test_connection").assertIsEnabled().performClick()
-        composeRule.onNodeWithTag("dashboard_validate_session").assertIsEnabled().performClick()
+        // Both buttons sit inside ConnectorStatusCard/CompanySessionCard, well below the fold in
+        // this scrollable screen's NotReady branch -- performClick() on an off-screen node can
+        // silently miss rather than throw, so each must be scrolled into view first.
+        composeRule.onNodeWithTag("dashboard_test_connection").performScrollTo().assertIsEnabled().performClick()
+        composeRule.onNodeWithTag("dashboard_validate_session").performScrollTo().assertIsEnabled().performClick()
         assertTrue(events.contains(DashboardEvent.TestConnection))
         assertTrue(events.contains(DashboardEvent.ValidateSession))
     }

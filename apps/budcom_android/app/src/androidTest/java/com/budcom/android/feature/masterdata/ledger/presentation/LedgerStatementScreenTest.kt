@@ -9,8 +9,10 @@ import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import com.budcom.android.core.pdf.PdfPageRenderer
 import com.budcom.android.core.pdf.PdfPreviewDocument
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementMode
@@ -299,7 +301,17 @@ class LedgerStatementScreenTest {
                 )
             }
         }
+        // ModalBottomSheet's content Column has no scroll of its own (confirmed: performScrollTo
+        // throws "no parent layout with a Scroll SemanticsAction" here) -- Material3's default
+        // SheetState starts PartiallyExpanded, not Expanded, and this sheet's stacked content
+        // (period chips + statement-mode row + five share destinations) is taller than the peek
+        // height on this device, hiding the last destination(s) until the sheet is dragged open
+        // the rest of the way -- exactly what a real user would do. Simulate that swipe rather
+        // than assert on a state no real interaction ever produces.
         composeRule.onNodeWithTag("ledger_statement_share_button").assertIsEnabled()
+        // ModalBottomSheet renders in its own Popup window, so onRoot() is ambiguous (finds both
+        // the main screen's root and the sheet's) -- swipe on the sheet's own content container.
+        composeRule.onNodeWithTag("ledger_statement_advanced_options").performTouchInput { swipeUp() }
         composeRule.onNodeWithTag("ledger_statement_destination_android_share").assertIsDisplayed()
         composeRule.onNodeWithTag("ledger_statement_destination_save_pdf").assertIsDisplayed()
         composeRule.onNodeWithTag("ledger_statement_destination_preview_pdf").assertIsDisplayed()
@@ -323,7 +335,12 @@ class LedgerStatementScreenTest {
                 )
             }
         }
-        composeRule.onNodeWithTag("ledger_statement_period").performClick()
+        // ledger_statement_period is a plain Text leaf inside a Row with its own onClick
+        // (Modifier.clickable), which makes Compose merge descendants -- the same pattern already
+        // fixed for Connect's Alias line (Phase 51): useUnmergedTree = true reaches the leaf's own
+        // testTag directly. A touch at the Text's on-screen bounds still lands inside the parent
+        // Row's clickable area, so the click correctly reaches onChangePeriod.
+        composeRule.onNodeWithTag("ledger_statement_period", useUnmergedTree = true).performClick()
         composeRule.onNodeWithTag("ledger_statement_to_field").assertIsDisplayed()
         composeRule.onNodeWithTag("ledger_statement_to_field").performTextReplacement("2026-08-11")
         composeRule.onNodeWithTag("ledger_statement_period_confirm").performClick()

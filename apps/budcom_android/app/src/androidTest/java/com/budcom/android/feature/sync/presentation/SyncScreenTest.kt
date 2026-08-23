@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.sync.domain.model.SyncTarget
 import com.budcom.android.ui.theme.BudcomTheme
@@ -24,11 +25,19 @@ class SyncScreenTest {
                 SyncScreen(state = SyncUiState(companyId = "c1"), onEvent = {})
             }
         }
+        // sync_screen's content is a scrollable column; each target card is tall enough that
+        // later cards sit below the initially-visible area.
+        //
+        // defaultCards() (SyncUiState.kt) marks Vouchers `available = true`, so TargetCard's
+        // "${tag}_unavailable" branch never renders for this state -- only the interactive
+        // "${tag}_start" Button does. "sync_target_vouchers_unavailable" was a stale assumption
+        // that never matched this fixture; asserting on the card itself (matching the other two
+        // lines) verifies what this test actually intends: all three target cards render in idle.
         composeRule.onNodeWithTag("sync_screen").assertIsDisplayed()
-        composeRule.onNodeWithTag("sync_target_ledgers").assertIsDisplayed()
-        composeRule.onNodeWithTag("sync_target_stockitems").assertIsDisplayed()
-        composeRule.onNodeWithTag("sync_target_vouchers_unavailable").assertIsDisplayed()
-        composeRule.onNodeWithTag("sync_run_available").assertIsDisplayed()
+        composeRule.onNodeWithTag("sync_target_ledgers").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("sync_target_stockitems").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("sync_target_vouchers").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("sync_run_available").performScrollTo().assertIsDisplayed()
     }
 
     @Test

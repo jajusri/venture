@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorHealth
 import com.budcom.android.feature.serverconfig.domain.model.ConnectorReadiness
@@ -24,13 +25,16 @@ class DiagnosticsScreenTest {
                 DiagnosticsScreen(state = sampleState(), onEvent = {})
             }
         }
+        // diagnostics_screen's content column is verticalScroll -- sections beyond the first
+        // couple are off-screen on first composition, so each must be scrolled into view before
+        // asserting visibility.
         composeRule.onNodeWithTag("diagnostics_screen").assertIsDisplayed()
-        composeRule.onNodeWithTag("diagnostics_application").assertIsDisplayed()
-        composeRule.onNodeWithTag("diagnostics_connector").assertIsDisplayed()
-        composeRule.onNodeWithTag("diagnostics_company").assertIsDisplayed()
-        composeRule.onNodeWithTag("diagnostics_sync").assertIsDisplayed()
-        composeRule.onNodeWithTag("diagnostics_health_status").assertIsDisplayed()
-        composeRule.onNodeWithTag("diagnostics_ready_status").assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostics_application").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostics_connector").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostics_company").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostics_sync").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostics_health_status").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("diagnostics_ready_status").performScrollTo().assertIsDisplayed()
     }
 
     @Test

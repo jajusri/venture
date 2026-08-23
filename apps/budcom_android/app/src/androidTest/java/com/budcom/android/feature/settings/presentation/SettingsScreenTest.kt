@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.budcom.android.feature.settings.domain.model.ApplicationInformation
 import com.budcom.android.feature.settings.domain.model.ThemePreference
 import com.budcom.android.navigation.StartupRoutingState
@@ -26,13 +27,15 @@ class SettingsScreenTest {
                 SettingsScreen(state = sampleState(), onEvent = {})
             }
         }
+        // settings_screen's content is a scrollable column -- sections beyond the first couple
+        // are off-screen on first composition.
         composeRule.onNodeWithTag("settings_screen").assertIsDisplayed()
-        composeRule.onNodeWithTag("settings_connection").assertIsDisplayed()
-        composeRule.onNodeWithTag("settings_appearance").assertIsDisplayed()
-        composeRule.onNodeWithTag("settings_company").assertIsDisplayed()
-        composeRule.onNodeWithTag("settings_sync").assertIsDisplayed()
-        composeRule.onNodeWithTag("settings_diagnostics").assertIsDisplayed()
-        composeRule.onNodeWithTag("settings_about").assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_connection").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_appearance").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_company").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_sync").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_diagnostics").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("settings_about").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -55,10 +58,12 @@ class SettingsScreenTest {
                 SettingsScreen(state = sampleState(), onEvent = { events.add(it) })
             }
         }
-        composeRule.onNodeWithTag("settings_open_server_config").performClick()
-        composeRule.onNodeWithTag("settings_open_company").performClick()
-        composeRule.onNodeWithTag("settings_open_sync").performClick()
-        composeRule.onNodeWithTag("settings_open_diagnostics").performClick()
+        // These navigation rows are stacked in a scrollable Settings list; a click on an
+        // off-screen row can silently miss rather than throw, so each must be scrolled into view.
+        composeRule.onNodeWithTag("settings_open_server_config").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings_open_company").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings_open_sync").performScrollTo().performClick()
+        composeRule.onNodeWithTag("settings_open_diagnostics").performScrollTo().performClick()
         assertTrue(events.contains(SettingsEvent.OpenServerConfig))
         assertTrue(events.contains(SettingsEvent.OpenCompanySelection))
         assertTrue(events.contains(SettingsEvent.OpenSync))

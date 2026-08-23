@@ -58,12 +58,20 @@ class VoucherDetailsScreenTest {
                 )
             }
         }
+        // Actual LazyColumn items for this sampleContent()/default-state combination (verified by
+        // enumerating every conditional item's guard condition against sampleContent()'s and
+        // VoucherDetailsUiState's real defaults): 0=data status row, 1=HeaderCard,
+        // 2=narration section (narration = "Hello", non-blank), 3=ledger section, 4=MetadataCard.
+        // canShareInvoice=false AND shareUnavailableReason=null together skip that whole
+        // if/else-if block (zero items, not one), and inventoryLines is empty so that item is
+        // also skipped -- the previous indices (4 and 5) assumed two extra items that don't
+        // render under this state, which is why performScrollToIndex(5) went out of bounds.
         composeRule.onNodeWithTag("voucher_details_content").assertIsDisplayed()
         composeRule.onNodeWithTag("voucher_details_header").assertIsDisplayed()
-        composeRule.onNodeWithTag("voucher_details_content").performScrollToIndex(4)
+        composeRule.onNodeWithTag("voucher_details_content").performScrollToIndex(3)
         composeRule.onNodeWithTag("voucher_details_ledger_section").assertIsDisplayed()
         composeRule.onNodeWithTag("voucher_ledger_line_1").assertIsDisplayed()
-        composeRule.onNodeWithTag("voucher_details_content").performScrollToIndex(5)
+        composeRule.onNodeWithTag("voucher_details_content").performScrollToIndex(4)
         composeRule.onNodeWithTag("voucher_details_metadata").assertIsDisplayed()
     }
 
