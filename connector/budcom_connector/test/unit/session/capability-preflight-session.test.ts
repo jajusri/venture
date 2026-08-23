@@ -1,4 +1,4 @@
-import request from 'supertest';
+﻿import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AppError, ErrorCodes } from '../../../src/infrastructure/errors/app-error.js';
@@ -42,6 +42,7 @@ describe('capability preflight session fail-closed (3A-3F)', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(),
       readStockGroups: vi.fn(),
       readStockCategories: vi.fn(),

@@ -521,6 +521,9 @@ private class FakeRemote(
         ledgerId: String,
     ): ApiResult<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails> =
         error("fetchLedgerContactDetails is not exercised by ledger-list tests")
+
+    override suspend fun fetchLedgerContactDetailsBulk(): ApiResult<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetailsBulkResult> =
+        error("fetchLedgerContactDetailsBulk is not exercised by ledger-list tests")
 }
 
 private object UnreachableRemote : LedgerRemoteDataSource {
@@ -532,6 +535,9 @@ private object UnreachableRemote : LedgerRemoteDataSource {
         range: com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatementDateRange,
     ): ApiResult<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement> =
         error("fetchLedgerStatement is not exercised by ledger-list tests")
+
+    override suspend fun fetchLedgerContactDetailsBulk(): ApiResult<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetailsBulkResult> =
+        error("UnreachableRemote must never be called on the AUTHENTICATED path")
 
     override suspend fun fetchLedgerContactDetails(
         ledgerId: String,

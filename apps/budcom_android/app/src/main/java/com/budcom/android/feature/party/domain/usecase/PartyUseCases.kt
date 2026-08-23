@@ -1,6 +1,8 @@
 package com.budcom.android.feature.party.domain.usecase
 
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
+import com.budcom.android.feature.party.domain.model.BulkContactSeedResult
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
 import com.budcom.android.feature.party.domain.model.IssueActivitySummary
@@ -105,6 +107,11 @@ class ReconcilePartiesFromLedgersUseCase @Inject constructor(
         if (eligible.isEmpty()) return emptyList()
         return repository.reconcilePartiesFromEligibleLedgers(companyId, eligible)
     }
+}
+
+class ApplyLedgerContactDetailsBulkUseCase @Inject constructor(private val repository: PartyRepository) {
+    suspend operator fun invoke(companyId: String, items: List<LedgerContactDetails>): BulkContactSeedResult =
+        repository.applyLedgerContactDetailsBulk(companyId, items)
 }
 
 // ---- MVP-1.1-C: Prospects, contact persons, tags, notes ----

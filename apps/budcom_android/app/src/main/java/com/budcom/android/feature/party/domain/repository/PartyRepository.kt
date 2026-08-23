@@ -1,5 +1,7 @@
 package com.budcom.android.feature.party.domain.repository
 
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails
+import com.budcom.android.feature.party.domain.model.BulkContactSeedResult
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
 import com.budcom.android.feature.party.domain.model.IssueActivitySummary
@@ -79,6 +81,17 @@ interface PartyRepository {
      * exact-10-digit Alias-phone rule non-destructively (architecture §8).
      */
     suspend fun reconcilePartiesFromEligibleLedgers(companyId: String, seeds: List<EligibleLedgerSeed>): List<Party>
+
+    /**
+     * Applies a manually-triggered bulk Tally contact-details fetch (Connect address/email/GSTIN
+     * auto-population) to every Party with a matching Tally-ledger source link, field by field,
+     * using the same non-destructive fill-if-empty/re-confirm-if-same/flag-conflict-if-different
+     * semantics [reconcilePartiesFromEligibleLedgers]'s own Alias-phone seeding already uses.
+     * [Party.addressCity] is never touched — Tally's ledger data has no field it can source from.
+     * A ledger with no matching Party (not yet reconciled, or never eligible) is silently skipped,
+     * counted in [BulkContactSeedResult.unmatchedLedgers] — this never creates a new Party.
+     */
+    suspend fun applyLedgerContactDetailsBulk(companyId: String, items: List<LedgerContactDetails>): BulkContactSeedResult
 
     // ---- MVP-1.1-C: Prospects, contact persons, tags, notes ----
 

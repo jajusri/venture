@@ -188,6 +188,11 @@ private class ProspectCreateTestFakePartyRepository : PartyRepository {
     override suspend fun confirmFieldFromTally(companyId: String, partyId: String, fieldName: String, tallyValue: String?): FieldProvenanceState = error("unused")
     override suspend fun reconcilePartiesFromEligibleLedgers(companyId: String, seeds: List<EligibleLedgerSeed>): List<Party> = error("unused")
 
+    override suspend fun applyLedgerContactDetailsBulk(
+        companyId: String,
+        items: List<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails>,
+    ): com.budcom.android.feature.party.domain.model.BulkContactSeedResult = error("unused")
+
     override suspend fun createProspect(companyId: String, draft: ProspectDraft): Party {
         created += draft
         val partyId = UUID.randomUUID().toString()

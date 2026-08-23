@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -100,6 +100,7 @@ function createReadPort(overrides: Partial<ErpReadPort> = {}): ErpReadPort {
     getGroups: vi.fn(),
     getCompanyInfo: vi.fn(),
     readLedgerGroups: vi.fn(),
+    readLedgerContactDetails: vi.fn(),
     readLedgers: vi.fn(async () => ({ items: [], durationMs: 1, rawByteLength: 1 })),
     readStockGroups: vi.fn(),
     readStockCategories: vi.fn(),

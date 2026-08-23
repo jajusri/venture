@@ -77,6 +77,16 @@ data class PartyPage(
     val totalItems: Int,
 )
 
+/** Summary of one bulk contact-details seeding pass (Connect address/email/GSTIN
+ * auto-population) — see [com.budcom.android.feature.party.domain.repository.PartyRepository.applyLedgerContactDetailsBulk]. */
+data class BulkContactSeedResult(
+    val matchedLedgers: Int,
+    val unmatchedLedgers: Int,
+    val fieldsFilled: Int,
+    val fieldsConfirmed: Int,
+    val fieldsConflicted: Int,
+)
+
 data class PartySourceLink(
     val companyId: String,
     val partyId: String,

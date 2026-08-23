@@ -7,6 +7,7 @@ import com.budcom.android.core.network.RetryPolicy
 import com.budcom.android.core.network.safeApiCall
 import com.budcom.android.core.network.withRetry
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetailsBulkResult
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatement
@@ -22,6 +23,13 @@ interface LedgerRemoteDataSource {
      * contact/gst) — used only by MVP-1.1-D's explicit re-sync action, never by any bulk/automatic
      * sync path. See [LedgerApi.getLedgerDetail]'s doc comment for exactly what this reads. */
     suspend fun fetchLedgerContactDetails(ledgerId: String): ApiResult<LedgerContactDetails>
+
+    /**
+     * Manually-triggered, bulk, all-ledgers-in-one-call read of Tally contact-compatible fields
+     * (Connect address/email/GSTIN auto-population). Never invoked by any scheduled/automatic
+     * sync path — see [LedgerApi.postLedgerContactDetailsSync]'s doc comment.
+     */
+    suspend fun fetchLedgerContactDetailsBulk(): ApiResult<LedgerContactDetailsBulkResult>
 }
 
 @Singleton
@@ -59,6 +67,13 @@ class DefaultLedgerRemoteDataSource @Inject constructor(
         withRetry(RetryPolicy.None) {
             safeApiCall(errorMapper, connectivityObserver) {
                 api.getLedgerDetail(ledgerId).ledger.toContactDetails()
+            }
+        }
+
+    override suspend fun fetchLedgerContactDetailsBulk(): ApiResult<LedgerContactDetailsBulkResult> =
+        withRetry(RetryPolicy.None) {
+            safeApiCall(errorMapper, connectivityObserver) {
+                api.postLedgerContactDetailsSync().toDomain()
             }
         }
 }

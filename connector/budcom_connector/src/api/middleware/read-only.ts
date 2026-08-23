@@ -13,6 +13,7 @@ const ALLOWED_WRITE_ROUTES = new Set([
   'POST /sync/ledgers',
   'POST /sync/ledgers/cancel',
   'POST /sync/ledgers/clear-cache',
+  'POST /sync/ledgers/contact-details',
   'POST /storage/ledgers/integrity-check',
   'POST /storage/ledgers/backup',
   'POST /sync/stock-items',

@@ -138,6 +138,60 @@ class LedgerDtoMappingTest {
     }
 
     @Test
+    fun `deserializes a bulk contact-details response into one item per ledger`() {
+        val payload = """
+            {
+              "schemaVersion": "1.0.0",
+              "requestedAt": "2026-08-24T10:00:00.000Z",
+              "durationMs": 42,
+              "ledgerCount": 2,
+              "updatedCount": 1,
+              "skippedCount": 1,
+              "items": [
+                {
+                  "ledgerId": "guid:abc",
+                  "mobile": "9876543210",
+                  "email": "accounts@acme.example",
+                  "address": "123 MG Road",
+                  "state": "Karnataka",
+                  "pincode": "560001",
+                  "gstin": "29AABCU9603R1ZM"
+                },
+                {
+                  "ledgerId": "guid:def"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val dto = json.decodeFromString(LedgerContactDetailsBulkResponseDto.serializer(), payload)
+        val result = dto.toDomain()
+
+        assertEquals(2, result.ledgerCount)
+        assertEquals(42, result.durationMs)
+        assertEquals(2, result.items.size)
+        assertEquals("guid:abc", result.items[0].ledgerId)
+        assertEquals("accounts@acme.example", result.items[0].email)
+        assertEquals("29AABCU9603R1ZM", result.items[0].gstin)
+        assertEquals("guid:def", result.items[1].ledgerId)
+        assertNull(result.items[1].email)
+    }
+
+    @Test
+    fun `bulk contact-details blank strings normalize to null, same as the single-ledger path`() {
+        val dto = LedgerContactDetailsBulkResponseDto(
+            items = listOf(
+                LedgerContactDetailsBulkItemDto(ledgerId = "guid:abc", email = "", mobile = "  ", gstin = ""),
+            ),
+        )
+        val result = dto.toDomain()
+
+        assertNull(result.items.single().email)
+        assertNull(result.items.single().mobile)
+        assertNull(result.items.single().gstin)
+    }
+
+    @Test
     fun `blank contact-field strings are normalized to null, never stored as empty`() {
         val payload = """
             {

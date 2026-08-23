@@ -745,6 +745,11 @@ private class InMemoryPartyRepository : PartyRepository {
 
     override suspend fun reconcilePartiesFromEligibleLedgers(companyId: String, seeds: List<EligibleLedgerSeed>): List<Party> = emptyList()
 
+    override suspend fun applyLedgerContactDetailsBulk(
+        companyId: String,
+        items: List<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails>,
+    ): com.budcom.android.feature.party.domain.model.BulkContactSeedResult = error("unused")
+
     override suspend fun createProspect(companyId: String, draft: ProspectDraft): Party {
         val partyId = UUID.randomUUID().toString()
         val party = Party(

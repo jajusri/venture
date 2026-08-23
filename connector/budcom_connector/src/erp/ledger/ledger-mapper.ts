@@ -1,5 +1,13 @@
 import type { NormalizedLedger } from '../../extraction/core/types.js';
-import type { BalanceNature, LedgerDetails, LedgerIdentitySource, LedgerStatus } from './ledger-domain.js';
+import type {
+  BalanceNature,
+  LedgerContactDetails,
+  LedgerDetails,
+  LedgerGstDetails,
+  LedgerIdentitySource,
+  LedgerMailingDetails,
+  LedgerStatus,
+} from './ledger-domain.js';
 import { LEDGER_DOMAIN_CONTRACT_VERSION } from './ledger-domain.js';
 import type { LedgerDataQuality } from './ledger-extraction-quality.js';
 
@@ -21,6 +29,39 @@ function resolveStatus(ledger: NormalizedLedger): LedgerStatus {
     return 'reserved';
   }
   return 'active';
+}
+
+/** Shared by the routine ledger mapper below and the bulk contact-details sync -- see their doc comments. */
+export function buildLedgerMailing(ledger: NormalizedLedger): LedgerMailingDetails | undefined {
+  return ledger.mailingName || ledger.address || ledger.state || ledger.country || ledger.pincode
+    ? {
+        mailingName: ledger.mailingName,
+        address: ledger.address,
+        state: ledger.state,
+        country: ledger.country,
+        pincode: ledger.pincode,
+      }
+    : undefined;
+}
+
+export function buildLedgerContact(ledger: NormalizedLedger): LedgerContactDetails | undefined {
+  return ledger.email || ledger.phone || ledger.mobile
+    ? {
+        email: ledger.email,
+        phone: ledger.phone,
+        mobile: ledger.mobile,
+      }
+    : undefined;
+}
+
+export function buildLedgerGst(ledger: NormalizedLedger): LedgerGstDetails | undefined {
+  return ledger.gstin || ledger.gstRegistrationType
+    ? {
+        gstin: ledger.gstin,
+        registrationType: ledger.gstRegistrationType,
+        applicableFrom: ledger.gstApplicableFrom,
+      }
+    : undefined;
 }
 
 /** Maps ERP-neutral extraction model into the persisted ledger domain record. */
@@ -49,29 +90,9 @@ export function mapNormalizedLedgerToDomain(
     reservedName: ledger.reservedName,
     isDeleted: false,
     syncedAt,
-    mailing: ledger.mailingName || ledger.address || ledger.state || ledger.country || ledger.pincode
-      ? {
-          mailingName: ledger.mailingName,
-          address: ledger.address,
-          state: ledger.state,
-          country: ledger.country,
-          pincode: ledger.pincode,
-        }
-      : undefined,
-    contact: ledger.email || ledger.phone || ledger.mobile
-      ? {
-          email: ledger.email,
-          phone: ledger.phone,
-          mobile: ledger.mobile,
-        }
-      : undefined,
-    gst: ledger.gstin || ledger.gstRegistrationType
-      ? {
-          gstin: ledger.gstin,
-          registrationType: ledger.gstRegistrationType,
-          applicableFrom: ledger.gstApplicableFrom,
-        }
-      : undefined,
+    mailing: buildLedgerMailing(ledger),
+    contact: buildLedgerContact(ledger),
+    gst: buildLedgerGst(ledger),
     metadata: {
       contractVersion: LEDGER_DOMAIN_CONTRACT_VERSION,
       identitySource,

@@ -2,6 +2,7 @@
 import path from 'node:path';
 
 import type {
+  LedgerContactDetailsPatch,
   LedgerDetails,
   LedgerSearchParams,
   LedgerSearchResult,
@@ -48,6 +49,31 @@ export class JsonLedgerRepository implements LedgerRepositoryPort {
 
   async update(companyId: string, ledger: LedgerDetails): Promise<void> {
     await this.upsertMany(companyId, [ledger]);
+  }
+
+  /** Narrow partial update -- see `SqliteLedgerRepository.updateContactDetailsMany`'s own doc comment. */
+  async updateContactDetailsMany(
+    companyId: string,
+    patches: readonly LedgerContactDetailsPatch[],
+  ): Promise<{ updated: number; skipped: number }> {
+    const store = await this.loadCompany(companyId);
+    let updated = 0;
+    for (const patch of patches) {
+      const existing = store.ledgers[patch.ledgerId];
+      if (!existing) continue;
+      store.ledgers[patch.ledgerId] = {
+        ...existing,
+        mailing: patch.mailing,
+        contact: patch.contact,
+        gst: patch.gst,
+      };
+      updated += 1;
+    }
+    if (updated > 0) {
+      store.updatedAt = new Date().toISOString();
+      await this.persistCompany(store);
+    }
+    return { updated, skipped: patches.length - updated };
   }
 
   async softDelete(companyId: string, ledgerId: string): Promise<boolean> {

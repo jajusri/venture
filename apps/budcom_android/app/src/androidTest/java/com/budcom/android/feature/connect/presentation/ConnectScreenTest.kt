@@ -2,6 +2,7 @@ package com.budcom.android.feature.connect.presentation
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -232,6 +233,27 @@ class ConnectScreenTest {
         }
         composeRule.onNodeWithTag("connect_retry").performClick()
         assertTrue(retried)
+    }
+
+    @Test
+    fun fetchContactDetailsButtonIsVisibleAndDispatchesTheEvent() {
+        var lastEvent: ConnectEvent? = null
+        composeRule.setContent {
+            BudcomTheme { ConnectScreen(state = ConnectUiState(isInitialLoading = false), onEvent = { lastEvent = it }) }
+        }
+        composeRule.onNodeWithTag("connect_fetch_contact_details").assertIsDisplayed()
+        composeRule.onNodeWithTag("connect_fetch_contact_details").performClick()
+        assertEquals(ConnectEvent.FetchContactDetailsTapped, lastEvent)
+    }
+
+    @Test
+    fun fetchContactDetailsButtonIsDisabledWhileFetching() {
+        composeRule.setContent {
+            BudcomTheme {
+                ConnectScreen(state = ConnectUiState(isInitialLoading = false, isFetchingContactDetails = true), onEvent = {})
+            }
+        }
+        composeRule.onNodeWithTag("connect_fetch_contact_details").assertIsNotEnabled()
     }
 
     @Test

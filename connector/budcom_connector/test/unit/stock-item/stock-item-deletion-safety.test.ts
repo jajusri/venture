@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ErpReadPort } from '../../../src/erp/ports/erp-read-port.js';
 import { createLogger } from '../../../src/infrastructure/logging/logger.js';
@@ -28,6 +28,7 @@ describe('stock item deletion safety', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(),
       readStockGroups: vi.fn(),
       readStockCategories: vi.fn(),
@@ -68,6 +69,7 @@ describe('stock item deletion safety', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(),
       readStockGroups: vi.fn(),
       readStockCategories: vi.fn(),

@@ -33,6 +33,7 @@ import type {
 export interface MasterDataExtractorRegistry {
   readonly ledgerGroups: MasterDataExtractor<NormalizedLedgerGroup>;
   readonly ledgers: MasterDataExtractor<NormalizedLedger>;
+  readonly ledgerContactDetails: MasterDataExtractor<NormalizedLedger>;
   readonly stockGroups: MasterDataExtractor<NormalizedStockGroup>;
   readonly stockCategories: MasterDataExtractor<NormalizedStockCategory>;
   readonly stockItems: MasterDataExtractor<NormalizedStockItem>;
@@ -66,6 +67,16 @@ export function createMasterDataExtractorRegistry(deps: {
       nodeName: 'LEDGER',
       mapNode: mapLedger,
       masterDataContract: 'ledger',
+    }),
+    // No masterDataContract -- the 'ledger' contract's thresholds are tuned for the full rich-ledger
+    // field set/semantics; forcing a contact-only payload through it risks spurious MALFORMED
+    // failures for a shape it was never designed to assess. Matches the existing precedent of
+    // stockGroups/godowns/gstRegistrations below, which also omit masterDataContract.
+    ledgerContactDetails: create({
+      entityType: MasterDataEntityType.LedgerContactDetails,
+      operationId: ApprovedOperationId.LedgersContactDetails,
+      nodeName: 'LEDGER',
+      mapNode: mapLedger,
     }),
     stockGroups: create({
       entityType: MasterDataEntityType.StockGroup,

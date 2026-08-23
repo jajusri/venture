@@ -1,4 +1,4 @@
-import request from 'supertest';
+﻿import request from 'supertest';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ServiceTokens } from '../../src/core/tokens.js';
@@ -34,6 +34,7 @@ describe('capability preflight sync mutation boundary (5A-5D)', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(),
       readStockGroups: vi.fn(),
       readStockCategories: vi.fn(),
@@ -74,6 +75,7 @@ describe('capability preflight sync mutation boundary (5A-5D)', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(),
       readStockGroups: vi.fn(),
       readStockCategories: vi.fn(),
@@ -114,6 +116,7 @@ describe('capability preflight sync mutation boundary (5A-5D)', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(async () => {
         throw new AppError(ErrorCodes.SERVICE_UNAVAILABLE, 'transport failed', 503);
       }),
@@ -163,6 +166,7 @@ describe('capability preflight sync mutation boundary (5A-5D)', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(async () => ({
         items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,

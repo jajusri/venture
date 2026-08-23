@@ -7,6 +7,7 @@ export const MasterDataEntityType = {
   CompanyInfo: 'company-info',
   LedgerGroup: 'ledger-groups',
   Ledger: 'ledgers',
+  LedgerContactDetails: 'ledger-contact-details',
   StockGroup: 'stock-groups',
   StockCategory: 'stock-categories',
   StockItem: 'stock-items',

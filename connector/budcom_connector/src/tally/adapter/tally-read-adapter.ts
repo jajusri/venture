@@ -260,6 +260,10 @@ export class TallyReadAdapter implements ErpReadPort {
     return this.extractors.ledgers.extract(companyName, options ?? {});
   }
 
+  readLedgerContactDetails(companyName: string, options?: { signal?: AbortSignal }) {
+    return this.extractors.ledgerContactDetails.extract(companyName, options ?? {});
+  }
+
   readStockGroups(companyName: string) {
     return this.extractors.stockGroups.extract(companyName);
   }

@@ -70,6 +70,38 @@ export interface LedgerDetails extends LedgerSummary {
   readonly metadata?: Record<string, string>;
 }
 
+/**
+ * Narrow patch for the bulk contact-details sync (Connect address/email/GSTIN
+ * auto-population) -- only mailing/contact/gst, never the identity/balance/status fields a full
+ * {@link LedgerDetails} carries. See `LedgerRepositoryPort.updateContactDetailsMany`.
+ */
+export interface LedgerContactDetailsPatch {
+  readonly ledgerId: string;
+  readonly mailing?: LedgerMailingDetails;
+  readonly contact?: LedgerContactDetails;
+  readonly gst?: LedgerGstDetails;
+}
+
+/** Result summary for a bulk contact-details fetch/patch pass. */
+export interface LedgerContactDetailsBulkResult {
+  readonly requestedAt: string;
+  readonly durationMs: number;
+  readonly ledgerCount: number;
+  readonly updatedCount: number;
+  readonly skippedCount: number;
+  readonly items: readonly LedgerContactDetailsSummaryItem[];
+}
+
+export interface LedgerContactDetailsSummaryItem {
+  readonly ledgerId: string;
+  readonly mobile?: string;
+  readonly email?: string;
+  readonly address?: string;
+  readonly state?: string;
+  readonly pincode?: string;
+  readonly gstin?: string;
+}
+
 export interface LedgerCollection {
   readonly items: readonly LedgerSummary[];
   readonly totalCount: number;

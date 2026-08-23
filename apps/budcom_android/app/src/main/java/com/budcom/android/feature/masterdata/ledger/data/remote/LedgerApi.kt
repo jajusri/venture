@@ -1,6 +1,7 @@
 package com.budcom.android.feature.masterdata.ledger.data.remote
 
 import retrofit2.http.GET
+import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -35,4 +36,13 @@ interface LedgerApi {
      */
     @GET("ledgers/{id}")
     suspend fun getLedgerDetail(@Path("id") ledgerId: String): LedgerDetailEnvelopeDto
+
+    /**
+     * Confirmed Connector bulk contact-details endpoint: `POST /sync/ledgers/contact-details` —
+     * one Tally round-trip for every ledger's mailing/contact/GST fields at once. Manually
+     * triggered only (Connect's own action) — never part of `SyncApi`'s routine sync cycle, and
+     * never invoked automatically.
+     */
+    @POST("sync/ledgers/contact-details")
+    suspend fun postLedgerContactDetailsSync(): LedgerContactDetailsBulkResponseDto
 }

@@ -4,6 +4,7 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.core.util.TimeProvider
 import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerDataQuality
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
@@ -375,6 +376,139 @@ class PartyRepositoryImplTest {
         val provenance = fieldProvenanceDao.findField("co-1", party2.partyId, PartyFieldNames.PRIMARY_PHONE)
         assertEquals("conflict", provenance?.state)
         assertEquals("9111111111", provenance?.tallyValue)
+    }
+
+    // ============================== BULK CONTACT DETAILS SEEDING ==============================
+
+    private fun contactDetails(
+        ledgerId: String,
+        mobile: String? = null,
+        email: String? = null,
+        address: String? = null,
+        state: String? = null,
+        pincode: String? = null,
+        gstin: String? = null,
+    ) = LedgerContactDetails(ledgerId, mobile, email, address, state, pincode, gstin)
+
+    @Test
+    fun `fills empty email, address, state, pincode and gstin as confirmed from Tally`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers("co-1", listOf(seed(ledgerId = "guid:acme")))
+
+        val result = repo.applyLedgerContactDetailsBulk(
+            "co-1",
+            listOf(
+                contactDetails(
+                    "guid:acme",
+                    email = "accounts@acme.example",
+                    address = "123 MG Road",
+                    state = "Karnataka",
+                    pincode = "560001",
+                    gstin = "29AABCU9603R1ZM",
+                ),
+            ),
+        )
+
+        assertEquals(1, result.matchedLedgers)
+        assertEquals(0, result.unmatchedLedgers)
+        assertEquals(5, result.fieldsFilled)
+        assertEquals(0, result.fieldsConfirmed)
+        assertEquals(0, result.fieldsConflicted)
+
+        val partyId = partyIdFor(repo, "guid:acme")
+        val party = repo.getPartyById("co-1", partyId)
+        assertEquals("accounts@acme.example", party?.primaryEmail)
+        assertEquals("123 MG Road", party?.addressLine1)
+        assertEquals("Karnataka", party?.addressState)
+        assertEquals("560001", party?.addressPincode)
+        assertEquals("29AABCU9603R1ZM", party?.gstin)
+        val provenance = fieldProvenanceDao.findField("co-1", partyId, PartyFieldNames.PRIMARY_EMAIL)
+        assertEquals("confirmed_from_tally", provenance?.state)
+    }
+
+    @Test
+    fun `re-confirms when the fetched value matches the existing one, using canonical comparison`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers("co-1", listOf(seed(ledgerId = "guid:acme")))
+        val partyId = partyIdFor(repo, "guid:acme")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.PRIMARY_EMAIL, "Accounts@Acme.example")
+
+        val result = repo.applyLedgerContactDetailsBulk(
+            "co-1",
+            listOf(contactDetails("guid:acme", email = "accounts@acme.example")),
+        )
+
+        assertEquals(1, result.fieldsConfirmed)
+        assertEquals(0, result.fieldsFilled)
+        assertEquals(0, result.fieldsConflicted)
+        // Case differs from what Tally returned -- confirms canonicalizeForComparison is reused,
+        // never overwritten to Tally's casing.
+        assertEquals("Accounts@Acme.example", repo.getPartyById("co-1", partyId)?.primaryEmail)
+    }
+
+    @Test
+    fun `a different value than what is already effective surfaces as conflict, never silently overwritten`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers("co-1", listOf(seed(ledgerId = "guid:acme")))
+        val partyId = partyIdFor(repo, "guid:acme")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.GSTIN, "27AAAAA0000A1Z5")
+
+        val result = repo.applyLedgerContactDetailsBulk(
+            "co-1",
+            listOf(contactDetails("guid:acme", gstin = "29AABCU9603R1ZM")),
+        )
+
+        assertEquals(1, result.fieldsConflicted)
+        assertEquals("27AAAAA0000A1Z5", repo.getPartyById("co-1", partyId)?.gstin) // unchanged
+        val provenance = fieldProvenanceDao.findField("co-1", partyId, PartyFieldNames.GSTIN)
+        assertEquals("conflict", provenance?.state)
+        assertEquals("29AABCU9603R1ZM", provenance?.tallyValue)
+    }
+
+    @Test
+    fun `blank or null fetched fields are skipped, never treated as a fill or a conflict`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers("co-1", listOf(seed(ledgerId = "guid:acme")))
+
+        val result = repo.applyLedgerContactDetailsBulk(
+            "co-1",
+            listOf(contactDetails("guid:acme", email = "", state = null)),
+        )
+
+        assertEquals(1, result.matchedLedgers)
+        assertEquals(0, result.fieldsFilled)
+        assertEquals(0, result.fieldsConfirmed)
+        assertEquals(0, result.fieldsConflicted)
+        assertNull(repo.getPartyById("co-1", partyIdFor(repo, "guid:acme"))?.primaryEmail)
+    }
+
+    @Test
+    fun `a ledger with no matching Party is counted as unmatched and never creates one`() = runTest(dispatcher) {
+        val repo = repository()
+
+        val result = repo.applyLedgerContactDetailsBulk(
+            "co-1",
+            listOf(contactDetails("guid:never-reconciled", email = "x@example.com")),
+        )
+
+        assertEquals(0, result.matchedLedgers)
+        assertEquals(1, result.unmatchedLedgers)
+        assertNull(repo.getPartyForLedger("co-1", "guid:never-reconciled"))
+    }
+
+    @Test
+    fun `addressCity is never touched -- there is no Tally source field for it`() = runTest(dispatcher) {
+        val repo = repository()
+        repo.reconcilePartiesFromEligibleLedgers("co-1", listOf(seed(ledgerId = "guid:acme")))
+        val partyId = partyIdFor(repo, "guid:acme")
+        repo.updateBudcomOnlyField("co-1", partyId, PartyFieldNames.ADDRESS_CITY, "Bengaluru")
+
+        repo.applyLedgerContactDetailsBulk(
+            "co-1",
+            listOf(contactDetails("guid:acme", address = "123 MG Road", state = "Karnataka")),
+        )
+
+        assertEquals("Bengaluru", repo.getPartyById("co-1", partyId)?.addressCity)
     }
 
     // ============================== PROVENANCE ==============================

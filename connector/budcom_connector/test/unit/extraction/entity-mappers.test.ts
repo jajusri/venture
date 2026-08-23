@@ -39,6 +39,59 @@ describe('entity mappers', () => {
   });
 
   /**
+   * Bulk contact-details sync (Connect address/email/GSTIN auto-population): mapLedger() is
+   * reused UNCHANGED for this path -- it already parses these tags, they've just never been
+   * requested by the routine sync's own Fetch list. This proves it degrades gracefully (no
+   * throw, undefined for absent fields) when balance/alias tags are absent from the response,
+   * exactly the shape LEDGER_CONTACT_FETCH_FIELDS' response will have.
+   */
+  it('maps mailing/contact/gst fields from a contact-only response (no balances/alias present)', () => {
+    const contactOnlyResponse = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <LEDGER NAME="Acme Corp">
+          <NAME>Acme Corp</NAME>
+          <GUID TYPE="String">aaaaaaaa-bbbb-cccc-dddd-000000000002</GUID>
+          <MASTERID TYPE="Number">2002</MASTERID>
+          <MAILINGNAME>Acme Corp Pvt Ltd</MAILINGNAME>
+          <ADDRESS>123 MG Road</ADDRESS>
+          <STATENAME>Karnataka</STATENAME>
+          <COUNTRYNAME>India</COUNTRYNAME>
+          <PINCODE>560001</PINCODE>
+          <EMAIL>accounts@acme.example</EMAIL>
+          <PHONENUMBER>08012345678</PHONENUMBER>
+          <MOBILENUMBER>9876543210</MOBILENUMBER>
+          <PARTYGSTIN>29AABCU9603R1ZM</PARTYGSTIN>
+          <GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>
+          <APPLICABLEFROM>20200401</APPLICABLEFROM>
+        </LEDGER>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+    const document = collectionParser.parseDocument(contactOnlyResponse);
+    const nodes = collectionParser.parseNodes(document, { nodeName: 'LEDGER' });
+    const ledger = mapLedger(collectionParser, nodes[0]);
+
+    expect(ledger?.mailingName).toBe('Acme Corp Pvt Ltd');
+    expect(ledger?.address).toBe('123 MG Road');
+    expect(ledger?.state).toBe('Karnataka');
+    expect(ledger?.country).toBe('India');
+    expect(ledger?.pincode).toBe('560001');
+    expect(ledger?.email).toBe('accounts@acme.example');
+    expect(ledger?.phone).toBe('08012345678');
+    expect(ledger?.mobile).toBe('9876543210');
+    expect(ledger?.gstin).toBe('29AABCU9603R1ZM');
+    expect(ledger?.gstRegistrationType).toBe('Regular');
+    expect(ledger?.gstApplicableFrom).toBe('20200401');
+    // Balance/alias tags absent from this response -- confirms no throw, graceful undefined.
+    expect(ledger?.openingBalance).toBeUndefined();
+    expect(ledger?.closingBalance).toBeUndefined();
+    expect(ledger?.alias).toBeUndefined();
+  });
+
+  /**
    * 2026-08-23: real ESTIMATION ledgers never export a flat `<ALIAS>` tag at all -- their Alias
    * value(s) arrive as extra `<NAME>` siblings inside `LANGUAGENAME.LIST/NAME.LIST`, alongside
    * the primary name as the first entry. See `resolveLedgerAlias` in entity-mappers.ts and

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ErpReadPort } from '../../src/erp/ports/erp-read-port.js';
 import type { LedgerSyncRunRecord } from '../../src/erp/ledger/ledger-domain.js';
@@ -28,6 +28,7 @@ function createReadPort(overrides: Partial<ErpReadPort> = {}): ErpReadPort {
     getGroups: vi.fn(),
     getCompanyInfo: vi.fn(),
     readLedgerGroups: vi.fn(),
+    readLedgerContactDetails: vi.fn(),
     readLedgers: vi.fn(async () => ({ items: [], durationMs: 1, rawByteLength: 1 })),
     readStockGroups: vi.fn(),
     readStockCategories: vi.fn(),

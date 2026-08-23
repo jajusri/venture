@@ -1,4 +1,4 @@
-import { vi } from 'vitest';
+﻿import { vi } from 'vitest';
 
 import type { ErpReadPort } from '../../src/erp/ports/erp-read-port.js';
 import { mapNormalizedLedgerToDomain } from '../../src/erp/ledger/ledger-mapper.js';
@@ -47,6 +47,7 @@ export function createMigrationReadPort(
     getGroups: vi.fn(),
     getCompanyInfo: vi.fn(),
     readLedgerGroups: vi.fn(),
+    readLedgerContactDetails: vi.fn(),
     readLedgers,
     readStockGroups: vi.fn(),
     readStockCategories: vi.fn(),

@@ -164,6 +164,18 @@ export function createLedgersRouter(ledgerSync: LedgerSyncService, scheduler?: A
   );
 
   router.post(
+    // Manually-triggered, occasional bulk mailing/contact/GST fetch for Connect address/email/GSTIN
+    // auto-population -- deliberately separate from `/sync/ledgers` above. Never calls
+    // `scheduler?.recordManualSyncOutcome`: this stays structurally outside the routine sync cycle
+    // and its adaptive-scheduler ladder, not just by convention.
+    '/sync/ledgers/contact-details',
+    asyncHandler(async (_req, res) => {
+      const result = await ledgerSync.fetchLedgerContactDetailsBulk();
+      res.status(200).json({ schemaVersion: '1.0.0', ...result });
+    }),
+  );
+
+  router.post(
     '/storage/ledgers/integrity-check',
     asyncHandler(async (_req, res) => {
       const result = await ledgerSync.runIntegrityCheck();

@@ -84,3 +84,15 @@ data class LedgerContactDetails(
     val pincode: String?,
     val gstin: String?,
 )
+
+/**
+ * Result of a manually-triggered, occasional bulk contact-details fetch — one Tally round-trip
+ * covering every ledger, reusing [LedgerContactDetails] per item. Never populated as part of the
+ * bulk [Ledger] list/browse path, and never automatic — see [LedgerBulkContactDetailPort][
+ * com.budcom.android.feature.masterdata.ledger.domain.port.LedgerBulkContactDetailPort].
+ */
+data class LedgerContactDetailsBulkResult(
+    val items: List<LedgerContactDetails>,
+    val ledgerCount: Int,
+    val durationMs: Long,
+)

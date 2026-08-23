@@ -1,4 +1,4 @@
-import { LEDGER_RICH_FETCH_FIELDS } from '../core/ledger-identity.js';
+import { LEDGER_RICH_FETCH_FIELDS, LEDGER_CONTACT_FETCH_FIELDS } from '../core/ledger-identity.js';
 import type { TallyXmlRequestSpec } from '../../tally/xml/request-builder.js';
 
 /** Tally collection/object IDs for master data extraction. */
@@ -82,6 +82,15 @@ export const MasterDataTemplates = {
     buildCollectionTemplate(TallyMasterDataCollections.Ledgers, {
       companyName,
       collectionModifyFetch: [...LEDGER_RICH_FETCH_FIELDS],
+    }),
+  // Deliberately separate from `ledgers` above -- a manually-triggered, occasional bulk fetch of
+  // mailing/contact/GST fields only, never part of the routine Ledgers sync's request shape. Same
+  // Tally collection (`List of Ledgers`), different (additive) Fetch list -- see
+  // `LEDGER_CONTACT_FETCH_FIELDS`'s own doc comment.
+  ledgersContactDetails: (companyName: string) =>
+    buildCollectionTemplate(TallyMasterDataCollections.Ledgers, {
+      companyName,
+      collectionModifyFetch: [...LEDGER_CONTACT_FETCH_FIELDS],
     }),
   stockGroups: (companyName: string) =>
     buildCollectionTemplate(TallyMasterDataCollections.StockGroups, { companyName }),

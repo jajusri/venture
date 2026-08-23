@@ -1,6 +1,7 @@
 import type { DatabaseSync } from './node-sqlite.js';
 
 import type {
+  LedgerContactDetailsPatch,
   LedgerDetails,
   LedgerSearchParams,
   LedgerSearchResult,
@@ -21,6 +22,18 @@ const ALLOWED_SORT_FIELDS = new Set(['name', 'parentGroup', 'closingBalance', 's
 export class SqliteLedgerRepository implements LedgerRepositoryPort {
   constructor(private readonly database: SqliteDatabase) {}
 
+  /**
+   * `mailing_json`/`contact_json`/`gst_json` use `COALESCE(excluded.x, ledgers.x)` rather than the
+   * unconditional `excluded.x` every other column uses: the routine Ledgers sync (via
+   * `LEDGER_RICH_FETCH_FIELDS`) never requests those Tally tags, so its own extraction always
+   * produces `undefined` for these three fields -- meaning `COALESCE(NULL, old)` is functionally
+   * identical to prior behavior for every case that has ever actually occurred. What it newly
+   * prevents is the bulk contact-details sync (`updateContactDetailsMany` below, or any future
+   * extraction that legitimately populates these) being silently wiped by the very next routine
+   * sync. `replaceCompanyLedgersAtomically`'s rare delete-and-reinsert identity-migration path is
+   * intentionally NOT given the same treatment -- it's a one-time-per-migration rebuild by design;
+   * re-running the bulk contact-details sync afterward is the accepted recovery.
+   */
   async upsertMany(companyId: string, ledgers: readonly LedgerDetails[]): Promise<void> {
     const db = this.database.getDatabase();
     const now = new Date().toISOString();
@@ -54,9 +67,9 @@ export class SqliteLedgerRepository implements LedgerRepositoryPort {
         data_quality = excluded.data_quality,
         is_bill_wise_on = excluded.is_bill_wise_on,
         reserved_name = excluded.reserved_name,
-        mailing_json = excluded.mailing_json,
-        contact_json = excluded.contact_json,
-        gst_json = excluded.gst_json,
+        mailing_json = COALESCE(excluded.mailing_json, ledgers.mailing_json),
+        contact_json = COALESCE(excluded.contact_json, ledgers.contact_json),
+        gst_json = COALESCE(excluded.gst_json, ledgers.gst_json),
         metadata_json = excluded.metadata_json,
         content_fingerprint = excluded.content_fingerprint,
         is_deleted = excluded.is_deleted,
@@ -85,6 +98,49 @@ export class SqliteLedgerRepository implements LedgerRepositoryPort {
 
   update(companyId: string, ledger: LedgerDetails): Promise<void> {
     return this.upsertMany(companyId, [ledger]);
+  }
+
+  /**
+   * Bulk contact-details sync write path (Connect address/email/GSTIN auto-population).
+   * Deliberately touches ONLY mailing_json/contact_json/gst_json/updated_at -- never
+   * name/alias/parent_group/balances/status -- so it can never clobber data the routine Ledgers
+   * sync owns, unlike `upsertMany` which writes the full row. A ledger with no matching row
+   * (never synced yet) is silently skipped, not inserted -- this method only ever updates.
+   */
+  async updateContactDetailsMany(
+    companyId: string,
+    patches: readonly LedgerContactDetailsPatch[],
+  ): Promise<{ updated: number; skipped: number }> {
+    const db = this.database.getDatabase();
+    const now = new Date().toISOString();
+    const stmt = db.prepare(`
+      UPDATE ledgers
+      SET mailing_json = @mailingJson, contact_json = @contactJson, gst_json = @gstJson, updated_at = @updatedAt
+      WHERE company_id = @companyId AND ledger_id = @ledgerId
+    `);
+
+    let updated = 0;
+    const writeAll = (): void => {
+      for (const patch of patches) {
+        const result = stmt.run({
+          companyId,
+          ledgerId: patch.ledgerId,
+          mailingJson: patch.mailing ? JSON.stringify(patch.mailing) : null,
+          contactJson: patch.contact ? JSON.stringify(patch.contact) : null,
+          gstJson: patch.gst ? JSON.stringify(patch.gst) : null,
+          updatedAt: now,
+        });
+        if (result.changes > 0) updated += 1;
+      }
+    };
+
+    if (this.database.isInTransaction()) {
+      writeAll();
+    } else {
+      this.database.runInTransactionSync(writeAll);
+    }
+
+    return { updated, skipped: patches.length - updated };
   }
 
   softDelete(companyId: string, ledgerId: string): Promise<boolean> {

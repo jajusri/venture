@@ -5,6 +5,7 @@ import com.budcom.android.core.util.AliasSearchClassifier
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.core.util.PhoneNumberNormalizer
 import com.budcom.android.core.util.TimeProvider
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
 import com.budcom.android.feature.masterdata.ledger.domain.port.SearchLedgersPort
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
@@ -29,6 +30,7 @@ import com.budcom.android.feature.party.data.local.TagEntity
 import com.budcom.android.feature.party.data.local.asColumn
 import com.budcom.android.feature.party.data.local.toDomain
 import com.budcom.android.feature.party.data.local.toFieldProvenanceState
+import com.budcom.android.feature.party.domain.model.BulkContactSeedResult
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
 import com.budcom.android.feature.party.domain.model.IssueActivitySummary
@@ -59,6 +61,8 @@ import javax.inject.Singleton
 
 private const val SOURCE_TYPE_TALLY_LEDGER = "tally_ledger"
 private const val GUID_PREFIX = "guid:"
+
+private enum class ContactFieldSeedOutcome { Filled, Confirmed, Conflicted, Skipped }
 
 @Singleton
 class PartyRepositoryImpl @Inject constructor(
@@ -231,6 +235,123 @@ class PartyRepositoryImpl @Inject constructor(
             }
             reconcileOne(companyId, seed)
         }
+    }
+
+    /**
+     * Field-generic version of [applyAliasPhoneSeeding]'s exact fill-if-empty/re-confirm-if-same/
+     * flag-conflict-if-different-and-leave-untouched pattern, applied across every ledger fetched
+     * in one bulk contact-details pass. Uses [canonicalizeForComparison] for equality (unlike
+     * phone, email/state/GSTIN legitimately vary in case/formatting between Tally and BUDCOM
+     * without being a real conflict).
+     */
+    override suspend fun applyLedgerContactDetailsBulk(
+        companyId: String,
+        items: List<LedgerContactDetails>,
+    ): BulkContactSeedResult = withContext(dispatchers.io) {
+        val partyIdByLedgerId = sourceLinkDao.findAllForCompany(companyId)
+            .filter { it.sourceType == SOURCE_TYPE_TALLY_LEDGER }
+            .associate { it.externalEntityId to it.partyId }
+
+        var matched = 0
+        var unmatched = 0
+        var filled = 0
+        var confirmed = 0
+        var conflicted = 0
+
+        items.forEach { item ->
+            val partyId = partyIdByLedgerId[item.ledgerId]
+            if (partyId == null) {
+                unmatched++
+                return@forEach
+            }
+            matched++
+            val now = timeProvider.nowEpochMillis()
+            val fieldsToSeed = listOf(
+                PartyFieldNames.PRIMARY_EMAIL to item.email,
+                PartyFieldNames.ADDRESS_LINE1 to item.address,
+                PartyFieldNames.ADDRESS_STATE to item.state,
+                PartyFieldNames.ADDRESS_PINCODE to item.pincode,
+                PartyFieldNames.GSTIN to item.gstin,
+            )
+            fieldsToSeed.forEach { (fieldName, tallyValue) ->
+                when (applyContactFieldSeed(companyId, partyId, fieldName, tallyValue, now)) {
+                    ContactFieldSeedOutcome.Filled -> filled++
+                    ContactFieldSeedOutcome.Confirmed -> confirmed++
+                    ContactFieldSeedOutcome.Conflicted -> conflicted++
+                    ContactFieldSeedOutcome.Skipped -> Unit
+                }
+            }
+        }
+
+        BulkContactSeedResult(
+            matchedLedgers = matched,
+            unmatchedLedgers = unmatched,
+            fieldsFilled = filled,
+            fieldsConfirmed = confirmed,
+            fieldsConflicted = conflicted,
+        )
+    }
+
+    private suspend fun applyContactFieldSeed(
+        companyId: String,
+        partyId: String,
+        fieldName: String,
+        tallyValue: String?,
+        now: Long,
+    ): ContactFieldSeedOutcome {
+        if (tallyValue.isNullOrBlank()) return ContactFieldSeedOutcome.Skipped
+        val party = partyDao.findById(companyId, partyId) ?: return ContactFieldSeedOutcome.Skipped
+        val currentValue = party.currentValueFor(fieldName)
+        val existing = fieldProvenanceDao.findField(companyId, partyId, fieldName)
+
+        return when {
+            currentValue.isNullOrBlank() -> {
+                fieldProvenanceDao.upsert(
+                    baseProvenance(existing, companyId, partyId, fieldName).copy(
+                        state = FieldProvenanceState.ConfirmedFromTally.asColumn(),
+                        tallyValue = tallyValue,
+                        lastConfirmedAt = now,
+                        updatedAt = now,
+                    ),
+                )
+                applyEffectiveFieldValue(companyId, partyId, fieldName, tallyValue, now)
+                ContactFieldSeedOutcome.Filled
+            }
+
+            canonicalizeForComparison(fieldName, currentValue) == canonicalizeForComparison(fieldName, tallyValue) -> {
+                fieldProvenanceDao.upsert(
+                    baseProvenance(existing, companyId, partyId, fieldName).copy(
+                        state = FieldProvenanceState.ConfirmedFromTally.asColumn(),
+                        tallyValue = tallyValue,
+                        lastConfirmedAt = now,
+                        updatedAt = now,
+                    ),
+                )
+                ContactFieldSeedOutcome.Confirmed
+            }
+
+            else -> {
+                // A different value is already effective -- never overwrite silently, matching
+                // applyAliasPhoneSeeding's own rule.
+                fieldProvenanceDao.upsert(
+                    baseProvenance(existing, companyId, partyId, fieldName).copy(
+                        state = FieldProvenanceState.Conflict.asColumn(),
+                        tallyValue = tallyValue,
+                        updatedAt = now,
+                    ),
+                )
+                ContactFieldSeedOutcome.Conflicted
+            }
+        }
+    }
+
+    private fun PartyEntity.currentValueFor(fieldName: String): String? = when (fieldName) {
+        PartyFieldNames.PRIMARY_EMAIL -> primaryEmail
+        PartyFieldNames.ADDRESS_LINE1 -> addressLine1
+        PartyFieldNames.ADDRESS_STATE -> addressState
+        PartyFieldNames.ADDRESS_PINCODE -> addressPincode
+        PartyFieldNames.GSTIN -> gstin
+        else -> null
     }
 
     private suspend fun reconcileOne(companyId: String, seed: EligibleLedgerSeed): Party {

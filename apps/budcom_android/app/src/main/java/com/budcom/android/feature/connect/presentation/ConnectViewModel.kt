@@ -3,17 +3,22 @@ package com.budcom.android.feature.connect.presentation
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.core.util.PhoneNumberNormalizer
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
+import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerBulkContactDetailPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
+import com.budcom.android.feature.masterdata.presentation.displayMessage
+import com.budcom.android.feature.masterdata.presentation.toMasterDataUiError
 import com.budcom.android.feature.party.domain.model.Party
 import com.budcom.android.feature.party.domain.model.PartyPage
 import com.budcom.android.feature.party.domain.model.PartySourceLink
 import com.budcom.android.feature.party.domain.model.Tag
+import com.budcom.android.feature.party.domain.usecase.ApplyLedgerContactDetailsBulkUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartySourceLinksForCompanyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartyTagsForCompanyUseCase
 import com.budcom.android.feature.party.domain.usecase.ListPartiesByClassificationUseCase
@@ -55,6 +60,8 @@ class ConnectViewModel @Inject constructor(
     private val getPartySourceLinksForCompany: GetPartySourceLinksForCompanyUseCase,
     private val getPartyTagsForCompany: GetPartyTagsForCompanyUseCase,
     private val ledgerSnapshotPort: LedgerSnapshotPort,
+    private val ledgerBulkContactDetailPort: LedgerBulkContactDetailPort,
+    private val applyLedgerContactDetailsBulk: ApplyLedgerContactDetailsBulkUseCase,
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
 ) : ViewModel() {
@@ -181,6 +188,34 @@ class ConnectViewModel @Inject constructor(
                     _effects.tryEmit(ConnectEffect.ShowMessage("No phone number available."))
                 } else {
                     _effects.tryEmit(ConnectEffect.LaunchWhatsApp(phone))
+                }
+            }
+            ConnectEvent.FetchContactDetailsTapped -> fetchContactDetailsBulk()
+        }
+    }
+
+    private fun fetchContactDetailsBulk() {
+        val companyId = _uiState.value.companyId ?: return
+        if (_uiState.value.isFetchingContactDetails) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isFetchingContactDetails = true) }
+            when (val result = ledgerBulkContactDetailPort.fetchContactDetailsBulk()) {
+                is AppResult.Success -> {
+                    val seed = applyLedgerContactDetailsBulk(companyId, result.value.items)
+                    _uiState.update { it.copy(isFetchingContactDetails = false) }
+                    _effects.tryEmit(
+                        ConnectEffect.ShowMessage(
+                            "Fetched contact details for ${result.value.ledgerCount} ledgers: " +
+                                "${seed.fieldsFilled} filled, ${seed.fieldsConfirmed} confirmed, " +
+                                "${seed.fieldsConflicted} need review.",
+                        ),
+                    )
+                    load(page = 1, append = false, refreshing = true, forceEnrichmentRefresh = true, source = "FetchContactDetails")
+                }
+                is AppResult.Failure -> {
+                    val uiError = result.error.toMasterDataUiError()
+                    _uiState.update { it.copy(isFetchingContactDetails = false) }
+                    _effects.tryEmit(ConnectEffect.ShowMessage("Could not reach the Connector: ${uiError.displayMessage()}"))
                 }
             }
         }

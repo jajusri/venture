@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AppError, ErrorCodes } from '../../src/infrastructure/errors/app-error.js';
 import { createLogger } from '../../src/infrastructure/logging/logger.js';
@@ -30,6 +30,7 @@ function buildReadPort(readLedgers: ErpReadPort['readLedgers'], readStockItems: 
     getGroups: vi.fn(),
     getCompanyInfo: vi.fn(),
     readLedgerGroups: vi.fn(),
+    readLedgerContactDetails: vi.fn(),
     readLedgers,
     readStockGroups: vi.fn(),
     readStockCategories: vi.fn(),

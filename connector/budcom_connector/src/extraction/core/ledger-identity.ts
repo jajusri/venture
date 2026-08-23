@@ -36,6 +36,33 @@ export const LEDGER_RICH_FETCH_FIELDS = [
   'ISBILLWISEON',
 ] as const;
 
+/**
+ * Deliberately separate, additive Fetch list for the manually-triggered bulk contact-details
+ * action (Connect address/email/GSTIN auto-population). Never merged into
+ * `LEDGER_RICH_FETCH_FIELDS` -- the routine Ledgers sync's request shape must stay unchanged.
+ * `NAME`/`GUID`/`MASTERID` are required for identity resolution; the rest are exactly the tags
+ * `mapLedger()` (`entity-mappers.ts`) already parses into `mailing`/`contact`/`gst`, but which the
+ * routine export has never requested -- same root cause as TD-042's Alias gap above, for a
+ * different field set.
+ */
+export const LEDGER_CONTACT_FETCH_FIELDS = [
+  'NAME',
+  'GUID',
+  'MASTERID',
+  'MAILINGNAME',
+  'ADDRESS',
+  'STATENAME',
+  'COUNTRYNAME',
+  'PINCODE',
+  'EMAIL',
+  'PHONENUMBER',
+  'MOBILENUMBER',
+  'PARTYGSTIN',
+  'GSTIN',
+  'GSTREGISTRATIONTYPE',
+  'APPLICABLEFROM',
+] as const;
+
 export function normalizeLedgerGuid(value: string): string {
   return value.trim().toLowerCase();
 }

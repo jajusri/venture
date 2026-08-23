@@ -9,7 +9,7 @@ import {
   VOUCHER_COLLECTION_MAX_RESPONSE_BYTES,
   toPolicyOperation,
 } from '../../../src/tally/registry/operation-registry.js';
-import { LEDGER_RICH_FETCH_FIELDS } from '../../../src/extraction/core/ledger-identity.js';
+import { LEDGER_CONTACT_FETCH_FIELDS, LEDGER_RICH_FETCH_FIELDS } from '../../../src/extraction/core/ledger-identity.js';
 import { isForbiddenOperation } from '../../../src/tally/registry/forbidden-registry.js';
 import { decidePolicy } from '../../../src/erp/policy/policy-engine.js';
 
@@ -43,6 +43,35 @@ describe('operation registry', () => {
     });
     expect(spec.collectionModifyFetch).toEqual([...LEDGER_RICH_FETCH_FIELDS]);
     expect(spec.id).toBe('List of Ledgers');
+  });
+
+  it('disables LEDGERS_CONTACT_DETAILS until its Fetch list is live-validated (render throws)', () => {
+    const op = getApprovedOperation(ApprovedOperationId.LedgersContactDetails);
+    expect(op.classification).toBe('EXPERIMENTAL_DISABLED');
+    expect(op.rolloutStatus).toBe('disabled');
+    expect(op.tallyId).toBe('List of Ledgers');
+    expect(() => op.render({ companyName: 'ESTIMATION' })).toThrow(/LEDGERS_CONTACT_DETAILS is disabled/);
+  });
+
+  it(
+    'documents that findApprovedOperationByRequest resolves the shared "List of Ledgers" tallyId ' +
+      'to the pre-existing LEDGERS entry, not LEDGERS_CONTACT_DETAILS -- so that operation\'s own ' +
+      'classification/rolloutStatus cannot gate this request shape at the transport chokepoint',
+    () => {
+      const resolved = findApprovedOperationByRequest('COLLECTION', 'List of Ledgers');
+      expect(resolved?.operationId).toBe(ApprovedOperationId.Ledgers);
+      expect(resolved?.operationId).not.toBe(ApprovedOperationId.LedgersContactDetails);
+    },
+  );
+
+  it('would enrich ledger contact details via the same additive Fetch list once enabled', () => {
+    // LEDGERS_CONTACT_DETAILS.render() throws until live-validated (see above), so this exercises
+    // the underlying template directly -- confirms the intended Fetch list shape without sending
+    // anything to Tally.
+    expect([...LEDGER_CONTACT_FETCH_FIELDS]).toEqual(
+      expect.arrayContaining(['MAILINGNAME', 'ADDRESS', 'EMAIL', 'MOBILENUMBER', 'PARTYGSTIN']),
+    );
+    expect(LEDGER_CONTACT_FETCH_FIELDS).not.toEqual(LEDGER_RICH_FETCH_FIELDS);
   });
 
   it('uses the shared rich master response cap for ledgers and stock items', () => {

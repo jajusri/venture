@@ -7,11 +7,16 @@ import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.masterdata.ledger.domain.model.AmountSide
 import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetailsBulkResult
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerDataQuality
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerStatus
 import com.budcom.android.feature.masterdata.ledger.domain.model.MoneyAmount
+import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerBulkContactDetailPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
+import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.feature.party.domain.model.BulkContactSeedResult
 import com.budcom.android.feature.party.domain.model.EligibleLedgerSeed
 import com.budcom.android.feature.party.domain.model.FieldProvenanceState
 import com.budcom.android.feature.party.domain.model.Party
@@ -24,6 +29,7 @@ import com.budcom.android.feature.party.domain.model.PartySourceType
 import com.budcom.android.feature.party.domain.model.LedgerIdentitySource
 import com.budcom.android.feature.party.domain.model.Tag
 import com.budcom.android.feature.party.domain.repository.PartyRepository
+import com.budcom.android.feature.party.domain.usecase.ApplyLedgerContactDetailsBulkUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartySourceLinksForCompanyUseCase
 import com.budcom.android.feature.party.domain.usecase.GetPartyTagsForCompanyUseCase
 import com.budcom.android.feature.party.domain.usecase.ListPartiesByClassificationUseCase
@@ -107,6 +113,7 @@ class ConnectViewModelTest {
     private fun createViewModel(
         repository: FakePartyRepository = FakePartyRepository(),
         ledgerSnapshotPort: FakeLedgerSnapshotPort = FakeLedgerSnapshotPort(),
+        ledgerBulkContactDetailPort: LedgerBulkContactDetailPort = FakeLedgerBulkContactDetailPort(),
         company: FakeCompanySession = FakeCompanySession("co-1"),
         connectivity: FakeConnectivity = FakeConnectivity(true),
         query: String = "",
@@ -117,6 +124,8 @@ class ConnectViewModelTest {
         getPartySourceLinksForCompany = GetPartySourceLinksForCompanyUseCase(repository),
         getPartyTagsForCompany = GetPartyTagsForCompanyUseCase(repository),
         ledgerSnapshotPort = ledgerSnapshotPort,
+        ledgerBulkContactDetailPort = ledgerBulkContactDetailPort,
+        applyLedgerContactDetailsBulk = ApplyLedgerContactDetailsBulkUseCase(repository),
         companySession = company,
         connectivityObserver = connectivity,
     )
@@ -420,6 +429,99 @@ class ConnectViewModelTest {
         assertTrue(vm.uiState.value.error != null)
         assertTrue(vm.uiState.value.rows.isEmpty())
     }
+
+    @Test
+    fun `fetch contact details success seeds Parties and shows a summary message`() = runTest(dispatcher) {
+        val repo = FakePartyRepository().apply {
+            contactDetailsSeedResult = BulkContactSeedResult(
+                matchedLedgers = 1,
+                unmatchedLedgers = 0,
+                fieldsFilled = 2,
+                fieldsConfirmed = 1,
+                fieldsConflicted = 1,
+            )
+        }
+        val port = FakeLedgerBulkContactDetailPort(
+            AppResult.Success(
+                LedgerContactDetailsBulkResult(
+                    items = listOf(
+                        LedgerContactDetails(
+                            ledgerId = "guid:abc",
+                            mobile = "9876543210",
+                            email = "accounts@acme.example",
+                            address = "123 MG Road",
+                            state = "Karnataka",
+                            pincode = "560001",
+                            gstin = "29AABCU9603R1ZM",
+                        ),
+                    ),
+                    ledgerCount = 1,
+                    durationMs = 5,
+                ),
+            ),
+        )
+        val vm = createViewModel(repository = repo, ledgerBulkContactDetailPort = port)
+        advanceUntilIdle()
+        var emitted: ConnectEffect? = null
+        val job = launch { vm.effects.collect { emitted = it } }
+        advanceUntilIdle()
+
+        vm.onEvent(ConnectEvent.FetchContactDetailsTapped)
+        advanceUntilIdle()
+
+        assertEquals(1, port.callCount)
+        assertEquals("guid:abc", repo.lastContactDetailsItems?.single()?.ledgerId)
+        assertFalse(vm.uiState.value.isFetchingContactDetails)
+        val message = (emitted as? ConnectEffect.ShowMessage)?.message
+        assertTrue(message?.contains("2 filled") == true)
+        assertTrue(message?.contains("1 confirmed") == true)
+        assertTrue(message?.contains("1 need review") == true)
+        job.cancel()
+    }
+
+    @Test
+    fun `fetch contact details failure shows a Connector-unreachable message and never crashes`() = runTest(dispatcher) {
+        val port = FakeLedgerBulkContactDetailPort(AppResult.Failure(AppError.Offline()))
+        val vm = createViewModel(ledgerBulkContactDetailPort = port)
+        advanceUntilIdle()
+        var emitted: ConnectEffect? = null
+        val job = launch { vm.effects.collect { emitted = it } }
+        advanceUntilIdle()
+
+        vm.onEvent(ConnectEvent.FetchContactDetailsTapped)
+        advanceUntilIdle()
+
+        assertFalse(vm.uiState.value.isFetchingContactDetails)
+        val message = (emitted as? ConnectEffect.ShowMessage)?.message
+        assertTrue(message?.contains("Could not reach the Connector") == true)
+        job.cancel()
+    }
+
+    @Test
+    fun `fetch contact details is a no-op while a fetch is already in flight`() = runTest(dispatcher) {
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var callCount = 0
+        val port = object : LedgerBulkContactDetailPort {
+            override suspend fun fetchContactDetailsBulk(): AppResult<LedgerContactDetailsBulkResult> {
+                callCount++
+                gate.await()
+                return AppResult.Success(LedgerContactDetailsBulkResult(emptyList(), 0, 0))
+            }
+        }
+        val vm = createViewModel(ledgerBulkContactDetailPort = port)
+        advanceUntilIdle()
+
+        vm.onEvent(ConnectEvent.FetchContactDetailsTapped)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.isFetchingContactDetails)
+
+        vm.onEvent(ConnectEvent.FetchContactDetailsTapped)
+        advanceUntilIdle()
+
+        assertEquals(1, callCount)
+        gate.complete(Unit)
+        advanceUntilIdle()
+    }
 }
 
 private class FakePartyRepository : PartyRepository {
@@ -428,6 +530,8 @@ private class FakePartyRepository : PartyRepository {
     val sourceLinks = mutableMapOf<String, List<PartySourceLink>>()
     val tagsByCompany = mutableMapOf<String, Map<String, List<Tag>>>()
     val searchClassificationsSeen = mutableListOf<PartyClassification?>()
+    var contactDetailsSeedResult = BulkContactSeedResult(0, 0, 0, 0, 0)
+    var lastContactDetailsItems: List<LedgerContactDetails>? = null
 
     override suspend fun getPartyById(companyId: String, partyId: String): Party? = null
     override suspend fun getPartyForLedger(companyId: String, ledgerId: String): Party? = null
@@ -464,6 +568,14 @@ private class FakePartyRepository : PartyRepository {
     override suspend fun confirmFieldFromTally(companyId: String, partyId: String, fieldName: String, tallyValue: String?) =
         FieldProvenanceState.ConfirmedFromTally
     override suspend fun reconcilePartiesFromEligibleLedgers(companyId: String, seeds: List<EligibleLedgerSeed>): List<Party> = emptyList()
+
+    override suspend fun applyLedgerContactDetailsBulk(
+        companyId: String,
+        items: List<LedgerContactDetails>,
+    ): BulkContactSeedResult {
+        lastContactDetailsItems = items
+        return contactDetailsSeedResult
+    }
 
     override suspend fun createProspect(
         companyId: String,
@@ -554,6 +666,23 @@ private class FakePartyRepository : PartyRepository {
 
 private class FakeLedgerSnapshotPort(private val byCompany: Map<String, List<Ledger>> = emptyMap()) : LedgerSnapshotPort {
     override suspend fun getCachedLedgers(companyId: String): List<Ledger> = byCompany[companyId].orEmpty()
+}
+
+private class FakeLedgerBulkContactDetailPort(
+    private var result: AppResult<LedgerContactDetailsBulkResult> =
+        AppResult.Success(LedgerContactDetailsBulkResult(items = emptyList(), ledgerCount = 0, durationMs = 0)),
+) : LedgerBulkContactDetailPort {
+    var callCount = 0
+        private set
+
+    fun setResult(newResult: AppResult<LedgerContactDetailsBulkResult>) {
+        result = newResult
+    }
+
+    override suspend fun fetchContactDetailsBulk(): AppResult<LedgerContactDetailsBulkResult> {
+        callCount++
+        return result
+    }
 }
 
 private class FakeCompanySession(initial: String?) : CompanySessionPort {

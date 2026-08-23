@@ -7,10 +7,12 @@ import com.budcom.android.feature.masterdata.ledger.data.remote.DefaultAuthentic
 import com.budcom.android.feature.masterdata.ledger.data.remote.DefaultLedgerRemoteDataSource
 import com.budcom.android.feature.masterdata.ledger.data.remote.LedgerApi
 import com.budcom.android.feature.masterdata.ledger.data.remote.LedgerRemoteDataSource
+import com.budcom.android.feature.masterdata.ledger.data.repository.LedgerBulkContactDetailPortImpl
 import com.budcom.android.feature.masterdata.ledger.data.repository.LedgerLiveDetailPortImpl
 import com.budcom.android.feature.masterdata.ledger.data.repository.LedgerRepositoryImpl
 import com.budcom.android.feature.masterdata.ledger.data.repository.LedgerSnapshotPortImpl
 import com.budcom.android.feature.masterdata.ledger.data.repository.SearchLedgersPortImpl
+import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerBulkContactDetailPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerLiveDetailPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.LedgerSnapshotPort
 import com.budcom.android.feature.masterdata.ledger.domain.port.SearchLedgersPort
@@ -68,6 +70,12 @@ abstract class LedgerBindModule {
     abstract fun bindLedgerLiveDetailPort(
         impl: LedgerLiveDetailPortImpl,
     ): LedgerLiveDetailPort
+
+    @Binds
+    @Singleton
+    abstract fun bindLedgerBulkContactDetailPort(
+        impl: LedgerBulkContactDetailPortImpl,
+    ): LedgerBulkContactDetailPort
 }
 
 @Module

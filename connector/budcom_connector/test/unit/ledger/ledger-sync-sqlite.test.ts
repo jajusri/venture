@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ErpReadPort } from '../../../src/erp/ports/erp-read-port.js';
 import { createLogger } from '../../../src/infrastructure/logging/logger.js';
@@ -21,6 +21,7 @@ describe('LedgerSyncServiceImpl (SQLite)', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(async () => ({
         items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
@@ -65,6 +66,7 @@ describe('LedgerSyncServiceImpl (SQLite)', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(async () => ({
         items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,

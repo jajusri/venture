@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ErpReadPort } from '../../../src/erp/ports/erp-read-port.js';
 import { createLogger } from '../../../src/infrastructure/logging/logger.js';
@@ -28,6 +28,7 @@ describe('LedgerSyncServiceImpl', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(async () => ({
         items: [
           sampleNormalizedLedger({
@@ -84,6 +85,7 @@ describe('LedgerSyncServiceImpl', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(async () => ({
         items: Array.from({ length: 3 }, (_, index) =>
           sampleNormalizedLedger({
@@ -133,6 +135,7 @@ describe('LedgerSyncServiceImpl', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(),
       readStockGroups: vi.fn(),
       readStockCategories: vi.fn(),
@@ -216,6 +219,7 @@ describe('LedgerSyncServiceImpl', () => {
         getGroups: vi.fn(),
         getCompanyInfo: vi.fn(),
         readLedgerGroups: vi.fn(),
+        readLedgerContactDetails: vi.fn(),
         readLedgers: vi.fn(async (companyName: string) => {
           if (companyName === 'company-a') {
             await companyAGate;
@@ -312,6 +316,7 @@ describe('LedgerSyncServiceImpl', () => {
         getGroups: vi.fn(),
         getCompanyInfo: vi.fn(),
         readLedgerGroups: vi.fn(),
+        readLedgerContactDetails: vi.fn(),
         readLedgers: vi.fn(async () => ({
           items: [
             sampleNormalizedLedger({
@@ -367,5 +372,118 @@ describe('LedgerSyncServiceImpl', () => {
       expect(statsA.totalLedgers).toBe(1);
       expect(statsB.totalLedgers).toBe(1);
     });
+  });
+});
+
+describe('LedgerSyncServiceImpl.fetchLedgerContactDetailsBulk', () => {
+  it('fetches mailing/contact/gst for every ledger in one call and patches only matching rows', async () => {
+    const { storage, basePath } = await createTestSqliteStorage();
+    const readPort: ErpReadPort = {
+      isReady: () => true,
+      discoverCompanies: vi.fn(),
+      getGroups: vi.fn(),
+      getCompanyInfo: vi.fn(),
+      readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(async () => ({
+        items: [
+          sampleNormalizedLedger({
+            id: 'acme',
+            name: 'Acme Corp',
+            normalizedName: 'acme corp',
+            email: 'accounts@acme.example',
+            mobile: '9876543210',
+            gstin: '29AABCU9603R1ZM',
+          }),
+        ],
+        durationMs: 5,
+        rawByteLength: 200,
+      })),
+      readLedgers: vi.fn(async () => ({
+        items: [sampleNormalizedLedger({ id: 'acme', name: 'Acme Corp', normalizedName: 'acme corp' })],
+        durationMs: 1,
+        rawByteLength: 100,
+      })),
+      readStockGroups: vi.fn(),
+      readStockCategories: vi.fn(),
+      readStockItems: vi.fn(),
+      readGodowns: vi.fn(),
+      readCostCategories: vi.fn(),
+      readCostCentres: vi.fn(),
+      readVoucherTypes: vi.fn(),
+      readGstRegistrations: vi.fn(),
+      getReadDiagnostics: vi.fn(() => []),
+    };
+    const companyResolver = {
+      resolveName: vi.fn(async () => 'Demo Company'),
+    } as unknown as CompanyResolver;
+    const service = new LedgerSyncServiceImpl(
+      createTestConnectorConfig(basePath),
+      readPort,
+      companyResolver,
+      createPermissiveSessionMock(),
+      createLogger({ service: 'test', level: 'error' }),
+      storage,
+    );
+    await service.start();
+
+    // Routine Ledgers sync runs first -- the row must already exist for the bulk contact-details
+    // patch (a narrow UPDATE, never an INSERT) to take effect.
+    await service.syncLedgers();
+
+    const result = await service.fetchLedgerContactDetailsBulk();
+
+    expect(result.ledgerCount).toBe(1);
+    expect(result.updatedCount).toBe(1);
+    expect(result.skippedCount).toBe(0);
+    expect(result.items[0]).toMatchObject({ ledgerId: 'acme', email: 'accounts@acme.example', gstin: '29AABCU9603R1ZM' });
+
+    const ledger = await service.getLedgerById('acme');
+    expect(ledger?.contact).toEqual({ email: 'accounts@acme.example', mobile: '9876543210' });
+    expect(ledger?.gst).toEqual({ gstin: '29AABCU9603R1ZM' });
+    // Name/identity untouched by the contact-only patch.
+    expect(ledger?.name).toBe('Acme Corp');
+
+    expect(readPort.readLedgerContactDetails).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not run reconciliation/sync-run/scheduler machinery -- a plain request/response call', async () => {
+    const { storage, basePath } = await createTestSqliteStorage();
+    const readPort: ErpReadPort = {
+      isReady: () => true,
+      discoverCompanies: vi.fn(),
+      getGroups: vi.fn(),
+      getCompanyInfo: vi.fn(),
+      readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(async () => ({ items: [], durationMs: 1, rawByteLength: 1 })),
+      readLedgers: vi.fn(async () => ({ items: [], durationMs: 1, rawByteLength: 1 })),
+      readStockGroups: vi.fn(),
+      readStockCategories: vi.fn(),
+      readStockItems: vi.fn(),
+      readGodowns: vi.fn(),
+      readCostCategories: vi.fn(),
+      readCostCentres: vi.fn(),
+      readVoucherTypes: vi.fn(),
+      readGstRegistrations: vi.fn(),
+      getReadDiagnostics: vi.fn(() => []),
+    };
+    const companyResolver = {
+      resolveName: vi.fn(async () => 'Demo Company'),
+    } as unknown as CompanyResolver;
+    const service = new LedgerSyncServiceImpl(
+      createTestConnectorConfig(basePath),
+      readPort,
+      companyResolver,
+      createPermissiveSessionMock(),
+      createLogger({ service: 'test', level: 'error' }),
+      storage,
+    );
+    await service.start();
+
+    const result = await service.fetchLedgerContactDetailsBulk();
+
+    expect(result.ledgerCount).toBe(0);
+    // No sync run was ever created for this action -- confirms it's outside syncLedgers' run-tracking.
+    expect(await service.listSyncRuns()).toHaveLength(0);
+    expect((await service.getSyncProgress()).status).toBe('idle');
   });
 });

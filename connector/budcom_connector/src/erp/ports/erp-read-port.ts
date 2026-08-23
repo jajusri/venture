@@ -51,6 +51,12 @@ export interface ErpReadPort {
 
   readLedgerGroups(companyName: string): Promise<ExtractionResult<NormalizedLedgerGroup>>;
   readLedgers(companyName: string, options?: ErpReadOptions): Promise<ExtractionResult<NormalizedLedger>>;
+  /**
+   * Manually-triggered, bulk, all-ledgers-in-one-call read of mailing/contact/GST fields only
+   * (Connect address/email/GSTIN auto-population). Deliberately separate from {@link readLedgers}
+   * -- never part of the routine sync cycle.
+   */
+  readLedgerContactDetails(companyName: string, options?: ErpReadOptions): Promise<ExtractionResult<NormalizedLedger>>;
   readStockGroups(companyName: string): Promise<ExtractionResult<NormalizedStockGroup>>;
   readStockCategories(companyName: string): Promise<ExtractionResult<NormalizedStockCategory>>;
   readStockItems(companyName: string, options?: ErpReadOptions): Promise<ExtractionResult<NormalizedStockItem>>;

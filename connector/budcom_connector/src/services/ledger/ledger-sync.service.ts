@@ -8,6 +8,7 @@ import {
 import type { ServiceStatus } from '../../core/types.js';
 import type {
   LedgerChange,
+  LedgerContactDetailsBulkResult,
   LedgerDetails,
   LedgerSearchParams,
   LedgerSearchResult,
@@ -17,7 +18,12 @@ import type {
   LedgerSyncRunRecord,
   StorageStatus,
 } from '../../erp/ledger/ledger-domain.js';
-import { mapNormalizedLedgerToDomain } from '../../erp/ledger/ledger-mapper.js';
+import {
+  buildLedgerContact,
+  buildLedgerGst,
+  buildLedgerMailing,
+  mapNormalizedLedgerToDomain,
+} from '../../erp/ledger/ledger-mapper.js';
 import { assessLedgerExtraction } from '../../erp/ledger/ledger-extraction-quality.js';
 import { validateLedgerCollection } from '../../erp/ledger/ledger-validation.js';
 import {
@@ -75,6 +81,14 @@ export interface LedgerSyncService extends SyncEngineService {
   clearCache(): Promise<void>;
   runIntegrityCheck(): Promise<{ ok: boolean; message: string }>;
   createBackup(): Promise<{ ok: boolean; backupPath: string | null; message: string }>;
+  /**
+   * Manually-triggered, occasional bulk fetch of mailing/contact/GST fields for every ledger in
+   * one Tally round-trip (Connect address/email/GSTIN auto-population). Deliberately NOT part of
+   * `syncLedgers`/the sync-run/progress/scheduler machinery above -- a single synchronous
+   * request/response action, not a resumable batch sync. Entirely Party-agnostic; reconciling
+   * against BUDCOM Parties is the Android client's job.
+   */
+  fetchLedgerContactDetailsBulk(): Promise<LedgerContactDetailsBulkResult>;
 }
 
 export class LedgerSyncServiceImpl implements LedgerSyncService {
@@ -328,6 +342,39 @@ export class LedgerSyncServiceImpl implements LedgerSyncService {
   createBackup(): Promise<{ ok: boolean; backupPath: string | null; message: string }> {
     const backupDir = `${this.config.databasePath}/backups`;
     return Promise.resolve(this.storage.createBackup(backupDir));
+  }
+
+  async fetchLedgerContactDetailsBulk(): Promise<LedgerContactDetailsBulkResult> {
+    const companyId = await this.requireCompanyId();
+    const companyName = await this.companyResolver.resolveName(companyId);
+    const started = Date.now();
+
+    const extraction = await this.readPort.readLedgerContactDetails(companyName);
+
+    const patches = extraction.items.map((item) => ({
+      ledgerId: item.id,
+      mailing: buildLedgerMailing(item),
+      contact: buildLedgerContact(item),
+      gst: buildLedgerGst(item),
+    }));
+    const { updated, skipped } = await this.repository.updateContactDetailsMany(companyId, patches);
+
+    return {
+      requestedAt: new Date().toISOString(),
+      durationMs: Date.now() - started,
+      ledgerCount: extraction.items.length,
+      updatedCount: updated,
+      skippedCount: skipped,
+      items: extraction.items.map((item) => ({
+        ledgerId: item.id,
+        mobile: item.mobile,
+        email: item.email,
+        address: item.address,
+        state: item.state,
+        pincode: item.pincode,
+        gstin: item.gstin,
+      })),
+    };
   }
 
   async syncLedgers(options: { incremental?: boolean; maxAttempts?: number } = {}): Promise<LedgerSyncResult> {

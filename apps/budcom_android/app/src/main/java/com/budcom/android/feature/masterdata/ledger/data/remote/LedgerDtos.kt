@@ -91,3 +91,31 @@ data class LedgerGstDto(
     val registrationType: String? = null,
     val applicableFrom: String? = null,
 )
+
+/**
+ * Response envelope for `POST /sync/ledgers/contact-details` — the manually-triggered, occasional
+ * bulk fetch of mailing/contact/GST fields for every ledger in one Tally round-trip (Connect
+ * address/email/GSTIN auto-population). Deliberately separate from [LedgerDetailEnvelopeDto]
+ * above, which is one ledger at a time.
+ */
+@Serializable
+data class LedgerContactDetailsBulkResponseDto(
+    val schemaVersion: String? = null,
+    val requestedAt: String? = null,
+    val durationMs: Long = 0,
+    val ledgerCount: Int = 0,
+    val updatedCount: Int = 0,
+    val skippedCount: Int = 0,
+    val items: List<LedgerContactDetailsBulkItemDto> = emptyList(),
+)
+
+@Serializable
+data class LedgerContactDetailsBulkItemDto(
+    val ledgerId: String,
+    val mobile: String? = null,
+    val email: String? = null,
+    val address: String? = null,
+    val state: String? = null,
+    val pincode: String? = null,
+    val gstin: String? = null,
+)

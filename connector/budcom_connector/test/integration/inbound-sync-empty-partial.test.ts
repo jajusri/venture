@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { mapNormalizedLedgerToDomain } from '../../src/erp/ledger/ledger-mapper.js';
 import { mapNormalizedStockItemToDomain } from '../../src/erp/stock-item/stock-item-mapper.js';
@@ -31,6 +31,7 @@ function createReadPort(overrides: Partial<ErpReadPort> = {}): ErpReadPort {
     getGroups: vi.fn(),
     getCompanyInfo: vi.fn(),
     readLedgerGroups: vi.fn(),
+    readLedgerContactDetails: vi.fn(),
     readLedgers: vi.fn(async () => ({ items: [], durationMs: 1, rawByteLength: 1 })),
     readStockGroups: vi.fn(),
     readStockCategories: vi.fn(),

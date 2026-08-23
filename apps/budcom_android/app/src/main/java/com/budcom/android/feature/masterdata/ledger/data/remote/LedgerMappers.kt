@@ -4,6 +4,7 @@ import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.ledger.domain.model.AmountSide
 import com.budcom.android.feature.masterdata.ledger.domain.model.Ledger
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails
+import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetailsBulkResult
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerDataQuality
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerPage
 import com.budcom.android.feature.masterdata.ledger.domain.model.LedgerQuery
@@ -79,3 +80,20 @@ internal fun LedgerDetailDto.toContactDetails(): LedgerContactDetails = LedgerCo
     pincode = mailing?.pincode?.takeIf { it.isNotBlank() },
     gstin = gst?.gstin?.takeIf { it.isNotBlank() },
 )
+
+internal fun LedgerContactDetailsBulkItemDto.toDomain(): LedgerContactDetails = LedgerContactDetails(
+    ledgerId = ledgerId,
+    mobile = mobile?.takeIf { it.isNotBlank() },
+    email = email?.takeIf { it.isNotBlank() },
+    address = address?.takeIf { it.isNotBlank() },
+    state = state?.takeIf { it.isNotBlank() },
+    pincode = pincode?.takeIf { it.isNotBlank() },
+    gstin = gstin?.takeIf { it.isNotBlank() },
+)
+
+internal fun LedgerContactDetailsBulkResponseDto.toDomain(): LedgerContactDetailsBulkResult =
+    LedgerContactDetailsBulkResult(
+        items = items.map { it.toDomain() },
+        ledgerCount = ledgerCount,
+        durationMs = durationMs,
+    )

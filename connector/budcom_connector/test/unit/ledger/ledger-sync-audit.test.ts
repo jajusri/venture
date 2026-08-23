@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -31,6 +31,7 @@ describe('Ledger sync audit regressions', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(async () => ({
         items: [sampleNormalizedLedger({ name: 'Cash', normalizedName: 'cash' })],
         durationMs: 1,
@@ -84,6 +85,7 @@ describe('Ledger sync audit regressions', () => {
       getGroups: vi.fn(),
       getCompanyInfo: vi.fn(),
       readLedgerGroups: vi.fn(),
+      readLedgerContactDetails: vi.fn(),
       readLedgers: vi.fn(async () => ({ items: [], durationMs: 1, rawByteLength: 0 })),
       readStockGroups: vi.fn(),
       readStockCategories: vi.fn(),

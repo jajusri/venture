@@ -433,6 +433,11 @@ private class SyncVmFakePartyRepository : PartyRepository {
         return emptyList()
     }
 
+    override suspend fun applyLedgerContactDetailsBulk(
+        companyId: String,
+        items: List<com.budcom.android.feature.masterdata.ledger.domain.model.LedgerContactDetails>,
+    ): com.budcom.android.feature.party.domain.model.BulkContactSeedResult = error("unused")
+
     override suspend fun createProspect(
         companyId: String,
         draft: com.budcom.android.feature.party.domain.model.ProspectDraft,

@@ -54,6 +54,21 @@ describe('ledger API negative paths and isolation', () => {
     expect((await request(app).get('/ledgers')).status).toBe(400);
     expect((await request(app).get('/ledgers/name:missing')).status).toBe(400);
     expect((await request(app).post('/sync/ledgers').send({})).status).toBe(400);
+    expect((await request(app).post('/sync/ledgers/contact-details').send({})).status).toBe(400);
+  });
+
+  it('allows the bulk contact-details route through the read-only write-gate, but the still-disabled operation fails safely rather than reaching Tally', async () => {
+    const { app } = await setupLedgerApi({ selectCompanyId: 'estimation' });
+    const response = await request(app).post('/sync/ledgers/contact-details').send({});
+    // Not 405 READ_ONLY_VIOLATION -- confirms the route is correctly registered in
+    // ALLOWED_WRITE_ROUTES. Not 200 either -- LEDGERS_CONTACT_DETAILS.render() still throws
+    // until its Fetch list is live-validated (operation-registry.ts, TD-040-style gate); that
+    // throw surfaces as SERVICE_UNAVAILABLE (503) via the same extraction-failure error mapping
+    // every other master-data read uses, proving the safety gate is enforced end-to-end through
+    // the real route, not just at the unit level.
+    expect(response.status).not.toBe(405);
+    expect(response.status).toBe(503);
+    assertSafeErrorBody(response.body);
   });
 
   it('does not return another company ledger by id', async () => {

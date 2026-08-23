@@ -10,6 +10,7 @@ describe('MasterDataTemplates', () => {
   const entities = [
     ['ledgerGroups', MasterDataTemplates.ledgerGroups('ESTIMATION')],
     ['ledgers', MasterDataTemplates.ledgers('ESTIMATION')],
+    ['ledgersContactDetails', MasterDataTemplates.ledgersContactDetails('ESTIMATION')],
     ['stockGroups', MasterDataTemplates.stockGroups('ESTIMATION')],
     ['stockCategories', MasterDataTemplates.stockCategories('ESTIMATION')],
     ['stockItems', MasterDataTemplates.stockItems('ESTIMATION')],
@@ -43,6 +44,19 @@ describe('MasterDataTemplates', () => {
       'Fetch : NAME, GUID, ALTERID, MASTERID, ALIAS, PARENT, OPENINGBALANCE, CLOSINGBALANCE, ISBILLWISEON',
     );
     expect(xml).not.toContain('<DESC>List of Ledgers</DESC>');
+  });
+
+  it('builds the bulk contact-details fetch on the same collection as ledgers, with a separate additive FETCH list', () => {
+    const xml = builder.build(MasterDataTemplates.ledgersContactDetails('ESTIMATION'));
+    expect(xml).toContain('<COLLECTION NAME="List of Ledgers" ISMODIFY="Yes">');
+    expect(xml).toContain(
+      'Fetch : NAME, GUID, MASTERID, MAILINGNAME, ADDRESS, STATENAME, COUNTRYNAME, PINCODE, ' +
+        'EMAIL, PHONENUMBER, MOBILENUMBER, PARTYGSTIN, GSTIN, GSTREGISTRATIONTYPE, APPLICABLEFROM',
+    );
+    // Deliberately does NOT request the routine sync's own fields -- confirms the two Fetch lists
+    // stay independent rather than accidentally merging.
+    expect(xml).not.toMatch(/Fetch\s*:[^<]*\bALIAS\b/);
+    expect(xml).not.toMatch(/Fetch\s*:[^<]*\bOPENINGBALANCE\b/);
   });
 
   // TD-001 fix (2026-08-16): this exact "&#4;" shape -- observed live on ESTIMATION --

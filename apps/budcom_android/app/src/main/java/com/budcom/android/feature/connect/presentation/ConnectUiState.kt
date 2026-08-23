@@ -42,6 +42,11 @@ data class ConnectUiState(
      * only when no Ledger data has ever been cached for this company yet.
      */
     val dataFreshnessAt: String? = null,
+    /** True while the manually-triggered bulk contact-details fetch (address/email/GSTIN
+     * auto-population) is in flight -- see [ConnectEvent.FetchContactDetailsTapped]. Deliberately
+     * NOT part of [isBusy]/the initial-loading/refresh states below, since this is a distinct,
+     * user-initiated, occasional action, not part of the row-loading lifecycle. */
+    val isFetchingContactDetails: Boolean = false,
 ) {
     val isBusy: Boolean get() = isInitialLoading || isRefreshing || isLoadingMore
     val hasContent: Boolean get() = rows.isNotEmpty()
@@ -96,4 +101,8 @@ sealed interface ConnectEvent {
     data class ViewVouchersTapped(val ledgerName: String) : ConnectEvent
     data class CallTapped(val phoneE164: String?) : ConnectEvent
     data class WhatsAppTapped(val phoneE164: String?) : ConnectEvent
+    /** Manual, occasional bulk fetch of Tally mailing/contact/GST fields for every ledger, seeded
+     * into matching Parties' address/email/GSTIN -- see `LedgerBulkContactDetailPort`. Never
+     * triggered automatically. */
+    data object FetchContactDetailsTapped : ConnectEvent
 }

@@ -33,6 +33,7 @@ export const ApprovedOperationId = {
   CompanyInfo: 'COMPANY_INFO',
   LedgerGroups: 'LEDGER_GROUPS',
   Ledgers: 'LEDGERS',
+  LedgersContactDetails: 'LEDGERS_CONTACT_DETAILS',
   StockGroups: 'STOCK_GROUPS',
   StockCategories: 'STOCK_CATEGORIES',
   StockItems: 'STOCK_ITEMS',
@@ -252,6 +253,50 @@ const REGISTRY: Readonly<Record<ApprovedOperationId, ApprovedOperation>> = Objec
         throw new Error(`Operation for ${TallyMasterDataCollections.Ledgers} requires a company context`);
       }
       return MasterDataTemplates.ledgers(params.companyName);
+    },
+  },
+  [ApprovedOperationId.LedgersContactDetails]: {
+    operationId: ApprovedOperationId.LedgersContactDetails,
+    erpType: 'tally',
+    adapterVersion: ADAPTER_VERSION,
+    tallyEvidenceBuild: EVIDENCE_BUILD,
+    capability: TallyCapability.MasterRead,
+    tallyRequest: 'Export',
+    requestKind: 'Collection',
+    tallyId: TallyMasterDataCollections.Ledgers,
+    classification: 'EXPERIMENTAL_DISABLED',
+    risk: 'MEDIUM',
+    requiresCompany: true,
+    maxRequestBytes: 65_536,
+    maxResponseBytes: RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+    timeoutMs: 45_000,
+    autoApproveConditional: false,
+    evidenceSource: 'PENDING VALIDATION -- LEDGER_CONTACT_FETCH_FIELDS never sent to live Tally',
+    rolloutStatus: 'disabled',
+    // IMPORTANT: this operation shares `tallyId` ('List of Ledgers') with the already-VERIFIED_SAFE
+    // `Ledgers` operation above. `TallyRequestGuard.prepare()` resolves its policy decision via
+    // `findApprovedOperationByRequest(requestKind, tallyId)`, matching by (kind, tallyId) off the
+    // outgoing XML -- NOT by operationId. Since `Ledgers` is declared first and shares this exact
+    // (kind, tallyId) pair, the guard will always resolve THAT entry's policy for this request, not
+    // this one's `classification`/`rolloutStatus`. Those fields are therefore inert as a safety gate
+    // at the transport chokepoint for this specific operation -- documented here so a future reader
+    // doesn't assume flipping `rolloutStatus` to 'production' is what enables this feature.
+    //
+    // The real gate is this `render()` throwing, exactly like `CompanyInfo`'s TD-040 fix above --
+    // the difference is this is lower risk than TD-040 (same proven-safe Collection-Fetch-modify
+    // mechanism as `Ledgers`, already production-verified for 923 records; only the specific
+    // MAILINGNAME/ADDRESS/STATENAME/COUNTRYNAME/PINCODE/EMAIL/PHONENUMBER/MOBILENUMBER/PARTYGSTIN/
+    // GSTREGISTRATIONTYPE/APPLICABLEFROM Fetch tags are unvalidated against live Tally). Per the
+    // project's standing rule (BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md's Tally-request-safety
+    // section), do not remove this throw until that field list has been validated against Tally's
+    // own developer documentation or a disposable non-production instance, with real evidence
+    // recorded in `evidenceSource` above.
+    render: () => {
+      throw new Error(
+        'LEDGERS_CONTACT_DETAILS is disabled: LEDGER_CONTACT_FETCH_FIELDS has not yet been ' +
+          'validated against live Tally (see operation-registry.ts comment). Do not enable the ' +
+          '/sync/ledgers/contact-details route until validation evidence is recorded here.',
+      );
     },
   },
   [ApprovedOperationId.StockGroups]: masterCollection(
