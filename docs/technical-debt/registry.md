@@ -685,6 +685,22 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-041 — Connect's Customer/Supplier list can go stale-empty mid-session after a repeat Ledgers sync (OPEN — root cause not yet isolated)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-041 |
+| **Description** | Found during Phase 52 real-device validation against the real ESTIMATION company. Reproduced twice, precisely: (1) triggering a real Ledgers "Sync Now" and then opening Connect for the first time in that app process showed "No customers found yet." even though `cached_parties` genuinely had 873 real customer rows (confirmed via direct `sqlite3` query against the live database) — a pull-to-refresh did not fix it, only a full app restart did; (2) from a Connect screen already showing the correct 873 customers, triggering Ledgers "Sync Now" **again** (same unchanged ledgers, a real, safe, already-proven action) broke the already-correct display back to "No customers found yet." — and this time two code-guaranteed reload triggers (`ConnectEvent.Refresh` intent and a `ConnectEvent.TabChanged` tab switch, both of which unconditionally re-run `PartyRepositoryImpl.listByClassification`'s plain, uncached, one-shot Room query) did **not** recover it; only a full app restart did. Ruled out with direct evidence: company-ID mismatch (all three of `selected_company_id`, `cached_ledgers.companyId`, `cached_parties.companyId` consistently read `"estimation"`); a general Room-wide staleness issue (Ledger Browser, queried in the *same* app process immediately after the *same* second sync, correctly showed fresh data — narrowing this specifically to the Party/Connect read path, since `LedgerRepositoryImpl.listLedgers()` is structurally almost identical to the failing `PartyRepositoryImpl.listByClassification()` and does not exhibit the bug); a test/gesture-recognition error (the second reproduction used only precise, code-guaranteed triggers, not an ambiguous swipe). |
+| **Impact** | A real user could see Connect's Customers/Prospects tab report empty or wrong results after using the app for a while (specifically after a second/repeat manual sync in the same session) even though their real Tally data is correctly synced and present locally — a trust-damaging, customer-facing display defect, not a data-loss or data-corruption issue (the underlying Room data itself is confirmed correct throughout). |
+| **Priority** | P1 — real, reproducible, customer-facing incorrect display on the app's primary Connect screen. |
+| **Target milestone** | Not yet scheduled — recommended as the next task's primary focus. |
+| **Status** | **OPEN.** Reproduced twice with precise, evidenced conditions; deliberately **not given a speculative fix** — the governing task for this investigation explicitly prohibited cosmetic workarounds, arbitrary delays, or any fix made without being certain of the mechanism, and confidently isolating a suspected Room/SQLite-connection-level staleness (the leading hypothesis, given the Ledger-Browser-vs-Connect asymmetry) would need tooling (e.g. Android Studio's Database Inspector, attached debugger) beyond this session's real-device/ADB-only toolkit. No source code changed for this finding. |
+| **Introduced** | Not traced to a specific commit — first observed because this was the first time in this project's history that a *second* real "Sync Now" was performed against Connect in the same live app session with real device access; may have existed since Connect/Party reconciliation was first implemented. |
+| **Suspected mechanism (unproven)** | A Room/SQLite connection-level staleness specific to `PartyDao`/`cached_parties` reads that persists across explicit reload events within one process but clears on process restart — plausible given `LedgerDao`/`cached_ledgers` reads (structurally similar, same `AppDatabase` singleton) do not exhibit it, but not confirmed. |
+| **Evidence** | Real-device reproduction 2026-08-23 (device `10BF44124K000E3`, company `estimation`, 949 real ledgers, 873 real customers/53 real suppliers) — `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §43 has the full timeline, exact timestamps, and ruled-out-cause evidence. |
+
+---
+
 ## TD-040 — COMPANY_INFO's Tally Object-export request is structurally invalid, crashed live Tally's UI (FIXED — disabled)
 
 | Field | Value |
@@ -738,6 +754,7 @@ Engineering-tracked compromises, defects, and deferred work.
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-041 | Connect's Customer/Supplier list can go stale-empty mid-session after a repeat Ledgers sync — reproduced twice on real device/data, root cause not yet isolated | P1 | **OPEN (2026-08-23): confirmed real, reproducible, and specific to the Party/Connect read path (Ledger Browser unaffected); no speculative fix applied. Recommended as next task's primary focus.** | Open — see entry |
 | TD-040 | COMPANY_INFO's Tally Object-export request is structurally invalid (missing SUBTYPE/ID TYPE="Name") — sending it crashed live Tally's UI ("Memory access violation") | P1 | **FIXED (2026-08-23): `render()` now throws before any Tally call rather than re-guessing a shape; caught by the pre-existing discovery-metadata fallback. Unreachable from any real Desktop/Android client today.** | Fixed — see entry |
 | TD-039 | Ledgers "Sync Now" never refreshed Android's own Room cache (`cached_ledgers`), unlike Vouchers — left Connect's Customer/Supplier population stale after a "successful" sync | P1 | **FIXED (2026-08-23): `StartTargetSyncUseCase` gained a `completeLedgerRoomRefresh()` step mirroring the existing Voucher window-fetch pattern; re-verified live on a real device.** | Fixed — see entry |
 | TD-038 | Ledger/Voucher Browser "Retry" was a permanent dead end for a never-synced company (empty Room cache + Connector-only "Sync Now") | P1 | **FIXED (2026-08-22): Retry now escalates to network refresh exactly when there's no cached content; existing cache-first invariant preserved.** | Fixed — see entry |

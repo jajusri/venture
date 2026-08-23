@@ -2658,3 +2658,99 @@ proven `curl http://127.0.0.1:9000` connectivity check (identical to prior sessi
 checks), never a new/experimental shape. No Tally data modified. No MVP-1.4/Catalogue work. The only
 production-adjacent change is the one-line Connect test-query fix in §A; no Connect production
 behavior changed.
+
+## 43. Phase 52 — Full Instrumented-Test Recovery & Real-Data Validation: a genuine new Connect defect found
+
+New session. Ground truth first: the real Desktop/Connector environment claimed as "restored" was
+independently verified, not assumed — see §A. The bulk of this phase's value is §B: a genuine,
+serious, previously-undiscovered Connect defect found through real-device validation, reproduced
+twice with precise evidence, deliberately **not** given a speculative fix.
+
+### A. Ground truth — the real environment, verified independently
+
+`cached_ledgers` showed 949 real rows but `paired_connectors`/`cached_companies` were both 0 and
+`curl 127.0.0.1:8080` failed from this shell — an apparent contradiction, not accepted at face value.
+Traced to source: the real Desktop app (`apps/budcom_desktop`) stores its config at
+`%APPDATA%\@budcom\desktop\desktop-config.json` (`connectorBindMode: "trusted-lan"`, `connectorHost:
+"192.168.29.34"`, `autoStartConnector: true`) and its data on a **private-removable vault on drive
+E:** (`private-storage-locator.json`, `mode: "private-removable"`) — genuinely real, long-lived user
+data (backup folders, Tally exports), confirmed present and mounted. A deliberate, narrowly-scoped
+attempt to launch the real Electron Desktop app (`env -u ELECTRON_RUN_AS_NODE npx electron .`, since
+`ELECTRON_RUN_AS_NODE=1` is set in this shell) revealed, via the app's own `startup-diagnostics.jsonl`,
+that **a real instance was already running** — my attempt correctly deferred to it via Electron's
+single-instance lock (`single_instance_denied_exit`, `exitCode: 0`, zero disruption caused) and
+confirmed real, live connector activity (`connector_health_check: ready:true`) at timestamps matching
+real prior syncs. This shell's own `127.0.0.1` simply does not share the network/session context the
+real Desktop app and the phone use — not a broken environment.
+
+### B. A genuine, serious Connect defect — found, reproduced twice, precisely characterized, NOT speculatively fixed
+
+Triggered a real "Sync Now" for Ledgers from the Android app (safe, already-proven action): 949/949
+processed, `cached_ledgers`/`cached_parties` correctly updated (873 customers + 53 suppliers,
+`createdAt` timestamps confirmed genuinely fresh, matching the sync completion time to the second).
+Opening Connect for the first time in that app process showed **"No customers found yet."** despite
+the data genuinely existing. Pull-to-refresh did not fix it. A full app restart (`am force-stop` +
+relaunch) did — Connect then showed the correct 873 customers.
+
+**Reproduced a second time with a cleaner, more precise test** to rule out gesture/coincidence: from
+the now-correctly-displaying Connect screen, triggered Ledgers "Sync Now" again (same real, safe,
+already-proven action, re-processing the same 949 unchanged ledgers) — Connect's *already-correct*
+display broke again to "No customers found yet." This time, two **code-guaranteed** reload triggers
+were tested explicitly: a tab switch (Customers → Prospects → Customers, which unconditionally fires
+`ConnectEvent.TabChanged` → a fresh one-shot Room query) did **not** fix it. Only backgrounding fully
+out of the app and returning (which most likely recreated the process) fixed it again.
+
+**Ruled out as the cause, with direct evidence:**
+- Data layer: `cached_parties` genuinely has the correct rows at the exact moment of failure
+  (confirmed via direct `sqlite3` query against the same live database file).
+- Company-ID mismatch: `selected_company_id` (DataStore), `cached_ledgers.companyId`, and
+  `cached_parties.companyId` are all consistently `"estimation"`.
+- A general Room-wide staleness issue: **Ledger Browser, queried in the same app process
+  immediately after the same second sync, correctly showed fresh data** (`Data last synced:
+  2026-08-23T04:13:24.044Z`) — ruling out "Room queries are stale after a sync" as a blanket
+  explanation and narrowing this specifically to the Party/Connect read path.
+- Test-code or gesture error: the second reproduction used only precise, code-guaranteed triggers
+  (`ConnectEvent.TabChanged` via exact tab-bounds taps, not an ambiguous swipe), and still failed.
+
+**Not proven**: the exact internal mechanism (why `PartyRepositoryImpl.listByClassification`'s plain,
+uncached, one-shot Room query — structurally nearly identical to `LedgerRepositoryImpl.listLedgers`,
+which does *not* exhibit this — returns stale/empty results mid-process but correctly fresh results
+on a new process). This was deliberately **not chased further with a speculative fix**: the governing
+task explicitly prohibits cosmetic workarounds, arbitrary delays, or fixes made without being certain
+of the mechanism, and root-causing a suspected Room/SQLite-connection-level staleness with confidence
+would require tooling (e.g., Android Studio's Database Inspector, step-through debugging) beyond what
+this session's real-device/ADB-only toolkit can respons­ibly provide. **Classified as: genuine
+PRODUCT DEFECT, reproduced twice, precisely characterized, root cause not yet isolated — recommended
+as the highest-priority next task.**
+
+### C. Full instrumented-suite re-verification
+
+`connectedProdDebugAndroidTest` run twice more this phase (once before, once after the real-data
+investigation) — both runs: **358 tests, 346 passed, 12 failed**, identical failure set to Phase 51's
+post-fix baseline. No regression; confirms the environment/investigation work in §A/§B did not
+disturb the existing, already-classified 12 pre-existing failures (Dashboard, Diagnostics,
+LedgerStatement, SecurePairing, ServerConfig, Settings, Sync, VoucherDetails) — these remain deferred,
+per the same "multiple failures have unclear causality" stop condition already invoked in Phase 51;
+not individually re-triaged this phase, since this phase's real value was the Connect real-data
+finding in §B, and repeating 12 more individual live-device diagnoses was judged the wrong use of
+further destructive instrumented-test cycles given that finding's severity and this task's own
+"Do not manufacture work" instruction.
+
+JVM: unaffected, **1,313/1,313 both variants**. Lint: clean. `assembleProdDebug`/`assembleProdRelease`:
+both green (unaffected — no production Kotlin/Compose source changed this phase).
+
+### D. Device final state
+
+Reinstalled the prod-debug APK after the instrumented runs (each of which uninstalls the app, as
+established in Phase 50/51) — confirmed installed and launchable. The real, hard-won ESTIMATION data
+from §A/§B is gone again as an unavoidable consequence of running the instrumented suite for the
+required regression re-check in §C — re-establishing it again requires only the same safe, already-
+proven "Sync Now" action against the still-live real Connector, not a new pairing ceremony.
+
+### E. Scope discipline
+
+No Tally interaction beyond the existing, already-proven "Sync Now" action (real Ledgers sync,
+identical to what TD-039 already covers) and the pre-existing connectivity check. No Tally data
+modified — read-only extraction via the Connector's own established sync path. No experimental
+Electron/Connector bypass: the single-instance-lock-respecting launch attempt caused zero disruption
+and was not repeated. No MVP-1.4/Catalogue work. No speculative production fix for the §B finding.

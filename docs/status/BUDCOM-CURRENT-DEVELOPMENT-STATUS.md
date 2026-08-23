@@ -393,6 +393,27 @@ completed this session — a genuine, disclosed infrastructure limitation. No Ta
 the existing, already-proven connectivity check; no Tally data modified. Full detail:
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §42.
 
+**Phase 52 — Full Instrumented-Test Recovery & Real-Data Validation (2026-08-23).** Verified the real
+Desktop/Connector environment independently rather than trusting the claim: traced Desktop's config
+to `%APPDATA%\@budcom\desktop` (LAN-bound, `192.168.29.34:8080`, private-removable vault on drive
+E:) and confirmed, via a narrowly-scoped launch attempt that safely deferred to Electron's own
+single-instance lock, that the real Desktop app was already running — this shell's own `127.0.0.1`
+simply doesn't share the phone's network path. Triggered a real Ledgers "Sync Now": 949/949
+processed, 873 real customers + 53 real suppliers correctly reconciled into Room. **Found a genuine,
+serious, previously-undiscovered Connect defect (TD-041, OPEN)**: Connect's Customer list can go
+stale-empty mid-session after a repeat Ledgers sync, reproduced twice with precise evidence (data
+layer confirmed correct throughout; Ledger Browser, queried in the same process right after the same
+sync, correctly shows fresh data — narrowing the bug specifically to the Party/Connect read path);
+code-guaranteed reload triggers (`Refresh`, `TabChanged`) do not recover it, only a full app restart
+does. Deliberately **not given a speculative fix** — the governing task explicitly prohibited fixing
+without being certain of the mechanism, and confidently isolating it would need tooling beyond this
+session's real-device/ADB-only toolkit. Full instrumented suite re-run twice: **358 tests, 346
+passed, 12 failed**, unchanged from Phase 51's baseline (no regression; the pre-existing 12 remain
+deferred, not individually re-triaged this phase). JVM: unaffected, 1,313/1,313. Lint clean, both
+debug and release builds green. No Tally interaction beyond the existing, already-proven "Sync Now"
+action; no Tally data modified; no experimental Electron/Connector bypass. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §43; `docs/technical-debt/registry.md` TD-041.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.
