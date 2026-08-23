@@ -6,11 +6,12 @@ essentially as recommended: the staged-backoff state machine (§5-§6), the comp
 Connector-only scheduler (§8, §14), the same-sync-engine trigger with no parallel implementation
 (§16), and the `scheduler_state` migration/table shape (§14). The two RECOMMENDED prerequisite
 fixes (§17 item 8: Connector singleton sync-progress state, Android's dead
-`clearActiveIfCompanyChanged()`) were fixed first, as this document itself insisted. The OPEN items
-(§17 items 10-13: the cheap pre-extraction signal, the removed voucher `already_current` fast path,
-exact timing-value tuning, and UI prominence) remain genuinely open — none were resolved or
-silently assumed by the implementation. See `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §33 for this
-document's own research session record, and §35 for the implementation session record;
+`clearActiveIfCompanyChanged()`) were fixed first, as this document itself insisted. **Item 10 (the
+cheap pre-extraction signal) was investigated to a conclusion 2026-08-23 (Phase 47) — see §3.1: NOT
+PROVEN SAFE, not implemented, real Tally evidence recorded.** Items 11-13 (the removed voucher
+`already_current` fast path, exact timing-value tuning, and UI prominence) remain genuinely open.
+See `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §33 for this document's own research session record,
+§35 for the implementation session record, and §37 for the Phase 47 cheap-signal investigation;
 `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md` for the current-state pointer.
 
 **Investigation date:** 2026-08-22.
@@ -194,6 +195,69 @@ assume it will work against BUDCOM's actually-supported Tally versions/editions.
 investigation (§17), validated by a small, isolated spike against a real Tally instance before any
 implementation task depends on it. The architecture recommended in §6 does **not** depend on this
 signal existing.
+
+### 3.1 Item 10 resolved (2026-08-23, Phase 47): NOT PROVEN SAFE — investigated to a conclusion
+
+The OPEN spike this section called for was performed against the real, live TallyPrime instance
+(same installation as all prior real-device sessions; companies ESTIMATION and Jaju Sanitations).
+**Conclusion: no genuinely cheap, pre-extraction, company-level Tally change-detection signal is
+available. Not implemented.** Full evidence:
+
+**Candidate 1 — a company-level `ALTERID`/`ALTERMASTERID` object probe.** BUDCOM's own
+`MasterDataTemplates.companyInfo()` / `buildObjectTemplate()` (the "exact request-shape scaffold"
+this document originally pointed to) turned out to be dead code with zero callers, and — tested live
+— structurally invalid: it emits `<TYPE>Object</TYPE><ID>Company</ID>` with no `<SUBTYPE>` and a
+bare `<ID>` rather than `<ID TYPE="Name">`. Issuing this request against the real Tally instance
+produced a blocking error dialog on Tally's own UI (window title changed to "Error", requiring a
+manual dismissal/restart before Tally would answer further requests — a genuine, disruptive,
+now-documented cost of guessing at unvalidated request shapes against a live production Tally).
+Tally's own developer documentation (`help.tallysolutions.com`, Case Study 1 — Object export)
+confirms the correct shape requires `<TYPE>OBJECT</TYPE><SUBTYPE>Ledger</SUBTYPE><ID
+TYPE="Name">...</ID>` plus a `<FETCHLIST>/<FETCH>` block — a different mechanism from
+`collectionModifyFetch`'s `<COLLECTION ISMODIFY="Yes">` used everywhere else in BUDCOM. More
+fundamentally, Object-type export is documented and used only for **named, keyed masters** (a
+specific Ledger, Stock Item, Voucher) — "Company" is a *context* selected via
+`SVCURRENTCOMPANY`, not a keyed master object Tally exposes through this gateway. No authoritative
+Tally documentation and no independent third-party Tally-integration project (a live web search
+included a real Tally↔ODBC connector, `ramajayam-CA/Tally-Connector`, which surfaces per-record
+`$Alterid`/`$Alteredon` exactly as BUDCOM already does, but implements no company-level marker and
+no incremental filter) shows any working mechanism for a single company-level "has anything
+changed" value. **Verdict: not available, not merely untested.**
+
+**Candidate 2 — a lightweight `NAME/GUID/ALTERID`-only collection fetch, diffed against a persisted
+per-record watermark.** Technically buildable and safe-by-construction (reuses the exact
+`collectionModifyFetch` mechanism BUDCOM's production Ledgers/StockItems sync already sends
+successfully every day — no new request shape, no new trust boundary). Measured live against the
+real ESTIMATION company (949 real ledgers): a 3-field fetch (`NAME, GUID, ALTERID`) returned in
+**0.23-0.28s** across four repeated real requests and **386,343 bytes**; the existing full 8-field
+fetch (`NAME, GUID, ALTERID, MASTERID, PARENT, OPENINGBALANCE, CLOSINGBALANCE, ISBILLWISEON`)
+returned in **0.295s** and **637,871 bytes**. **The wall-clock cost is statistically indistinguishable
+between the two** — Tally's own internal collection-walk time dominates at this scale and is not
+reduced by requesting fewer fields; only network bytes (~40% smaller) and Connector-side downstream
+work (domain mapping, fingerprint compute, SQLite upsert — all skipped in a pure detect-only pass)
+would actually shrink. This is a real but modest, different benefit than the "cheap check → do
+almost nothing" ideal in §2 of the governing task — it does not reduce Tally-server-side load, which
+was the primary stated objective. **Verdict: not proven beneficial enough, at this measured scale,
+to justify a new persisted per-record watermark table (one row per ledger/stock item per company) on
+top of the existing content-fingerprint mechanism (§7) that already does the same comparison as a
+side effect of the full sync.**
+
+**A genuine, live-proven company-isolation hazard surfaced during this same measurement, unrelated
+to whether either candidate is adopted:** Tally's `GUID` field is `<data-source-installation-UUID>-
+<hex MasterId>`, and **MasterId is small and per-company** — the live experiment found all 21 of
+Jaju Sanitations' real `GUID` values also present verbatim in ESTIMATION's real 949-`GUID` set
+(confirmed these are genuinely different real ledgers by name, not a test-script error). A bare
+Tally `GUID` is **not globally unique across companies in this real installation** — it must always
+be paired with `companyId`. BUDCOM's existing `ledgers`/`stock_items` tables already do this
+correctly (`idx_ledgers_company_guid`/`idx_stock_items_company_guid` are unique indexes on
+`(company_id, guid)`, never `guid` alone — `connector/budcom_connector/src/storage/sqlite/schema.ts`)
+— no existing defect, but this real-data confirmation is recorded here as binding evidence for *any*
+future work (this spike's candidate 2, or anything else) that might be tempted to use a bare Tally
+GUID as a key: it would silently collide across companies, proven live, not hypothetically.
+
+**Item 10 is now CLOSED as investigated: NOT PROVEN SAFE / NOT PROVEN BENEFICIAL, not implemented.**
+No production code changed as a result of this spike. Full evidence, exact requests/responses, and
+the incident writeup: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §37.
 
 ## 4. Strategy comparison (§5 of the governing task)
 
@@ -557,12 +621,19 @@ implementation task should begin.
    company-scoped table**, not Room, not DataStore, not a new table shape mirroring `sync_runs`.
    (§14)
 
-### OPEN (requires explicit ChatGPT/Product-Owner decision before any implementation work depends on it)
+### CLOSED (investigated to a conclusion, no product decision needed — the answer is no)
 
-10. **Whether a genuinely cheap, pre-extraction Tally change-detection signal (company-level
-    `ALTERID`/similar) is real and safe against BUDCOM's supported Tally versions.** (§3) — this
-    requires a small, separately-scoped technical spike against a live Tally instance; it is
-    explicitly not decided or assumed by this document, and Strategy C does not depend on the answer.
+10. ~~**Whether a genuinely cheap, pre-extraction Tally change-detection signal (company-level
+    `ALTERID`/similar) is real and safe against BUDCOM's supported Tally versions.**~~ **Resolved
+    2026-08-23 (Phase 47), see §3.1: NOT PROVEN SAFE / NOT PROVEN BENEFICIAL. No company-level
+    marker exists or is reachable through any Tally mechanism found (live-tested, and searched
+    against authoritative Tally documentation and independent third-party integrations); the closest
+    real alternative (a lightweight per-record `ALTERID`-only fetch) is safe-by-construction but,
+    measured live against 949 real ledgers, does not reduce Tally-side processing time — only bytes
+    and downstream Connector work. Not implemented. Strategy C (already implemented) never depended
+    on this answer, exactly as this document anticipated.**
+
+### OPEN (requires explicit ChatGPT/Product-Owner decision before any implementation work depends on it)
 11. **Why the voucher sync's `'already_current'` fast path was deliberately removed** (§2.2) — the
     reasoning isn't recorded in-source; worth recovering from the team before considering any future
     cheap-skip mechanism for vouchers specifically, in case it repeats a known-bad idea.

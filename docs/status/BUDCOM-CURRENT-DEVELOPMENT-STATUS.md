@@ -285,6 +285,28 @@ code touched: Connector 1,471/1,471, Android 1,286/1,286 both variants (+5), Des
 clean. No MVP-1.4 work; no scheduler-architecture change. Full detail:
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §36; `docs/technical-debt/registry.md` TD-039.
 
+**Phase 47 — Cheap Tally Change-Detection Signal: Autonomous Investigation (2026-08-23, research
+only).** Resolved Phase 43's OPEN item 10 with a real Tally-instance spike, per an explicit
+authorization to implement only if proven safe. **Decision: NOT IMPLEMENTED — NOT PROVEN SAFE / NOT
+PROVEN BENEFICIAL.** A company-level `ALTERID`/`ALTERMASTERID` object probe (Candidate 1) turned out
+to rely on dead, structurally-invalid scaffold code (`MasterDataTemplates.companyInfo()`, zero
+callers); testing the shape it would have sent against the real, live TallyPrime instance produced a
+blocking error dialog on Tally's own UI, requiring a restart — a real, disclosed incident, not a
+hypothetical risk. Tally's own developer documentation subsequently confirmed Object-type export is
+valid only for named, keyed masters (a specific Ledger/Stock Item/Voucher), not for "Company" (a
+context, not a keyed master) — no authoritative documentation or independent third-party Tally
+integration shows a company-level change marker exists at all. A second, safer candidate (a
+lightweight `NAME/GUID/ALTERID`-only Ledgers fetch, reusing the existing proven request mechanism)
+was measured live against 949 real ESTIMATION ledgers: statistically the same wall-clock time as the
+existing full fetch (0.23-0.28s vs 0.295s) — Tally's own collection-walk time dominates and isn't
+reduced by requesting fewer fields, so this candidate doesn't deliver the stated objective either. A
+real, live company-isolation hazard was discovered as a side effect (Tally `GUID` values collide
+across real companies in this installation — MasterId-based, not globally unique) and checked
+immediately against BUDCOM's schema: already safe (`(company_id, guid)` composite unique indexes),
+no existing defect, recorded as binding evidence for any future work. No production code changed.
+Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §37;
+`docs/architecture/BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md` §3.1, §17 item 10 now CLOSED.
+
 ## 2. Branch / HEAD
 
 - Branch: `main`.

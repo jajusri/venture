@@ -2097,3 +2097,82 @@ No MVP-1.4 Catalogue work. No second sync engine. No scheduler-architecture chan
 design (ACTIVE_WINDOW/BACKOFF staging, per-company state, Manual Sync feeding scheduler state) is
 untouched and not re-litigated. The cheap Tally change-detection signal (`ALTERID`/similar) was not
 implemented, per the governing task's own instruction.
+
+## 37. Phase 47 — Cheap Tally Change-Detection Signal: Autonomous Investigation (Research Only)
+
+New session, explicitly scoped to resolve Phase 43's OPEN item 10 (a genuinely cheap, pre-extraction
+Tally change-detection signal) with a real Tally-instance spike, and to implement it **only if
+proven safe** — explicitly authorized to reach either a successful-implementation or a
+research-only outcome, with an unconditional instruction never to convert an assumption into a
+production behavior change.
+
+### A. Source-level investigation (§1/§3 of the governing task)
+
+Confirmed via direct source inspection: `MasterDataTemplates.companyInfo()`/`buildObjectTemplate()`
+— the "exact request-shape scaffold" Phase 43's research had pointed to as the theoretical path to a
+company-level probe — has **zero callers anywhere in the Connector** (dead code). `TD-006`'s
+"Accepted limitation" already documents that Tally's export order is not guaranteed and no snapshot
+identity exists, independently reinforcing why a watermark/resume-style mechanism can't be assumed
+safe. The existing per-record `ALTERID` is already part of `computeLedgerFingerprint()`/the
+equivalent Stock Item fingerprint — confirming BUDCOM's *existing* definition of "change" already
+uses `ALTERID`, just after a full extraction, not before one.
+
+### B. Real Tally experiment (§4 of the governing task) — incident and recovery
+
+Tested the Candidate-1 hypothesis (a company-level object probe) directly against the real, live
+TallyPrime instance (`tally.exe`, port 9000; real companies ESTIMATION and Jaju Sanitations both
+open). The request BUDCOM's own dead-code scaffold would have sent — `<TYPE>Object</TYPE>
+<ID>Company</ID>` with no `<SUBTYPE>` — produced **no response and a blocking error dialog on
+Tally's own UI** (window title changed to `"Error"`), which required Tally to be restarted before it
+would answer further requests. This is recorded honestly as an unintended, real, disruptive incident
+caused by testing an unvalidated request shape against live production Tally — not a simulated or
+hypothetical risk. Work paused; the user was informed directly and asked to confirm the screen was
+clear before any further live request was attempted. Tally's own developer documentation
+(`help.tallysolutions.com`, fetched directly, not assumed) subsequently confirmed the root cause: a
+valid Object-type export requires `<SUBTYPE>` and `<ID TYPE="Name">`, plus a `<FETCHLIST>/<FETCH>`
+block distinct from `collectionModifyFetch` — and, more fundamentally, Object-type export is
+documented only for named, keyed masters (a specific Ledger, Stock Item, Voucher); "Company" is a
+`SVCURRENTCOMPANY` *context*, not a keyed master Tally exposes this way. A follow-up web search found
+no authoritative Tally documentation and no independent third-party Tally integration (including a
+real Tally↔ODBC connector project that does surface per-record `$Alterid`/`$Alteredon`) implementing
+any company-level "has anything changed" marker. **Candidate 1: not available, not merely untested.**
+
+Once Tally was confirmed healthy again (re-tested with the already-proven-safe "List of Companies"
+request), a second, much lower-risk candidate was measured live using only the existing, proven
+`collectionModifyFetch` mechanism (no new request shape): a 3-field (`NAME, GUID, ALTERID`) Ledgers
+fetch against the real ESTIMATION company (949 real ledgers) returned in **0.23-0.28s** across four
+repeated requests, **386,343 bytes**; the existing full 8-field fetch returned in **0.295s**,
+**637,871 bytes**. The wall-clock difference is not meaningful at this scale — Tally's own
+collection-walk time dominates and is not reduced by requesting fewer fields; only network bytes
+(~40%) and Connector-side downstream work (mapping/fingerprint/DB-write, skippable in a detect-only
+pass) would shrink. **Candidate 2: safe-by-construction, but not proven to deliver the stated
+objective (reducing Tally-side load) at this measured scale.**
+
+**A real, live company-isolation hazard was also discovered as a side effect of this measurement**
+(unrelated to whether either candidate is adopted): Tally's `GUID` is `<data-source-UUID>-<hex
+MasterId>`, and MasterId is small and per-company — all 21 of Jaju Sanitations' real ledger `GUID`
+values were found to also appear verbatim in ESTIMATION's real 949-`GUID` set (confirmed as
+genuinely different real ledgers by name, ruling out a test-script error). A bare Tally `GUID` is
+**not globally unique across companies in this real installation.** Checked immediately against
+BUDCOM's own schema: `idx_ledgers_company_guid`/`idx_stock_items_company_guid` in
+`connector/budcom_connector/src/storage/sqlite/schema.ts` are already unique on `(company_id, guid)`,
+never `guid` alone — **no existing defect**, but this is now binding, real-data-proven evidence
+against ever keying anything by a bare Tally GUID in the future.
+
+### C. Decision
+
+**NOT IMPLEMENTED — NOT PROVEN SAFE / NOT PROVEN BENEFICIAL.** No production code was changed.
+Per the governing task's own explicit rule ("never convert an assumption into a production behavior
+change" / "a false negative is unacceptable"), and given neither candidate clears the bar (Candidate
+1 does not exist as a reachable mechanism; Candidate 2 is safe but does not measurably reduce the
+dominant cost), the existing Phase 45 adaptive scheduler remains authoritative and unchanged. Full
+evidence recorded in `docs/architecture/BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md` §3.1, and its
+§17 OPEN item 10 is now marked CLOSED (investigated, answer is no) rather than silently dropped.
+
+### D. Scope discipline
+
+No MVP-1.4 work. No scheduler-architecture change. No new persisted state. No second sync engine.
+The one real incident (a live Tally error dialog from an unvalidated request) was disclosed to the
+user immediately, work paused pending their confirmation the screen was clear, and no further
+untested request shapes were attempted afterward — only requests already proven safe by BUDCOM's own
+production code or by fetched, authoritative Tally documentation.
