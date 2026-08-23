@@ -14,12 +14,16 @@ describe('master data extraction routes', () => {
     return createTestApp(context);
   }
 
-  it('GET /companies/:companyId returns company info', async () => {
+  // TD-040 (2026-08-23): COMPANY_INFO's underlying Tally Object-export request was found to be
+  // structurally invalid (missing SUBTYPE/ID TYPE="Name") and disabled -- it now fails closed
+  // before any Tally call, so this route falls back to discovery metadata (name only, no
+  // gstin/address/etc.) instead of ever sending an unverified request shape to Tally.
+  it('GET /companies/:companyId returns discovery-metadata fallback (COMPANY_INFO disabled, TD-040)', async () => {
     const app = await setupApp();
     const response = await request(app).get(`/companies/${companyId}`);
     expect(response.status).toBe(200);
     expect(response.body.company.name).toBe('ESTIMATION');
-    expect(response.body.company.gstin).toBe('27AAAAA0000A1Z5');
+    expect(response.body.company.gstin).toBeUndefined();
   });
 
   it('GET /companies/:companyId/ledger-groups returns paginated groups', async () => {

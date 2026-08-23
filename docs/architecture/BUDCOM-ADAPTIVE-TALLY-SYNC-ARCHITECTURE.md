@@ -259,6 +259,20 @@ GUID as a key: it would silently collide across companies, proven live, not hypo
 No production code changed as a result of this spike. Full evidence, exact requests/responses, and
 the incident writeup: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §37.
 
+**Forensic follow-up (Phase 48, `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §38):** a full review of
+the incident above found it was consistent with a Tally-side application fault triggered by the
+structurally invalid request (confirmed: no Windows Error Reporting crash record exists for
+`tally.exe` on that date, despite the WER pipeline being active and having recorded six earlier
+`tally.exe` crashes/hangs on this machine — the exact internal mechanism inside Tally's own process
+is not independently provable beyond that). The same review also found that the identical broken
+request shape is independently constructed by a real, "production"-classified Connector operation
+(`ApprovedOperationId.CompanyInfo`) — unreachable from any real Desktop/Android client today, but a
+live landmine — fixed by disabling it (**TD-040**, `docs/technical-debt/registry.md`) rather than
+guessing a second unverified shape. **Permanent rule this establishes**: never send a hand-crafted or
+newly-added Tally TDL/XML request shape — research probe or new Connector code alike — to a live
+Tally instance without first validating it against Tally's own official developer documentation or a
+disposable non-production instance.
+
 ## 4. Strategy comparison (§5 of the governing task)
 
 | | Tally/Connector load | Freshness | Complexity | Depends on unproven signal? |

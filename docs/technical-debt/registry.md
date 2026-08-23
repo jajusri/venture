@@ -685,6 +685,23 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-040 — COMPANY_INFO's Tally Object-export request is structurally invalid, crashed live Tally's UI (FIXED — disabled)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-040 |
+| **Description** | Found during a Phase 48 forensic review of a real incident (2026-08-23): TallyPrime displayed a "Memory access violation" dialog requiring a manual restart, encountered during an unrelated autonomous investigation into Tally change-detection signals. Root cause traced to the Connector's own `ApprovedOperationId.CompanyInfo` operation (`tally/registry/operation-registry.ts`), `rolloutStatus: 'production'`, `autoApproveConditional: true` — its `render()` called `buildObjectTemplate('Company', { companyName })`, which emits `<TYPE>Object</TYPE><ID>Company</ID>` with no `<SUBTYPE>` and a bare `<ID>` rather than `<ID TYPE="Name">`. Tally's own developer documentation (help.tallysolutions.com, fetched directly) confirms a valid Object-type export requires `<SUBTYPE>` plus `<ID TYPE="Name">`, and is documented only for named, keyed masters (Ledger/StockItem/Voucher) — "Company" is a `SVCURRENTCOMPANY` context, not a keyed master Tally exposes this way. The exact incident-causing request (sent as an ad-hoc experimental probe outside the Connector, not by BUDCOM's shipped code) is preserved verbatim in `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §38. Existing tests exercised `MasterDataTemplates.companyInfo()`'s XML output (`master-data-templates.test.ts`) but asserted only generic envelope/static-variable presence, never SUBTYPE/ID correctness — the exact gap that let this ship undetected. |
+| **Impact** | `GET /companies/:companyId` (Connector API) reaches this exact broken request shape via `MasterDataService.getCompanyInfo()` → `TallyReadAdapter.getCompanyInfo()`. Confirmed via source search: **neither Desktop nor Android currently calls this route** (both use other endpoints for company data), so no real end-user has been exposed. It remained a live, reachable, "production"-classified defect that could disrupt any real user's live Tally session the moment anything called it — a future feature, a manual API call, or direct testing. |
+| **Priority** | P1 — real, live, user-visible Tally disruption risk (not merely an internal error), even though currently unreachable from any shipped client UI. |
+| **Target milestone** | Fixed same-session as discovery (Phase 48 forensic review), ahead of any further work depending on it. |
+| **Status** | **FIXED (2026-08-23) — disabled, not re-implemented.** `render()` now throws a clear, immediate `Error` before constructing any XML or making any Tally call, rather than guessing a second, equally-unverified request shape. This is caught by `MasterDataService.getCompanyInfo()`'s pre-existing try/catch (already designed for exactly this — its own `evidenceSource` comment read "safe discovery fallback exists"), which falls back to discovery metadata (company name only, no gstin/address/mailing-name/etc.). `GET /companies/:companyId` still returns `200` with a correct company name; only the extra Company-object-specific fields are now absent, since they were never safely obtainable in the first place. Re-enabling requires a live-validated request shape confirmed against Tally's own documentation or a disposable non-production instance — not a repeat guess. |
+| **Introduced** | Not traced to a specific commit — a `render()` implementation that was apparently never exercised against a real Tally instance or a shape-correctness test before this investigation. |
+| **Fix implemented** | `connector/budcom_connector/src/tally/registry/operation-registry.ts` (`CompanyInfo.render()`). |
+| **Regression tests** | New `test/unit/tally/operation-registry-company-info.test.ts` (render() throws with and without a company context, before any request spec is returned). Updated `test/integration/master-data.test.ts`'s `GET /companies/:companyId` test to assert the new safe fallback behavior (200, correct name, `gstin` now `undefined`) instead of the old mocked-GSTIN expectation. Connector: 162/162 → **163/163 test files, 1,473/1,473 tests** (+2), `tsc --noEmit`/`eslint`/`npm run build` all clean. |
+| **Evidence** | `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §38 (full forensic reconstruction: exact request, timestamps, Windows Event Log / WER cross-check, Tally documentation citation). |
+
+---
+
 ## TD-039 — Ledgers "Sync Now" never refreshed Android's own Room cache, unlike Vouchers (FIXED)
 
 | Field | Value |
@@ -721,6 +738,7 @@ Engineering-tracked compromises, defects, and deferred work.
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-040 | COMPANY_INFO's Tally Object-export request is structurally invalid (missing SUBTYPE/ID TYPE="Name") — sending it crashed live Tally's UI ("Memory access violation") | P1 | **FIXED (2026-08-23): `render()` now throws before any Tally call rather than re-guessing a shape; caught by the pre-existing discovery-metadata fallback. Unreachable from any real Desktop/Android client today.** | Fixed — see entry |
 | TD-039 | Ledgers "Sync Now" never refreshed Android's own Room cache (`cached_ledgers`), unlike Vouchers — left Connect's Customer/Supplier population stale after a "successful" sync | P1 | **FIXED (2026-08-23): `StartTargetSyncUseCase` gained a `completeLedgerRoomRefresh()` step mirroring the existing Voucher window-fetch pattern; re-verified live on a real device.** | Fixed — see entry |
 | TD-038 | Ledger/Voucher Browser "Retry" was a permanent dead end for a never-synced company (empty Room cache + Connector-only "Sync Now") | P1 | **FIXED (2026-08-22): Retry now escalates to network refresh exactly when there's no cached content; existing cache-first invariant preserved.** | Fixed — see entry |
 | TD-037 | Android `SyncRepositoryImpl` leaks the previous company's freshness summary after a company switch (cosmetic only — Room data confirmed correctly isolated) | P1 | **FIXED (2026-08-22): `bindCompany` resets the summary on an actual company change; dead `clearActiveIfCompanyChanged()` removed.** | Fixed — see entry |

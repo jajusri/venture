@@ -4,7 +4,6 @@ import type {
 } from '../xml/request-builder.js';
 import {
   buildCollectionTemplate,
-  buildObjectTemplate,
   MasterDataTemplates,
   TallyMasterDataCollections,
 } from '../../extraction/templates/master-data-templates.js';
@@ -206,9 +205,27 @@ const REGISTRY: Readonly<Record<ApprovedOperationId, ApprovedOperation>> = Objec
     autoApproveConditional: true,
     evidenceSource: 'audit sent; safe discovery fallback exists',
     rolloutStatus: 'production',
-    render: (params) => {
-      if (!params.companyName) throw new Error('COMPANY_INFO requires a company context');
-      return buildObjectTemplate('Company', { companyName: params.companyName });
+    // Disabled 2026-08-23 (TD-040): this `render()` used to build `buildObjectTemplate('Company',
+    // ...)`, which emits `<TYPE>Object</TYPE><ID>Company</ID>` with no `<SUBTYPE>` and a bare
+    // `<ID>` rather than `<ID TYPE="Name">`. Tally's own developer documentation requires
+    // `<SUBTYPE>` plus `<ID TYPE="Name">` for any Object-type export, and Object-type export is
+    // documented only for named, keyed masters (Ledger/StockItem/Voucher) -- "Company" is a
+    // `SVCURRENTCOMPANY` *context*, not a keyed master Tally exposes this way. Sending this exact
+    // shape directly to the real, live TallyPrime instance during an unrelated investigation
+    // (2026-08-23) produced no response and put Tally's own UI into a fault state requiring a
+    // restart. No caller of this operation exists anywhere in Desktop or Android today (verified:
+    // neither client requests `GET /companies/:companyId`), so disabling it changes no observed
+    // behavior. `getCompanyInfo()`'s pre-existing try/catch (`services/extraction/master-data.
+    // service.ts`) already falls back to discovery metadata on any thrown error -- exactly what
+    // this now exercises -- so this fails safely with zero Tally traffic rather than guessing a
+    // second, equally-unverified shape. Do not re-enable without a live-validated request shape
+    // confirmed against Tally's own documentation or a disposable non-production instance.
+    render: () => {
+      throw new Error(
+        'COMPANY_INFO is disabled: no live-validated Tally request shape exists for a ' +
+          'Company object export (see operation-registry.ts comment, TD-040). Falls back to ' +
+          'discovery metadata instead of sending an unverified request to Tally.',
+      );
     },
   },
   [ApprovedOperationId.LedgerGroups]: masterCollection(

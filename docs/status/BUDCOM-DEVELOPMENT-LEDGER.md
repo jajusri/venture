@@ -2176,3 +2176,148 @@ The one real incident (a live Tally error dialog from an unvalidated request) wa
 user immediately, work paused pending their confirmation the screen was clear, and no further
 untested request shapes were attempted afterward — only requests already proven safe by BUDCOM's own
 production code or by fetched, authoritative Tally documentation.
+
+## 38. Phase 48 — Tally Incident Forensic Review + Connect Alias Intelligence
+
+New session. Two independent workstreams: (1) a forensic review of the Phase 47 Tally incident,
+using only static evidence — no new live Tally requests, per explicit instruction; (2) Connect
+Alias intelligence (10-digit mobile candidate, 1-5 digit ledger shortcut).
+
+### A. Forensic review — exact request, timeline, and root cause
+
+**Exact request sent immediately before the incident** (recovered verbatim from
+`/d/tmp/company_object.xml`, timestamp 2026-08-23 06:24:25 IST):
+```xml
+<ENVELOPE><HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Object</TYPE>
+<ID>Company</ID></HEADER><BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+<SVCURRENTCOMPANY>ESTIMATION</SVCURRENTCOMPANY></STATICVARIABLES></DESC></BODY></ENVELOPE>
+```
+This was an **ad-hoc experimental request sent directly to Tally's port 9000 via `curl`, bypassing
+BUDCOM's Connector entirely** — the Connector process was not even running at the time (confirmed:
+no `node.exe`/`electron.exe` processes present). It was not, at the moment it was sent, a real
+BUDCOM production request.
+
+**However, this same investigation discovered that the exact same broken shape *is* independently
+constructed by real, "production"-classified BUDCOM Connector code** — see §B below (**TD-040**).
+
+**Timeline, reconstructed from file timestamps and process state, not assumption:**
+- `06:24:13` — a "List of Companies" request succeeds, confirming **ESTIMATION was open** in Tally
+  at this point, alongside Jaju Sanitations, both returning real data.
+- `06:24:25` — the malformed Object-type request above is sent; the response file is 0 bytes —
+  Tally never replied.
+- Within the next ~2 minutes, Tally's UI entered a fault state (window title changed to "Error";
+  the user later confirmed the dialog itself read **"Memory access violation"**); `Get-Process`
+  showed `Responding: True` at that point — the process had not (yet, or ever) terminated.
+- **`06:28:54`** — a new `tally.exe` process (PID 1284) is observed running, confirming Tally was
+  restarted between the fault and this check.
+- Checked directly this session: **no Windows Application-Error or Windows-Error-Reporting crash
+  report exists for `tally.exe` on 2026-08-23** (`Get-WinEvent`, `C:\ProgramData\Microsoft\Windows\
+  WER\ReportArchive`) — the most recent WER entry for `tally.exe` on this machine is from
+  **2026-05-17**, and the WER pipeline is confirmed active (it has captured `tally.exe` crashes and
+  hangs on six other dates going back to 2025-11-12). **This is significant negative evidence**: if
+  Tally's process had genuinely terminated via an unhandled OS-level exception, this same pipeline
+  would very likely have recorded it, as it has before. Its absence, combined with `Responding: True`
+  observed immediately after the fault, supports that Tally's own application code displayed an
+  internal error dialog (using the wording "Memory access violation") **without the process actually
+  crashing at the OS level** — a real Tally-side robustness gap when fed structurally incomplete
+  input, not a proven OS memory-safety fault.
+- "ESTIMATION was not initially open, then opened manually" (context supplied for this task) is
+  best explained as describing **post-incident recovery**: a restarted Tally process does not
+  automatically reload previously-open companies, so the user needed to manually reopen it
+  afterward — consistent with, not contradicting, the pre-incident evidence above that ESTIMATION
+  was genuinely open and being read successfully moments before the crash-inducing request.
+
+**Root cause, confirmed against Tally's own developer documentation (`help.tallysolutions.com`,
+fetched directly, cited in Phase 47):** a valid Tally Object-type export requires `<SUBTYPE>` and
+`<ID TYPE="Name">...</ID>` (plus a `<FETCHLIST>/<FETCH>` block); Object-type export is documented
+only for named, keyed masters (a specific Ledger/StockItem/Voucher) — "Company" is a
+`SVCURRENTCOMPANY` *context*, not a keyed master Tally exposes this way. The request above has
+neither `<SUBTYPE>` nor `<ID TYPE="Name">` — it is structurally invalid per Tally's own contract,
+independent of any assumption about BUDCOM.
+
+**Answering the forensic questions directly:**
+- Could BUDCOM-side limits have been exceeded? No — this bypassed the Connector, so none of its
+  request-size/response-size/concurrency/circuit-breaker/timeout logic were even in the code path.
+  (Confirmed separately: even the real registry entry's own configured limits — 65,536-byte max
+  request, 262,144-byte max response, 20-second timeout — are generous relative to this ~350-byte
+  request; size was never the issue.)
+- Evidence of BUDCOM accessing native memory, pointers, or unsafe APIs? None. The client was a plain
+  HTTP POST with a text/xml body — no native code, no pointers, no unsafe memory operations are
+  possible from that side. A memory fault, if real, occurred inside *Tally's own* process reacting
+  to unexpected structural input — a client cannot directly manipulate a separate process's memory
+  over a network text request; it can only supply input the receiving application mishandles.
+- More consistent with a Tally-side application failure triggered by an invalid request shape? Yes
+  — this is the best-evidenced explanation (structurally invalid per Tally's own docs; zero
+  response; process still "Responding" immediately after; no WER crash report for this date).
+- **CAUSE (exact internal mechanism) NOT PROVEN** in the strict sense: no Tally crash-dump or stack
+  trace was available to examine (none was generated — see WER check above), so the literal internal
+  reason Tally's own code produced this exact dialog cannot be independently confirmed beyond what
+  is stated above. What **is** proven: this was not a BUDCOM production request at the time it was
+  sent (Connector wasn't running), it is not evidence of any BUDCOM-side memory-unsafe code, and the
+  request was objectively structurally invalid per Tally's own documented contract.
+
+### B. TD-040 — a real, live, "production" BUDCOM defect discovered by this same review
+
+The forensic review's evidence-gathering step (checking whether "any existing BUDCOM request could
+reproduce the problem") found that it could: `ApprovedOperationId.CompanyInfo`
+(`connector/budcom_connector/src/tally/registry/operation-registry.ts`, `rolloutStatus:
+'production'`, `autoApproveConditional: true`) independently constructs the identical broken shape
+via `buildObjectTemplate('Company', { companyName })` — not the same code path as the ad-hoc curl
+test, but functionally identical output. Reachable via the Connector's own `GET
+/companies/:companyId` route (`api/routes/master-data.ts` → `MasterDataService.getCompanyInfo()` →
+`TallyReadAdapter.getCompanyInfo()`). Source search confirmed **neither Desktop nor Android calls
+this route today** — Desktop's only `/companies*` call is the list endpoint (`connector-http-
+client.ts`), and nothing in Android references it at all — so no real end-user has been exposed, but
+it remained a live, reachable landmine. The existing `master-data-templates.test.ts` already
+exercised `MasterDataTemplates.companyInfo()`'s XML output but asserted only generic envelope/
+static-variable presence, never SUBTYPE/ID correctness — the exact gap that let this ship
+undetected, entirely at the mock/interface layer in every other test referencing "CompanyInfo".
+
+**Fixed by disabling, not re-guessing:** `render()` now throws a clear `Error` immediately, before
+constructing any XML or contacting Tally — caught cleanly by `MasterDataService.getCompanyInfo()`'s
+pre-existing try/catch (its own `evidenceSource` field already said "safe discovery fallback
+exists"), which falls back to discovery metadata. `GET /companies/:companyId` still returns `200`
+with the correct company name; only Company-object-specific fields (gstin, address, mailing name,
+etc.) are now absent, since they were never safely obtainable in the first place. This is the
+"prevent the malformed request from ever being sent" fix, not a second unverified guess at the
+correct shape — per this task's own explicit rule against sending a new, unvalidated TDL/XML shape
+to production Tally to verify a fix. Full detail: `docs/technical-debt/registry.md` TD-040.
+
+One existing test (`master-data.test.ts`'s `GET /companies/:companyId returns company info`) asserted
+a mocked GSTIN value that depended on the now-disabled path; updated to assert the new, safe fallback
+behavior instead (200, correct name, `gstin` now `undefined`) — not weakened, corrected to match the
+now-safe intended behavior. Connector: 162/162 → **163/163 test files, 1,473/1,473 tests** (+2),
+`tsc --noEmit`/`eslint`/`npm run build` all clean.
+
+### C. Boundary audit (Part D of the governing task) — no further defects found
+
+Confirmed via direct source inspection, no changes needed: `TallyRequestGuard` enforces mandatory,
+config-independent limits (`poolMaxConnections: 1` — single-flight always, regardless of
+SAFE_MODE; `minRequestIntervalMs` at least 2000ms in safe mode; circuit breaker always enabled;
+`HARD_MAX_REQUEST_BYTES = 262,144`, a ceiling config cannot raise). `LedgerSyncServiceImpl`'s
+`syncInFlightByCompany`/`activeRunByCompany` Maps (the TD-036 fix) give real per-company
+single-flight protection with a clean `SYNC_CONFLICT` rejection — confirmed this is what protects
+against a manual sync and a scheduler check racing for the same company, exactly as
+`adaptive-scheduler.service.ts`'s own comment describes. The scheduler's `ticking` flag prevents
+re-entrant `runOnce()` calls; `start()` is idempotent (checked `if (this.running) return`). Desktop
+triggers no sync at all (confirmed: no `/sync/*` POST call anywhere in its source) — it is a
+pure status observer, exactly as the Phase 45 architecture intends. No scheduler code was changed.
+
+### D. Permanent safety policy added
+
+`docs/architecture/BUDCOM-ADAPTIVE-TALLY-SYNC-ARCHITECTURE.md` §3.1 already recorded the immediate
+lesson from Phase 47; this session's forensic confirmation (the crash mechanism, the WER
+cross-check, and TD-040's discovery that a "production" registry entry independently reproduced it)
+is added there as a cross-reference. The durable rule, scoped to what the evidence actually
+supports: **never send a hand-crafted or newly-added Tally TDL/XML request shape — whether as an ad
+hoc research probe or as new Connector code — to a live/production Tally instance without first
+validating it against Tally's own official developer documentation or a disposable non-production
+Tally instance.** This is not broadened beyond what TD-040 and the Phase 47 incident actually prove.
+
+### E. Scope discipline
+
+No MVP-1.4 work. No further live Tally requests were sent to investigate the incident (all evidence
+above is static: file timestamps, process state already observed in Phase 47, Windows Event Log /
+WER report archive, git/source inspection, already-fetched Tally documentation). The TD-040 fix
+required zero live Tally interaction to implement or verify (unit/integration tests use the existing
+mock-fetch harness). Alias Intelligence work (Parts A/B of the governing task) follows in §39.
