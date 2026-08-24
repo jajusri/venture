@@ -3424,3 +3424,59 @@ the dump was treated as authoritative over the image).
 unreachable throughout, so no live Tally traffic was possible or attempted — consistent with this
 project's safety rules); a real second-company isolation walkthrough; exercising the Excel/
 category-sharing/branch paths physically (no UI exists yet for the latter two, per §H).
+
+## 48. Phase 57 — Catalogue: UI for two capabilities that existed only at the repository layer
+
+New session. User question ("what about auto-populating Tally stock items? and a photo option?")
+identified that two capabilities Phase 56 had already built at the domain/data layer had no UI
+entry point: `CatalogueRepository.createDraftFromStockItem` (never called from any screen) and
+`CatalogueAssetStore` (fully implemented, never wired to a picker or camera). Closed both gaps.
+
+**Link from Tally stock.** The Catalogue FAB now opens a choice dialog ("Enter details yourself, or
+link a product you already have in Tally") instead of going straight to the manual-name dialog.
+`CatalogueRepository.listUnlinkedStockItems(companyId)` (new) diffs
+`StockItemLookupPort.listAllForCompany` against `CatalogueSourceLinkDao.findAllForCompany`, so an
+already-linked Stock Item never appears twice. New `CatalogueStockItemPickerScreen`/ViewModel
+(`Routes.CATALOGUE_STOCK_ITEM_PICKER`) provides a search field plus list; picking an item calls the
+existing `createDraftFromStockItem` and navigates straight to the new Draft's detail screen with
+`popUpTo(...) { inclusive = true }` so back doesn't return to the picker.
+
+**Photos.** `CatalogueRepository` gained `addAsset`/`listAssets`/`setPrimaryAsset`/`deleteAsset`/
+`resolveAssetFile`, implemented in `CatalogueRepositoryImpl` against the pre-existing
+`CatalogueAssetStore` (first asset added becomes primary automatically; deleting the primary
+promotes the next one; `CatalogueAsset` gained the `filePath` field it was missing for UI
+resolution). `CatalogueDetailScreen` gained a Photos section — "Take photo" using
+`ActivityResultContracts.TakePicture()` against a `FileProvider`-backed cache file (new
+`catalogue_camera` cache-path entry in `invoice_share_paths.xml`, reusing the existing
+`${applicationId}.invoice-files` authority) and "Choose photo" using
+`ActivityResultContracts.PickVisualMedia()` (Android Photo Picker) — no CAMERA permission needed
+for either. Thumbnails decode off the main thread via `BitmapFactory.decodeFile` in a
+`LaunchedEffect`, mirroring `BusinessProfileLogo`'s existing pattern exactly (no Coil/Glide
+dependency added). Plain text buttons were used instead of camera/gallery icons after confirming
+via `unzip -l` on the actual AAR that this project's `material-icons-core` (no `-extended`
+dependency) does not contain `PhotoCamera`/`CameraAlt`/`Image`/`AddAPhoto` — `Close` and `Star` (for
+delete and primary-marker) were confirmed present and used instead.
+
+**Tests.** 24 new unit tests: 9 in `CatalogueRepositoryImplTest` (unlinked-item filtering and
+company isolation, primary-on-first-add, `setPrimaryAsset` clearing every other flag, delete-then-
+promote, delete-the-only-one, a rejected asset never reaching Room, assets never leaking across
+companies), 3 in `CatalogueViewModelTest` (FAB choice dialog open/manual/link-from-stock paths), 5
+in the new `CatalogueStockItemPickerViewModelTest`, 7 in `CatalogueDetailViewModelTest` (load
+existing photos, add/second-add-not-primary, set-primary, delete, a rejected add's failure message,
+`TakePhoto`/`PickPhotoFromGallery` effects). Full `testDevDebugUnitTest` run: all green.
+`compileDevDebugKotlin`/`compileDevDebugUnitTestKotlin`: clean. `lintDevDebug`: 0 errors, 84
+pre-existing warnings (unchanged from Phase 56).
+
+**Live device validation** (same device, `10BF44124K000E3`, real ESTIMATION company): ran a fresh
+Tally sync to populate real Stock Items, then walked the full flow by hand via
+`adb shell input`/`uiautomator dump`/`screencap` — FAB → choice dialog → "Link from Tally stock" →
+search filter ("gadda") → picked "1 NO GADDA" → Draft created and opened its detail screen
+automatically. Then "Choose photo" → real Android Photo Picker → selected a real gallery photo →
+saved and rendered as the primary thumbnail with the star badge → removed via the delete icon
+("Photo removed" confirmation). Then "Take photo" → real camera app → captured → OK → saved and
+rendered as primary → removed. Both photo entry points and the stock-item link path are confirmed
+working against real data, not just unit-test doubles.
+
+Committed as `4a77955`, 20 files. Pre-existing unrelated uncommitted work (Connect screen polish,
+architecture-doc edits already in the working tree at session start) was left untouched and not
+included in this commit, per this project's standing scope-discipline practice.
