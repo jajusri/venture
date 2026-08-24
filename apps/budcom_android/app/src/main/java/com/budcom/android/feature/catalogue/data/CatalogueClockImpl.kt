@@ -6,6 +6,7 @@ import com.budcom.android.feature.catalogue.domain.model.CatalogueTimestamp
 import com.budcom.android.feature.catalogue.domain.model.CatalogueTimestampSource
 import com.budcom.android.feature.catalogue.domain.port.CatalogueClock
 import com.budcom.android.feature.serverconfig.domain.port.ConnectorStatusPort
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,6 +30,18 @@ import javax.inject.Singleton
  * construction; it gets [CatalogueTimestampSource.DeviceLocalProvisional] and stays that way. The
  * architecture document explicitly declines to invent multi-device offline-conflict mechanics
  * beyond this, and this implementation does not either.
+ *
+ * **Bounded wait, found live on a real device (2026-08-24):** `probeConnection()`'s underlying
+ * `fetchHealth()` is wrapped in this app's shared [com.budcom.android.core.network.RetryPolicy],
+ * which retries a failed connection with a real per-attempt timeout — on a real device with no
+ * reachable Connector this took ~45s (three ~15s timeouts) before falling back, during which the
+ * Catalogue list screen's initial load (which calls [now] for its reconciliation sweep) appeared
+ * hung. Every Catalogue write calls [now], so this would have made the entire feature feel broken
+ * whenever the paired Connector is merely out of Wi-Fi range — an ordinary, common state, not an
+ * edge case. [withTimeoutOrNull] caps the *caller's* wait independently of that shared retry
+ * policy (cancelling the coroutine aborts the in-flight OkHttp call rather than waiting it out) —
+ * deliberately short, because this is a timestamp lookup a user is implicitly waiting on
+ * synchronously, not a background sync.
  */
 @Singleton
 class CatalogueClockImpl @Inject constructor(
@@ -37,12 +50,18 @@ class CatalogueClockImpl @Inject constructor(
 ) : CatalogueClock {
 
     override suspend fun now(): CatalogueTimestamp {
-        val probe = runCatching { connectorStatusPort.probeConnection() }.getOrNull()
+        val probe = withTimeoutOrNull(PROBE_TIMEOUT_MILLIS) {
+            runCatching { connectorStatusPort.probeConnection() }.getOrNull()
+        }
         val serverTime = (probe as? AppResult.Success)?.value?.health?.serverTimeEpochMillis
         return if (serverTime != null) {
             CatalogueTimestamp(serverTime, CatalogueTimestampSource.Connector)
         } else {
             CatalogueTimestamp(timeProvider.nowEpochMillis(), CatalogueTimestampSource.DeviceLocalProvisional)
         }
+    }
+
+    private companion object {
+        const val PROBE_TIMEOUT_MILLIS = 2_500L
     }
 }

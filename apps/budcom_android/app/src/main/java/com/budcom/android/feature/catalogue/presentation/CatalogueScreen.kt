@@ -38,7 +38,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState
 import com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource
 
@@ -51,6 +54,21 @@ fun CatalogueRoute(
     val context = LocalContext.current
     LaunchedEffect(viewModel) {
         viewModel.shareIntent.collect { intent -> context.startActivity(intent) }
+    }
+    // Found live on a real device (2026-08-24): returning from the detail screen after a
+    // Publish/Archive/enrichment edit left this list showing stale lifecycle-state chips.
+    // NavHost disposes and recreates this whole composable (a fresh LaunchedEffect scope) every
+    // time this destination becomes current again -- a "skip the first resume" guard here was
+    // tried first and does NOT work, precisely because every return looks like a first resume to
+    // a freshly recomposed effect scope. The ViewModel instance itself persists (hiltViewModel is
+    // entry-scoped), so this harmless extra refresh on true first-entry just races the ViewModel's
+    // own initial company-subscription load, not a correctness issue. Mirrors DashboardScreen's
+    // own RESUMED-lifecycle reconciliation pattern.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(viewModel, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            viewModel.onEvent(CatalogueEvent.Refresh)
+        }
     }
     CatalogueScreen(state = state, onEvent = viewModel::onEvent, onOpenProductDetail = onOpenProductDetail)
 }

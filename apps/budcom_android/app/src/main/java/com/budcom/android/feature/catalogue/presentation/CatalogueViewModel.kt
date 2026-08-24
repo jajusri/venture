@@ -65,7 +65,13 @@ class CatalogueViewModel @Inject constructor(
 
     private fun load(refreshing: Boolean) {
         val id = companyId ?: run {
-            _uiState.update { it.copy(isInitialLoading = false, isRefreshing = false, products = emptyList()) }
+            // A resume-triggered CatalogueEvent.Refresh (see CatalogueRoute) can race the
+            // company-session subscription on a cold start, firing before companyId is known.
+            // Only the real, company-driven load path (refreshing = false, from the init-block
+            // subscription) is allowed to declare "no company" and clear the loading indicator --
+            // a premature Refresh in this state must be a no-op, not a flash of the empty state
+            // this screen isn't actually in yet.
+            if (!refreshing) _uiState.update { it.copy(isInitialLoading = false, isRefreshing = false, products = emptyList()) }
             return
         }
         viewModelScope.launch {
