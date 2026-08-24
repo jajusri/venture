@@ -37,6 +37,9 @@ class CatalogueViewModel @Inject constructor(
     private val _shareIntent = MutableSharedFlow<Intent>(extraBufferCapacity = 1)
     val shareIntent = _shareIntent.asSharedFlow()
 
+    private val _effects = MutableSharedFlow<CatalogueEffect>(extraBufferCapacity = 1)
+    val effects = _effects.asSharedFlow()
+
     private var companyId: String? = null
 
     init {
@@ -53,6 +56,14 @@ class CatalogueViewModel @Inject constructor(
     fun onEvent(event: CatalogueEvent) {
         when (event) {
             CatalogueEvent.Refresh -> load(refreshing = true)
+            CatalogueEvent.OpenAddChoiceDialog -> _uiState.update { it.copy(showAddChoiceDialog = true) }
+            CatalogueEvent.DismissAddChoiceDialog -> _uiState.update { it.copy(showAddChoiceDialog = false) }
+            CatalogueEvent.ChooseManualEntry ->
+                _uiState.update { it.copy(showAddChoiceDialog = false, showAddManualDialog = true, addManualName = "") }
+            CatalogueEvent.ChooseLinkFromStock -> {
+                _uiState.update { it.copy(showAddChoiceDialog = false) }
+                viewModelScope.launch { _effects.emit(CatalogueEffect.NavigateToStockItemPicker) }
+            }
             CatalogueEvent.OpenAddManualDialog -> _uiState.update { it.copy(showAddManualDialog = true, addManualName = "") }
             CatalogueEvent.DismissAddManualDialog -> _uiState.update { it.copy(showAddManualDialog = false) }
             is CatalogueEvent.AddManualNameChanged -> _uiState.update { it.copy(addManualName = event.name) }

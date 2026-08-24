@@ -6,6 +6,7 @@ import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState
 import com.budcom.android.feature.catalogue.domain.model.PriceDisplayMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -127,5 +128,117 @@ class CatalogueDetailViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertTrue(!vm.uiState.value.canEdit)
+    }
+
+    // ============================== Photos ==============================
+
+    @Test
+    fun `loading a product also loads its existing photos`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        repository.addAsset("co-1", "p1", android.net.TestUri.create(), com.budcom.android.feature.catalogue.domain.model.CatalogueTimestamp(1L, com.budcom.android.feature.catalogue.domain.model.CatalogueTimestampSource.DeviceLocalProvisional))
+
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, vm.uiState.value.assets.size)
+        assertTrue(vm.uiState.value.assets.single().isPrimary)
+    }
+
+    @Test
+    fun `PhotoSelected adds a new photo and it becomes primary if it is the first`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueDetailEvent.PhotoSelected(android.net.TestUri.create()))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, vm.uiState.value.assets.size)
+        assertTrue(vm.uiState.value.assets.single().isPrimary)
+        assertEquals("Photo added", vm.uiState.value.message)
+    }
+
+    @Test
+    fun `a second photo does not become primary until explicitly set`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueDetailEvent.PhotoSelected(android.net.TestUri.create()))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueDetailEvent.PhotoSelected(android.net.TestUri.create()))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, vm.uiState.value.assets.count { it.isPrimary })
+    }
+
+    @Test
+    fun `SetPrimaryAsset promotes the chosen photo and demotes the rest`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueDetailEvent.PhotoSelected(android.net.TestUri.create()))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueDetailEvent.PhotoSelected(android.net.TestUri.create()))
+        dispatcher.scheduler.advanceUntilIdle()
+        val second = vm.uiState.value.assets.last().assetId
+
+        vm.onEvent(CatalogueDetailEvent.SetPrimaryAsset(second))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(second, vm.uiState.value.assets.single { it.isPrimary }.assetId)
+    }
+
+    @Test
+    fun `DeleteAsset removes the photo and surfaces a confirmation message`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueDetailEvent.PhotoSelected(android.net.TestUri.create()))
+        dispatcher.scheduler.advanceUntilIdle()
+        val assetId = vm.uiState.value.assets.single().assetId
+
+        vm.onEvent(CatalogueDetailEvent.DeleteAsset(assetId))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.assets.isEmpty())
+        assertEquals("Photo removed", vm.uiState.value.message)
+    }
+
+    @Test
+    fun `a rejected photo surfaces a specific, honest failure message`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        repository.addAssetFailure = com.budcom.android.feature.catalogue.storage.CatalogueAssetFailureReason.FileTooLarge
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueDetailEvent.PhotoSelected(android.net.TestUri.create()))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.assets.isEmpty())
+        assertEquals("That photo is too large", vm.uiState.value.message)
+    }
+
+    @Test
+    fun `TakePhoto and PickPhotoFromGallery emit the correct one-shot effects`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val effects = mutableListOf<CatalogueDetailEffect>()
+        val job = launch(Dispatchers.Unconfined) { vm.effects.collect { effects.add(it) } }
+        vm.onEvent(CatalogueDetailEvent.TakePhoto)
+        vm.onEvent(CatalogueDetailEvent.PickPhotoFromGallery)
+        dispatcher.scheduler.advanceUntilIdle()
+        job.cancel()
+
+        assertEquals(listOf(CatalogueDetailEffect.RequestCameraCapture, CatalogueDetailEffect.RequestGalleryPick), effects)
     }
 }

@@ -4,4 +4,5 @@
     <cache-path name="ledger_statement_share" path="ledger-statement-share/" />
     <cache-path name="party_xml_export" path="party-xml-export/" />
     <cache-path name="catalogue_share" path="catalogue-share/" />
+    <cache-path name="catalogue_camera" path="catalogue-camera/" />
 </paths>

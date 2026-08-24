@@ -1,10 +1,12 @@
 package com.budcom.android.feature.catalogue.data.repository
 
+import android.net.Uri
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.catalogue.data.local.CATALOGUE_SOURCE_TYPE_TALLY_STOCK_ITEM
 import com.budcom.android.feature.catalogue.data.local.BranchDao
 import com.budcom.android.feature.catalogue.data.local.BranchEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueAssetDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueAssetEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueProductDao
@@ -33,10 +35,13 @@ import com.budcom.android.feature.catalogue.domain.repository.CatalogueEnrichmen
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueLifecycleResult
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueReconciliationResult
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository
+import com.budcom.android.feature.catalogue.storage.CatalogueAssetResult
+import com.budcom.android.feature.catalogue.storage.CatalogueAssetStore
 import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem
 import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItemStatus
 import com.budcom.android.feature.masterdata.stockitem.domain.port.StockItemLookupPort
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -55,7 +60,8 @@ class CatalogueRepositoryImpl @Inject constructor(
     private val overrideDao: CatalogueOverrideDao,
     private val publishedSnapshotDao: CataloguePublishedSnapshotDao,
     private val settingsDao: CatalogueSettingsDao,
-    @Suppress("unused") private val assetDao: CatalogueAssetDao,
+    private val assetDao: CatalogueAssetDao,
+    private val assetStore: CatalogueAssetStore,
     private val stockItemLookup: StockItemLookupPort,
     private val dispatchers: DispatcherProvider,
 ) : CatalogueRepository {
@@ -141,6 +147,11 @@ class CatalogueRepositoryImpl @Inject constructor(
         )
         productDao.upsert(entity)
         toDomain(companyId, entity)
+    }
+
+    override suspend fun listUnlinkedStockItems(companyId: String): List<StockItem> = withContext(dispatchers.io) {
+        val linkedIds = sourceLinkDao.findAllForCompany(companyId).map { it.externalStockItemId }.toSet()
+        stockItemLookup.listAllForCompany(companyId).filterNot { it.id in linkedIds }
     }
 
     override suspend fun findProduct(companyId: String, productId: String): CatalogueProduct? = withContext(dispatchers.io) {
@@ -346,6 +357,65 @@ class CatalogueRepositoryImpl @Inject constructor(
         settingsDao.upsert(CatalogueSettingsEntity(companyId, isPublic, epoch, source))
     }
 
+    override suspend fun addAsset(
+        companyId: String,
+        productId: String,
+        sourceUri: Uri,
+        timestamp: CatalogueTimestamp,
+    ): CatalogueAssetResult = withContext(dispatchers.io) {
+        when (val saved = assetStore.saveAsset(companyId, productId, sourceUri)) {
+            is CatalogueAssetResult.Failure -> saved
+            is CatalogueAssetResult.Success -> {
+                val (epoch, source) = timestamp.toPair()
+                val existing = assetDao.findAllForProduct(companyId, productId)
+                assetDao.upsert(
+                    CatalogueAssetEntity(
+                        companyId = companyId,
+                        productId = productId,
+                        assetId = saved.assetId,
+                        // The first image a product ever gets becomes primary automatically
+                        // (architecture §10: "one primary image per SKU"); later ones do not,
+                        // until explicitly promoted via setPrimaryAsset.
+                        isPrimary = existing.isEmpty(),
+                        sortOrder = existing.size,
+                        filePath = saved.filePath,
+                        createdAt = epoch,
+                        createdAtSource = source,
+                    ),
+                )
+                saved
+            }
+        }
+    }
+
+    override suspend fun listAssets(companyId: String, productId: String): List<com.budcom.android.feature.catalogue.domain.model.CatalogueAsset> =
+        withContext(dispatchers.io) {
+            assetDao.findAllForProduct(companyId, productId).map { it.toDomain() }
+        }
+
+    override suspend fun setPrimaryAsset(companyId: String, productId: String, assetId: String, timestamp: CatalogueTimestamp) =
+        withContext(dispatchers.io) {
+            assetDao.clearPrimaryExcept(companyId, productId, keepAssetId = assetId)
+            val entity = assetDao.findById(companyId, productId, assetId) ?: return@withContext
+            assetDao.upsert(entity.copy(isPrimary = true))
+        }
+
+    override suspend fun deleteAsset(companyId: String, productId: String, assetId: String): Unit = withContext(dispatchers.io) {
+        val entity = assetDao.findById(companyId, productId, assetId) ?: return@withContext
+        // Soft-remove the DB row before deleting the file (architecture §10) -- a dangling DB
+        // reference to a deleted file is never possible.
+        assetDao.delete(companyId, productId, assetId)
+        assetStore.deleteAsset(companyId, productId, entity.filePath)
+        if (entity.isPrimary) {
+            // A product with any images remaining always has exactly one primary -- promote the
+            // next one automatically rather than leaving the product primary-less.
+            assetDao.findAllForProduct(companyId, productId).firstOrNull()?.let { assetDao.upsert(it.copy(isPrimary = true)) }
+        }
+    }
+
+    override fun resolveAssetFile(companyId: String, productId: String, filePath: String): File? =
+        assetStore.resolveAssetFile(companyId, productId, filePath)
+
     private suspend fun toDomain(companyId: String, entity: CatalogueProductEntity, preResolved: StockItem? = null): CatalogueProduct {
         val stockItem = preResolved ?: entity.linkedStockItemId?.let { stockItemLookup.findById(companyId, it) }
         return CatalogueProduct(
@@ -421,3 +491,14 @@ private fun CataloguePublishedSnapshotEntity.toDomain(): CataloguePublishedSnaps
     primaryAssetId = primaryAssetId,
     publishedAt = entityTimestamp(publishedAt, publishedAtSource),
 )
+
+private fun CatalogueAssetEntity.toDomain(): com.budcom.android.feature.catalogue.domain.model.CatalogueAsset =
+    com.budcom.android.feature.catalogue.domain.model.CatalogueAsset(
+        companyId = companyId,
+        productId = productId,
+        assetId = assetId,
+        isPrimary = isPrimary,
+        sortOrder = sortOrder,
+        filePath = filePath,
+        createdAt = entityTimestamp(createdAt, createdAtSource),
+    )

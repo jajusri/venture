@@ -16,6 +16,7 @@ import com.budcom.android.feature.businessprofile.presentation.BusinessProfileRo
 import com.budcom.android.feature.catalogue.presentation.CatalogueDetailRoute
 import com.budcom.android.feature.catalogue.presentation.CatalogueDetailViewModel
 import com.budcom.android.feature.catalogue.presentation.CatalogueRoute
+import com.budcom.android.feature.catalogue.presentation.CatalogueStockItemPickerRoute
 import com.budcom.android.feature.company.presentation.CompanyRoute
 import com.budcom.android.feature.connect.presentation.ConnectRoute
 import com.budcom.android.feature.connect.presentation.PartyDetailRoute
@@ -262,6 +263,7 @@ fun BudcomNavHost(
                 onOpenProductDetail = { productId ->
                     navController.navigate(Routes.catalogueDetail(productId))
                 },
+                onOpenStockItemPicker = { navController.navigate(Routes.CATALOGUE_STOCK_ITEM_PICKER) },
             )
         }
         composable(
@@ -273,6 +275,16 @@ fun BudcomNavHost(
             ),
         ) {
             CatalogueDetailRoute(onBack = { navController.popBackStack() })
+        }
+        composable(route = Routes.CATALOGUE_STOCK_ITEM_PICKER) {
+            CatalogueStockItemPickerRoute(
+                onLinked = { productId ->
+                    navController.navigate(Routes.catalogueDetail(productId)) {
+                        popUpTo(Routes.CATALOGUE_STOCK_ITEM_PICKER) { inclusive = true }
+                    }
+                },
+                onBack = { navController.popBackStack() },
+            )
         }
         composable(
             route = Routes.PARTY_DETAIL,

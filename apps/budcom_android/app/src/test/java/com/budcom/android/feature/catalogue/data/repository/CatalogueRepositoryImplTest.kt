@@ -53,10 +53,11 @@ class CatalogueRepositoryImplTest {
     private val snapshotDao = FakeCataloguePublishedSnapshotDao()
     private val settingsDao = FakeCatalogueSettingsDao()
     private val assetDao = FakeCatalogueAssetDao()
+    private val assetStore = FakeCatalogueAssetStore()
     private val stockItemLookup = FakeStockItemLookupPort()
 
     private fun repository() = CatalogueRepositoryImpl(
-        productDao, sourceLinkDao, branchDao, overrideDao, snapshotDao, settingsDao, assetDao, stockItemLookup, dispatchers,
+        productDao, sourceLinkDao, branchDao, overrideDao, snapshotDao, settingsDao, assetDao, assetStore, stockItemLookup, dispatchers,
     )
 
     private fun ts(millis: Long = 1_000L) = CatalogueTimestamp(millis, CatalogueTimestampSource.DeviceLocalProvisional)
@@ -330,6 +331,125 @@ class CatalogueRepositoryImplTest {
         assertFalse(repo.findProduct("co-A", productA.productId)!!.sourceAvailable)
         assertTrue("co-B must be untouched by a co-A reconciliation sweep", repo.findProduct("co-B", productB.productId)!!.sourceAvailable)
     }
+
+    // ============================== Unlinked Stock Item listing ==============================
+
+    @Test
+    fun `listUnlinkedStockItems excludes Stock Items already linked to a product`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }.apply {
+            put("guid:linked", stockItem(id = "guid:linked", name = "Linked"))
+            put("guid:free", stockItem(id = "guid:free", name = "Free"))
+        }
+        val repo = repository()
+        repo.createDraftFromStockItem("co-1", "guid:linked", ts())
+
+        val unlinked = repo.listUnlinkedStockItems("co-1")
+
+        assertEquals(listOf("guid:free"), unlinked.map { it.id })
+    }
+
+    @Test
+    fun `listUnlinkedStockItems never leaks across companies`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-A") { mutableMapOf() }["guid:a"] = stockItem(id = "guid:a")
+        stockItemLookup.stored.getOrPut("co-B") { mutableMapOf() }["guid:b"] = stockItem(id = "guid:b")
+        val repo = repository()
+
+        assertEquals(listOf("guid:a"), repo.listUnlinkedStockItems("co-A").map { it.id })
+        assertEquals(listOf("guid:b"), repo.listUnlinkedStockItems("co-B").map { it.id })
+    }
+
+    // ============================== Assets ==============================
+
+    @Test
+    fun `the first asset added to a product becomes primary automatically`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Basket", ts())
+
+        val result = repo.addAsset("co-1", product.productId, android.net.TestUri.create(), ts())
+
+        val assetId = (result as com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Success).assetId
+        val assets = repo.listAssets("co-1", product.productId)
+        assertEquals(1, assets.size)
+        assertTrue(assets.single().isPrimary)
+        assertEquals(assetId, assets.single().assetId)
+    }
+
+    @Test
+    fun `a second asset does not become primary until explicitly set`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Basket", ts())
+        repo.addAsset("co-1", product.productId, android.net.TestUri.create(), ts())
+        repo.addAsset("co-1", product.productId, android.net.TestUri.create(), ts())
+
+        val assets = repo.listAssets("co-1", product.productId)
+        assertEquals(1, assets.count { it.isPrimary })
+    }
+
+    @Test
+    fun `setPrimaryAsset clears every other asset's primary flag first`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Basket", ts())
+        val first = (repo.addAsset("co-1", product.productId, android.net.TestUri.create(), ts())
+            as com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Success)
+        val second = (repo.addAsset("co-1", product.productId, android.net.TestUri.create(), ts())
+            as com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Success)
+
+        repo.setPrimaryAsset("co-1", product.productId, second.assetId, ts())
+
+        val assets = repo.listAssets("co-1", product.productId).associateBy { it.assetId }
+        assertFalse(assets.getValue(first.assetId).isPrimary)
+        assertTrue(assets.getValue(second.assetId).isPrimary)
+    }
+
+    @Test
+    fun `deleting the primary asset promotes the next remaining one`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Basket", ts())
+        val first = (repo.addAsset("co-1", product.productId, android.net.TestUri.create(), ts())
+            as com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Success)
+        repo.addAsset("co-1", product.productId, android.net.TestUri.create(), ts())
+
+        repo.deleteAsset("co-1", product.productId, first.assetId)
+
+        val remaining = repo.listAssets("co-1", product.productId)
+        assertEquals(1, remaining.size)
+        assertTrue("the only remaining asset must become primary", remaining.single().isPrimary)
+    }
+
+    @Test
+    fun `deleting the only asset leaves the product with none, never an orphaned primary flag error`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Basket", ts())
+        val only = (repo.addAsset("co-1", product.productId, android.net.TestUri.create(), ts())
+            as com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Success)
+
+        repo.deleteAsset("co-1", product.productId, only.assetId)
+
+        assertTrue(repo.listAssets("co-1", product.productId).isEmpty())
+    }
+
+    @Test
+    fun `a rejected asset, such as an unsupported file type, is never recorded in Room`() = runTest(dispatcher) {
+        assetStore.failureReason = com.budcom.android.feature.catalogue.storage.CatalogueAssetFailureReason.UnsupportedFileType
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Basket", ts())
+
+        val result = repo.addAsset("co-1", product.productId, android.net.TestUri.create(), ts())
+
+        assertTrue(result is com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Failure)
+        assertTrue(repo.listAssets("co-1", product.productId).isEmpty())
+    }
+
+    @Test
+    fun `assets never leak across companies`() = runTest(dispatcher) {
+        val repo = repository()
+        val productA = repo.createManualDraft("co-A", "A Item", ts())
+        val productB = repo.createManualDraft("co-B", "B Item", ts())
+        repo.addAsset("co-A", productA.productId, android.net.TestUri.create(), ts())
+
+        assertEquals(1, repo.listAssets("co-A", productA.productId).size)
+        assertTrue("co-B's product must see no assets from co-A", repo.listAssets("co-B", productB.productId).isEmpty())
+    }
 }
 
 // ============================== Fakes ==============================
@@ -424,4 +544,24 @@ private class FakeStockItemLookupPort : StockItemLookupPort {
     val stored = mutableMapOf<String, MutableMap<String, StockItem>>()
     override suspend fun findById(companyId: String, stockItemId: String): StockItem? = stored[companyId]?.get(stockItemId)
     override suspend fun listAllForCompany(companyId: String): List<StockItem> = stored[companyId]?.values?.toList().orEmpty()
+}
+
+private class FakeCatalogueAssetStore : com.budcom.android.feature.catalogue.storage.CatalogueAssetStore {
+    var nextAssetId = 0
+    val saved = mutableListOf<Triple<String, String, android.net.Uri>>()
+    val deleted = mutableListOf<Triple<String, String, String>>()
+    var failureReason: com.budcom.android.feature.catalogue.storage.CatalogueAssetFailureReason? = null
+
+    override suspend fun saveAsset(companyId: String, productId: String, sourceUri: android.net.Uri): com.budcom.android.feature.catalogue.storage.CatalogueAssetResult {
+        saved += Triple(companyId, productId, sourceUri)
+        failureReason?.let { return com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Failure(it) }
+        val assetId = "asset-${nextAssetId++}"
+        return com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Success(assetId, "$companyId/$productId/$assetId.jpg")
+    }
+
+    override fun resolveAssetFile(companyId: String, productId: String, filePath: String?): java.io.File? = null
+
+    override suspend fun deleteAsset(companyId: String, productId: String, filePath: String) {
+        deleted += Triple(companyId, productId, filePath)
+    }
 }

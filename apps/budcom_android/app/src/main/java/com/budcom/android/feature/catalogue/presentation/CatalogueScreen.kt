@@ -48,12 +48,20 @@ import com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource
 @Composable
 fun CatalogueRoute(
     onOpenProductDetail: (String) -> Unit,
+    onOpenStockItemPicker: () -> Unit,
     viewModel: CatalogueViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     LaunchedEffect(viewModel) {
         viewModel.shareIntent.collect { intent -> context.startActivity(intent) }
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                CatalogueEffect.NavigateToStockItemPicker -> onOpenStockItemPicker()
+            }
+        }
     }
     // Found live on a real device (2026-08-24): returning from the detail screen after a
     // Publish/Archive/enrichment edit left this list showing stale lifecycle-state chips.
@@ -101,7 +109,7 @@ fun CatalogueScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { onEvent(CatalogueEvent.OpenAddManualDialog) },
+                onClick = { onEvent(CatalogueEvent.OpenAddChoiceDialog) },
                 modifier = Modifier.testTag("catalogue_add_fab"),
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Add product")
@@ -130,6 +138,26 @@ fun CatalogueScreen(
                 }
             }
         }
+    }
+
+    if (state.showAddChoiceDialog) {
+        AlertDialog(
+            onDismissRequest = { onEvent(CatalogueEvent.DismissAddChoiceDialog) },
+            title = { Text("Add product") },
+            text = { Text("Enter details yourself, or link a product you already have in Tally.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { onEvent(CatalogueEvent.ChooseLinkFromStock) },
+                    modifier = Modifier.testTag("catalogue_choose_link_stock"),
+                ) { Text("Link from Tally stock") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { onEvent(CatalogueEvent.ChooseManualEntry) },
+                    modifier = Modifier.testTag("catalogue_choose_manual"),
+                ) { Text("Enter manually") }
+            },
+        )
     }
 
     if (state.showAddManualDialog) {

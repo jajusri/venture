@@ -1,5 +1,6 @@
 package com.budcom.android.feature.catalogue.presentation
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,10 +9,14 @@ import com.budcom.android.feature.catalogue.domain.port.CatalogueClock
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueEnrichmentUpdate
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueLifecycleResult
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository
+import com.budcom.android.feature.catalogue.storage.CatalogueAssetFailureReason
+import com.budcom.android.feature.catalogue.storage.CatalogueAssetResult
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -30,6 +35,9 @@ class CatalogueDetailViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(CatalogueDetailUiState())
     val uiState: StateFlow<CatalogueDetailUiState> = _uiState.asStateFlow()
+
+    private val _effects = MutableSharedFlow<CatalogueDetailEffect>(extraBufferCapacity = 1)
+    val effects = _effects.asSharedFlow()
 
     /**
      * Owner-only enforcement is structurally wired end-to-end (architecture §7/§18:
@@ -65,6 +73,11 @@ class CatalogueDetailViewModel @Inject constructor(
             CatalogueDetailEvent.SaveEnrichment -> saveEnrichment()
             is CatalogueDetailEvent.Transition -> transition(event.action)
             CatalogueDetailEvent.DismissMessage -> _uiState.update { it.copy(message = null) }
+            CatalogueDetailEvent.PickPhotoFromGallery -> viewModelScope.launch { _effects.emit(CatalogueDetailEffect.RequestGalleryPick) }
+            CatalogueDetailEvent.TakePhoto -> viewModelScope.launch { _effects.emit(CatalogueDetailEffect.RequestCameraCapture) }
+            is CatalogueDetailEvent.PhotoSelected -> addPhoto(event.uri)
+            is CatalogueDetailEvent.SetPrimaryAsset -> setPrimaryAsset(event.assetId)
+            is CatalogueDetailEvent.DeleteAsset -> deleteAsset(event.assetId)
         }
     }
 
@@ -75,6 +88,51 @@ class CatalogueDetailViewModel @Inject constructor(
             return
         }
         _uiState.update { it.applyProduct(product) }
+        loadAssets(companyId, product.productId)
+    }
+
+    private suspend fun loadAssets(companyId: String, productId: String, message: String? = null) {
+        val assets = repository.listAssets(companyId, productId).map { asset ->
+            CatalogueAssetUi(
+                assetId = asset.assetId,
+                isPrimary = asset.isPrimary,
+                file = repository.resolveAssetFile(companyId, productId, asset.filePath),
+            )
+        }
+        _uiState.update { it.copy(assets = assets, message = message ?: it.message) }
+    }
+
+    private fun addPhoto(uri: Uri) {
+        val product = _uiState.value.product ?: return
+        viewModelScope.launch {
+            when (val result = repository.addAsset(product.companyId, product.productId, uri, clock.now())) {
+                is CatalogueAssetResult.Success -> loadAssets(product.companyId, product.productId, message = "Photo added")
+                is CatalogueAssetResult.Failure -> _uiState.update { it.copy(message = result.reason.toMessage()) }
+            }
+        }
+    }
+
+    private fun setPrimaryAsset(assetId: String) {
+        val product = _uiState.value.product ?: return
+        viewModelScope.launch {
+            repository.setPrimaryAsset(product.companyId, product.productId, assetId, clock.now())
+            loadAssets(product.companyId, product.productId)
+        }
+    }
+
+    private fun deleteAsset(assetId: String) {
+        val product = _uiState.value.product ?: return
+        viewModelScope.launch {
+            repository.deleteAsset(product.companyId, product.productId, assetId)
+            loadAssets(product.companyId, product.productId, message = "Photo removed")
+        }
+    }
+
+    private fun CatalogueAssetFailureReason.toMessage(): String = when (this) {
+        CatalogueAssetFailureReason.UnsupportedFileType -> "Only JPG, PNG, or WEBP photos are supported"
+        CatalogueAssetFailureReason.FileTooLarge -> "That photo is too large"
+        CatalogueAssetFailureReason.UnreadableSource -> "Could not read that photo"
+        CatalogueAssetFailureReason.StorageError -> "Could not save that photo. Please try again"
     }
 
     private fun saveEnrichment() {

@@ -28,6 +28,7 @@ import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -101,6 +102,47 @@ class CatalogueViewModelTest {
 
         assertTrue(vm.uiState.value.isPublic)
         assertTrue(repository.publicByCompany["co-1"] == true)
+    }
+
+    @Test
+    fun `the FAB opens a choice between manual entry and linking from Tally stock`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.OpenAddChoiceDialog)
+
+        assertTrue(vm.uiState.value.showAddChoiceDialog)
+    }
+
+    @Test
+    fun `choosing manual entry closes the choice dialog and opens the manual-name dialog`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.OpenAddChoiceDialog)
+
+        vm.onEvent(CatalogueEvent.ChooseManualEntry)
+
+        assertTrue(!vm.uiState.value.showAddChoiceDialog)
+        assertTrue(vm.uiState.value.showAddManualDialog)
+    }
+
+    @Test
+    fun `choosing link-from-stock closes the choice dialog and emits a navigation effect`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.OpenAddChoiceDialog)
+
+        val effects = mutableListOf<CatalogueEffect>()
+        val job = launch { vm.effects.collect { effects.add(it) } }
+        vm.onEvent(CatalogueEvent.ChooseLinkFromStock)
+        dispatcher.scheduler.advanceUntilIdle()
+        job.cancel()
+
+        assertTrue(!vm.uiState.value.showAddChoiceDialog)
+        assertEquals(listOf(CatalogueEffect.NavigateToStockItemPicker), effects)
     }
 
     @Test
@@ -223,7 +265,64 @@ internal class FakeCatalogueRepository : CatalogueRepository {
     val publicByCompany = mutableMapOf<String, Boolean>()
     var nextId = 0
 
-    override suspend fun createDraftFromStockItem(companyId: String, stockItemId: String, timestamp: CatalogueTimestamp): CatalogueProduct? = null
+val unlinkedStockItems = mutableMapOf<String, MutableList<com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem>>()
+
+    override suspend fun createDraftFromStockItem(companyId: String, stockItemId: String, timestamp: CatalogueTimestamp): CatalogueProduct? {
+        val list = unlinkedStockItems[companyId] ?: return null
+        val stockItem = list.firstOrNull { it.id == stockItemId } ?: return null
+        list.remove(stockItem)
+        val product = sampleProduct(companyId = companyId, productId = "linked-${nextId++}", displayName = stockItem.name)
+            .copy(source = com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource.Tally, linkedStockItemId = stockItemId, tallyName = stockItem.name)
+        products.getOrPut(companyId) { mutableListOf() }.add(product)
+        return product
+    }
+
+    override suspend fun listUnlinkedStockItems(companyId: String): List<com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem> =
+        unlinkedStockItems[companyId].orEmpty()
+
+    val assetsByProduct = mutableMapOf<Pair<String, String>, MutableList<com.budcom.android.feature.catalogue.domain.model.CatalogueAsset>>()
+    var nextAssetId = 0
+    var addAssetFailure: com.budcom.android.feature.catalogue.storage.CatalogueAssetFailureReason? = null
+
+    override suspend fun addAsset(
+        companyId: String,
+        productId: String,
+        sourceUri: android.net.Uri,
+        timestamp: CatalogueTimestamp,
+    ): com.budcom.android.feature.catalogue.storage.CatalogueAssetResult {
+        addAssetFailure?.let { return com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Failure(it) }
+        val assetId = "asset-${nextAssetId++}"
+        val list = assetsByProduct.getOrPut(companyId to productId) { mutableListOf() }
+        list.add(
+            com.budcom.android.feature.catalogue.domain.model.CatalogueAsset(
+                companyId = companyId,
+                productId = productId,
+                assetId = assetId,
+                isPrimary = list.isEmpty(),
+                sortOrder = list.size,
+                filePath = "$companyId/$productId/$assetId.jpg",
+                createdAt = timestamp,
+            ),
+        )
+        return com.budcom.android.feature.catalogue.storage.CatalogueAssetResult.Success(assetId, "$companyId/$productId/$assetId.jpg")
+    }
+
+    override suspend fun listAssets(companyId: String, productId: String): List<com.budcom.android.feature.catalogue.domain.model.CatalogueAsset> =
+        assetsByProduct[companyId to productId].orEmpty()
+
+    override suspend fun setPrimaryAsset(companyId: String, productId: String, assetId: String, timestamp: CatalogueTimestamp) {
+        val list = assetsByProduct[companyId to productId] ?: return
+        assetsByProduct[companyId to productId] = list.map { it.copy(isPrimary = it.assetId == assetId) }.toMutableList()
+    }
+
+    override suspend fun deleteAsset(companyId: String, productId: String, assetId: String) {
+        val list = assetsByProduct[companyId to productId] ?: return
+        val wasPrimary = list.firstOrNull { it.assetId == assetId }?.isPrimary == true
+        list.removeAll { it.assetId == assetId }
+        if (wasPrimary && list.isNotEmpty()) list[0] = list[0].copy(isPrimary = true)
+    }
+
+    override fun resolveAssetFile(companyId: String, productId: String, filePath: String): java.io.File? = null
 
     override suspend fun createManualDraft(companyId: String, displayName: String, timestamp: CatalogueTimestamp): CatalogueProduct {
         val product = sampleProduct(companyId = companyId, productId = "manual-${nextId++}", displayName = displayName)

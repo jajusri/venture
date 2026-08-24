@@ -83,6 +83,10 @@ data class CatalogueAsset(
     val assetId: String,
     val isPrimary: Boolean,
     val sortOrder: Int,
+    /** Path relative to [com.budcom.android.feature.catalogue.storage.CatalogueAssetStore]'s own
+     * managed directory — resolve via [com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository.resolveAssetFile],
+     * never used directly as a filesystem path. */
+    val filePath: String,
     val createdAt: CatalogueTimestamp,
 )
 

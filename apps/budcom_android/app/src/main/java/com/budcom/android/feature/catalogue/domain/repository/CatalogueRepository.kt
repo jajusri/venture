@@ -1,6 +1,8 @@
 package com.budcom.android.feature.catalogue.domain.repository
 
+import android.net.Uri
 import com.budcom.android.feature.catalogue.domain.model.Branch
+import com.budcom.android.feature.catalogue.domain.model.CatalogueAsset
 import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleAction
 import com.budcom.android.feature.catalogue.domain.model.CatalogueOverrideAttribute
 import com.budcom.android.feature.catalogue.domain.model.CatalogueOverrideRow
@@ -9,6 +11,9 @@ import com.budcom.android.feature.catalogue.domain.model.CatalogueProduct
 import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState
 import com.budcom.android.feature.catalogue.domain.model.CataloguePublishedSnapshot
 import com.budcom.android.feature.catalogue.domain.model.CatalogueTimestamp
+import com.budcom.android.feature.catalogue.storage.CatalogueAssetResult
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem
+import java.io.File
 
 /** Enrichment fields an owner/staff member can edit — deliberately excludes every Tally-owned
  * field (architecture §6's field-ownership table) and every lifecycle/identity field (those move
@@ -43,6 +48,13 @@ data class CatalogueReconciliationResult(
 interface CatalogueRepository {
     suspend fun createDraftFromStockItem(companyId: String, stockItemId: String, timestamp: CatalogueTimestamp): CatalogueProduct?
     suspend fun createManualDraft(companyId: String, displayName: String, timestamp: CatalogueTimestamp): CatalogueProduct
+
+    /** Every locally-synced Stock Item for [companyId] that has no [CatalogueProduct] linked to it
+     * yet — the source list for a "link from Tally stock items" picker UI (architecture §21
+     * Milestone 1's own named "create Drafts from Stock Items" action). Local-cache-only, matching
+     * [com.budcom.android.feature.masterdata.stockitem.domain.port.StockItemLookupPort]'s own
+     * discipline — never a fresh network fetch of its own. */
+    suspend fun listUnlinkedStockItems(companyId: String): List<StockItem>
     suspend fun findProduct(companyId: String, productId: String): CatalogueProduct?
     suspend fun listProducts(companyId: String): List<CatalogueProduct>
     suspend fun listProductsByState(companyId: String, state: CatalogueLifecycleState): List<CatalogueProduct>
@@ -97,4 +109,26 @@ interface CatalogueRepository {
      * shareable. */
     suspend fun isPublic(companyId: String): Boolean
     suspend fun setPublic(companyId: String, isPublic: Boolean, timestamp: CatalogueTimestamp)
+
+    /** Validates and stores [sourceUri] (camera capture or gallery pick — the caller doesn't
+     * distinguish) as a new image for [productId] via
+     * [com.budcom.android.feature.catalogue.storage.CatalogueAssetStore], then records it in
+     * `catalogue_asset`. The very first asset ever added to a product becomes its primary
+     * automatically (architecture §10: "one primary image per SKU"); later ones do not, until
+     * explicitly set via [setPrimaryAsset]. */
+    suspend fun addAsset(companyId: String, productId: String, sourceUri: Uri, timestamp: CatalogueTimestamp): CatalogueAssetResult
+
+    suspend fun listAssets(companyId: String, productId: String): List<CatalogueAsset>
+
+    /** Clears every other asset's primary flag for this product first (architecture §10's two-phase
+     * discipline — at most one row is ever primary, no window where two are). */
+    suspend fun setPrimaryAsset(companyId: String, productId: String, assetId: String, timestamp: CatalogueTimestamp)
+
+    /** Soft-removes the DB row before deleting the file (architecture §10) — a dangling DB
+     * reference to a deleted file is never possible, only the reverse (briefly) window. If the
+     * deleted asset was primary and others remain, the next one is promoted automatically so a
+     * product with any images always has exactly one primary. */
+    suspend fun deleteAsset(companyId: String, productId: String, assetId: String)
+
+    fun resolveAssetFile(companyId: String, productId: String, filePath: String): File?
 }

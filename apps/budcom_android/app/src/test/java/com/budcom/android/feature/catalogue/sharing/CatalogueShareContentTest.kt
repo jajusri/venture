@@ -97,6 +97,21 @@ private class FakeShareRepository(private val isPublic: Boolean) : CatalogueRepo
         return published
     }
 
+    override suspend fun listUnlinkedStockItems(companyId: String): List<com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem> =
+        error("not used in these tests")
+    override suspend fun addAsset(
+        companyId: String,
+        productId: String,
+        sourceUri: android.net.Uri,
+        timestamp: CatalogueTimestamp,
+    ): com.budcom.android.feature.catalogue.storage.CatalogueAssetResult = error("not used in these tests")
+    override suspend fun listAssets(companyId: String, productId: String): List<com.budcom.android.feature.catalogue.domain.model.CatalogueAsset> =
+        error("not used in these tests")
+    override suspend fun setPrimaryAsset(companyId: String, productId: String, assetId: String, timestamp: CatalogueTimestamp) =
+        error("not used in these tests")
+    override suspend fun deleteAsset(companyId: String, productId: String, assetId: String) = error("not used in these tests")
+    override fun resolveAssetFile(companyId: String, productId: String, filePath: String): java.io.File? = error("not used in these tests")
+
     override suspend fun listPublishedForCategory(companyId: String, category: String): List<CataloguePublishedSnapshot> =
         published.filter { it.customerFacingCategory == category }
 
