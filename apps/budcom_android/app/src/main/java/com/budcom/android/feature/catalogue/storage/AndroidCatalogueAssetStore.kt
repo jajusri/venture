@@ -76,12 +76,8 @@ class AndroidCatalogueAssetStore @Inject constructor(
             }
         }
 
-    override fun resolveAssetFile(companyId: String, productId: String, filePath: String?): File? {
-        if (filePath.isNullOrBlank()) return null
-        val root = File(context.filesDir, ASSET_DIRECTORY).canonicalFile
-        val candidate = File(context.filesDir, "$ASSET_DIRECTORY/$filePath")
-        return if (candidate.isFile && candidate.canonicalFile.startsWith(root)) candidate else null
-    }
+    override fun resolveAssetFile(companyId: String, productId: String, filePath: String?): File? =
+        resolveContainedAssetFile(File(context.filesDir, ASSET_DIRECTORY), companyId, productId, filePath)
 
     override suspend fun deleteAsset(companyId: String, productId: String, filePath: String): Unit = withContext(dispatchers.io) {
         resolveAssetFile(companyId, productId, filePath)?.delete()
@@ -100,6 +96,28 @@ class AndroidCatalogueAssetStore @Inject constructor(
  * raw id string directly as part of a filesystem path. */
 internal fun sanitizedSegment(value: String): String =
     value.trim().replace(Regex("[^A-Za-z0-9._-]+"), "-").trim('.', '-', '_').take(80).ifBlank { "x" }
+
+/**
+ * TD (this audit pass): [companyId]/[productId] were previously accepted but never actually used
+ * to validate [filePath] — the old check only confirmed the candidate was *somewhere* under the
+ * shared `catalogue_assets/` root, not that it was inside *this specific* company+product's own
+ * subdirectory (architecture §13: "the full (companyId, productId, assetId) tuple must be
+ * validated on every read"). Every current call site's `filePath` already originates from a
+ * `companyId`/`productId`-scoped DAO query, so this was not observed to be exploitable through any
+ * existing UI flow — but the containment check itself did not structurally enforce it, exactly the
+ * residual-risk class architecture §13 names ("a hypothetical future DAO method that omits its
+ * WHERE companyId clause would not be caught... named here so implementation-phase code review
+ * knows to check for it explicitly"). Extracted as a pure, `Context`-free function so the tuple
+ * check itself has direct JVM test coverage (the `saveAsset`/`Context`-coupled path still needs an
+ * instrumented test, a pre-existing gap this store already disclosed it shares with
+ * `BusinessProfileLogoStore`).
+ */
+internal fun resolveContainedAssetFile(baseDir: File, companyId: String, productId: String, filePath: String?): File? {
+    if (filePath.isNullOrBlank()) return null
+    val expectedDirectory = File(baseDir, "${sanitizedSegment(companyId)}/${sanitizedSegment(productId)}").canonicalFile
+    val candidate = File(baseDir, filePath)
+    return if (candidate.isFile && candidate.canonicalFile.parentFile == expectedDirectory) candidate else null
+}
 
 internal fun copyBounded(input: InputStream, output: OutputStream, maxBytes: Long): Boolean {
     val buffer = ByteArray(8 * 1024)

@@ -65,6 +65,34 @@ class CatalogueExcelImportUseCaseTest {
     }
 
     @Test
+    fun `TD (price-state lock) -- Open mode with no Price cell imports as No-Price-Supplied, never Contact-for-price`() = runTest {
+        val repository = FakeCatalogueRepository()
+        val useCase = CatalogueExcelImportUseCase(repository, FakeCatalogueClock())
+        val rows = listOf(
+            row(
+                1,
+                CatalogueExcelColumns.PRODUCT_NAME to "Widget",
+                CatalogueExcelColumns.UNIT to "Nos",
+                CatalogueExcelColumns.PRICE_DISPLAY_MODE to "Open",
+                // Price cell deliberately absent -- the seller has not supplied a number yet.
+            ),
+        )
+        val preview = CatalogueExcelValidator.preview(rows, resolveExistingProductId = { null })
+
+        useCase.commit("co-1", rows, preview)
+
+        val product = repository.products["co-1"]!!.single()
+        assertEquals(PriceDisplayMode.Open, product.priceDisplayMode)
+        assertEquals(null, product.manualPriceAmount)
+        assertEquals(
+            com.budcom.android.feature.catalogue.domain.model.CataloguePriceState.NoPriceSupplied,
+            com.budcom.android.feature.catalogue.domain.model.resolveCataloguePriceState(
+                product.priceDisplayMode, product.manualPriceAmount, product.manualPriceCurrencyCode,
+            ),
+        )
+    }
+
+    @Test
     fun `a Skipped outcome is never committed`() = runTest {
         val repository = FakeCatalogueRepository()
         val useCase = CatalogueExcelImportUseCase(repository, FakeCatalogueClock())

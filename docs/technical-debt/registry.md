@@ -848,10 +848,42 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-048 — `AndroidCatalogueAssetStore.resolveAssetFile` accepted `companyId`/`productId` parameters but never validated them, only that the path was somewhere under the shared assets root (FIXED)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-048 |
+| **Description** | Found during a fresh company-isolation audit pass (offline hardening session). Architecture §13 explicitly requires: "Catalogue assets — the full `(companyId, productId, assetId)` tuple must be validated on every read, exactly like `BusinessProfileLogoStore.resolveLogoFile`'s existing path-containment check." The actual implementation only checked `candidate.canonicalFile.startsWith(root)` where `root` was the single shared `catalogue_assets/` directory for **every company** — it never compared against the specific `<companyId>/<productId>/` subdirectory the caller asked for, despite receiving both as parameters. |
+| **Impact** | Under every current call site, `filePath` always originates from a `catalogue_asset` row already correctly scoped by the DAO's own `WHERE companyId = ... AND productId = ...`, so this was not observed to be exploitable through any existing UI flow today. But the containment check itself provided no structural guarantee — exactly the residual-risk class architecture §13 itself names ("a hypothetical future DAO method that omits its WHERE companyId clause would not be caught by the type system... named here so implementation-phase code review knows to check for it explicitly"). A future bug feeding a mismatched `filePath` (cache bug, copy-paste error, a new code path) would have silently resolved and displayed a **different company's or product's photo** with no error. |
+| **Priority** | P2 — not currently exploitable, but a real gap in a locked, explicitly-named defense-in-depth requirement. |
+| **Status** | **FIXED, unit-tested (6 new tests).** Extracted the containment logic into a pure, `Context`-free `resolveContainedAssetFile(baseDir, companyId, productId, filePath)` that validates the candidate file's parent directory is *exactly* `<baseDir>/<sanitizedCompanyId>/<sanitizedProductId>/` — not merely somewhere under the shared root. `AndroidCatalogueAssetStore.resolveAssetFile` now delegates to it. New tests (`AndroidCatalogueAssetStoreHelpersTest`, real temp-directory JVM tests, no Robolectric needed): resolves a genuinely-owned file; refuses a path pointing at a different company's directory even though still under the shared root (the actual regression case); refuses a different product within the same company; refuses a `../` traversal attempt escaping the root entirely; refuses a non-existent file; refuses blank/null input. |
+| **Introduced** | Phase 56 (original `AndroidCatalogueAssetStore` implementation) — the `companyId`/`productId` parameters were added to the interface per the architecture's own requirement but the implementation never used them for validation. |
+| **Root cause** | The containment check was copied from `BusinessProfileLogoStore.resolveLogoFile`'s simpler flat-directory model (one file per company, filename-prefixed, `parentFile == directory` is sufficient) without adapting it for Catalogue's nested per-company/per-product directory structure, where the shared-root check is too weak. |
+| **Evidence** | `AndroidCatalogueAssetStoreHelpersTest.kt` — the "refuses a path pointing at a DIFFERENT company's directory" test fails against the pre-fix implementation and passes against the fix. |
+
+---
+
+## TD-049 — Catalogue share text collapsed "Open price mode, no amount entered" into "Contact for price," hiding the seller's actual price state from viewers (FIXED)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-049 |
+| **Description** | Found while implementing the mid-session product lock "Price is optional, but the price state is not" (explicit three-way price state: an actual price, an honest "no price supplied yet," and the seller's deliberate "Contact for price" — the latter two must never be conflated). `CatalogueShareTextRenderer.priceLine()` treated `PriceDisplayMode.Open` with a null/blank `resolvedPriceAmount` identically to `PriceDisplayMode.ContactForPrice`, rendering "Price: Contact for price" in both cases. |
+| **Impact** | A seller who left a product in Open mode without yet entering a number appeared, to any share recipient, to have deliberately chosen "Contact for price" — a different, seller-authored signal the seller never actually gave. Not a company-isolation or data-corruption issue, but a real state-representation defect directly contradicting the now-locked semantic model. |
+| **Priority** | P2. |
+| **Status** | **FIXED, unit-tested (7 new tests + 1 existing test corrected).** New `CataloguePriceState` sealed type (`ActualPrice`/`NoPriceSupplied`/`ContactForPrice`) and `resolveCataloguePriceState(displayMode, amount, currencyCode)` resolver (`domain/model/CatalogueModels.kt`) — the single place this three-way distinction is computed, so no call site re-derives it ad hoc. `CatalogueShareTextRenderer` now renders "Price: Not supplied yet" for the `NoPriceSupplied` case, distinct from "Price: Contact for price". The Excel round-trip needed no code change — `priceDisplayMode`/`manualPriceAmount` were already carried through import/export as separate, uncollapsed fields; only the renderer was re-deriving a conflated state. New tests: `CataloguePriceStateTest` (6, the resolver's own logic matrix) + `CatalogueShareTextRendererTest`'s existing "Open mode with no resolved price" test corrected to assert the new, locked-correct behavior + a new Excel-import round-trip test proving Open-mode-with-blank-Price-cell imports as `NoPriceSupplied`, never `ContactForPrice`. |
+| **Introduced** | Phase 56 (original `CatalogueShareTextRenderer` implementation) — first became a locked-requirement violation only once the mid-session price-state product lock was issued; the original code was a reasonable simplification at the time, not itself a violation of anything locked when written. |
+| **Root cause** | No explicit three-state price representation existed anywhere in the domain model; every price-rendering call site derived "does this look like Contact-for-price" from `amount == null`, which is indistinguishable from "Open mode, not yet entered." |
+| **Evidence** | `CataloguePriceStateTest.kt`, `CatalogueShareTextRendererTest.kt` (corrected test), `CatalogueExcelImportUseCaseTest.kt` (new round-trip test). |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-049 | Catalogue share text collapsed "Open price mode, no amount entered" into "Contact for price," hiding the seller's actual price state | P2 | **FIXED (2026-08-24), unit-tested (7 new + 1 corrected).** New `CataloguePriceState`/`resolveCataloguePriceState` three-way resolver; renderer now shows "Not supplied yet" distinctly. | Fixed — see entry |
+| TD-048 | `AndroidCatalogueAssetStore.resolveAssetFile` received `companyId`/`productId` but never validated them — only checked the path was under the shared root, not the specific company+product subdirectory | P2 | **FIXED (2026-08-24), unit-tested (6 tests).** Extracted `resolveContainedAssetFile`, now validates the full tuple structurally. | Fixed — see entry |
 | TD-047 | A Manual (non-Tally) Catalogue product had no code path that ever set its required "Unit" field, breaking Excel export/re-import round-trip for that product class | P2 | **FIXED (2026-08-24), unit-tested (24 tests) and live-verified on real device.** Unit is now owner-editable for Manual products, migration 12→13; Tally-linked products keep Unit exclusively Tally-authoritative, enforced structurally. | Fixed — see entry |
 | TD-046 | Catalogue product list showed stale lifecycle-state chips after returning from the detail screen — found live on real-device walkthrough | P1 | **FIXED (2026-08-24, Phase 56), live-verified on real device.** `CatalogueRoute` now refreshes on every RESUMED entry; `load()` guards against the resulting cold-start race. | Fixed — see entry |
 | TD-045 | CatalogueClock blocked ~45s on every Catalogue write whenever the paired Connector was unreachable — found live on real-device walkthrough | P1 | **FIXED (2026-08-24, Phase 56), live-verified on real device.** `CatalogueClockImpl.now()` now bounded by a 2.5s `withTimeoutOrNull`, independent of the shared retry policy. | Fixed — see entry |

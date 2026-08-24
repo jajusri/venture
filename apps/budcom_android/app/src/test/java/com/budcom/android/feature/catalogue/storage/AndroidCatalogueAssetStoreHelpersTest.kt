@@ -2,6 +2,7 @@ package com.budcom.android.feature.catalogue.storage
 
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -76,5 +77,75 @@ class AndroidCatalogueAssetStoreHelpersTest {
         val output = ByteArrayOutputStream()
         assertTrue(copyBounded(ByteArrayInputStream(ByteArray(0)), output, maxBytes = 10))
         assertEquals(0, output.size())
+    }
+
+    // ============================== resolveContainedAssetFile (isolation audit) ==============================
+
+    private fun tempBaseDir() = kotlin.io.path.createTempDirectory("catalogue-asset-test").toFile()
+
+    @Test
+    fun `resolves a file that genuinely lives under this company and product's own directory`() {
+        val base = tempBaseDir()
+        val dir = File(base, "co-1/prod-1").apply { mkdirs() }
+        val file = File(dir, "asset-1.jpg").apply { writeText("x") }
+
+        val resolved = resolveContainedAssetFile(base, "co-1", "prod-1", "co-1/prod-1/asset-1.jpg")
+
+        assertEquals(file.canonicalFile, resolved?.canonicalFile)
+    }
+
+    @Test
+    fun `refuses a path pointing at a DIFFERENT company's directory even though it is still under the shared root`() {
+        val base = tempBaseDir()
+        File(base, "co-B/prod-B").apply { mkdirs() }
+        File(base, "co-B/prod-B/secret.jpg").writeText("someone else's photo")
+
+        // Caller believes it is asking for co-A's asset, but the stored filePath string actually
+        // points at co-B's file -- this is exactly the class of bug architecture §13 names ("a
+        // hypothetical future DAO method that omits its WHERE companyId clause").
+        val resolved = resolveContainedAssetFile(base, "co-A", "prod-A", "co-B/prod-B/secret.jpg")
+
+        assertEquals("must never resolve a file outside the requesting company+product's own directory", null, resolved)
+    }
+
+    @Test
+    fun `refuses a path pointing at a different PRODUCT within the same company`() {
+        val base = tempBaseDir()
+        File(base, "co-1/prod-B").apply { mkdirs() }
+        File(base, "co-1/prod-B/other.jpg").writeText("a different product's photo")
+
+        val resolved = resolveContainedAssetFile(base, "co-1", "prod-A", "co-1/prod-B/other.jpg")
+
+        assertEquals(null, resolved)
+    }
+
+    @Test
+    fun `refuses a traversal attempt escaping the shared root entirely`() {
+        val base = tempBaseDir()
+        val outside = File(base.parentFile, "outside-${base.name}.jpg").apply { writeText("x") }
+        try {
+            val resolved = resolveContainedAssetFile(base, "co-1", "prod-1", "../${outside.name}")
+            assertEquals(null, resolved)
+        } finally {
+            outside.delete()
+        }
+    }
+
+    @Test
+    fun `refuses a non-existent file rather than resolving a path that merely looks right`() {
+        val base = tempBaseDir()
+        File(base, "co-1/prod-1").mkdirs()
+
+        val resolved = resolveContainedAssetFile(base, "co-1", "prod-1", "co-1/prod-1/never-written.jpg")
+
+        assertEquals(null, resolved)
+    }
+
+    @Test
+    fun `blank or null filePath is refused without touching the filesystem`() {
+        val base = tempBaseDir()
+        assertEquals(null, resolveContainedAssetFile(base, "co-1", "prod-1", null))
+        assertEquals(null, resolveContainedAssetFile(base, "co-1", "prod-1", ""))
+        assertEquals(null, resolveContainedAssetFile(base, "co-1", "prod-1", "   "))
     }
 }

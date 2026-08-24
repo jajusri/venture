@@ -3811,3 +3811,104 @@ merely simulated — the strongest class of evidence this project's own standing
 
 Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
 practice.
+
+## 51. Phase 60 — MVP-1.4 Catalogue: fresh offline audit (TD-048, TD-049 found and fixed) + mid-
+session price-state product lock
+
+Continued directly from Phase 59 (`8145ff4`), same session. User asked for a disciplined fresh
+audit ("do not assume tests pass means the product is perfect") rather than new features, then
+mid-task issued a genuine new LOCKED product requirement on pricing/buyer-visibility semantics,
+explicitly to be incorporated into the same run without restarting.
+
+### A. Company-isolation re-audit — TD-048 found and fixed
+
+Re-read every Catalogue DAO query (all correctly `companyId`-scoped) and every store, this time
+including `AndroidCatalogueAssetStore` at the implementation level rather than trusting its own
+doc comment's claim of "path-containment check on read." Found the real gap: `resolveAssetFile`
+received `companyId`/`productId` but never used them — it only checked the path was somewhere
+under the shared `catalogue_assets/` root, not the specific `<companyId>/<productId>/`
+subdirectory, directly contradicting architecture §13's own explicit requirement. Not currently
+exploitable (every real `filePath` value already originates from a correctly-scoped DAO query) but
+a genuine structural gap in a named defense-in-depth requirement. Fixed by extracting a pure,
+`Context`-free `resolveContainedAssetFile` helper that validates the full tuple; 6 new JVM tests
+using real temp directories prove a cross-company path is refused even though it sits under the
+same shared root — the actual regression case. See TD-048 for full detail.
+
+No other isolation gap found. `linkAll()`/`listUnlinkedStockItems`/`reconcileStockItemLinks`/the
+branch-selection DataStore/custom-field tables were all re-checked and confirmed correctly scoped
+(most of this had already been adversarially tested in Phases 58–59; this pass specifically looked
+for anything *not* yet covered, per the task's own "add regression tests only where a genuine
+uncovered risk is found" instruction).
+
+### B. Mid-session product lock: explicit price state + seller-controlled visibility
+
+User issued a new LOCKED requirement: a Catalogue product's price must always represent one of
+three **explicit** states to a viewer (an actual price, an honest "no price supplied yet," or the
+seller's deliberate "Contact for price") — the latter two must never be conflated — and, separately,
+that Connect approval must never be treated as automatically granting Catalogue/price visibility;
+the seller remains the sole authority, controllable at product/product-group level via the
+already-locked override chain, with a buyer/viewer level explicitly out of reach of today's
+infrastructure.
+
+**Found and fixed a real, concrete violation (TD-049)**: `CatalogueShareTextRenderer.priceLine()`
+rendered "Contact for price" for *both* `PriceDisplayMode.ContactForPrice` and
+`PriceDisplayMode.Open`-with-no-amount-entered — exactly the conflation the lock forbids (matches
+the lock's own Example B precisely). Fixed with a new `CataloguePriceState` sealed type
+(`ActualPrice`/`NoPriceSupplied`/`ContactForPrice`) and a single `resolveCataloguePriceState`
+resolver in `domain/model/CatalogueModels.kt`, now the one place this three-way distinction is
+computed; the renderer shows "Price: Not supplied yet" for the previously-conflated case. The
+Excel round-trip needed no change — `priceDisplayMode`/`manualPriceAmount` were already carried as
+separate, uncollapsed fields through import/export; only the renderer was re-deriving a conflated
+state from them. 7 new tests (`CataloguePriceStateTest`) + 1 existing renderer test corrected (it
+had asserted the old, now-locked-incorrect behavior by name) + 1 new Excel-import round-trip test.
+
+**Verified, not fixed (nothing to fix)**: Connect approval does not, and never did, grant Catalogue
+access — a direct code search (`grep -rn "feature\.connect\|feature\.party\|ConnectionStatus"` across
+`feature/catalogue/`) found zero coupling; the only two hits are doc-comment naming-pattern
+references to `PartySourceLink`, not code dependencies. Catalogue sharing is gated exclusively by
+the company-wide `catalogue_settings.isPublic` toggle, with no buyer-specific concept anywhere —
+this is the correct, already-locked state (buyer accounts/connection-based access is explicitly
+1.4b, future), not a gap this session needed to close.
+
+**Deliberately deferred, not built**: extending the override-resolution chain (Item → Branch →
+Stock-group → Catalogue-wide) to cover `PriceDisplayMode` itself (today only `PriceSyncMode` is
+override-resolvable). Investigated the actual shape this would require: `catalogue_product.priceDisplayMode`
+is a non-nullable plain column today (every product always has an explicit value), so "falling
+through" to a branch/stock-group/catalogue-wide default would require making it nullable — a real
+schema change — *and* deciding whether the Detail screen's existing plain-column write path should
+become an Item-level override row instead, for consistency. Separately, **no override-editing UI
+exists for any attribute yet** (not even the already-locked `PriceSyncMode`), so wiring resolution
+for a second attribute today would have no way to actually be exercised by an owner — exactly the
+"oversized speculative subsystem" the task's own instruction warned against building. The
+resolution *engine* itself (`CatalogueOverrideResolver`) is already generic and requires no change
+to accept a new attribute once this groundwork is done properly; this is genuinely deferred
+infrastructure, not a currently-broken promise.
+
+### C. Testing, build, and safety confirmation
+
+Android JVM unit tests: **1,543 total, 0 failures** (up from Phase 59's 1,530; +13 net this phase: 6
+TD-048 + 6 TD-049 resolver + 1 new Excel round-trip test; the renderer's existing "Open mode with no
+resolved price" test was corrected in place, not counted as a net addition).
+`compileDevDebugKotlin`/`compileDevDebugUnitTestKotlin` clean. Full Catalogue suite
+re-run green after every change, not just the directly-touched files. No live Tally/Connector
+communication attempted, no experimental Tally request shape invented, no security boundary
+touched — this phase's changes are entirely local (asset-store path validation, pure price-state
+domain logic) with zero Connector/Tally/pairing-code involvement.
+
+### D. What was not done, and why
+
+- **Live Tally/Connector validation** — out of scope per the network constraint, unchanged from
+  Phase 59; still the one remaining categorical gate.
+- **Override-chain support for `PriceDisplayMode`** — deliberately deferred, see §B; would need a
+  nullable-column migration and a decision on the Detail screen's persistence path, neither safe to
+  rush, and no override-editing UI exists yet to exercise it regardless.
+- **Buyer/viewer-level price visibility** — explicitly out of reach of current infrastructure
+  (no buyer identity/connection-awareness anywhere in Catalogue); remains 1.4b, future, per the
+  lock's own instruction not to fake it.
+- **An owner-facing "no price entered yet" hint in `CatalogueDetailScreen`** — the Detail screen is
+  the seller's own edit surface; an empty Price text field is already self-evident to the person
+  typing into it. Not changed, to keep this pass focused on the buyer-facing defect that was
+  actually locked against.
+
+Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
+practice.

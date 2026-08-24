@@ -1,7 +1,8 @@
 package com.budcom.android.feature.catalogue.sharing
 
+import com.budcom.android.feature.catalogue.domain.model.CataloguePriceState
 import com.budcom.android.feature.catalogue.domain.model.CataloguePublishedSnapshot
-import com.budcom.android.feature.catalogue.domain.model.PriceDisplayMode
+import com.budcom.android.feature.catalogue.domain.model.resolveCataloguePriceState
 
 /**
  * Renders a Published-only catalogue scope as a plain-text share file.
@@ -41,11 +42,14 @@ object CatalogueShareTextRenderer {
         }
     }
 
-    private fun priceLine(snapshot: CataloguePublishedSnapshot): String = when (snapshot.priceDisplayMode) {
-        PriceDisplayMode.ContactForPrice -> "Price: Contact for price"
-        PriceDisplayMode.Open -> {
-            val amount = snapshot.resolvedPriceAmount
-            if (amount.isNullOrBlank()) "Price: Contact for price" else "Price: $amount ${snapshot.resolvedPriceCurrencyCode.orEmpty()}".trim()
+    /** Mid-MVP-1.4 lock: a viewer must always see one of three explicit states -- an actual price,
+     * an honest "no price yet," or the seller's deliberate "Contact for price." The pre-lock
+     * version of this function silently collapsed an Open-mode product with no amount entered into
+     * "Contact for price," which is exactly the state confusion the lock forbids (Example B/C). */
+    private fun priceLine(snapshot: CataloguePublishedSnapshot): String =
+        when (val state = resolveCataloguePriceState(snapshot.priceDisplayMode, snapshot.resolvedPriceAmount, snapshot.resolvedPriceCurrencyCode)) {
+            is CataloguePriceState.ActualPrice -> "Price: ${state.amount} ${state.currencyCode.orEmpty()}".trim()
+            CataloguePriceState.NoPriceSupplied -> "Price: Not supplied yet"
+            CataloguePriceState.ContactForPrice -> "Price: Contact for price"
         }
-    }
 }

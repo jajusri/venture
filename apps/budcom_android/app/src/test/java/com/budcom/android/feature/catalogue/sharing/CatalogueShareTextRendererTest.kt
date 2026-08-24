@@ -78,12 +78,16 @@ class CatalogueShareTextRendererTest {
     }
 
     @Test
-    fun `Open mode with no resolved price still falls back to Contact for price, never blank`() {
+    fun `Open mode with no resolved price shows an explicit not-supplied state, never blank and never Contact-for-price`() {
+        // Mid-MVP-1.4 lock: "No Price Supplied" must never be confused with the seller's
+        // deliberate "Contact for Price" choice -- they are different states with different
+        // meanings, even though both currently render with no numeric amount.
         val text = CatalogueShareTextRenderer.render(
             null, CatalogueShareScope.FullCatalogue,
             listOf(snapshot(priceDisplayMode = PriceDisplayMode.Open, price = null)),
         )
-        assertTrue(text.contains("Price: Contact for price"))
+        assertTrue(text.contains("Price: Not supplied yet"))
+        assertFalse(text.contains("Contact for price"))
     }
 
     @Test

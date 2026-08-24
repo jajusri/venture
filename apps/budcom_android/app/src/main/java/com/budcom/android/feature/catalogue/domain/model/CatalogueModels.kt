@@ -24,6 +24,32 @@ enum class CatalogueLifecycleState { Draft, Review, Published, Archived }
 /** Brainstorm Outcome §4 "Pricing — No pricing engine. Open (visible) or 'Contact for price' only." */
 enum class PriceDisplayMode { Open, ContactForPrice }
 
+/**
+ * Mid-MVP-1.4 product lock: "Price is optional, but the price state is not" — a viewer must always
+ * see one of these three **explicit** states, never an apparently-missing field. [ContactForPrice]
+ * (the seller's deliberate choice) must never be shown for, or confused with, [NoPriceSupplied]
+ * (the seller simply hasn't entered a number yet under [PriceDisplayMode.Open]) — the two look
+ * identical to a naive `amount == null` check, which is exactly the bug this type exists to
+ * prevent structurally. [resolveCataloguePriceState] is the single place this resolution happens;
+ * every price-rendering call site (share text, and any future one) must go through it rather than
+ * re-deriving the same three-way distinction ad hoc.
+ */
+sealed interface CataloguePriceState {
+    data class ActualPrice(val amount: String, val currencyCode: String?) : CataloguePriceState
+    /** [PriceDisplayMode.Open] selected, but no amount has been entered yet — distinct from
+     * [ContactForPrice], never collapsed into it. */
+    data object NoPriceSupplied : CataloguePriceState
+    data object ContactForPrice : CataloguePriceState
+}
+
+fun resolveCataloguePriceState(displayMode: PriceDisplayMode, amount: String?, currencyCode: String?): CataloguePriceState =
+    when (displayMode) {
+        PriceDisplayMode.ContactForPrice -> CataloguePriceState.ContactForPrice
+        PriceDisplayMode.Open -> amount?.trim()?.takeIf(String::isNotEmpty)
+            ?.let { CataloguePriceState.ActualPrice(it, currencyCode) }
+            ?: CataloguePriceState.NoPriceSupplied
+    }
+
 /** Brainstorm Outcome §4 "Price-sync from Tally: Auto or Manual". Resolved per the same override
  * chain as every other override-capable attribute (architecture §8/§12). */
 enum class PriceSyncMode { Auto, Manual }
