@@ -186,6 +186,19 @@ private fun CatalogueDetailContent(state: CatalogueDetailUiState, onEvent: (Cata
         val canEdit = state.canEdit
         PhotosSection(state = state, canEdit = canEdit, onEvent = onEvent)
 
+        // TD-047: a Manual product has no Tally Stock Item to source a Unit from, so it gets its
+        // own Catalogue-owned, editable field here -- a Tally-linked product's Unit is Tally-
+        // authoritative and already shown read-only in the "From Tally" card above.
+        if (state.isManualProduct) {
+            OutlinedTextField(
+                value = state.unitDraft,
+                onValueChange = { onEvent(CatalogueDetailEvent.UnitChanged(it)) },
+                label = { Text("Unit") },
+                enabled = canEdit,
+                modifier = Modifier.fillMaxWidth().testTag("catalogue_detail_unit"),
+            )
+        }
+
         OutlinedTextField(
             value = state.descriptionDraft,
             onValueChange = { onEvent(CatalogueDetailEvent.DescriptionChanged(it)) },

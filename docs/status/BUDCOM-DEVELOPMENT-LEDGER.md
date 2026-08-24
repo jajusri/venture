@@ -3651,3 +3651,163 @@ keyed storage/retrieval this guarantee depends on.
   gap in physical evidence, named here rather than glossed over.
 
 Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing practice.
+
+## 50. Phase 59 — MVP-1.4 Catalogue: TD-047 resolution, Branch selector UI, offline-only pass to
+pre-live-validation completeness
+
+Continued directly from Phase 58 (`8f9fae8`), same session, same mobile-hotspot network
+constraint. User authorized taking Catalogue "to its strongest possible pre-live-validation
+completion state" and gave an explicit product decision for TD-047 (Unit becomes owner-editable
+for Manual products; Tally-linked stays authoritative), removing the one open product-ambiguity
+Phase 58 had flagged as blocking a unilateral fix. Re-audited current implementation state against
+the architecture/ledger/TD-registry directly (not from memory) before writing code, per this
+project's standing discipline.
+
+### A. TD-047 resolved (see Technical Debt Registry for the full write-up)
+
+New nullable `catalogue_product.manualUnit` column, migration 12→13 (additive-only). Unit resolves
+as `if (source == Tally) stockItem?.baseUnit else entity.manualUnit` — a Tally-linked product's
+Unit stays exclusively Tally-authoritative by construction; `CatalogueRepositoryImpl.updateEnrichment`
+only ever writes `manualUnit` for a `Manual`-sourced product, so an enrichment update aimed at a
+Tally-linked product's Unit is silently ignored rather than merely hidden by the UI. New editable
+"Unit" field in `CatalogueDetailScreen`, shown only for Manual products. Excel import now populates
+it too (`CatalogueExcelImportUseCase.toEnrichmentUpdate()` gained `unit`). 16 new/strengthened
+tests (11 repository, 4 ViewModel, 2 Excel — one an existing test strengthened with a new
+assertion) plus the `migrate12To13` instrumented test. **Live-verified end-to-end** (§E): a real
+CSV import created a Manual product whose Detail screen showed an editable Unit field correctly
+pre-filled from the file, confirmed in the real on-device SQLite database, and confirmed to survive
+a genuine app force-stop + relaunch.
+
+### B. Branch selector UI (closes Phase 56 §H's other disclosed gap)
+
+New `CatalogueBranchSelectionStore` port + `CatalogueBranchSelectionLocalDataSource` (DataStore
+Preferences, own store file, mirrors `LedgerSharingPreferencesLocalDataSource`'s exact pattern —
+own file, safe fallback on a corrupt/missing read) — `companyId`-keyed preference keys, so
+cross-company isolation is structural (different companies read genuinely different keys, not a
+shared key filtered by convention). `CatalogueScreen` gained a company-level branch selector
+(architecture §17): a dropdown showing "All branches" plus every existing branch, and a minimal
+"+ Add branch" (name-only dialog, mirroring the manual-product-creation dialog's own minimal-fields
+precedent — deliberately no branch editing/deactivation/management screen, none of which are part
+of the locked scope). Selecting a branch persists immediately and is re-read on every company load,
+falling back to the catalogue-wide default if a stored selection points at a branch that no longer
+exists (dangling-reference safety). Selecting a branch never filters the product list — "One shared
+catalogue across branches" (Brainstorm Outcome §4) is locked and unchanged; the selector is scoping
+context only, consistent with there being no override-editing UI yet to actually scope (the
+override *resolution* engine itself has been fully implemented and tested since Phase 56 — this
+phase only adds the missing selector surface, not a new override-editing screen, which remains
+out of scope). 9 new ViewModel tests: empty-state, add-and-select, blank-name rejection,
+select/deselect, persistence across a simulated relaunch (a second ViewModel instance sharing the
+same underlying fake store), a dangling stored-selection fallback, single-branch rendering, and
+cross-company isolation (a branch selection made under one company is never visible after switching
+to another, and correctly restored on switching back).
+
+**Live-verified**: real device, "All branches" selector renders in the app bar row; no crash.
+Full add-branch → select → persist-across-relaunch walkthrough was exercised at the unit-test level
+only this pass (9 tests above) — the on-device walkthrough covered rendering and the default state,
+not a hands-on "type a branch name, save, relaunch, confirm" sequence; named explicitly under
+"What was not done" below rather than implied.
+
+### C. Excel import/export UI (closes the other Phase 58-disclosed gap)
+
+New overflow menu (`MoreVert` icon, confirmed present in this project's `material-icons-core` AAR
+before use, matching Phase 57's own verification discipline) offering "Import from Excel (CSV)" and
+"Export to Excel (CSV)". Import: `ActivityResultContracts.GetContent("text/*")` → Route reads the
+picked `Uri`'s text via `ContentResolver` off the main thread → `CatalogueViewModel` parses it
+(`CatalogueCsvFormat`), builds the mandatory preview (`CatalogueExcelValidator`, identity resolution
+via Stock Item Reference/SKU against the company's real products — never Product Name alone, per
+the already-locked contract) → an `AlertDialog` shows create/update/skip counts, a plain-language
+note on native-vs-custom field handling, any duplicate-header warnings, and every skipped row's
+specific reason → `ConfirmImport` commits via the existing, untouched `CatalogueExcelImportUseCase`
+and refreshes the list. Export: `CatalogueExcelExportUseCase` generates CSV text immediately (no
+picker needed first, unlike import), then `ActivityResultContracts.CreateDocument("text/csv")` lets
+the owner choose a destination with a suggested filename; the Route writes the already-generated
+text to it. No new parsing/validation logic in the UI layer at all — every byte of contract logic
+still lives in the Phase 58 domain layer, exactly as the task's own instruction required. 13 new
+ViewModel tests: file-pick request, valid-file preview, malformed-row skip-with-reason, empty file,
+duplicate-header warning, custom-column preservation, confirm-commits-and-refreshes,
+dismiss-commits-nothing, per-company scoping, export-effect content/filename.
+
+**Live-verified end-to-end, the strongest evidence in this phase**: pushed a real CSV
+(`Product Name,Unit,Description,Category,Warranty` / one data row) to the device's Downloads via
+`adb push` + a media-scanner broadcast, then drove the *actual* on-device flow by hand exactly as an
+owner would — tapped the overflow menu, "Import from Excel (CSV)", the real Android system
+document-picker opened, selected the pushed file, the Import Preview dialog correctly showed
+"1 new, 0 updated, 0 skipped out of 1 rows," tapped Import (observed the disabled "Importing…"
+label mid-flight), and the product appeared in the list as "Test Widget · Draft · Manually added"
+with a real "Import complete: 1 created, 0 updated, 0 skipped" confirmation. Read the real on-device
+SQLite database directly (`run-as ... sqlite3`) and confirmed `manualUnit='Nos'`,
+`description='A fine test widget'`, `customerFacingCategory='Tools'`, and the custom
+`Warranty='12 months'` field landed correctly in the new `catalogue_custom_field` table — proving
+the entire Phase 58 Excel persistence layer, not just this phase's UI, end-to-end against real
+platform I/O for the first time. Then exercised Export the same way: the real `CreateDocument`
+system picker opened pre-filled with `catalogue-export.csv`, saved it, and the pulled file's actual
+bytes were read back and confirmed byte-correct: native columns plus the `Warranty` custom column,
+matching the database exactly. No crash at any point (`logcat AndroidRuntime:E` checked after every
+step). Test data was cleaned up afterward (product Published then Archived — Catalogue has no
+delete by design — Public toggle returned to off, pushed files removed from the device).
+
+**One genuine testing-methodology lesson worth recording, not a product defect**: mid-cleanup, a
+rapid double-tap at identical screen coordinates (intended as two consecutive "Archive" taps)
+actually landed on "Archive" then "Restore" once the button set changed after the first tap
+succeeded, silently reverting the test product from Archived back to Draft. Caught by re-checking
+state via a fresh `uiautomator dump` rather than trusting the assumed tap target, and corrected with
+single, dump-verified taps. `CatalogueLifecycleTransitions` — the actual state machine — was not
+touched this session and remains fully covered by its own pre-existing exhaustive test suite; this
+was purely an artifact of blind coordinate-based UI driving, recorded here so a future session
+doesn't mistake a similar observation for a real regression.
+
+### D. Company/branch isolation and data-integrity audit (mandatory per the governing instructions)
+
+Added 4 repository-level adversarial tests in Phase 58 already covered the "identical identifier
+across two companies" pattern for Stock Item GUID, SKU, category, and custom fields (see Phase 58's
+own §F). This phase's Unit work added one more of the same shape (identical Unit value in two
+companies never cross-resolves, §A above). Re-audited the branch-selection store specifically for
+this class of gap: confirmed the DataStore key itself is `companyId`-prefixed (not merely filtered
+after a shared read), so cross-company leakage is structurally impossible, not convention-enforced —
+covered by the "branch selection never mixes across companies" ViewModel test (§B). No new gap
+found beyond what Phase 58 already closed; company scoping across every new table/store introduced
+across both phases (`catalogue_custom_field`, `catalogue_product.manualUnit`,
+`catalogue_branch_selection` DataStore) was re-confirmed `companyId`-first by direct inspection.
+
+### E. Testing, build, and real-device evidence (cumulative, both phases)
+
+Android JVM unit tests: **1,530 total, 0 failures** (up from Phase 58's 1,494; +36 this phase: 16
+TD-047 + 9 branch selector + 13 Excel UI, minus one test strengthened rather than added new outright
+— see individual counts above; net matches the total delta). `compileDevDebugKotlin`/
+`compileDevDebugUnitTestKotlin`/`compileDevDebugAndroidTestKotlin` all clean.
+`lintDevDebug`: 0 errors, 84 warnings (identical pre-existing baseline, unchanged by this phase).
+`assembleDevRelease` (full R8/ProGuard minification, resource shrinking, `lintVitalDevRelease`) ran
+clean end-to-end — genuine evidence this phase's code is release-build-safe, not just debug-safe.
+
+**Real-device evidence** (`10BF44124K000E3`, same device both phases): installed **over the existing
+v12 database** specifically to exercise the real `MIGRATION_12_13` against genuine prior data — `PRAGMA
+user_version` read `13` post-launch, no crash. All 12 instrumented tests in
+`AppDatabaseMigrationTest` (10 from Phase 56/58 plus this phase's `migrate12To13` — Phase 58's own
+`migrate11To12` counted in that file's total) ran via `connectedDevDebugAndroidTest` directly against
+the real device and passed. The full Excel import→commit→export round-trip (§C) and TD-047's Unit
+field (§A) were both proven end-to-end against real platform I/O and the real on-device database, not
+merely simulated — the strongest class of evidence this project's own standing discipline recognizes
+("every prior milestone's JVM-green result was explicitly treated as necessary but not sufficient").
+
+### F. What was not done, and why (deferred, not silently dropped)
+
+- **Live Tally/Connector validation** — explicitly out of scope this session (mobile-hotspot network
+  constraint, per the governing instructions); TD-043 (`stockItemsEnrichedFields`) remains exactly
+  where Phase 56 left it, `EXPERIMENTAL_DISABLED`. A precise validation protocol for the next
+  trusted-network session is recorded in this session's final report (not duplicated here).
+- **A hands-on, on-device "add a branch, select it, relaunch" walkthrough** — the branch selector's
+  render/empty-state was confirmed live; the full add/select/persist sequence was proven at the
+  unit-test level (9 tests) but not walked by hand on the device this pass, unlike the Excel
+  import/export flow, which was. Named explicitly rather than implied as equivalent evidence.
+- **TD-044 (no real Owner/staff identity)** — unrelated to this phase's scope, unchanged, still
+  disclosed and open per its own registry entry.
+- **A branch-management screen (edit/deactivate/reorder)** — deliberately not built; not part of the
+  locked MVP-1.4 scope, and the governing instructions explicitly warned against inventing one
+  merely because a selector now exists.
+- **Override-editing UI** (e.g., a price-sync-mode picker scoped by the now-selectable branch) —
+  still not built; the override *resolution* engine has been complete and tested since Phase 56, but
+  no screen lets an owner actually set an override at any level. Out of this phase's named scope
+  (Branch selector UI, not override UI), flagged as a real remaining gap for a future pass.
+
+Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
+practice.

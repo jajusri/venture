@@ -1,7 +1,13 @@
 package com.budcom.android.feature.catalogue.presentation
 
+import com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelImportPreview
 import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState
 import com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource
+
+data class CatalogueBranchUi(
+    val branchId: String,
+    val name: String,
+)
 
 data class CatalogueProductRowUi(
     val productId: String,
@@ -29,7 +35,24 @@ data class CatalogueUiState(
      * (architecture §11: sharing reads exclusively from the published snapshot) -- a Draft/Review
      * product's category, if it hasn't been published yet, is never offered here. */
     val availableCategories: List<String> = emptyList(),
+    /** Branch selector (architecture §8/§17) -- scoping context only, never a product-list filter:
+     * "One shared catalogue across branches" is locked, so [products] is never filtered by this. */
+    val branches: List<CatalogueBranchUi> = emptyList(),
+    /** `null` means the catalogue-wide default context, same meaning as
+     * [com.budcom.android.feature.catalogue.domain.model.CatalogueOverrideScope.CatalogueWide]. */
+    val selectedBranchId: String? = null,
+    val showBranchMenu: Boolean = false,
+    val showAddBranchDialog: Boolean = false,
+    val addBranchName: String = "",
+    val showMoreMenu: Boolean = false,
+    /** Set once a picked file has been parsed and previewed (architecture §9: "Import preview:
+     * mandatory step before commit... never a silent bulk-apply") -- `null` means no import is in
+     * progress. Committing or dismissing clears it back to `null`. */
+    val importPreview: CatalogueExcelImportPreview? = null,
+    val importDuplicateHeaderWarnings: List<String> = emptyList(),
+    val isImporting: Boolean = false,
 ) {
+    val selectedBranchName: String get() = branches.firstOrNull { it.branchId == selectedBranchId }?.name ?: "All branches"
     val isEmpty: Boolean get() = !isInitialLoading && products.isEmpty()
 }
 
@@ -56,9 +79,35 @@ sealed interface CatalogueEvent {
     data object OpenCategoryShareDialog : CatalogueEvent
     data object DismissCategoryShareDialog : CatalogueEvent
     data class ShareCategory(val category: String) : CatalogueEvent
+
+    data object OpenBranchMenu : CatalogueEvent
+    data object DismissBranchMenu : CatalogueEvent
+    data class SelectBranch(val branchId: String?) : CatalogueEvent
+    data object OpenAddBranchDialog : CatalogueEvent
+    data object DismissAddBranchDialog : CatalogueEvent
+    data class AddBranchNameChanged(val name: String) : CatalogueEvent
+    data object ConfirmAddBranch : CatalogueEvent
+
+    data object OpenMoreMenu : CatalogueEvent
+    data object DismissMoreMenu : CatalogueEvent
+    /** Route responds by launching a file picker (architecture §9 -- CSV, this contract's chosen
+     * file format, §9's own doc comment). */
+    data object ImportFromExcel : CatalogueEvent
+    /** The Route has already read the picked file's raw text (a Route/Composable-layer concern,
+     * mirroring [com.budcom.android.feature.catalogue.presentation.CatalogueDetailEvent.PhotoSelected]'s
+     * own "Route resolves the platform Uri, ViewModel never touches Context" split) -- parses and
+     * previews it, never committing anything yet. */
+    data class ExcelFileTextLoaded(val text: String) : CatalogueEvent
+    data object ConfirmImport : CatalogueEvent
+    data object DismissImportPreview : CatalogueEvent
+    /** Route responds by launching a "create document" picker with the already-generated CSV
+     * content and a suggested filename (see [CatalogueEffect.ExportCsvReady]). */
+    data object ExportToExcel : CatalogueEvent
 }
 
 /** One-shot navigation effect — mirrors [CatalogueDetailEffect]'s own pattern. */
 sealed interface CatalogueEffect {
     data object NavigateToStockItemPicker : CatalogueEffect
+    data object RequestExcelImportPick : CatalogueEffect
+    data class ExportCsvReady(val csvText: String, val suggestedFileName: String) : CatalogueEffect
 }

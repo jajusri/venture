@@ -38,6 +38,13 @@ data class CatalogueProductEntity(
     val linkedStockItemId: String?,
     val sku: String?,
     val displayNameOverride: String?,
+    /** Catalogue-owned Unit, meaningful only for a [source] == `"MANUAL"` product (TD-047) — a
+     * Tally-linked product's Unit remains exclusively [com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem.baseUnit],
+     * resolved live and never mirrored here, per this table's own "never store a Tally-owned field"
+     * discipline (see this file's top-level doc comment). [com.budcom.android.feature.catalogue.data.repository.CatalogueRepositoryImpl]
+     * only ever writes this column for a Manual-sourced product, structurally preventing a Manual
+     * edit from ever reaching (let alone overwriting) Tally-authoritative data. */
+    val manualUnit: String?,
     val description: String?,
     val specifications: String?,
     val customerFacingCategory: String?,

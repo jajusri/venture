@@ -1230,4 +1230,65 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 12 -> 13 migration (TD-047: adding `catalogue_product.manualUnit`)
+     * preserves every pre-existing row -- including an existing Manual product and an existing
+     * Tally-linked product's source link -- and adds exactly one new, nullable, backfilled-to-NULL
+     * column, never touching any other table.
+     */
+    @Test
+    fun migrate12To13_preservesExistingRowsAndAddsManualUnitColumnOnly() {
+        val db1213DbName = "migration-test-db-12-13"
+
+        var db = helper.createDatabase(db1213DbName, 12)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO catalogue_product (companyId, productId, source, linkedStockItemId, sku, " +
+                "displayNameOverride, description, specifications, customerFacingCategory, priceDisplayMode, " +
+                "manualPriceAmount, manualPriceCurrencyCode, lifecycleState, sourceAvailable, createdAt, " +
+                "createdAtSource, updatedAt, updatedAtSource, archivedAt, archivedAtSource) VALUES " +
+                "('acme-001', 'prod-manual', 'MANUAL', NULL, NULL, 'Handwoven Basket', 'A fine basket', NULL, NULL, " +
+                "'OPEN', NULL, NULL, 'DRAFT', 1, 1736899200000, 'DEVICE_LOCAL_PROVISIONAL', 1736899200000, " +
+                "'DEVICE_LOCAL_PROVISIONAL', NULL, NULL)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db1213DbName, 13, false, DatabaseModule.MIGRATION_12_13)
+
+        db.query(
+            "SELECT displayNameOverride, description FROM catalogue_product WHERE companyId = 'acme-001' AND productId = 'prod-manual'",
+        ).use { cursor ->
+            assertTrue("existing Manual product row must survive the migration", cursor.moveToFirst())
+            assertEquals("Handwoven Basket", cursor.getString(0))
+            assertEquals("A fine basket", cursor.getString(1))
+        }
+
+        val columns = mutableMapOf<String, String>()
+        db.query("PRAGMA table_info(`catalogue_product`)").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val typeIdx = cursor.getColumnIndexOrThrow("type")
+            while (cursor.moveToNext()) {
+                columns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+            }
+        }
+        assertTrue("manualUnit column must exist after migration", columns.containsKey("manualUnit"))
+        assertEquals("TEXT", columns["manualUnit"])
+
+        db.query("SELECT manualUnit FROM catalogue_product WHERE companyId = 'acme-001' AND productId = 'prod-manual'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertTrue("pre-existing row's new column must backfill to NULL, not an empty string or default", cursor.isNull(0))
+        }
+
+        db.execSQL("UPDATE catalogue_product SET manualUnit = 'Nos' WHERE companyId = 'acme-001' AND productId = 'prod-manual'")
+        db.query("SELECT manualUnit FROM catalogue_product WHERE companyId = 'acme-001' AND productId = 'prod-manual'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("Nos", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

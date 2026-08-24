@@ -150,6 +150,125 @@ class CatalogueRepositoryImplTest {
         assertNull(repository().updateEnrichment("co-1", "missing", CatalogueEnrichmentUpdate(description = "x"), ts()))
     }
 
+    // ============================== TD-047: Manual product Unit ==============================
+
+    @Test
+    fun `a new Manual product starts with no Unit`() = runTest(dispatcher) {
+        val product = repository().createManualDraft("co-1", "Hand-made Basket", ts())
+        assertNull(product.unit)
+    }
+
+    @Test
+    fun `a Manual product can receive a Unit via updateEnrichment`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Hand-made Basket", ts())
+
+        val updated = repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(unit = "Nos"), ts())!!
+
+        assertEquals("Nos", updated.unit)
+    }
+
+    @Test
+    fun `a Manual product's Unit can be edited after it is already set`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Hand-made Basket", ts())
+        repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(unit = "Nos"), ts())
+
+        val updated = repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(unit = "Box"), ts())!!
+
+        assertEquals("Box", updated.unit)
+    }
+
+    @Test
+    fun `a Manual product's Unit persists across a fresh findProduct re-fetch`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Hand-made Basket", ts())
+        repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(unit = "Nos"), ts())
+
+        val reread = repo.findProduct("co-1", product.productId)!!
+
+        assertEquals("Nos", reread.unit)
+    }
+
+    @Test
+    fun `passing null for unit leaves an already-set Manual Unit unchanged, matching every other enrichment field`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Hand-made Basket", ts())
+        repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(unit = "Nos"), ts())
+
+        val updated = repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(description = "Unrelated edit"), ts())!!
+
+        assertEquals("Nos", updated.unit)
+        assertEquals("Unrelated edit", updated.description)
+    }
+
+    @Test
+    fun `passing an explicit blank string for unit sets it to blank, distinct from null-means-unchanged`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Hand-made Basket", ts())
+        repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(unit = "Nos"), ts())
+
+        val updated = repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(unit = ""), ts())!!
+
+        assertEquals("", updated.unit)
+    }
+
+    @Test
+    fun `a Tally-linked product's Unit stays exclusively Tally-authoritative -- an enrichment update can never overwrite it`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }["guid:widget"] = stockItem(id = "guid:widget")
+        val repo = repository()
+        val product = repo.createDraftFromStockItem("co-1", "guid:widget", ts())!!
+        assertEquals("Nos", product.unit)
+
+        val updated = repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(unit = "MALICIOUS OVERWRITE"), ts())!!
+
+        assertEquals("a Tally-linked product's Unit must never be overwritten by an enrichment update", "Nos", updated.unit)
+        val reread = repo.findProduct("co-1", product.productId)!!
+        assertEquals("Nos", reread.unit)
+    }
+
+    @Test
+    fun `a Tally-linked product's Unit still updates correctly when Tally itself re-syncs a new Unit`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }["guid:widget"] = stockItem(id = "guid:widget")
+        val repo = repository()
+        val product = repo.createDraftFromStockItem("co-1", "guid:widget", ts())!!
+        assertEquals("Nos", product.unit)
+
+        stockItemLookup.stored["co-1"]!!["guid:widget"] = stockItem(id = "guid:widget").copy(baseUnit = "Box")
+
+        val reread = repo.findProduct("co-1", product.productId)!!
+        assertEquals("Box", reread.unit)
+    }
+
+    @Test
+    fun `the identical Unit value set on Manual products in two different companies never cross-resolves`() = runTest(dispatcher) {
+        val repo = repository()
+        val productA = repo.createManualDraft("co-A", "Widget A", ts())
+        val productB = repo.createManualDraft("co-B", "Widget B", ts())
+        repo.updateEnrichment("co-A", productA.productId, CatalogueEnrichmentUpdate(unit = "Nos"), ts())
+        repo.updateEnrichment("co-B", productB.productId, CatalogueEnrichmentUpdate(unit = "Box"), ts())
+
+        assertEquals("Nos", repo.findProduct("co-A", productA.productId)!!.unit)
+        assertEquals("Box", repo.findProduct("co-B", productB.productId)!!.unit)
+    }
+
+    @Test
+    fun `setting a Manual product's Unit does not regress its other enrichment fields`() = runTest(dispatcher) {
+        val repo = repository()
+        val product = repo.createManualDraft("co-1", "Hand-made Basket", ts())
+        repo.updateEnrichment(
+            "co-1", product.productId,
+            CatalogueEnrichmentUpdate(description = "A fine basket", customerFacingCategory = "Home"),
+            ts(),
+        )
+
+        val updated = repo.updateEnrichment("co-1", product.productId, CatalogueEnrichmentUpdate(unit = "Nos"), ts())!!
+
+        assertEquals("Nos", updated.unit)
+        assertEquals("A fine basket", updated.description)
+        assertEquals("Home", updated.customerFacingCategory)
+    }
+
     // ============================== Lifecycle / publish ==============================
 
     @Test

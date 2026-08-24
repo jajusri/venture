@@ -1,5 +1,7 @@
 package com.budcom.android.feature.catalogue.presentation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,11 +9,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -35,6 +41,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -45,8 +55,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelRowOutcome
 import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState
 import com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CatalogueRoute(
@@ -56,6 +70,33 @@ fun CatalogueRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    // Holds a just-generated export's CSV text between "user picked a destination" and "we can
+    // actually write to it" -- CreateDocument's result callback has no way to carry our own
+    // payload through, so it has to live here instead (same reason CatalogueDetailRoute holds
+    // `pendingCameraUri` across its own two-step camera-capture flow).
+    var pendingExportCsv by remember { mutableStateOf<String?>(null) }
+
+    val importFilePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } }.getOrNull()
+            }
+            if (text != null) viewModel.onEvent(CatalogueEvent.ExcelFileTextLoaded(text))
+        }
+    }
+    val exportDestinationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        val csv = pendingExportCsv
+        pendingExportCsv = null
+        if (uri == null || csv == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching { context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(csv) } }
+            }
+        }
+    }
+
     LaunchedEffect(viewModel) {
         viewModel.shareIntent.collect { intent -> context.startActivity(intent) }
     }
@@ -63,6 +104,11 @@ fun CatalogueRoute(
         viewModel.effects.collect { effect ->
             when (effect) {
                 CatalogueEffect.NavigateToStockItemPicker -> onOpenStockItemPicker()
+                CatalogueEffect.RequestExcelImportPick -> importFilePickerLauncher.launch("text/*")
+                is CatalogueEffect.ExportCsvReady -> {
+                    pendingExportCsv = effect.csvText
+                    exportDestinationLauncher.launch(effect.suggestedFileName)
+                }
             }
         }
     }
@@ -125,6 +171,30 @@ fun CatalogueScreen(
                             )
                         }
                     }
+                    Box {
+                        IconButton(
+                            onClick = { onEvent(CatalogueEvent.OpenMoreMenu) },
+                            modifier = Modifier.testTag("catalogue_more_button"),
+                        ) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(
+                            expanded = state.showMoreMenu,
+                            onDismissRequest = { onEvent(CatalogueEvent.DismissMoreMenu) },
+                            modifier = Modifier.testTag("catalogue_more_menu"),
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Import from Excel (CSV)") },
+                                onClick = { onEvent(CatalogueEvent.ImportFromExcel) },
+                                modifier = Modifier.testTag("catalogue_more_menu_import"),
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Export to Excel (CSV)") },
+                                onClick = { onEvent(CatalogueEvent.ExportToExcel) },
+                                modifier = Modifier.testTag("catalogue_more_menu_export"),
+                            )
+                        }
+                    }
                 },
             )
         },
@@ -137,7 +207,9 @@ fun CatalogueScreen(
             }
         },
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            BranchSelectorRow(state = state, onEvent = onEvent)
+            Box(modifier = Modifier.fillMaxSize().weight(1f)) {
             when {
                 state.isInitialLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 state.isEmpty -> CatalogueEmptyState(modifier = Modifier.align(Alignment.Center))
@@ -157,6 +229,7 @@ fun CatalogueScreen(
                 ) {
                     Text(text = message, modifier = Modifier.padding(12.dp))
                 }
+            }
             }
         }
     }
@@ -232,6 +305,130 @@ fun CatalogueScreen(
                 TextButton(onClick = { onEvent(CatalogueEvent.DismissCategoryShareDialog) }) { Text("Cancel") }
             },
         )
+    }
+
+    if (state.showAddBranchDialog) {
+        AlertDialog(
+            onDismissRequest = { onEvent(CatalogueEvent.DismissAddBranchDialog) },
+            title = { Text("New branch") },
+            text = {
+                OutlinedTextField(
+                    value = state.addBranchName,
+                    onValueChange = { onEvent(CatalogueEvent.AddBranchNameChanged(it)) },
+                    label = { Text("Branch name") },
+                    modifier = Modifier.fillMaxWidth().testTag("catalogue_add_branch_name_field"),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onEvent(CatalogueEvent.ConfirmAddBranch) },
+                    modifier = Modifier.testTag("catalogue_add_branch_confirm"),
+                ) { Text("Add") }
+            },
+            dismissButton = {
+                TextButton(onClick = { onEvent(CatalogueEvent.DismissAddBranchDialog) }) { Text("Cancel") }
+            },
+        )
+    }
+
+    val importPreview = state.importPreview
+    if (importPreview != null) {
+        AlertDialog(
+            onDismissRequest = { onEvent(CatalogueEvent.DismissImportPreview) },
+            title = { Text("Import preview") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()).testTag("catalogue_import_preview"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        "${importPreview.createCount} new, ${importPreview.updateCount} updated, " +
+                            "${importPreview.skipCount} skipped out of ${importPreview.outcomes.size} rows.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "Native fields (Product Name, Unit, SKU, HSN, GST Rate, Price, etc.) are matched by " +
+                            "their reserved names and applied as shown; every other column is kept as a custom " +
+                            "field, unchanged, never interpreted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (state.importDuplicateHeaderWarnings.isNotEmpty()) {
+                        Text(
+                            "Duplicate column header(s), only the first used: ${state.importDuplicateHeaderWarnings.joinToString()}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    importPreview.outcomes.filterIsInstance<CatalogueExcelRowOutcome.Skipped>().forEach { skipped ->
+                        Text(
+                            "Row ${skipped.rowNumber} skipped: ${skipped.reason}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("catalogue_import_skip_${skipped.rowNumber}"),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onEvent(CatalogueEvent.ConfirmImport) },
+                    enabled = !state.isImporting && (importPreview.createCount > 0 || importPreview.updateCount > 0),
+                    modifier = Modifier.testTag("catalogue_import_confirm"),
+                ) { Text(if (state.isImporting) "Importing…" else "Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { onEvent(CatalogueEvent.DismissImportPreview) }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+/**
+ * A company-level branch selector (architecture §17), scoping context only -- selecting a branch
+ * never filters [CatalogueUiState.products]: "One shared catalogue across branches" is locked
+ * (Brainstorm Outcome §4). Deliberately minimal, matching this task's own scope discipline: a
+ * dropdown to pick an existing branch or the catalogue-wide default, plus a single "Add branch"
+ * action (name only, mirroring the manual-product-creation dialog's own minimal-fields precedent) --
+ * no branch editing, deactivation, or a dedicated management screen, none of which are part of the
+ * locked MVP-1.4 scope.
+ */
+@Composable
+private fun BranchSelectorRow(state: CatalogueUiState, onEvent: (CatalogueEvent) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            TextButton(
+                onClick = { onEvent(CatalogueEvent.OpenBranchMenu) },
+                modifier = Modifier.testTag("catalogue_branch_selector"),
+            ) { Text(state.selectedBranchName) }
+            DropdownMenu(
+                expanded = state.showBranchMenu,
+                onDismissRequest = { onEvent(CatalogueEvent.DismissBranchMenu) },
+                modifier = Modifier.testTag("catalogue_branch_menu"),
+            ) {
+                DropdownMenuItem(
+                    text = { Text("All branches") },
+                    onClick = { onEvent(CatalogueEvent.SelectBranch(null)) },
+                    modifier = Modifier.testTag("catalogue_branch_menu_all"),
+                )
+                state.branches.forEach { branch ->
+                    DropdownMenuItem(
+                        text = { Text(branch.name) },
+                        onClick = { onEvent(CatalogueEvent.SelectBranch(branch.branchId)) },
+                        modifier = Modifier.testTag("catalogue_branch_menu_${branch.branchId}"),
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("+ Add branch") },
+                    onClick = { onEvent(CatalogueEvent.OpenAddBranchDialog) },
+                    modifier = Modifier.testTag("catalogue_branch_menu_add"),
+                )
+            }
+        }
     }
 }
 

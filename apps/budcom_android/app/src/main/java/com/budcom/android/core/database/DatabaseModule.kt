@@ -76,7 +76,7 @@ object DatabaseModule {
             DatabaseConstants.NAME,
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-            MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
+            MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -544,6 +544,21 @@ object DatabaseModule {
                 "CREATE INDEX IF NOT EXISTS `index_catalogue_custom_field_companyId_productId` " +
                     "ON `catalogue_custom_field` (`companyId`, `productId`)",
             )
+        }
+    }
+
+    /**
+     * Additive-only (TD-047 resolution): adds a single nullable `manualUnit` column to
+     * `catalogue_product`. Existing rows backfill to `NULL` (SQLite's implicit default for a
+     * nullable `ALTER TABLE ... ADD COLUMN`, same precedent as `MIGRATION_8_9`'s `dueAt`/
+     * `completedAt`/`issueId`) — every pre-existing product, Manual or Tally-linked, is completely
+     * unaffected until an owner explicitly sets a Manual product's Unit. This column is populated
+     * only for a `source = 'MANUAL'` row ([CatalogueRepositoryImpl] enforces this); a Tally-linked
+     * product's Unit remains exclusively resolved from the live Stock Item join, never this column.
+     */
+    val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `catalogue_product` ADD COLUMN `manualUnit` TEXT")
         }
     }
 }

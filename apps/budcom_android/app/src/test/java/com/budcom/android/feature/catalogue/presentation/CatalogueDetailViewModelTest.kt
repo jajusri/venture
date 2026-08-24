@@ -130,6 +130,60 @@ class CatalogueDetailViewModelTest {
         assertTrue(!vm.uiState.value.canEdit)
     }
 
+    // ============================== TD-047: Manual product Unit ==============================
+
+    @Test
+    fun `isManualProduct is true for a Manual product and gates the editable Unit field`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.isManualProduct)
+    }
+
+    @Test
+    fun `isManualProduct is false for a Tally-linked product`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(
+            sampleProduct(productId = "p1").copy(source = com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource.Tally, linkedStockItemId = "guid:widget", unit = "Nos"),
+        )
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(!vm.uiState.value.isManualProduct)
+        assertEquals("Nos", vm.uiState.value.unitDraft)
+    }
+
+    @Test
+    fun `UnitChanged updates the draft and marks the state dirty`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueDetailEvent.UnitChanged("Nos"))
+
+        assertEquals("Nos", vm.uiState.value.unitDraft)
+        assertTrue(vm.uiState.value.isDirty)
+    }
+
+    @Test
+    fun `saving a Manual product's Unit persists it and the reloaded state reflects it`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueDetailEvent.UnitChanged("Nos"))
+        vm.onEvent(CatalogueDetailEvent.SaveEnrichment)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("Nos", repository.products["co-1"]!!.single().unit)
+        assertEquals("Nos", vm.uiState.value.unitDraft)
+        assertEquals("Saved", vm.uiState.value.message)
+    }
+
     // ============================== Photos ==============================
 
     @Test

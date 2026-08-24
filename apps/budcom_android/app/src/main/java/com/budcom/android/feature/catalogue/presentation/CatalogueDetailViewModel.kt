@@ -67,6 +67,7 @@ class CatalogueDetailViewModel @Inject constructor(
         when (event) {
             is CatalogueDetailEvent.DescriptionChanged -> _uiState.update { it.copy(descriptionDraft = event.value, isDirty = true) }
             is CatalogueDetailEvent.SpecificationsChanged -> _uiState.update { it.copy(specificationsDraft = event.value, isDirty = true) }
+            is CatalogueDetailEvent.UnitChanged -> _uiState.update { it.copy(unitDraft = event.value, isDirty = true) }
             is CatalogueDetailEvent.CategoryChanged -> _uiState.update { it.copy(categoryDraft = event.value, isDirty = true) }
             is CatalogueDetailEvent.PriceDisplayModeChanged -> _uiState.update { it.copy(priceDisplayMode = event.mode, isDirty = true) }
             is CatalogueDetailEvent.ManualPriceChanged -> _uiState.update { it.copy(manualPriceDraft = event.value, isDirty = true) }
@@ -144,6 +145,9 @@ class CatalogueDetailViewModel @Inject constructor(
                 product.companyId,
                 product.productId,
                 CatalogueEnrichmentUpdate(
+                    // TD-047: harmless to always pass -- CatalogueRepository ignores this for a
+                    // Tally-linked product, so this is never actually applied outside the Manual case.
+                    unit = state.unitDraft.ifBlank { null },
                     description = state.descriptionDraft,
                     specifications = state.specificationsDraft,
                     customerFacingCategory = state.categoryDraft.ifBlank { null },
@@ -176,6 +180,7 @@ class CatalogueDetailViewModel @Inject constructor(
         product = product,
         descriptionDraft = product.description.orEmpty(),
         specificationsDraft = product.specifications.orEmpty(),
+        unitDraft = product.unit.orEmpty(),
         categoryDraft = product.customerFacingCategory.orEmpty(),
         priceDisplayMode = product.priceDisplayMode,
         manualPriceDraft = product.manualPriceAmount.orEmpty(),

@@ -58,7 +58,12 @@ class CatalogueViewModelTest {
         company: FakeCompanySessionPort,
         shareCoordinator: FakeCatalogueShareCoordinator = FakeCatalogueShareCoordinator(),
         businessProfileRepository: FakeBusinessProfileRepository = FakeBusinessProfileRepository(),
-    ) = CatalogueViewModel(repository, company, FakeCatalogueClock(), shareCoordinator, businessProfileRepository)
+        branchSelectionStore: FakeCatalogueBranchSelectionStore = FakeCatalogueBranchSelectionStore(),
+    ) = CatalogueViewModel(
+        repository, company, FakeCatalogueClock(), shareCoordinator, businessProfileRepository, branchSelectionStore,
+        com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelImportUseCase(repository, FakeCatalogueClock()),
+        com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelExportUseCase(repository),
+    )
 
     @Test
     fun `loads products when a company becomes selected`() = runTest(dispatcher) {
@@ -203,6 +208,300 @@ class CatalogueViewModelTest {
         assertEquals("not exercised in these tests", vm.uiState.value.shareMessage)
     }
 
+    // ============================== Branch selector ==============================
+
+    @Test
+    fun `a fresh company with no branches shows only the catalogue-wide default`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.branches.isEmpty())
+        assertEquals(null, vm.uiState.value.selectedBranchId)
+        assertEquals("All branches", vm.uiState.value.selectedBranchName)
+    }
+
+    @Test
+    fun `adding a branch persists it, selects it, and it appears in the branch list`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.OpenAddBranchDialog)
+        vm.onEvent(CatalogueEvent.AddBranchNameChanged("Main Branch"))
+        vm.onEvent(CatalogueEvent.ConfirmAddBranch)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf("Main Branch"), vm.uiState.value.branches.map { it.name })
+        assertEquals("Main Branch", vm.uiState.value.selectedBranchName)
+        assertTrue(!vm.uiState.value.showAddBranchDialog)
+        assertEquals(1, repository.branches["co-1"]!!.size)
+    }
+
+    @Test
+    fun `a blank branch name is never submitted`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.OpenAddBranchDialog)
+        vm.onEvent(CatalogueEvent.AddBranchNameChanged("   "))
+        vm.onEvent(CatalogueEvent.ConfirmAddBranch)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(repository.branches["co-1"].isNullOrEmpty())
+    }
+
+    @Test
+    fun `selecting a branch updates state and persists through the branch selection store`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.branches["co-1"] = mutableListOf(Branch("co-1", "br-1", "Main Branch", true, ts(), ts()))
+        val branchStore = FakeCatalogueBranchSelectionStore()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"), branchSelectionStore = branchStore)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.SelectBranch("br-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("br-1", vm.uiState.value.selectedBranchId)
+        assertEquals("br-1", branchStore.currentValue("co-1"))
+    }
+
+    @Test
+    fun `switching back to All branches clears the persisted selection`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.branches["co-1"] = mutableListOf(Branch("co-1", "br-1", "Main Branch", true, ts(), ts()))
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.SelectBranch("br-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.SelectBranch(null))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(null, vm.uiState.value.selectedBranchId)
+        assertEquals("All branches", vm.uiState.value.selectedBranchName)
+    }
+
+    @Test
+    fun `a selected branch survives a simulated relaunch -- a fresh ViewModel re-reads the persisted selection`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.branches["co-1"] = mutableListOf(Branch("co-1", "br-1", "Main Branch", true, ts(), ts()))
+        val branchStore = FakeCatalogueBranchSelectionStore()
+        val firstSession = viewModel(repository, FakeCompanySessionPort("co-1"), branchSelectionStore = branchStore)
+        dispatcher.scheduler.advanceUntilIdle()
+        firstSession.onEvent(CatalogueEvent.SelectBranch("br-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        // A fresh ViewModel instance, same underlying store -- simulates the app being relaunched.
+        val secondSession = viewModel(repository, FakeCompanySessionPort("co-1"), branchSelectionStore = branchStore)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("br-1", secondSession.uiState.value.selectedBranchId)
+        assertEquals("Main Branch", secondSession.uiState.value.selectedBranchName)
+    }
+
+    @Test
+    fun `a stored selection for a branch that no longer exists falls back to All branches rather than dangling`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val branchStore = FakeCatalogueBranchSelectionStore()
+        branchStore.setSelectedBranchId("co-1", "br-deleted")
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"), branchSelectionStore = branchStore)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(null, vm.uiState.value.selectedBranchId)
+        assertEquals("All branches", vm.uiState.value.selectedBranchName)
+    }
+
+    @Test
+    fun `a single branch still renders correctly as the one selectable option`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.branches["co-1"] = mutableListOf(Branch("co-1", "br-1", "Only Branch", true, ts(), ts()))
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, vm.uiState.value.branches.size)
+        assertEquals("Only Branch", vm.uiState.value.branches.single().name)
+    }
+
+    @Test
+    fun `branch selection never mixes across companies`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.branches["co-A"] = mutableListOf(Branch("co-A", "br-A", "Branch A", true, ts(), ts()))
+        repository.branches["co-B"] = mutableListOf(Branch("co-B", "br-B", "Branch B", true, ts(), ts()))
+        val company = FakeCompanySessionPort("co-A")
+        val branchStore = FakeCatalogueBranchSelectionStore()
+        val vm = viewModel(repository, company, branchSelectionStore = branchStore)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.SelectBranch("br-A"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        company.set("co-B")
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf("Branch B"), vm.uiState.value.branches.map { it.name })
+        assertEquals(null, vm.uiState.value.selectedBranchId)
+
+        company.set("co-A")
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals("br-A", vm.uiState.value.selectedBranchId)
+    }
+
+    private fun ts() = CatalogueTimestamp(1_000L, CatalogueTimestampSource.DeviceLocalProvisional)
+
+    // ============================== Excel import/export UI ==============================
+
+    @Test
+    fun `ImportFromExcel requests a file pick`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val effects = mutableListOf<CatalogueEffect>()
+        val job = launch(Dispatchers.Unconfined) { vm.effects.collect { effects.add(it) } }
+        vm.onEvent(CatalogueEvent.ImportFromExcel)
+        dispatcher.scheduler.advanceUntilIdle()
+        job.cancel()
+
+        assertEquals(listOf(CatalogueEffect.RequestExcelImportPick), effects)
+        assertTrue(!vm.uiState.value.showMoreMenu)
+    }
+
+    @Test
+    fun `a valid CSV builds an import preview without committing anything`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.ExcelFileTextLoaded("Product Name,Unit\r\nWidget,Nos\r\nGadget,Box\r\n"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(2, vm.uiState.value.importPreview?.createCount)
+        assertTrue("nothing should be committed before ConfirmImport", repository.products["co-1"].isNullOrEmpty())
+    }
+
+    @Test
+    fun `a malformed row is skipped with its reason shown in the preview, valid rows still preview fine`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.ExcelFileTextLoaded("Product Name,Unit\r\nWidget,Nos\r\n,Box\r\n"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val preview = vm.uiState.value.importPreview!!
+        assertEquals(1, preview.createCount)
+        assertEquals(1, preview.skipCount)
+        val skipped = preview.outcomes.filterIsInstance<com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelRowOutcome.Skipped>().single()
+        assertTrue(skipped.reason.contains("Product Name"))
+    }
+
+    @Test
+    fun `an empty file previews to nothing, without crashing`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.ExcelFileTextLoaded(""))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(0, vm.uiState.value.importPreview?.outcomes?.size)
+    }
+
+    @Test
+    fun `a duplicate column header is surfaced as a warning in the preview`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.ExcelFileTextLoaded("Product Name,Unit,Unit\r\nWidget,Nos,Box\r\n"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf("Unit"), vm.uiState.value.importDuplicateHeaderWarnings)
+    }
+
+    @Test
+    fun `a custom column is preserved as a distinct field, never reinterpreted as a native one`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.ExcelFileTextLoaded("Product Name,Unit,Warranty\r\nWidget,Nos,12 months\r\n"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(setOf("Warranty"), vm.uiState.value.importPreview?.customColumnNames)
+    }
+
+    @Test
+    fun `confirming the import commits the previewed rows, clears the dialog, and refreshes the list`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.ExcelFileTextLoaded("Product Name,Unit\r\nWidget,Nos\r\n"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.ConfirmImport)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, repository.products["co-1"]!!.size)
+        assertEquals("Widget", repository.products["co-1"]!!.single().displayName)
+        assertEquals(null, vm.uiState.value.importPreview)
+        assertTrue(vm.uiState.value.shareMessage!!.contains("1 created"))
+        assertEquals(listOf("Widget"), vm.uiState.value.products.map { it.displayName })
+    }
+
+    @Test
+    fun `dismissing the import preview commits nothing`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.ExcelFileTextLoaded("Product Name,Unit\r\nWidget,Nos\r\n"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.DismissImportPreview)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(null, vm.uiState.value.importPreview)
+        assertTrue(repository.products["co-1"].isNullOrEmpty())
+    }
+
+    @Test
+    fun `import preview and commit are always scoped to the currently-selected company`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val company = FakeCompanySessionPort("co-A")
+        val vm = viewModel(repository, company)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.ExcelFileTextLoaded("Product Name,Unit\r\nWidget,Nos\r\n"))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.ConfirmImport)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, repository.products["co-A"]!!.size)
+        assertTrue("importing into co-A must never create a product under co-B", repository.products["co-B"].isNullOrEmpty())
+    }
+
+    @Test
+    fun `ExportToExcel emits the generated CSV content ready for a destination pick`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.OpenAddManualDialog)
+        vm.onEvent(CatalogueEvent.AddManualNameChanged("Widget"))
+        vm.onEvent(CatalogueEvent.ConfirmAddManual)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val effects = mutableListOf<CatalogueEffect>()
+        val job = launch(Dispatchers.Unconfined) { vm.effects.collect { effects.add(it) } }
+        vm.onEvent(CatalogueEvent.ExportToExcel)
+        dispatcher.scheduler.advanceUntilIdle()
+        job.cancel()
+
+        val ready = effects.filterIsInstance<CatalogueEffect.ExportCsvReady>().single()
+        assertTrue(ready.csvText.contains("Widget"))
+        assertEquals("catalogue-export.csv", ready.suggestedFileName)
+        assertTrue(!vm.uiState.value.showMoreMenu)
+    }
+
     @Test
     fun `confirming the add-manual dialog creates a Draft and refreshes the list`() = runTest(dispatcher) {
         val repository = FakeCatalogueRepository()
@@ -242,6 +541,16 @@ class CatalogueViewModelTest {
 internal class FakeCatalogueClock(private val timestamp: CatalogueTimestamp = CatalogueTimestamp(1_000L, CatalogueTimestampSource.DeviceLocalProvisional)) :
     CatalogueClock {
     override suspend fun now(): CatalogueTimestamp = timestamp
+}
+
+internal class FakeCatalogueBranchSelectionStore : com.budcom.android.feature.catalogue.domain.port.CatalogueBranchSelectionStore {
+    private val state = mutableMapOf<String, MutableStateFlow<String?>>()
+    private fun flowFor(companyId: String) = state.getOrPut(companyId) { MutableStateFlow(null) }
+    override fun observeSelectedBranchId(companyId: String): kotlinx.coroutines.flow.Flow<String?> = flowFor(companyId)
+    override suspend fun setSelectedBranchId(companyId: String, branchId: String?) {
+        flowFor(companyId).value = branchId
+    }
+    fun currentValue(companyId: String): String? = flowFor(companyId).value
 }
 
 internal class FakeCompanySessionPort(initial: String?) : CompanySessionPort {
@@ -420,6 +729,9 @@ val unlinkedStockItems = mutableMapOf<String, MutableList<com.budcom.android.fea
                 else -> existing.displayNameOverride
             },
             sku = update.sku ?: existing.sku,
+            // TD-047: mirrors CatalogueRepositoryImpl exactly -- only a Manual product's Unit is
+            // ever writable via this path; a Tally-linked product's Unit stays Tally-authoritative.
+            unit = if (existing.source == CatalogueProductSource.Manual) update.unit ?: existing.unit else existing.unit,
             description = update.description ?: existing.description,
             specifications = update.specifications ?: existing.specifications,
             customerFacingCategory = update.customerFacingCategory ?: existing.customerFacingCategory,
@@ -451,10 +763,17 @@ val unlinkedStockItems = mutableMapOf<String, MutableList<com.budcom.android.fea
     override suspend fun reconcileStockItemLinks(companyId: String, timestamp: CatalogueTimestamp): CatalogueReconciliationResult =
         CatalogueReconciliationResult(emptyList(), emptyList())
 
-    override suspend fun upsertBranch(companyId: String, branchId: String, name: String, isActive: Boolean, timestamp: CatalogueTimestamp): Branch =
-        error("not used in these tests")
+    val branches = mutableMapOf<String, MutableList<Branch>>()
 
-    override suspend fun listBranches(companyId: String): List<Branch> = emptyList()
+    override suspend fun upsertBranch(companyId: String, branchId: String, name: String, isActive: Boolean, timestamp: CatalogueTimestamp): Branch {
+        val branch = Branch(companyId, branchId, name, isActive, timestamp, timestamp)
+        val list = branches.getOrPut(companyId) { mutableListOf() }
+        val existingIndex = list.indexOfFirst { it.branchId == branchId }
+        if (existingIndex >= 0) list[existingIndex] = branch else list.add(branch)
+        return branch
+    }
+
+    override suspend fun listBranches(companyId: String): List<Branch> = branches[companyId].orEmpty()
 
     override suspend fun setOverride(
         companyId: String,

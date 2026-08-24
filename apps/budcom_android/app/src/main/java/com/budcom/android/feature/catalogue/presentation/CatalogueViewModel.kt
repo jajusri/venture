@@ -4,7 +4,13 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.feature.businessprofile.domain.repository.BusinessProfileRepository
+import com.budcom.android.feature.catalogue.domain.excel.CatalogueCsvFormat
+import com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelExportUseCase
+import com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelImportUseCase
+import com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelRow
+import com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelValidator
 import com.budcom.android.feature.catalogue.domain.model.CatalogueProduct
+import com.budcom.android.feature.catalogue.domain.port.CatalogueBranchSelectionStore
 import com.budcom.android.feature.catalogue.domain.port.CatalogueClock
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository
 import com.budcom.android.feature.catalogue.sharing.CatalogueShareCoordinator
@@ -18,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -29,6 +36,9 @@ class CatalogueViewModel @Inject constructor(
     private val clock: CatalogueClock,
     private val shareCoordinator: CatalogueShareCoordinator,
     private val businessProfileRepository: BusinessProfileRepository,
+    private val branchSelectionStore: CatalogueBranchSelectionStore,
+    private val excelImportUseCase: CatalogueExcelImportUseCase,
+    private val excelExportUseCase: CatalogueExcelExportUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CatalogueUiState())
@@ -41,6 +51,11 @@ class CatalogueViewModel @Inject constructor(
     val effects = _effects.asSharedFlow()
 
     private var companyId: String? = null
+
+    /** The already-parsed rows behind the current [CatalogueUiState.importPreview] -- kept out of
+     * UI state since the Screen never needs to render individual row data, only the preview's
+     * summary counts and flagged reasons. Cleared on commit or dismiss. */
+    private var pendingImportRows: List<CatalogueExcelRow> = emptyList()
 
     init {
         // Mirrors ConnectViewModel's own company-switch discipline (TD-037 class): every company
@@ -82,6 +97,26 @@ class CatalogueViewModel @Inject constructor(
                 _uiState.update { it.copy(showCategoryShareDialog = false) }
                 shareCategory(event.category)
             }
+            CatalogueEvent.OpenBranchMenu -> _uiState.update { it.copy(showBranchMenu = true) }
+            CatalogueEvent.DismissBranchMenu -> _uiState.update { it.copy(showBranchMenu = false) }
+            is CatalogueEvent.SelectBranch -> selectBranch(event.branchId)
+            CatalogueEvent.OpenAddBranchDialog -> _uiState.update { it.copy(showBranchMenu = false, showAddBranchDialog = true, addBranchName = "") }
+            CatalogueEvent.DismissAddBranchDialog -> _uiState.update { it.copy(showAddBranchDialog = false) }
+            is CatalogueEvent.AddBranchNameChanged -> _uiState.update { it.copy(addBranchName = event.name) }
+            CatalogueEvent.ConfirmAddBranch -> confirmAddBranch()
+            CatalogueEvent.OpenMoreMenu -> _uiState.update { it.copy(showMoreMenu = true) }
+            CatalogueEvent.DismissMoreMenu -> _uiState.update { it.copy(showMoreMenu = false) }
+            CatalogueEvent.ImportFromExcel -> {
+                _uiState.update { it.copy(showMoreMenu = false) }
+                viewModelScope.launch { _effects.emit(CatalogueEffect.RequestExcelImportPick) }
+            }
+            is CatalogueEvent.ExcelFileTextLoaded -> loadImportPreview(event.text)
+            CatalogueEvent.ConfirmImport -> confirmImport()
+            CatalogueEvent.DismissImportPreview -> {
+                pendingImportRows = emptyList()
+                _uiState.update { it.copy(importPreview = null, importDuplicateHeaderWarnings = emptyList()) }
+            }
+            CatalogueEvent.ExportToExcel -> exportToExcel()
         }
     }
 
@@ -105,12 +140,20 @@ class CatalogueViewModel @Inject constructor(
             runCatching { repository.reconcileStockItemLinks(id, clock.now()) }
             val products = repository.listProducts(id)
             val isPublic = repository.isPublic(id)
+            val branches = repository.listBranches(id)
+            val selectedBranchId = branchSelectionStore.observeSelectedBranchId(id).first()
+                // A previously-selected branch that no longer exists for this company (e.g. this
+                // is a fresh install/company-switch with a stale stored id from before) silently
+                // falls back to the catalogue-wide default rather than showing a dangling selection.
+                ?.takeIf { stored -> branches.any { it.branchId == stored } }
             _uiState.update {
                 it.copy(
                     isInitialLoading = false,
                     isRefreshing = false,
                     products = products.map { p -> p.toRowUi() },
                     isPublic = isPublic,
+                    branches = branches.map { CatalogueBranchUi(it.branchId, it.name) },
+                    selectedBranchId = selectedBranchId,
                     error = null,
                 )
             }
@@ -125,6 +168,82 @@ class CatalogueViewModel @Inject constructor(
             repository.createManualDraft(id, name, clock.now())
             _uiState.update { it.copy(showAddManualDialog = false, addManualName = "") }
             load(refreshing = false)
+        }
+    }
+
+    private fun selectBranch(branchId: String?) {
+        val id = companyId ?: return
+        viewModelScope.launch {
+            branchSelectionStore.setSelectedBranchId(id, branchId)
+            _uiState.update { it.copy(selectedBranchId = branchId, showBranchMenu = false) }
+        }
+    }
+
+    private fun confirmAddBranch() {
+        val id = companyId ?: return
+        val name = _uiState.value.addBranchName.trim()
+        if (name.isEmpty()) return
+        viewModelScope.launch {
+            val branch = repository.upsertBranch(id, java.util.UUID.randomUUID().toString(), name, isActive = true, clock.now())
+            branchSelectionStore.setSelectedBranchId(id, branch.branchId)
+            val branches = repository.listBranches(id)
+            _uiState.update {
+                it.copy(
+                    branches = branches.map { b -> CatalogueBranchUi(b.branchId, b.name) },
+                    selectedBranchId = branch.branchId,
+                    showAddBranchDialog = false,
+                    addBranchName = "",
+                )
+            }
+        }
+    }
+
+    /**
+     * Parses [text] (CatalogueCsvFormat, architecture §9's chosen file format) and builds the
+     * mandatory import preview -- never commits anything. Identity resolution for Update-vs-Create
+     * matching mirrors [CatalogueExcelValidator]'s own documented rule (Stock Item Reference, then
+     * SKU -- never Product Name alone, per architecture §9's "stable identifier" requirement).
+     */
+    private fun loadImportPreview(text: String) {
+        val id = companyId ?: return
+        viewModelScope.launch {
+            val parsed = CatalogueCsvFormat.parse(text)
+            val existingProducts = repository.listProducts(id)
+            val preview = CatalogueExcelValidator.preview(parsed.rows) { identifier ->
+                existingProducts.firstOrNull { it.linkedStockItemId == identifier || it.sku == identifier }?.productId
+            }
+            pendingImportRows = parsed.rows
+            _uiState.update {
+                it.copy(importPreview = preview, importDuplicateHeaderWarnings = parsed.duplicateHeaderWarnings)
+            }
+        }
+    }
+
+    private fun confirmImport() {
+        val id = companyId ?: return
+        val preview = _uiState.value.importPreview ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isImporting = true) }
+            val result = excelImportUseCase.commit(id, pendingImportRows, preview)
+            pendingImportRows = emptyList()
+            _uiState.update {
+                it.copy(
+                    isImporting = false,
+                    importPreview = null,
+                    importDuplicateHeaderWarnings = emptyList(),
+                    shareMessage = "Import complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped",
+                )
+            }
+            load(refreshing = true)
+        }
+    }
+
+    private fun exportToExcel() {
+        val id = companyId ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(showMoreMenu = false) }
+            val csv = excelExportUseCase.export(id).toCsv()
+            _effects.emit(CatalogueEffect.ExportCsvReady(csv, suggestedFileName = "catalogue-export.csv"))
         }
     }
 

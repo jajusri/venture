@@ -4,6 +4,7 @@ import android.net.Uri
 import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleAction
 import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState
 import com.budcom.android.feature.catalogue.domain.model.CatalogueProduct
+import com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource
 import com.budcom.android.feature.catalogue.domain.model.PriceDisplayMode
 import java.io.File
 
@@ -23,6 +24,10 @@ data class CatalogueDetailUiState(
     val descriptionDraft: String = "",
     val specificationsDraft: String = "",
     val categoryDraft: String = "",
+    /** TD-047: only meaningful (and only shown editable) for a [CatalogueProductSource.Manual]
+     * product -- a Tally-linked product's Unit is shown read-only from [CatalogueProduct.unit]
+     * elsewhere and never routes through this draft. */
+    val unitDraft: String = "",
     val priceDisplayMode: PriceDisplayMode = PriceDisplayMode.ContactForPrice,
     val manualPriceDraft: String = "",
     val assets: List<CatalogueAssetUi> = emptyList(),
@@ -33,6 +38,10 @@ data class CatalogueDetailUiState(
     val canEdit: Boolean get() = product?.let {
         it.lifecycleState == CatalogueLifecycleState.Draft || it.lifecycleState == CatalogueLifecycleState.Review
     } ?: false
+
+    /** TD-047: gates the editable Unit field -- a Tally-linked product's Unit is Tally-authoritative
+     * and shown read-only in the existing "From Tally" card instead. */
+    val isManualProduct: Boolean get() = product?.source == CatalogueProductSource.Manual
 
     val availableActions: List<CatalogueLifecycleAction> get() {
         val state = product?.lifecycleState ?: return emptyList()
@@ -48,6 +57,8 @@ data class CatalogueDetailUiState(
 sealed interface CatalogueDetailEvent {
     data class DescriptionChanged(val value: String) : CatalogueDetailEvent
     data class SpecificationsChanged(val value: String) : CatalogueDetailEvent
+    /** TD-047: only meaningful for a Manual product; see [CatalogueDetailUiState.isManualProduct]. */
+    data class UnitChanged(val value: String) : CatalogueDetailEvent
     data class CategoryChanged(val value: String) : CatalogueDetailEvent
     data class PriceDisplayModeChanged(val mode: PriceDisplayMode) : CatalogueDetailEvent
     data class ManualPriceChanged(val value: String) : CatalogueDetailEvent

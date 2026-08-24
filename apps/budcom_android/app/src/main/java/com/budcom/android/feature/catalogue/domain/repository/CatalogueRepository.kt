@@ -23,6 +23,11 @@ data class CatalogueEnrichmentUpdate(
     val displayNameOverride: String? = null,
     val clearDisplayNameOverride: Boolean = false,
     val sku: String? = null,
+    /** Catalogue-owned Unit (TD-047) — applied only to a `Manual`-sourced product; a Tally-linked
+     * product's Unit stays exclusively Tally-authoritative regardless of what is passed here (see
+     * [CatalogueRepository.updateEnrichment]'s own doc comment). `null` means "leave unchanged",
+     * matching every other field here. */
+    val unit: String? = null,
     val description: String? = null,
     val specifications: String? = null,
     val customerFacingCategory: String? = null,
@@ -58,6 +63,12 @@ interface CatalogueRepository {
     suspend fun findProduct(companyId: String, productId: String): CatalogueProduct?
     suspend fun listProducts(companyId: String): List<CatalogueProduct>
     suspend fun listProductsByState(companyId: String, state: CatalogueLifecycleState): List<CatalogueProduct>
+    /** [update.unit] is written only when the target product's [CatalogueProduct.source] is
+     * [com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource.Manual] (TD-047) —
+     * silently ignored for a Tally-linked product, exactly like every other Tally-owned field this
+     * method already refuses to let an enrichment update touch. This is enforced at the repository
+     * layer, not merely by the UI hiding the field, so a Manual edit can never reach (let alone
+     * overwrite) Tally-authoritative Unit data even if a future caller misuses this API. */
     suspend fun updateEnrichment(
         companyId: String,
         productId: String,

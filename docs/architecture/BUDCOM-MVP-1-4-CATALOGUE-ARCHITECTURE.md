@@ -1,32 +1,41 @@
 # BUDCOM MVP-1.4 — Catalogue — Architecture
 
-**Status: Implementation IN PROGRESS (2026-08-24, Phase 56; extended Phase 58) — see
-`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §47/§49 for the full implementation record.** Brainstorm 1
-is complete (`docs/architecture/BUDCOM-MVP-1_4-CATALOGUE-BRAINSTORM-OUTCOME.md`), PDL-020 locked the
-original nine open product decisions (2026-08-19), and a formal decision-lock pass (2026-08-24)
-additionally locked the override-resolution order, the Excel field-name reservation rule, the
-Prospect→Ledger FUTURE classification, sharing granularity, and the timestamp-integrity
-requirement. This document was the **implementation-ready architecture and execution plan**
-produced from that final locked scope; a separate, explicit go-ahead (received 2026-08-24) then
-authorized implementation. **Implemented and AUTOMATED-VALIDATED**: data foundation (§6, migration
-10→11→12), Tally identity/reconciliation (§14), override engine (§8, minus the Stock-group level —
-see TD-043), lifecycle (§7), pricing governance infra (§12, pending a Tally rate field — see the
-Development Ledger entry), asset store (§10), sharing (§11, plain-text instead of PDF — disclosed
-simplification; category-level sharing UI added Phase 58), **Excel contract/validation (§9) — now
-complete end-to-end**: CSV chosen as the file-format (Phase 58, no new dependency — see the Ledger
-entry for why CSV over a binary `.xlsx` library), custom-column value persistence
-(`catalogue_custom_field`), and export, and essential UI (§17, minus a branch selector — category-
-picker added Phase 58). **Also PHYSICALLY VALIDATED**: the Catalogue Room migration (10/10
-instrumented tests on a real device, Phase 56; the 11→12 migration re-verified against real prior
-on-device data, Phase 58) and a full hands-on Draft→Publish→Archive→Restore→Share walkthrough against
+**Status: Implementation essentially COMPLETE pending live Tally/Connector validation (2026-08-24,
+Phase 56; extended Phases 58–59) — see `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §47/§49/§50 for
+the full implementation record.** Brainstorm 1 is complete
+(`docs/architecture/BUDCOM-MVP-1_4-CATALOGUE-BRAINSTORM-OUTCOME.md`), PDL-020 locked the original
+nine open product decisions (2026-08-19), and a formal decision-lock pass (2026-08-24) additionally
+locked the override-resolution order, the Excel field-name reservation rule, the Prospect→Ledger
+FUTURE classification, sharing granularity, and the timestamp-integrity requirement. This document
+was the **implementation-ready architecture and execution plan** produced from that final locked
+scope; a separate, explicit go-ahead (received 2026-08-24) then authorized implementation.
+**Implemented, AUTOMATED-VALIDATED, and (where noted) PHYSICALLY VALIDATED**: data foundation (§6,
+migration 10→11→12→13), Tally identity/reconciliation (§14), override *resolution* engine (§8,
+minus the Stock-group level — see TD-043; override-*editing* UI remains unbuilt, a real gap — see
+below), lifecycle (§7), pricing governance infra (§12, pending a Tally rate field), asset store
+(§10), sharing (§11, plain-text instead of PDF — disclosed simplification; category-level sharing
+UI added Phase 58), Excel contract (§9) complete end-to-end including a working import/export UI
+(Phase 59) built on Phase 58's CSV format/custom-field-persistence/export layer — **live-verified
+end-to-end on a real device**: a real CSV imported through the actual on-device picker correctly
+created a product with its Unit, description, category, and a custom field all landing correctly in
+the real database, then exported back out to a byte-correct file. Essential UI (§17) including a
+Branch selector (Phase 59; branch *management* — edit/deactivate — deliberately not built, out of
+locked scope). TD-047 (a Manual product's Unit) is **fixed**: owner-editable for Manual products,
+Tally-linked stays exclusively authoritative, enforced structurally at the repository layer, not
+just by the UI — live-verified via the same on-device Excel import walkthrough. **Physically
+validated**: the Catalogue Room migration (12/12 instrumented tests on a real device, cumulative
+across all three phases) and a full hands-on Draft→Publish→Archive→Restore→Share walkthrough against
 a real paired company (Phase 56) — which found and fixed two real defects live (TD-045, TD-046) that
-no unit test had caught. **Not yet done**: Milestone 0's live Tally-request validation specifically
-(TD-043, gated safely disabled — distinct from the app-level physical validation already done), a
-real Owner/staff identity to enforce §18's Owner-only rule against (TD-044, currently a hardcoded
-placeholder), a Manual product's missing Unit field blocking its own Excel round-trip (TD-047, needs
-product-owner input), a branch-selector screen, and an Excel import/export UI screen (the domain/data
-layer is complete and ready to wire up). See the Development Ledger §47/§49 entries for the complete,
-itemized account of what was and was not done, and why.
+no unit test had caught. `assembleDevRelease` (R8/ProGuard minification, resource shrinking,
+`lintVitalDevRelease`) verified clean (Phase 59). **Not yet done / remaining**: Milestone 0's live
+Tally-request validation specifically (TD-043, gated safely disabled), a real Owner/staff identity
+to enforce §18's Owner-only rule against (TD-044, currently a hardcoded placeholder, cross-cutting
+and out of Catalogue's own scope to fix unilaterally), and an override-*editing* UI (the resolution
+engine is complete and tested; no screen lets an owner actually set an override at any level yet).
+All live Tally/Connector-dependent validation (real stock sync, "Link from Tally stock"/"Link all"
+against real data, cross-company Tally-linked isolation on a real second company) remains the one
+categorical gate blocking a "fully complete" claim — see the Development Ledger §50 entry and this
+session's final report for the precise validation protocol for the next trusted-network session.
 
 This revision supersedes this document's own pre-brainstorm content (§§5, 12 of the prior revision,
 preserved in git history) — those sections posed the nine open questions PDL-020 then resolved and

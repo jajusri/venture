@@ -33,10 +33,35 @@ class CatalogueExcelImportUseCaseTest {
         assertEquals(0, result.updated)
         val product = repository.products["co-1"]!!.single()
         assertEquals("Hand-made Basket", product.displayName)
+        assertEquals("Nos", product.unit)
         assertEquals("Woven basket", product.description)
         assertEquals(PriceDisplayMode.Open, product.priceDisplayMode)
         assertEquals("499", product.manualPriceAmount)
         assertEquals(com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState.Draft, product.lifecycleState)
+    }
+
+    @Test
+    fun `TD-047 -- an Update outcome for a Tally-linked product never overwrites its Tally-authoritative Unit`() = runTest {
+        val repository = FakeCatalogueRepository()
+        val existing = repository.createManualDraft(
+            "co-1", "Widget",
+            com.budcom.android.feature.catalogue.domain.model.CatalogueTimestamp(1L, com.budcom.android.feature.catalogue.domain.model.CatalogueTimestampSource.DeviceLocalProvisional),
+        ).copy(source = com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource.Tally, linkedStockItemId = "guid:widget", unit = "Nos")
+        repository.products["co-1"]!![0] = existing
+        val useCase = CatalogueExcelImportUseCase(repository, FakeCatalogueClock())
+        val rows = listOf(
+            row(
+                1,
+                CatalogueExcelColumns.PRODUCT_NAME to "Widget",
+                CatalogueExcelColumns.UNIT to "MALICIOUS OVERWRITE",
+                CatalogueExcelColumns.STOCK_ITEM_REFERENCE to "guid:widget",
+            ),
+        )
+        val preview = CatalogueExcelValidator.preview(rows, resolveExistingProductId = { existing.productId })
+
+        useCase.commit("co-1", rows, preview)
+
+        assertEquals("Nos", repository.products["co-1"]!!.single().unit)
     }
 
     @Test

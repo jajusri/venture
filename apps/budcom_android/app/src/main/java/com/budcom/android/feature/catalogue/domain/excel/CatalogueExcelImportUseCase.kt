@@ -45,6 +45,10 @@ class CatalogueExcelImportUseCase @Inject constructor(
     }
 
     private fun CatalogueExcelRow.toEnrichmentUpdate(): CatalogueEnrichmentUpdate = CatalogueEnrichmentUpdate(
+        // TD-047: only ever takes effect for a Manual product -- CatalogueRepository silently
+        // ignores this for a Tally-linked product, so a re-imported file can never overwrite
+        // Tally-authoritative Unit data even though the column is present for every row.
+        unit = value(CatalogueExcelColumns.UNIT),
         description = value(CatalogueExcelColumns.DESCRIPTION),
         specifications = value(CatalogueExcelColumns.SPECIFICATIONS),
         customerFacingCategory = value(CatalogueExcelColumns.CATEGORY),

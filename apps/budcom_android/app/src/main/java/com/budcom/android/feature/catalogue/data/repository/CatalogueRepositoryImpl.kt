@@ -90,6 +90,7 @@ class CatalogueRepositoryImpl @Inject constructor(
             linkedStockItemId = stockItemId,
             sku = stockItem.partNumber,
             displayNameOverride = null,
+            manualUnit = null,
             description = null,
             specifications = null,
             customerFacingCategory = null,
@@ -133,6 +134,7 @@ class CatalogueRepositoryImpl @Inject constructor(
             linkedStockItemId = null,
             sku = null,
             displayNameOverride = displayName,
+            manualUnit = null,
             description = null,
             specifications = null,
             customerFacingCategory = null,
@@ -185,6 +187,10 @@ class CatalogueRepositoryImpl @Inject constructor(
                 else -> existing.displayNameOverride
             },
             sku = update.sku ?: existing.sku,
+            // TD-047: a Manual product's Unit is Catalogue-owned; a Tally-linked product's Unit
+            // stays exclusively Tally-authoritative -- this write never reaches it regardless of
+            // what a caller passes in `update.unit`, enforced here rather than only by the UI.
+            manualUnit = if (existing.source == CatalogueProductSource.Manual.name) update.unit ?: existing.manualUnit else existing.manualUnit,
             description = update.description ?: existing.description,
             specifications = update.specifications ?: existing.specifications,
             customerFacingCategory = update.customerFacingCategory ?: existing.customerFacingCategory,
@@ -449,7 +455,10 @@ class CatalogueRepositoryImpl @Inject constructor(
             sku = entity.sku,
             displayNameOverride = entity.displayNameOverride,
             tallyName = stockItem?.name,
-            unit = stockItem?.baseUnit,
+            // TD-047: Tally-linked products keep Unit exclusively Tally-authoritative (never
+            // manualUnit, even if somehow populated); Manual products use their own Catalogue-owned
+            // manualUnit, since no Stock Item join exists to resolve it from.
+            unit = if (entity.source == CatalogueProductSource.Tally.name) stockItem?.baseUnit else entity.manualUnit,
             hsnCode = stockItem?.hsnCode,
             gstRate = stockItem?.gstRate,
             stockGroupKey = stockItem?.parentGroup,
