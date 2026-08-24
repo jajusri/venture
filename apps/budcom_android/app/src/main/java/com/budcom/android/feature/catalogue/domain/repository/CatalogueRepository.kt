@@ -101,6 +101,19 @@ interface CatalogueRepository {
         attribute: CatalogueOverrideAttribute,
     ): CatalogueOverrideRow?
 
+    /** Persists an owner-defined Excel custom column's values for one product (architecture §9:
+     * "Custom columns... round-tripped opaquely; BUDCOM never interprets their content"). A `null`
+     * value in [values] clears that column for this product (mirrors an Excel cell going blank on
+     * re-import); a column simply absent from [values] is left untouched. */
+    suspend fun upsertCustomFields(companyId: String, productId: String, values: Map<String, String?>, timestamp: CatalogueTimestamp)
+
+    suspend fun listCustomFields(companyId: String, productId: String): Map<String, String?>
+
+    /** Every distinct custom column name ever used anywhere in [companyId]'s Catalogue — the stable
+     * header set an export uses so a product missing one column still shows every other product's
+     * columns (a blank cell, not a dropped column). */
+    suspend fun listAllCustomFieldColumnNames(companyId: String): List<String>
+
     suspend fun listPublishedForCategory(companyId: String, category: String): List<CataloguePublishedSnapshot>
     suspend fun listAllPublished(companyId: String): List<CataloguePublishedSnapshot>
 

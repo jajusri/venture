@@ -6,6 +6,8 @@ import com.budcom.android.feature.catalogue.data.local.BranchEntity
 import com.budcom.android.feature.catalogue.data.local.CATALOGUE_SOURCE_TYPE_TALLY_STOCK_ITEM
 import com.budcom.android.feature.catalogue.data.local.CatalogueAssetDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueAssetEntity
+import com.budcom.android.feature.catalogue.data.local.CatalogueCustomFieldDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueCustomFieldEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueProductDao
@@ -54,10 +56,12 @@ class CatalogueRepositoryImplTest {
     private val settingsDao = FakeCatalogueSettingsDao()
     private val assetDao = FakeCatalogueAssetDao()
     private val assetStore = FakeCatalogueAssetStore()
+    private val customFieldDao = FakeCatalogueCustomFieldDao()
     private val stockItemLookup = FakeStockItemLookupPort()
 
     private fun repository() = CatalogueRepositoryImpl(
-        productDao, sourceLinkDao, branchDao, overrideDao, snapshotDao, settingsDao, assetDao, assetStore, stockItemLookup, dispatchers,
+        productDao, sourceLinkDao, branchDao, overrideDao, snapshotDao, settingsDao, assetDao, assetStore, customFieldDao,
+        stockItemLookup, dispatchers,
     )
 
     private fun ts(millis: Long = 1_000L) = CatalogueTimestamp(millis, CatalogueTimestampSource.DeviceLocalProvisional)
@@ -450,6 +454,73 @@ class CatalogueRepositoryImplTest {
         assertEquals(1, repo.listAssets("co-A", productA.productId).size)
         assertTrue("co-B's product must see no assets from co-A", repo.listAssets("co-B", productB.productId).isEmpty())
     }
+
+    // ===== Adversarial: the exact same identifier/name reused across two companies (not merely
+    // different data that happens not to leak -- these prove no accidental collision when the
+    // companyId prefix is the *only* thing distinguishing two otherwise-identical keys). =====
+
+    @Test
+    fun `the identical Tally Stock Item GUID in two different companies resolves to two independent products`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-A") { mutableMapOf() }["guid:same"] = stockItem(id = "guid:same", name = "Sugar 1kg")
+        stockItemLookup.stored.getOrPut("co-B") { mutableMapOf() }["guid:same"] = stockItem(id = "guid:same", name = "Sugar 1kg")
+        val repo = repository()
+
+        val productA = repo.createDraftFromStockItem("co-A", "guid:same", ts())!!
+        val productB = repo.createDraftFromStockItem("co-B", "guid:same", ts())!!
+
+        assertTrue("co-A and co-B must never resolve to the same Catalogue Product row", productA.productId != productB.productId)
+        assertEquals(listOf("Sugar 1kg"), repo.listProducts("co-A").map { it.displayName })
+        assertEquals(listOf("Sugar 1kg"), repo.listProducts("co-B").map { it.displayName })
+        // Removing co-A's link must never affect co-B's independently-created link to the "same" guid.
+        repo.reconcileStockItemLinks("co-A", ts())
+        assertTrue(repo.findProduct("co-B", productB.productId)!!.sourceAvailable)
+    }
+
+    @Test
+    fun `the identical SKU entered in two different companies never cross-resolves on Excel-style lookup`() = runTest(dispatcher) {
+        val repo = repository()
+        val productA = repo.createManualDraft("co-A", "Widget A", ts())
+        val productB = repo.createManualDraft("co-B", "Widget B", ts())
+        repo.updateEnrichment("co-A", productA.productId, CatalogueEnrichmentUpdate(sku = "SKU-100"), ts())
+        repo.updateEnrichment("co-B", productB.productId, CatalogueEnrichmentUpdate(sku = "SKU-100"), ts())
+
+        assertEquals("SKU-100", repo.findProduct("co-A", productA.productId)!!.sku)
+        assertEquals("SKU-100", repo.findProduct("co-B", productB.productId)!!.sku)
+        // A lookup scoped to co-A must never surface co-B's product, even though the SKU text matches.
+        assertTrue(repo.listProducts("co-A").none { it.productId == productB.productId })
+        assertTrue(repo.listProducts("co-B").none { it.productId == productA.productId })
+    }
+
+    @Test
+    fun `the identical customer-facing category name in two companies never mixes published items on a category share`() = runTest(dispatcher) {
+        val repo = repository()
+        val productA = repo.createManualDraft("co-A", "Widget A", ts())
+        val productB = repo.createManualDraft("co-B", "Widget B", ts())
+        repo.updateEnrichment("co-A", productA.productId, CatalogueEnrichmentUpdate(customerFacingCategory = "Snacks"), ts())
+        repo.updateEnrichment("co-B", productB.productId, CatalogueEnrichmentUpdate(customerFacingCategory = "Snacks"), ts())
+        repo.transitionLifecycle("co-A", productA.productId, CatalogueLifecycleAction.Publish, isOwner = true, ts())
+        repo.transitionLifecycle("co-B", productB.productId, CatalogueLifecycleAction.Publish, isOwner = true, ts())
+
+        val categoryA = repo.listPublishedForCategory("co-A", "Snacks")
+        val categoryB = repo.listPublishedForCategory("co-B", "Snacks")
+
+        assertEquals(listOf("Widget A"), categoryA.map { it.displayName })
+        assertEquals(listOf("Widget B"), categoryB.map { it.displayName })
+    }
+
+    @Test
+    fun `the identical custom Excel column name and value in two companies are stored and read back independently`() = runTest(dispatcher) {
+        val repo = repository()
+        val productA = repo.createManualDraft("co-A", "Widget A", ts())
+        val productB = repo.createManualDraft("co-B", "Widget B", ts())
+        repo.upsertCustomFields("co-A", productA.productId, mapOf("Warranty" to "12 months"), ts())
+        repo.upsertCustomFields("co-B", productB.productId, mapOf("Warranty" to "24 months"), ts())
+
+        assertEquals("12 months", repo.listCustomFields("co-A", productA.productId)["Warranty"])
+        assertEquals("24 months", repo.listCustomFields("co-B", productB.productId)["Warranty"])
+        assertEquals(listOf("Warranty"), repo.listAllCustomFieldColumnNames("co-A"))
+        assertEquals(listOf("Warranty"), repo.listAllCustomFieldColumnNames("co-B"))
+    }
 }
 
 // ============================== Fakes ==============================
@@ -538,6 +609,19 @@ private class FakeCatalogueAssetDao : CatalogueAssetDao {
     override suspend fun delete(companyId: String, productId: String, assetId: String) {
         store.remove(Triple(companyId, productId, assetId))
     }
+}
+
+private class FakeCatalogueCustomFieldDao : CatalogueCustomFieldDao {
+    val store = mutableMapOf<Triple<String, String, String>, CatalogueCustomFieldEntity>()
+    override suspend fun upsert(entity: CatalogueCustomFieldEntity) {
+        store[Triple(entity.companyId, entity.productId, entity.columnName)] = entity
+    }
+    override suspend fun findAllForProduct(companyId: String, productId: String) =
+        store.values.filter { it.companyId == companyId && it.productId == productId }
+    override suspend fun findAllColumnNamesForCompany(companyId: String) =
+        store.values.filter { it.companyId == companyId }.map { it.columnName }.distinct()
+    override suspend fun findAllForCompany(companyId: String) =
+        store.values.filter { it.companyId == companyId }
 }
 
 private class FakeStockItemLookupPort : StockItemLookupPort {

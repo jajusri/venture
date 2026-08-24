@@ -76,4 +76,73 @@ class CatalogueExcelImportUseCaseTest {
         assertEquals("Updated description", repository.products["co-1"]!!.single().description)
         assertEquals(existing.productId, repository.products["co-1"]!!.single().productId)
     }
+
+    @Test
+    fun `a custom column's value is persisted per product, round-trippable on export`() = runTest {
+        val repository = FakeCatalogueRepository()
+        val useCase = CatalogueExcelImportUseCase(repository, FakeCatalogueClock())
+        val rows = listOf(
+            row(
+                1,
+                CatalogueExcelColumns.PRODUCT_NAME to "Basket",
+                CatalogueExcelColumns.UNIT to "Nos",
+                "Warranty (months)" to "12",
+            ),
+        )
+        val preview = CatalogueExcelValidator.preview(rows, resolveExistingProductId = { null })
+
+        useCase.commit("co-1", rows, preview)
+
+        val product = repository.products["co-1"]!!.single()
+        val customFields = repository.listCustomFields("co-1", product.productId)
+        assertEquals("12", customFields["Warranty (months)"])
+    }
+
+    @Test
+    fun `a blank custom column on re-import clears a previously-set value`() = runTest {
+        val repository = FakeCatalogueRepository()
+        val ts = com.budcom.android.feature.catalogue.domain.model.CatalogueTimestamp(1L, com.budcom.android.feature.catalogue.domain.model.CatalogueTimestampSource.DeviceLocalProvisional)
+        val existing = repository.createManualDraft("co-1", "Widget", ts)
+        // A row with neither Stock Item Reference nor SKU can never resolve to an Update per the
+        // locked contract (architecture §9: "Stable-identifier matching: Stock Item reference, or a
+        // Catalogue-issued Product ID" -- Product Name alone is never a stable re-import identity),
+        // so this test gives the product a real SKU first, exactly as an owner would before ever
+        // relying on Excel re-import for a Manual product.
+        repository.updateEnrichment("co-1", existing.productId, com.budcom.android.feature.catalogue.domain.repository.CatalogueEnrichmentUpdate(sku = "SKU-1"), ts)
+        repository.upsertCustomFields("co-1", existing.productId, mapOf("Warranty (months)" to "12"), ts)
+        val useCase = CatalogueExcelImportUseCase(repository, FakeCatalogueClock())
+        val rows = listOf(
+            row(
+                1,
+                CatalogueExcelColumns.PRODUCT_NAME to "Widget",
+                CatalogueExcelColumns.UNIT to "Nos",
+                CatalogueExcelColumns.SKU to "SKU-1",
+                "Warranty (months)" to null,
+            ),
+        )
+        val preview = CatalogueExcelValidator.preview(rows, resolveExistingProductId = { identifier -> if (identifier == "SKU-1") existing.productId else null })
+
+        useCase.commit("co-1", rows, preview)
+
+        assertEquals(null, repository.listCustomFields("co-1", existing.productId)["Warranty (months)"])
+    }
+
+    @Test
+    fun `two companies importing the identically-named custom column never see each other's values`() = runTest {
+        val repository = FakeCatalogueRepository()
+        val useCase = CatalogueExcelImportUseCase(repository, FakeCatalogueClock())
+        val rowsA = listOf(row(1, CatalogueExcelColumns.PRODUCT_NAME to "Widget A", CatalogueExcelColumns.UNIT to "Nos", "Warranty" to "12 months"))
+        val rowsB = listOf(row(1, CatalogueExcelColumns.PRODUCT_NAME to "Widget B", CatalogueExcelColumns.UNIT to "Nos", "Warranty" to "24 months"))
+
+        useCase.commit("co-A", rowsA, CatalogueExcelValidator.preview(rowsA, resolveExistingProductId = { null }))
+        useCase.commit("co-B", rowsB, CatalogueExcelValidator.preview(rowsB, resolveExistingProductId = { null }))
+
+        val productA = repository.products["co-A"]!!.single()
+        val productB = repository.products["co-B"]!!.single()
+        assertEquals("12 months", repository.listCustomFields("co-A", productA.productId)["Warranty"])
+        assertEquals("24 months", repository.listCustomFields("co-B", productB.productId)["Warranty"])
+        // co-A's export column-name listing must never include co-B's rows or vice versa.
+        assertEquals(listOf("Warranty"), repository.listAllCustomFieldColumnNames("co-A"))
+        assertEquals(listOf("Warranty"), repository.listAllCustomFieldColumnNames("co-B"))
+    }
 }

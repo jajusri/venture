@@ -13,6 +13,7 @@ import com.budcom.android.core.connection.data.local.PairedConnectorDao
 import com.budcom.android.feature.businessprofile.data.local.BusinessProfileDao
 import com.budcom.android.feature.catalogue.data.local.BranchDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueAssetDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueCustomFieldDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueProductDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueProductSourceLinkDao
@@ -75,7 +76,7 @@ object DatabaseModule {
             DatabaseConstants.NAME,
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-            MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
+            MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -154,6 +155,9 @@ object DatabaseModule {
 
     @Provides
     fun provideCatalogueSettingsDao(db: AppDatabase): CatalogueSettingsDao = db.catalogueSettingsDao()
+
+    @Provides
+    fun provideCatalogueCustomFieldDao(db: AppDatabase): CatalogueCustomFieldDao = db.catalogueCustomFieldDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -519,6 +523,26 @@ object DatabaseModule {
                 "CREATE TABLE IF NOT EXISTS `catalogue_settings` (" +
                     "`companyId` TEXT NOT NULL, `isPublic` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
                     "`updatedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`))",
+            )
+        }
+    }
+
+    /**
+     * Additive-only (MVP-1.4 Catalogue Excel contract completion, architecture §9): adds the single
+     * `catalogue_custom_field` table so an owner-defined Excel custom column's per-product value
+     * actually persists and round-trips on export, not just its name. No existing table touched.
+     */
+    val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `catalogue_custom_field` (" +
+                    "`companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `columnName` TEXT NOT NULL, " +
+                    "`value` TEXT, `updatedAt` INTEGER NOT NULL, `updatedAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `productId`, `columnName`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_catalogue_custom_field_companyId_productId` " +
+                    "ON `catalogue_custom_field` (`companyId`, `productId`)",
             )
         }
     }

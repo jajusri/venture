@@ -1,5 +1,6 @@
 package com.budcom.android.feature.catalogue.presentation
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,8 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -98,11 +101,29 @@ fun CatalogueScreen(
                         onCheckedChange = { onEvent(CatalogueEvent.SetPublic(it)) },
                         modifier = Modifier.testTag("catalogue_public_toggle"),
                     )
-                    IconButton(
-                        onClick = { onEvent(CatalogueEvent.ShareFullCatalogue) },
-                        modifier = Modifier.testTag("catalogue_share_button"),
-                    ) {
-                        Icon(Icons.Filled.Share, contentDescription = "Share catalogue")
+                    Box {
+                        IconButton(
+                            onClick = { onEvent(CatalogueEvent.OpenShareMenu) },
+                            modifier = Modifier.testTag("catalogue_share_button"),
+                        ) {
+                            Icon(Icons.Filled.Share, contentDescription = "Share catalogue")
+                        }
+                        DropdownMenu(
+                            expanded = state.showShareMenu,
+                            onDismissRequest = { onEvent(CatalogueEvent.DismissShareMenu) },
+                            modifier = Modifier.testTag("catalogue_share_menu"),
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Share full catalogue") },
+                                onClick = { onEvent(CatalogueEvent.ShareFullCatalogue) },
+                                modifier = Modifier.testTag("catalogue_share_menu_full"),
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share a category") },
+                                onClick = { onEvent(CatalogueEvent.OpenCategoryShareDialog) },
+                                modifier = Modifier.testTag("catalogue_share_menu_category"),
+                            )
+                        }
                     }
                 },
             )
@@ -180,6 +201,35 @@ fun CatalogueScreen(
             },
             dismissButton = {
                 TextButton(onClick = { onEvent(CatalogueEvent.DismissAddManualDialog) }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (state.showCategoryShareDialog) {
+        AlertDialog(
+            onDismissRequest = { onEvent(CatalogueEvent.DismissCategoryShareDialog) },
+            title = { Text("Share a category") },
+            text = {
+                if (state.availableCategories.isEmpty()) {
+                    Text("No categories among your published products yet.")
+                } else {
+                    Column(modifier = Modifier.testTag("catalogue_category_share_list")) {
+                        state.availableCategories.forEach { category ->
+                            Text(
+                                text = category,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onEvent(CatalogueEvent.ShareCategory(category)) }
+                                    .padding(vertical = 12.dp)
+                                    .testTag("catalogue_category_share_$category"),
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { onEvent(CatalogueEvent.DismissCategoryShareDialog) }) { Text("Cancel") }
             },
         )
     }

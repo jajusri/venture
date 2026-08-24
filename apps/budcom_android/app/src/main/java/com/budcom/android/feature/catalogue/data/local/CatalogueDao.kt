@@ -125,6 +125,23 @@ interface CatalogueAssetDao {
 }
 
 @Dao
+interface CatalogueCustomFieldDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: CatalogueCustomFieldEntity)
+
+    @Query("SELECT * FROM catalogue_custom_field WHERE companyId = :companyId AND productId = :productId")
+    suspend fun findAllForProduct(companyId: String, productId: String): List<CatalogueCustomFieldEntity>
+
+    /** Export support: every distinct custom column name ever used across the company, so an
+     * export's header row is stable even for a product that happens not to have every column set. */
+    @Query("SELECT DISTINCT columnName FROM catalogue_custom_field WHERE companyId = :companyId")
+    suspend fun findAllColumnNamesForCompany(companyId: String): List<String>
+
+    @Query("SELECT * FROM catalogue_custom_field WHERE companyId = :companyId")
+    suspend fun findAllForCompany(companyId: String): List<CatalogueCustomFieldEntity>
+}
+
+@Dao
 interface CatalogueSettingsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: CatalogueSettingsEntity)

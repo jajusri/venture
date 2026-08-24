@@ -23,6 +23,12 @@ data class CatalogueUiState(
     val isPublic: Boolean = false,
     val shareMessage: String? = null,
     val error: String? = null,
+    val showShareMenu: Boolean = false,
+    val showCategoryShareDialog: Boolean = false,
+    /** Distinct customer-facing categories among this company's currently-Published products
+     * (architecture §11: sharing reads exclusively from the published snapshot) -- a Draft/Review
+     * product's category, if it hasn't been published yet, is never offered here. */
+    val availableCategories: List<String> = emptyList(),
 ) {
     val isEmpty: Boolean get() = !isInitialLoading && products.isEmpty()
 }
@@ -43,6 +49,13 @@ sealed interface CatalogueEvent {
     data class SetPublic(val isPublic: Boolean) : CatalogueEvent
     data object ShareFullCatalogue : CatalogueEvent
     data object DismissShareMessage : CatalogueEvent
+    data object OpenShareMenu : CatalogueEvent
+    data object DismissShareMenu : CatalogueEvent
+    /** Loads [CatalogueUiState.availableCategories] from the currently-Published snapshot and
+     * opens the category picker. */
+    data object OpenCategoryShareDialog : CatalogueEvent
+    data object DismissCategoryShareDialog : CatalogueEvent
+    data class ShareCategory(val category: String) : CatalogueEvent
 }
 
 /** One-shot navigation effect — mirrors [CatalogueDetailEffect]'s own pattern. */

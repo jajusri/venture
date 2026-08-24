@@ -92,6 +92,10 @@ private class FakeShareRepository(private val isPublic: Boolean) : CatalogueRepo
     override suspend fun isPublic(companyId: String): Boolean = isPublic
     override suspend fun setPublic(companyId: String, isPublic: Boolean, timestamp: CatalogueTimestamp) = Unit
 
+    override suspend fun upsertCustomFields(companyId: String, productId: String, values: Map<String, String?>, timestamp: CatalogueTimestamp) = Unit
+    override suspend fun listCustomFields(companyId: String, productId: String): Map<String, String?> = emptyMap()
+    override suspend fun listAllCustomFieldColumnNames(companyId: String): List<String> = emptyList()
+
     override suspend fun listAllPublished(companyId: String): List<CataloguePublishedSnapshot> {
         listAllPublishedCalled = true
         return published

@@ -7,6 +7,8 @@ import com.budcom.android.feature.catalogue.data.local.BranchDao
 import com.budcom.android.feature.catalogue.data.local.BranchEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueAssetDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueAssetEntity
+import com.budcom.android.feature.catalogue.data.local.CatalogueCustomFieldDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueCustomFieldEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueProductDao
@@ -62,6 +64,7 @@ class CatalogueRepositoryImpl @Inject constructor(
     private val settingsDao: CatalogueSettingsDao,
     private val assetDao: CatalogueAssetDao,
     private val assetStore: CatalogueAssetStore,
+    private val customFieldDao: CatalogueCustomFieldDao,
     private val stockItemLookup: StockItemLookupPort,
     private val dispatchers: DispatcherProvider,
 ) : CatalogueRepository {
@@ -337,6 +340,26 @@ class CatalogueRepositoryImpl @Inject constructor(
         val stockItem = product?.linkedStockItemId?.let { stockItemLookup.findById(companyId, it) }
         val rows = overrideDao.findAllForCompanyAndAttribute(companyId, attribute.attributeName).map { it.toDomain() }
         CatalogueOverrideResolver.resolve(rows, productId, branchId, stockItem?.parentGroup)
+    }
+
+    override suspend fun upsertCustomFields(
+        companyId: String,
+        productId: String,
+        values: Map<String, String?>,
+        timestamp: CatalogueTimestamp,
+    ) = withContext(dispatchers.io) {
+        val (epoch, source) = timestamp.toPair()
+        values.forEach { (columnName, value) ->
+            customFieldDao.upsert(CatalogueCustomFieldEntity(companyId, productId, columnName, value, epoch, source))
+        }
+    }
+
+    override suspend fun listCustomFields(companyId: String, productId: String): Map<String, String?> = withContext(dispatchers.io) {
+        customFieldDao.findAllForProduct(companyId, productId).associate { it.columnName to it.value }
+    }
+
+    override suspend fun listAllCustomFieldColumnNames(companyId: String): List<String> = withContext(dispatchers.io) {
+        customFieldDao.findAllColumnNamesForCompany(companyId)
     }
 
     override suspend fun listPublishedForCategory(companyId: String, category: String): List<CataloguePublishedSnapshot> =

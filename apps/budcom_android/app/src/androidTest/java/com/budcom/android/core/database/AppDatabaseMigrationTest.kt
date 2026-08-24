@@ -1161,4 +1161,73 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 11 -> 12 migration (adding `catalogue_custom_field` for the Excel
+     * contract's owner-defined custom-column round-trip) preserves every pre-existing row,
+     * including the Catalogue rows a real install would already have from Phase 56/57, and adds
+     * exactly one new, genuinely usable, genuinely empty table.
+     */
+    @Test
+    fun migrate11To12_preservesExistingRowsAndAddsCustomFieldTableOnly() {
+        val db1112DbName = "migration-test-db-11-12"
+
+        var db = helper.createDatabase(db1112DbName, 11)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO catalogue_product (companyId, productId, source, linkedStockItemId, sku, " +
+                "displayNameOverride, description, specifications, customerFacingCategory, priceDisplayMode, " +
+                "manualPriceAmount, manualPriceCurrencyCode, lifecycleState, sourceAvailable, createdAt, " +
+                "createdAtSource, updatedAt, updatedAtSource, archivedAt, archivedAtSource) VALUES " +
+                "('acme-001', 'prod-1', 'MANUAL', NULL, NULL, NULL, 'A fine widget', NULL, NULL, " +
+                "'OPEN', NULL, NULL, 'DRAFT', 1, 1736899200000, 'DEVICE_LOCAL_PROVISIONAL', 1736899200000, " +
+                "'DEVICE_LOCAL_PROVISIONAL', NULL, NULL)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db1112DbName, 12, false, DatabaseModule.MIGRATION_11_12)
+
+        db.query("SELECT description FROM catalogue_product WHERE companyId = 'acme-001' AND productId = 'prod-1'").use { cursor ->
+            assertTrue("existing Catalogue product row must survive the migration", cursor.moveToFirst())
+            assertEquals("A fine widget", cursor.getString(0))
+        }
+
+        val columns = mutableMapOf<String, String>()
+        db.query("PRAGMA table_info(`catalogue_custom_field`)").use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow("name")
+            val typeIdx = cursor.getColumnIndexOrThrow("type")
+            while (cursor.moveToNext()) {
+                columns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+            }
+        }
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "productId" to "TEXT", "columnName" to "TEXT", "value" to "TEXT",
+                "updatedAt" to "INTEGER", "updatedAtSource" to "TEXT",
+            ),
+            columns,
+        )
+
+        db.query("SELECT COUNT(*) FROM catalogue_custom_field").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("catalogue_custom_field must start empty", 0, cursor.getInt(0))
+        }
+
+        db.execSQL(
+            "INSERT INTO catalogue_custom_field (companyId, productId, columnName, value, updatedAt, updatedAtSource) " +
+                "VALUES ('acme-001', 'prod-1', 'Warranty (months)', '12', 1736899200000, 'DEVICE_LOCAL_PROVISIONAL')",
+        )
+        db.query(
+            "SELECT value FROM catalogue_custom_field WHERE companyId = 'acme-001' AND productId = 'prod-1' " +
+                "AND columnName = 'Warranty (months)'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("12", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

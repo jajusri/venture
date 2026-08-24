@@ -43,6 +43,14 @@ object CatalogueExcelColumns {
         DESCRIPTION, SPECIFICATIONS, CATEGORY, PRICE, PRICE_DISPLAY_MODE, PUBLICATION_STATE,
     )
 
+    /** Column order an export writes, before any owner-defined custom columns are appended
+     * (§9's "Export: round-trips every native + custom column"). Required columns first, matching
+     * the order an owner would most naturally fill them in by hand. */
+    val NATIVE_EXPORT_ORDER: List<String> = listOf(
+        PRODUCT_NAME, UNIT, SKU, STOCK_ITEM_REFERENCE, HSN, GST_RATE, STOCK_GROUP,
+        DESCRIPTION, SPECIFICATIONS, CATEGORY, PRICE, PRICE_DISPLAY_MODE, PUBLICATION_STATE,
+    )
+
     fun isReserved(columnName: String): Boolean =
         RESERVED_NAMES.any { it.equals(columnName.trim(), ignoreCase = true) }
 

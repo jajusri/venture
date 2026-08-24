@@ -29,10 +29,13 @@ class CatalogueExcelImportUseCase @Inject constructor(
                     val timestamp = clock.now()
                     val product = repository.createManualDraft(companyId, outcome.productName, timestamp)
                     repository.updateEnrichment(companyId, product.productId, row.toEnrichmentUpdate(), timestamp)
+                    repository.upsertCustomFields(companyId, product.productId, row.customFieldValues(preview.customColumnNames), timestamp)
                     created++
                 }
                 is CatalogueExcelRowOutcome.Update -> {
-                    repository.updateEnrichment(companyId, outcome.productId, row.toEnrichmentUpdate(), clock.now())
+                    val timestamp = clock.now()
+                    repository.updateEnrichment(companyId, outcome.productId, row.toEnrichmentUpdate(), timestamp)
+                    repository.upsertCustomFields(companyId, outcome.productId, row.customFieldValues(preview.customColumnNames), timestamp)
                     updated++
                 }
                 is CatalogueExcelRowOutcome.Skipped -> Unit
@@ -50,6 +53,14 @@ class CatalogueExcelImportUseCase @Inject constructor(
         },
         manualPriceAmount = value(CatalogueExcelColumns.PRICE),
     )
+
+    /** Every column this row carries that is not one of the reserved native names -- an owner-
+     * defined custom column, round-tripped opaquely (architecture §9). [knownCustomColumnNames] is
+     * [CatalogueExcelImportPreview.customColumnNames] (the full file-wide set) so a column present
+     * in the file but blank for *this* row still writes an explicit `null` (clearing any prior
+     * value), rather than silently leaving a stale value from an earlier import untouched. */
+    private fun CatalogueExcelRow.customFieldValues(knownCustomColumnNames: Set<String>): Map<String, String?> =
+        knownCustomColumnNames.associateWith { column -> value(column) }
 }
 
 data class CatalogueExcelCommitResult(val created: Int, val updated: Int, val skipped: Int)

@@ -158,4 +158,69 @@ class CatalogueExcelValidatorTest {
         )
         assertTrue(preview.customColumnNames.isEmpty())
     }
+
+    @Test
+    fun `an empty file (zero rows) previews to zero outcomes without crashing`() {
+        val preview = CatalogueExcelValidator.preview(emptyList(), resolveExistingProductId = { null })
+        assertEquals(0, preview.outcomes.size)
+        assertEquals(0, preview.createCount)
+        assertTrue(preview.customColumnNames.isEmpty())
+    }
+
+    @Test
+    fun `Unicode product names and descriptions are preserved exactly, not mangled`() {
+        val preview = CatalogueExcelValidator.preview(
+            listOf(row(1, CatalogueExcelColumns.PRODUCT_NAME to "मसाला चाय", CatalogueExcelColumns.UNIT to "पैकेट")),
+            resolveExistingProductId = { null },
+        )
+        val outcome = preview.outcomes.single() as CatalogueExcelRowOutcome.Create
+        assertEquals("मसाला चाय", outcome.productName)
+    }
+
+    @Test
+    fun `a very long product name is accepted, not truncated or rejected`() {
+        val longName = "A".repeat(5_000)
+        val preview = CatalogueExcelValidator.preview(
+            listOf(row(1, CatalogueExcelColumns.PRODUCT_NAME to longName, CatalogueExcelColumns.UNIT to "Nos")),
+            resolveExistingProductId = { null },
+        )
+        val outcome = preview.outcomes.single() as CatalogueExcelRowOutcome.Create
+        assertEquals(5_000, outcome.productName.length)
+    }
+
+    @Test
+    fun `a price containing currency symbols and thousands separators is rejected as unparseable, not silently coerced`() {
+        val preview = CatalogueExcelValidator.preview(
+            listOf(
+                row(
+                    1,
+                    CatalogueExcelColumns.PRODUCT_NAME to "Widget",
+                    CatalogueExcelColumns.UNIT to "Nos",
+                    CatalogueExcelColumns.PRICE_DISPLAY_MODE to "Open",
+                    CatalogueExcelColumns.PRICE to "₹1,299.00",
+                ),
+            ),
+            resolveExistingProductId = { null },
+        )
+        val outcome = preview.outcomes.single() as CatalogueExcelRowOutcome.Skipped
+        assertTrue(outcome.reason.contains("not a valid number"))
+    }
+
+    @Test
+    fun `whitespace-only cell values are treated as absent, not as a present empty string`() {
+        val preview = CatalogueExcelValidator.preview(
+            listOf(row(1, CatalogueExcelColumns.PRODUCT_NAME to "Widget", CatalogueExcelColumns.UNIT to "   ")),
+            resolveExistingProductId = { null },
+        )
+        val outcome = preview.outcomes.single() as CatalogueExcelRowOutcome.Skipped
+        assertTrue(outcome.reason.contains("Unit"))
+    }
+
+    @Test
+    fun `validateCustomColumnName rejects a reserved name case-insensitively and accepts a genuinely new one`() {
+        assertEquals(CustomColumnNameValidation.Reserved, CatalogueExcelColumns.validateCustomColumnName("product name"))
+        assertEquals(CustomColumnNameValidation.Reserved, CatalogueExcelColumns.validateCustomColumnName("PRICE"))
+        assertEquals(CustomColumnNameValidation.Blank, CatalogueExcelColumns.validateCustomColumnName("   "))
+        assertEquals(CustomColumnNameValidation.Valid, CatalogueExcelColumns.validateCustomColumnName("Warranty (months)"))
+    }
 }

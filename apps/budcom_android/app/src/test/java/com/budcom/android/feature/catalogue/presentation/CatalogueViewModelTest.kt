@@ -159,6 +159,51 @@ class CatalogueViewModelTest {
     }
 
     @Test
+    fun `opening the category share dialog lists only distinct categories among Published products`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val company = FakeCompanySessionPort("co-1")
+        val vm = viewModel(repository, company)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueEvent.OpenAddManualDialog)
+        vm.onEvent(CatalogueEvent.AddManualNameChanged("Snack A"))
+        vm.onEvent(CatalogueEvent.ConfirmAddManual)
+        vm.onEvent(CatalogueEvent.OpenAddManualDialog)
+        vm.onEvent(CatalogueEvent.AddManualNameChanged("Snack B"))
+        vm.onEvent(CatalogueEvent.ConfirmAddManual)
+        vm.onEvent(CatalogueEvent.OpenAddManualDialog)
+        vm.onEvent(CatalogueEvent.AddManualNameChanged("Draft Only"))
+        vm.onEvent(CatalogueEvent.ConfirmAddManual)
+        dispatcher.scheduler.advanceUntilIdle()
+        val (snackA, snackB, draftOnly) = repository.products["co-1"]!!
+        repository.updateEnrichment("co-1", snackA.productId, CatalogueEnrichmentUpdate(customerFacingCategory = "Snacks"), CatalogueTimestamp(1L, CatalogueTimestampSource.DeviceLocalProvisional))
+        repository.updateEnrichment("co-1", snackB.productId, CatalogueEnrichmentUpdate(customerFacingCategory = "Snacks"), CatalogueTimestamp(1L, CatalogueTimestampSource.DeviceLocalProvisional))
+        repository.updateEnrichment("co-1", draftOnly.productId, CatalogueEnrichmentUpdate(customerFacingCategory = "Unpublished Category"), CatalogueTimestamp(1L, CatalogueTimestampSource.DeviceLocalProvisional))
+        repository.transitionLifecycle("co-1", snackA.productId, CatalogueLifecycleAction.Publish, isOwner = true, CatalogueTimestamp(1L, CatalogueTimestampSource.DeviceLocalProvisional))
+        repository.transitionLifecycle("co-1", snackB.productId, CatalogueLifecycleAction.Publish, isOwner = true, CatalogueTimestamp(1L, CatalogueTimestampSource.DeviceLocalProvisional))
+        // draftOnly deliberately never published.
+
+        vm.onEvent(CatalogueEvent.OpenCategoryShareDialog)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.showCategoryShareDialog)
+        assertEquals(listOf("Snacks"), vm.uiState.value.availableCategories)
+    }
+
+    @Test
+    fun `sharing a category closes the dialog and attempts the share`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val company = FakeCompanySessionPort("co-1")
+        val vm = viewModel(repository, company)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.ShareCategory("Snacks"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(!vm.uiState.value.showCategoryShareDialog)
+        assertEquals("not exercised in these tests", vm.uiState.value.shareMessage)
+    }
+
+    @Test
     fun `confirming the add-manual dialog creates a Draft and refreshes the list`() = runTest(dispatcher) {
         val repository = FakeCatalogueRepository()
         val company = FakeCompanySessionPort("co-1")
@@ -240,6 +285,20 @@ internal fun sampleProduct(
     archivedAt = null,
 )
 
+private fun CatalogueProduct.toPublishedSnapshot() = CataloguePublishedSnapshot(
+    companyId = companyId,
+    productId = productId,
+    displayName = displayName,
+    description = description,
+    specifications = specifications,
+    customerFacingCategory = customerFacingCategory,
+    priceDisplayMode = priceDisplayMode,
+    resolvedPriceAmount = manualPriceAmount,
+    resolvedPriceCurrencyCode = manualPriceCurrencyCode,
+    primaryAssetId = null,
+    publishedAt = updatedAt,
+)
+
 internal class FakeCatalogueShareCoordinator : com.budcom.android.feature.catalogue.sharing.CatalogueShareCoordinator {
     override suspend fun prepareShare(
         companyId: String,
@@ -272,7 +331,15 @@ val unlinkedStockItems = mutableMapOf<String, MutableList<com.budcom.android.fea
         val stockItem = list.firstOrNull { it.id == stockItemId } ?: return null
         list.remove(stockItem)
         val product = sampleProduct(companyId = companyId, productId = "linked-${nextId++}", displayName = stockItem.name)
-            .copy(source = com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource.Tally, linkedStockItemId = stockItemId, tallyName = stockItem.name)
+            .copy(
+                source = com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource.Tally,
+                linkedStockItemId = stockItemId,
+                tallyName = stockItem.name,
+                unit = stockItem.baseUnit,
+                hsnCode = stockItem.hsnCode,
+                gstRate = stockItem.gstRate,
+                stockGroupKey = stockItem.parentGroup,
+            )
         products.getOrPut(companyId) { mutableListOf() }.add(product)
         return product
     }
@@ -347,11 +414,18 @@ val unlinkedStockItems = mutableMapOf<String, MutableList<com.budcom.android.fea
         val list = products[companyId] ?: return null
         val existing = list.firstOrNull { it.productId == productId } ?: return null
         val updated = existing.copy(
+            displayNameOverride = when {
+                update.clearDisplayNameOverride -> null
+                update.displayNameOverride != null -> update.displayNameOverride
+                else -> existing.displayNameOverride
+            },
+            sku = update.sku ?: existing.sku,
             description = update.description ?: existing.description,
             specifications = update.specifications ?: existing.specifications,
             customerFacingCategory = update.customerFacingCategory ?: existing.customerFacingCategory,
             priceDisplayMode = update.priceDisplayMode ?: existing.priceDisplayMode,
             manualPriceAmount = update.manualPriceAmount ?: existing.manualPriceAmount,
+            manualPriceCurrencyCode = update.manualPriceCurrencyCode ?: existing.manualPriceCurrencyCode,
         )
         list[list.indexOf(existing)] = updated
         return updated
@@ -399,10 +473,24 @@ val unlinkedStockItems = mutableMapOf<String, MutableList<com.budcom.android.fea
         attribute: CatalogueOverrideAttribute,
     ): CatalogueOverrideRow? = null
 
-    override suspend fun listPublishedForCategory(companyId: String, category: String): List<CataloguePublishedSnapshot> = emptyList()
-    override suspend fun listAllPublished(companyId: String): List<CataloguePublishedSnapshot> = emptyList()
+    override suspend fun listPublishedForCategory(companyId: String, category: String): List<CataloguePublishedSnapshot> =
+        listAllPublished(companyId).filter { it.customerFacingCategory == category }
+
+    override suspend fun listAllPublished(companyId: String): List<CataloguePublishedSnapshot> =
+        products[companyId].orEmpty()
+            .filter { it.lifecycleState == CatalogueLifecycleState.Published }
+            .map { it.toPublishedSnapshot() }
     override suspend fun isPublic(companyId: String): Boolean = publicByCompany[companyId] ?: false
     override suspend fun setPublic(companyId: String, isPublic: Boolean, timestamp: CatalogueTimestamp) {
         publicByCompany[companyId] = isPublic
     }
+
+    val customFields = mutableMapOf<Triple<String, String, String>, String?>()
+    override suspend fun upsertCustomFields(companyId: String, productId: String, values: Map<String, String?>, timestamp: CatalogueTimestamp) {
+        values.forEach { (column, value) -> customFields[Triple(companyId, productId, column)] = value }
+    }
+    override suspend fun listCustomFields(companyId: String, productId: String): Map<String, String?> =
+        customFields.filterKeys { it.first == companyId && it.second == productId }.mapKeys { it.key.third }
+    override suspend fun listAllCustomFieldColumnNames(companyId: String): List<String> =
+        customFields.keys.filter { it.first == companyId }.map { it.third }.distinct()
 }

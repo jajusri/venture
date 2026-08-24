@@ -830,10 +830,27 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-047 — A Manual (non-Tally) Catalogue product has no code path that ever sets its required "Unit" field, breaking Excel round-trip for that product class
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-047 |
+| **Description** | Found while writing an Excel export/re-import round-trip test during MVP-1.4 Catalogue completion work (this session). Architecture §6's field-ownership table treats `Unit` as **Tally-authoritative unconditionally** — `CatalogueProduct.unit` is populated only via the live join to a linked `StockItem.baseUnit` (`CatalogueRepositoryImpl.toDomain`). `CatalogueEnrichmentUpdate` (the only mutation surface for a Manual product) has no `unit` field at all, and `createManualDraft` takes no unit parameter either. A `CatalogueProductSource.Manual` product's `unit` is therefore always `null` for its entire lifecycle, with no owner-facing way to ever set it. |
+| **Impact** | The Excel contract's own locked rule (architecture §9, Brainstorm Outcome §6) makes `Unit` a **required** column — a row missing it is skipped with "Missing required column: Unit" (`CatalogueExcelValidator.classify`). Exporting any Manual product and re-importing that exact file unchanged therefore always skips that row instead of updating it, which is a real "no duplicate/no-op-loss-on-round-trip" violation (PDL-020 §4) specific to Manual-sourced products — exactly the class of gap the Brainstorm Outcome's own Risk #3 ("Manual-item test coverage — Manual-sourced Stock-Items need explicit testing, not assumed parity with Tally-sourced items in every code path") flagged as a named risk before implementation began. Tally-linked products are unaffected (Unit resolves correctly via the Stock Item join). |
+| **Priority** | P2 — does not corrupt data or crash (the row is safely skipped with an honest reason, never silently applied wrong), but silently defeats round-trip for every Manual product exported today; will surface as confusing "my re-imported file did nothing" reports once Excel import/export ships a real file-format UI. |
+| **Target milestone** | Not scheduled — the fix requires a product decision this session's own scope did not authorize: should Unit become Catalogue-owned (editable) for Manual products specifically, conditionally overriding the field-ownership table's current unconditional "Tally-authoritative" classification? Or should Manual-draft creation require a Unit up front? Either is a locked-architecture-adjacent decision, not a unilateral implementation fix. |
+| **Status** | **OPEN, disclosed.** Discovered and worked around *in the test suite only* — `CatalogueExcelExportUseCaseTest`'s round-trip test deliberately exercises a Tally-linked product instead of a Manual one, with an explicit comment recording why, so the passing test suite does not mask this gap. No production code changed for this defect. |
+| **Introduced** | Not introduced this session — pre-existing since Phase 56's original Catalogue data-model implementation (`CatalogueEnrichmentUpdate`/`createManualDraft` never had a unit parameter); first became consequential now that a real Excel round-trip test exists to exercise it. |
+| **Root cause** | `Unit` is modeled as unconditionally Tally-authoritative (architecture §6), with no Catalogue-owned fallback field for the `Manual` source case. |
+| **Evidence** | `CatalogueExcelExportUseCaseTest.kt` (this session) — the round-trip test's own doc comment records the exact failure mode discovered (`assertEquals(1, preview.updateCount)` returned `0`/all-Skipped when first written against a Manual product) before the test was corrected to use a Tally-linked product instead. |
+
+---
+
 ## Index
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-047 | A Manual (non-Tally) Catalogue product has no code path that ever sets its required "Unit" field, breaking Excel export/re-import round-trip for that product class — found while writing a round-trip test | P2 | **OPEN, disclosed.** Worked around in the test suite (uses a Tally-linked product) only; no production fix — requires a product decision on Unit's field-ownership for Manual products. | Not scheduled — needs product-owner input on field ownership |
 | TD-046 | Catalogue product list showed stale lifecycle-state chips after returning from the detail screen — found live on real-device walkthrough | P1 | **FIXED (2026-08-24, Phase 56), live-verified on real device.** `CatalogueRoute` now refreshes on every RESUMED entry; `load()` guards against the resulting cold-start race. | Fixed — see entry |
 | TD-045 | CatalogueClock blocked ~45s on every Catalogue write whenever the paired Connector was unreachable — found live on real-device walkthrough | P1 | **FIXED (2026-08-24, Phase 56), live-verified on real device.** `CatalogueClockImpl.now()` now bounded by a 2.5s `withTimeoutOrNull`, independent of the shared retry policy. | Fixed — see entry |
 | TD-044 | No user/role/authentication system exists anywhere in BUDCOM — Catalogue's locked Owner-only Publish/Archive rule is structurally wired but currently enforced against a hardcoded `true`, not a real identity | P2 | **OPEN, disclosed (2026-08-24, Phase 56).** `isOwner` threaded end-to-end so a real signal later needs one call-site change. | Not scheduled — cross-cutting, out of Catalogue's own scope |

@@ -69,8 +69,19 @@ class CatalogueViewModel @Inject constructor(
             is CatalogueEvent.AddManualNameChanged -> _uiState.update { it.copy(addManualName = event.name) }
             CatalogueEvent.ConfirmAddManual -> confirmAddManual()
             is CatalogueEvent.SetPublic -> setPublic(event.isPublic)
-            CatalogueEvent.ShareFullCatalogue -> shareFullCatalogue()
+            CatalogueEvent.ShareFullCatalogue -> {
+                _uiState.update { it.copy(showShareMenu = false) }
+                shareFullCatalogue()
+            }
             CatalogueEvent.DismissShareMessage -> _uiState.update { it.copy(shareMessage = null) }
+            CatalogueEvent.OpenShareMenu -> _uiState.update { it.copy(showShareMenu = true) }
+            CatalogueEvent.DismissShareMenu -> _uiState.update { it.copy(showShareMenu = false) }
+            CatalogueEvent.OpenCategoryShareDialog -> openCategoryShareDialog()
+            CatalogueEvent.DismissCategoryShareDialog -> _uiState.update { it.copy(showCategoryShareDialog = false) }
+            is CatalogueEvent.ShareCategory -> {
+                _uiState.update { it.copy(showCategoryShareDialog = false) }
+                shareCategory(event.category)
+            }
         }
     }
 
@@ -127,14 +138,30 @@ class CatalogueViewModel @Inject constructor(
 
     private fun shareFullCatalogue() {
         val id = companyId ?: return
+        viewModelScope.launch { performShare(id, CatalogueShareScope.FullCatalogue) }
+    }
+
+    private fun openCategoryShareDialog() {
+        val id = companyId ?: return
         viewModelScope.launch {
-            val businessName = businessProfileRepository.getProfile(id)?.tradingName
-            when (val prepared = shareCoordinator.prepareShare(id, CatalogueShareScope.FullCatalogue, businessName)) {
-                is CatalogueShareResult.Failure -> _uiState.update { it.copy(shareMessage = prepared.message) }
-                is CatalogueShareResult.Success -> when (val intentResult = shareCoordinator.createShareIntent(prepared.value)) {
-                    is CatalogueShareResult.Failure -> _uiState.update { it.copy(shareMessage = intentResult.message) }
-                    is CatalogueShareResult.Success -> _shareIntent.emit(intentResult.value)
-                }
+            _uiState.update { it.copy(showShareMenu = false) }
+            val categories = repository.listAllPublished(id).mapNotNull { it.customerFacingCategory }.distinct().sorted()
+            _uiState.update { it.copy(showCategoryShareDialog = true, availableCategories = categories) }
+        }
+    }
+
+    private fun shareCategory(category: String) {
+        val id = companyId ?: return
+        viewModelScope.launch { performShare(id, CatalogueShareScope.Category(category)) }
+    }
+
+    private suspend fun performShare(companyId: String, scope: CatalogueShareScope) {
+        val businessName = businessProfileRepository.getProfile(companyId)?.tradingName
+        when (val prepared = shareCoordinator.prepareShare(companyId, scope, businessName)) {
+            is CatalogueShareResult.Failure -> _uiState.update { it.copy(shareMessage = prepared.message) }
+            is CatalogueShareResult.Success -> when (val intentResult = shareCoordinator.createShareIntent(prepared.value)) {
+                is CatalogueShareResult.Failure -> _uiState.update { it.copy(shareMessage = intentResult.message) }
+                is CatalogueShareResult.Success -> _shareIntent.emit(intentResult.value)
             }
         }
     }

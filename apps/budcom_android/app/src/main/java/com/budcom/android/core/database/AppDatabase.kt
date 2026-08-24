@@ -22,6 +22,8 @@ import com.budcom.android.feature.catalogue.data.local.BranchDao
 import com.budcom.android.feature.catalogue.data.local.BranchEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueAssetDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueAssetEntity
+import com.budcom.android.feature.catalogue.data.local.CatalogueCustomFieldDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueCustomFieldEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideDao
 import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideEntity
 import com.budcom.android.feature.catalogue.data.local.CatalogueProductDao
@@ -82,6 +84,7 @@ import com.budcom.android.feature.party.data.local.TagEntity
         CataloguePublishedSnapshotEntity::class,
         CatalogueAssetEntity::class,
         CatalogueSettingsEntity::class,
+        CatalogueCustomFieldEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -111,4 +114,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cataloguePublishedSnapshotDao(): CataloguePublishedSnapshotDao
     abstract fun catalogueAssetDao(): CatalogueAssetDao
     abstract fun catalogueSettingsDao(): CatalogueSettingsDao
+    abstract fun catalogueCustomFieldDao(): CatalogueCustomFieldDao
 }

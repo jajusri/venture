@@ -1,26 +1,31 @@
 # BUDCOM MVP-1.4 — Catalogue — Architecture
 
-**Status: Implementation IN PROGRESS (2026-08-24, Phase 56) — see
-`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §47 for the full implementation record.** Brainstorm 1 is
-complete (`docs/architecture/BUDCOM-MVP-1_4-CATALOGUE-BRAINSTORM-OUTCOME.md`), PDL-020 locked the
+**Status: Implementation IN PROGRESS (2026-08-24, Phase 56; extended Phase 58) — see
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §47/§49 for the full implementation record.** Brainstorm 1
+is complete (`docs/architecture/BUDCOM-MVP-1_4-CATALOGUE-BRAINSTORM-OUTCOME.md`), PDL-020 locked the
 original nine open product decisions (2026-08-19), and a formal decision-lock pass (2026-08-24)
 additionally locked the override-resolution order, the Excel field-name reservation rule, the
 Prospect→Ledger FUTURE classification, sharing granularity, and the timestamp-integrity
 requirement. This document was the **implementation-ready architecture and execution plan**
 produced from that final locked scope; a separate, explicit go-ahead (received 2026-08-24) then
-authorized implementation. **Implemented and AUTOMATED-VALIDATED this same session**: data
-foundation (§6, migration 10→11), Tally identity/reconciliation (§14), override engine (§8, minus
-the Stock-group level — see TD-043), lifecycle (§7), pricing governance infra (§12, pending a Tally
-rate field — see the Development Ledger entry), asset store (§10), sharing (§11, plain-text instead
-of PDF — disclosed simplification), Excel contract/validation (§9, minus a chosen file-format
-library), and essential UI (§17, minus a branch selector and category-picker). **Also
-PHYSICALLY VALIDATED this same session** (Development Ledger §47.I): the Catalogue Room migration
-(10/10 instrumented tests on a real device) and a full hands-on Draft→Publish→Archive→Restore→
-Share walkthrough against a real paired company — which found and fixed two real defects live
-(TD-045, TD-046) that no unit test had caught. **Not yet done**: Milestone 0's live Tally-request
-validation specifically (TD-043, gated safely disabled — distinct from the app-level physical
-validation already done), a real Owner/staff identity to enforce §18's Owner-only rule against
-(TD-044, currently a hardcoded placeholder). See the Development Ledger entry for the complete,
+authorized implementation. **Implemented and AUTOMATED-VALIDATED**: data foundation (§6, migration
+10→11→12), Tally identity/reconciliation (§14), override engine (§8, minus the Stock-group level —
+see TD-043), lifecycle (§7), pricing governance infra (§12, pending a Tally rate field — see the
+Development Ledger entry), asset store (§10), sharing (§11, plain-text instead of PDF — disclosed
+simplification; category-level sharing UI added Phase 58), **Excel contract/validation (§9) — now
+complete end-to-end**: CSV chosen as the file-format (Phase 58, no new dependency — see the Ledger
+entry for why CSV over a binary `.xlsx` library), custom-column value persistence
+(`catalogue_custom_field`), and export, and essential UI (§17, minus a branch selector — category-
+picker added Phase 58). **Also PHYSICALLY VALIDATED**: the Catalogue Room migration (10/10
+instrumented tests on a real device, Phase 56; the 11→12 migration re-verified against real prior
+on-device data, Phase 58) and a full hands-on Draft→Publish→Archive→Restore→Share walkthrough against
+a real paired company (Phase 56) — which found and fixed two real defects live (TD-045, TD-046) that
+no unit test had caught. **Not yet done**: Milestone 0's live Tally-request validation specifically
+(TD-043, gated safely disabled — distinct from the app-level physical validation already done), a
+real Owner/staff identity to enforce §18's Owner-only rule against (TD-044, currently a hardcoded
+placeholder), a Manual product's missing Unit field blocking its own Excel round-trip (TD-047, needs
+product-owner input), a branch-selector screen, and an Excel import/export UI screen (the domain/data
+layer is complete and ready to wire up). See the Development Ledger §47/§49 entries for the complete,
 itemized account of what was and was not done, and why.
 
 This revision supersedes this document's own pre-brainstorm content (§§5, 12 of the prior revision,

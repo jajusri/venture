@@ -185,6 +185,30 @@ data class CataloguePublishedSnapshotEntity(
 )
 
 /**
+ * `catalogue_custom_field` — persists an owner-defined Excel custom column's value per product
+ * (architecture §9: "Custom columns: Owner-defined, any name not on the reserved list | Round-
+ * tripped opaquely; BUDCOM never interprets their content"). Without this table, a custom column's
+ * *name* survives round-trip (via [com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelImportPreview.customColumnNames])
+ * but its per-product *value* had nowhere to live — this is what makes export actually reproduce
+ * what was imported. `columnName` is stored exactly as the file's own header text (case preserved,
+ * matched case-insensitively elsewhere per [com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelColumns.isReserved]'s
+ * own convention) so export re-emits the owner's original header spelling.
+ */
+@Entity(
+    tableName = "catalogue_custom_field",
+    primaryKeys = ["companyId", "productId", "columnName"],
+    indices = [Index(value = ["companyId", "productId"])],
+)
+data class CatalogueCustomFieldEntity(
+    val companyId: String,
+    val productId: String,
+    val columnName: String,
+    val value: String?,
+    val updatedAt: Long,
+    val updatedAtSource: String,
+)
+
+/**
  * `catalogue_asset` — image identity is `(companyId, productId, assetId)` (architecture §10);
  * `assetId` is a generated UUID, never derived from the original filename. [filePath] is a path
  * relative to [com.budcom.android.feature.catalogue.storage.CatalogueAssetStore]'s own managed
