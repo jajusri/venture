@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -19,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,12 +36,16 @@ import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem
 @Composable
 fun CatalogueStockItemPickerRoute(
     onLinked: (String) -> Unit,
+    onLinkedAll: () -> Unit,
     onBack: () -> Unit,
     viewModel: CatalogueStockItemPickerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) {
         viewModel.linked.collect { productId -> onLinked(productId) }
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.linkedAll.collect { onLinkedAll() }
     }
     CatalogueStockItemPickerScreen(state = state, onEvent = viewModel::onEvent, onBack = onBack)
 }
@@ -51,11 +57,33 @@ fun CatalogueStockItemPickerScreen(
     onEvent: (CatalogueStockItemPickerEvent) -> Unit,
     onBack: () -> Unit,
 ) {
+    if (state.showLinkAllConfirmation) {
+        AlertDialog(
+            onDismissRequest = { onEvent(CatalogueStockItemPickerEvent.DismissLinkAllConfirmation) },
+            title = { Text("Link all stock items?") },
+            text = { Text("This creates a Draft product for every one of the ${state.allItems.size} Tally stock items not already in your Catalogue.") },
+            confirmButton = {
+                TextButton(onClick = { onEvent(CatalogueStockItemPickerEvent.ConfirmLinkAll) }) { Text("Link all") }
+            },
+            dismissButton = {
+                TextButton(onClick = { onEvent(CatalogueStockItemPickerEvent.DismissLinkAllConfirmation) }) { Text("Cancel") }
+            },
+        )
+    }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Link from Tally stock") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = {
+                    if (state.allItems.isNotEmpty()) {
+                        TextButton(
+                            onClick = { onEvent(CatalogueStockItemPickerEvent.OpenLinkAllConfirmation) },
+                            enabled = !state.isLinking,
+                            modifier = Modifier.testTag("catalogue_picker_link_all"),
+                        ) { Text("Link all") }
+                    }
+                },
             )
         },
     ) { padding ->

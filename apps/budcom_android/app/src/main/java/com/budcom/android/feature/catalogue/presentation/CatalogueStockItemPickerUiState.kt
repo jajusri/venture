@@ -7,6 +7,7 @@ data class CatalogueStockItemPickerUiState(
     val searchQuery: String = "",
     val allItems: List<StockItem> = emptyList(),
     val isLinking: Boolean = false,
+    val showLinkAllConfirmation: Boolean = false,
 ) {
     val filteredItems: List<StockItem>
         get() = searchQuery.trim().takeIf { it.isNotEmpty() }?.let { query ->
@@ -19,4 +20,7 @@ data class CatalogueStockItemPickerUiState(
 sealed interface CatalogueStockItemPickerEvent {
     data class SearchChanged(val query: String) : CatalogueStockItemPickerEvent
     data class Pick(val stockItemId: String) : CatalogueStockItemPickerEvent
+    data object OpenLinkAllConfirmation : CatalogueStockItemPickerEvent
+    data object DismissLinkAllConfirmation : CatalogueStockItemPickerEvent
+    data object ConfirmLinkAll : CatalogueStockItemPickerEvent
 }

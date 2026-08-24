@@ -36,6 +36,11 @@ class CatalogueStockItemPickerViewModel @Inject constructor(
     private val _linked = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val linked = _linked.asSharedFlow()
 
+    /** Emits the count of Drafts created once a "link all" run finishes — the Route returns to the
+     * Catalogue list (there is no single resulting product to open, unlike [linked]). */
+    private val _linkedAll = MutableSharedFlow<Int>(extraBufferCapacity = 1)
+    val linkedAll = _linkedAll.asSharedFlow()
+
     private var companyId: String? = null
 
     init {
@@ -55,6 +60,9 @@ class CatalogueStockItemPickerViewModel @Inject constructor(
         when (event) {
             is CatalogueStockItemPickerEvent.SearchChanged -> _uiState.update { it.copy(searchQuery = event.query) }
             is CatalogueStockItemPickerEvent.Pick -> pick(event.stockItemId)
+            is CatalogueStockItemPickerEvent.OpenLinkAllConfirmation -> _uiState.update { it.copy(showLinkAllConfirmation = true) }
+            is CatalogueStockItemPickerEvent.DismissLinkAllConfirmation -> _uiState.update { it.copy(showLinkAllConfirmation = false) }
+            is CatalogueStockItemPickerEvent.ConfirmLinkAll -> linkAll()
         }
     }
 
@@ -66,6 +74,26 @@ class CatalogueStockItemPickerViewModel @Inject constructor(
             val product = repository.createDraftFromStockItem(id, stockItemId, clock.now())
             _uiState.update { it.copy(isLinking = false) }
             product?.let { _linked.emit(it.productId) }
+        }
+    }
+
+    /** Creates a Draft for every currently-unlinked Stock Item, one at a time, reusing the same
+     * per-item path as [pick] rather than a separate bulk repository call — this is a local Room
+     * loop, not a network operation, so sequential writes stay fast even for a large stock list. */
+    private fun linkAll() {
+        val id = companyId ?: return
+        if (_uiState.value.isLinking) return
+        val stockItemIds = _uiState.value.allItems.map { it.id }
+        if (stockItemIds.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLinking = true, showLinkAllConfirmation = false) }
+            var linkedCount = 0
+            for (stockItemId in stockItemIds) {
+                if (repository.createDraftFromStockItem(id, stockItemId, clock.now()) != null) linkedCount++
+            }
+            val remaining = repository.listUnlinkedStockItems(id)
+            _uiState.update { it.copy(isLinking = false, allItems = remaining) }
+            _linkedAll.emit(linkedCount)
         }
     }
 }

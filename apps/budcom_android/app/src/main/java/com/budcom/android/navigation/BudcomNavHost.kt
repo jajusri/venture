@@ -283,6 +283,7 @@ fun BudcomNavHost(
                         popUpTo(Routes.CATALOGUE_STOCK_ITEM_PICKER) { inclusive = true }
                     }
                 },
+                onLinkedAll = { navController.popBackStack() },
                 onBack = { navController.popBackStack() },
             )
         }

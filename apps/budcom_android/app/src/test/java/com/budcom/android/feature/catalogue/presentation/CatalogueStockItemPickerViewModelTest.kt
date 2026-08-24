@@ -104,4 +104,70 @@ class CatalogueStockItemPickerViewModelTest {
         assertTrue(!vm.uiState.value.isLoading)
         assertTrue(vm.uiState.value.allItems.isEmpty())
     }
+
+    @Test
+    fun `OpenLinkAllConfirmation shows a confirmation before anything is linked`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.unlinkedStockItems["co-1"] = mutableListOf(stockItem("guid:a", "Widget A"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueStockItemPickerEvent.OpenLinkAllConfirmation)
+
+        assertTrue(vm.uiState.value.showLinkAllConfirmation)
+        assertEquals(1, repository.unlinkedStockItems["co-1"]!!.size)
+    }
+
+    @Test
+    fun `DismissLinkAllConfirmation closes the dialog without linking anything`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.unlinkedStockItems["co-1"] = mutableListOf(stockItem("guid:a", "Widget A"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(CatalogueStockItemPickerEvent.OpenLinkAllConfirmation)
+
+        vm.onEvent(CatalogueStockItemPickerEvent.DismissLinkAllConfirmation)
+
+        assertTrue(!vm.uiState.value.showLinkAllConfirmation)
+        assertEquals(1, repository.unlinkedStockItems["co-1"]!!.size)
+    }
+
+    @Test
+    fun `ConfirmLinkAll creates a Draft for every unlinked stock item and reports the count`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.unlinkedStockItems["co-1"] = mutableListOf(
+            stockItem("guid:a", "Widget A"), stockItem("guid:b", "Widget B"), stockItem("guid:c", "Widget C"),
+        )
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val linkedAllCounts = mutableListOf<Int>()
+        val job = launch { vm.linkedAll.collect { linkedAllCounts.add(it) } }
+        vm.onEvent(CatalogueStockItemPickerEvent.OpenLinkAllConfirmation)
+        vm.onEvent(CatalogueStockItemPickerEvent.ConfirmLinkAll)
+        dispatcher.scheduler.advanceUntilIdle()
+        job.cancel()
+
+        assertEquals(listOf(3), linkedAllCounts)
+        assertEquals(3, repository.products["co-1"]?.size)
+        assertEquals(setOf("Widget A", "Widget B", "Widget C"), repository.products["co-1"]!!.map { it.displayName }.toSet())
+        assertTrue(vm.uiState.value.allItems.isEmpty())
+        assertTrue(!vm.uiState.value.isLinking)
+        assertTrue(!vm.uiState.value.showLinkAllConfirmation)
+    }
+
+    @Test
+    fun `ConfirmLinkAll with nothing to link does not emit or crash`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val linkedAllCounts = mutableListOf<Int>()
+        val job = launch { vm.linkedAll.collect { linkedAllCounts.add(it) } }
+        vm.onEvent(CatalogueStockItemPickerEvent.ConfirmLinkAll)
+        dispatcher.scheduler.advanceUntilIdle()
+        job.cancel()
+
+        assertTrue(linkedAllCounts.isEmpty())
+    }
 }
