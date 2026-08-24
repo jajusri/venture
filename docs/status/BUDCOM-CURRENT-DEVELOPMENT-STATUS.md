@@ -811,13 +811,25 @@ the full Item→Branch→Stock-group→Catalogue-wide override engine, Draft→R
 lifecycle, enrichment + asset store, price-sync-mode infrastructure, category/full-catalogue sharing
 (plain-text, disclosed simplification — no PDF renderer this pass), the Excel validation/commit
 contract (no file-format library chosen — disclosed scope boundary), and essential list/detail UI
-wired into Dashboard. 94 new Catalogue unit tests, 1,425/1,425 total Android JVM tests green, 0 lint
-errors, `assembleDevDebug` green. **Not done, disclosed**: TD-043 (Stock Item Fetch-field gap gated
+wired into Dashboard. 98 new Catalogue unit tests, all Android JVM tests green, 0 lint errors,
+`assembleDevDebug` green. **Not done, disclosed**: TD-043 (Stock Item Fetch-field gap gated
 `EXPERIMENTAL_DISABLED`, no live Tally access this session to validate it), TD-044 (no real Owner/
-staff identity anywhere in BUDCOM — `isOwner` hardcoded `true`), no instrumented/real-device test run
-(no emulator/device available), no branch-selector or category-picker UI. Full itemized record:
-`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §47. **Not pushed to origin** — local commits only, push
-requires separate authorization per this session's own instructions.
+staff identity anywhere in BUDCOM — `isOwner` hardcoded `true`), no branch-selector or
+category-picker UI. Full itemized record: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §47. **Not
+pushed to origin** — local commits only, push requires separate authorization per this session's
+own instructions.
+
+**Live real-device validation performed after all (Development Ledger §47.I)** — a real, already-
+paired device (`I2407`/`10BF44124K000E3`, real company ESTIMATION) turned out to be available.
+Instrumented migration suite: **10/10 passed on-device**, including the new Catalogue migration
+test. Full hands-on walkthrough (Dashboard → Catalogue → create/enrich/Publish/Archive/Restore →
+Public toggle → Share) exercised and visually confirmed via screenshots and `uiautomator` dumps,
+not assumed. **Found and fixed two real defects live** — now **TD-045** (every Catalogue write
+blocked ~45s whenever the Connector was unreachable, an ordinary state) and **TD-046** (the product
+list didn't refresh after returning from the detail screen post-mutation) — both fixed, rebuilt,
+reinstalled, and re-verified working on the same device before being accepted. This is exactly the
+class of defect unit tests (which use instant fakes) cannot catch — real-device testing paid for
+itself immediately. Test device left in a clean state (test product Archived, Public toggle off).
 
 **Independently, not blocking the above:** StockItems' `PARENT`/`BASEUNITS`/`GSTAPPLICABLE`/
 `CATEGORY`/`CLOSINGBALANCE` TDL-fetch exclusion is now tracked as **TD-043** (registry), superseding
@@ -840,10 +852,11 @@ above:
    exact enumerated steps or against Business Profile/Dincharya specifically — treat this item as
    narrowed, not closed, until someone walks §E14 itself end-to-end.
 
-**MVP-1.4 Catalogue: implemented this session (Phase 56 above), not yet physically validated, not
-pushed.** Remaining before it can be considered release-ready: live Tally validation of TD-043,
-resolving TD-044's owner/role gap, a real-device/instrumented test pass, and the disclosed UI/Excel/
-sharing scope gaps listed in Phase 56 and the Development Ledger §47 entry.
+**MVP-1.4 Catalogue: implemented this session (Phase 56 above), live-validated on a real device,
+not pushed.** Remaining before it can be considered release-ready: live Tally-request validation of
+TD-043 specifically (distinct from the app-level real-device validation already done), resolving
+TD-044's owner/role gap, and the disclosed UI/Excel/sharing scope gaps listed in Phase 56 and the
+Development Ledger §47 entry.
 
 **Not started:** external/public distribution. Do not begin distribution before signing exists and
 the product owner explicitly authorizes it.

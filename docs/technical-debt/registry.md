@@ -766,6 +766,38 @@ Engineering-tracked compromises, defects, and deferred work.
 
 ---
 
+## TD-045 — CatalogueClock blocked ~45s on every Catalogue write whenever the paired Connector was unreachable (FIXED — live-verified)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-045 |
+| **Description** | Found live on a real device (2026-08-24, device `I2407`/`10BF44124K000E3`, real paired company ESTIMATION) during the first physical walkthrough of MVP-1.4 Catalogue: opening the Catalogue list (which triggers a reconciliation sweep) appeared to hang for the better part of a minute. `logcat` showed `CatalogueClockImpl.now()`'s call to the existing `ConnectorStatusPort.probeConnection()` retrying three times at ~15s each (this app's shared `RetryPolicy` wrapping `fetchHealth()`) before finally failing over to the device clock — because the Connector configured on this install (`http://10.0.2.2:8080`, an emulator-only loopback alias, stale from an earlier emulator session) was never reachable from this real physical device. Every Catalogue write (`createManualDraft`, `updateEnrichment`, `transitionLifecycle`, `setPublic`, plus the list screen's own reconciliation sweep on load) calls `CatalogueClock.now()`, so this made the entire feature feel broken whenever the paired Connector is merely unreachable — an ordinary, common real-world state (Desktop app closed, phone out of Wi-Fi range), not a rare edge case. |
+| **Impact** | The Catalogue list and detail screens could appear to hang for ~45 seconds on essentially every interaction whenever the Connector was unreachable, with no loading-state explanation — a first-time user would very plausibly conclude the feature was broken and give up before the fallback ever resolved. |
+| **Priority** | P1 — makes a brand-new, just-shipped feature unusable in an ordinary, common device state. |
+| **Target milestone** | Found and fixed same-session (Phase 56), before this milestone's implementation was considered complete. |
+| **Status** | **FIXED (2026-08-24), live-verified.** `CatalogueClockImpl.now()` (`feature/catalogue/data/CatalogueClockImpl.kt`) now wraps the probe in `withTimeoutOrNull(2_500L)`, independent of the shared `RetryPolicy`'s own longer retry/timeout behavior — cancelling the coroutine aborts the in-flight OkHttp call rather than waiting it out, and falls back to the device clock (tagged `DeviceLocalProvisional`, per the architecture's own already-locked distinction) the moment the bound is hit. Re-verified live on the same real device immediately after the fix: Catalogue list load, Save, Publish, and Archive all completed within ~2-3 seconds instead of ~45. 4 new unit tests (`CatalogueClockImplTest`) prove this with `runTest`'s virtual-time semantics (a probe that never resolves within the bound still returns the device-clock fallback, never the value from a delay well past the bound). |
+| **Introduced** | This session (Phase 56) — `CatalogueClockImpl` was new code; never shipped in a state without this bound. |
+| **Root cause** | `ConnectorStatusPort.probeConnection()`'s underlying `fetchHealth()` retries through this app's shared `RetryPolicy` before failing, which is appropriate for its existing ServerConfig/Diagnostics callers (an explicit, user-initiated "test connection" action) but not for a timestamp lookup silently sitting inside every Catalogue write. |
+| **Evidence** | Live real-device reproduction and fix verification 2026-08-24, device `I2407`/`10BF44124K000E3`, real company ESTIMATION — `logcat` capture showing the three ~15s `SocketTimeoutException` retries pre-fix, and sub-3-second completion post-fix, both directly observed via `adb`. |
+
+---
+
+## TD-046 — Catalogue product list showed stale lifecycle-state chips after returning from the detail screen (FIXED — live-verified)
+
+| Field | Value |
+|-------|-------|
+| **ID** | TD-046 |
+| **Description** | Found live on the same real-device walkthrough (2026-08-24) immediately after TD-045: publishing a Draft product from the detail screen and pressing Back to the product list showed the product still labeled "Draft" — the underlying Room data and the detail screen itself were both correct (re-opening the detail screen showed "Published" correctly), but `CatalogueViewModel`'s list only ever loaded once, on its initial company-session subscription; nothing told it to reload when the user navigated back from a screen that had just mutated the product. A first attempted fix (a "skip the first RESUMED event" guard on a `repeatOnLifecycle(RESUMED)` effect, modeled on `DashboardScreen`'s own pattern) did **not** work and was live-verified to not work before being replaced: Navigation-Compose disposes and recreates the whole list composable (a fresh `LaunchedEffect` scope) every time this destination becomes current again, so every return-from-detail looked like a first resume to the guard, defeating it. |
+| **Impact** | An owner/staff member publishing, archiving, or restoring a product and returning to the list would see incorrect lifecycle-state information until a manual pull-to-refresh (not wired to any gesture in this MVP UI) or an app restart — directly undermines trust in the one screen meant to give an at-a-glance view of catalogue state. |
+| **Priority** | P1 — incorrect state display on the primary Catalogue screen, found on the very first live walkthrough. |
+| **Target milestone** | Found and fixed same-session (Phase 56). |
+| **Status** | **FIXED (2026-08-24), live-verified.** `CatalogueRoute` (`feature/catalogue/presentation/CatalogueScreen.kt`) now fires `CatalogueEvent.Refresh` on every `Lifecycle.State.RESUMED` entry, including the first — the extra call on a genuine first entry harmlessly races the ViewModel's own initial company-driven load (both converge to the same correct state). To avoid that race showing a false empty state, `CatalogueViewModel.load()` (`CatalogueViewModel.kt`) was also changed so a `Refresh` arriving before `companyId` is known (i.e. before the company-session subscription has emitted) is a pure no-op rather than clearing `isInitialLoading`, which was previously reserved for the real "no company" case only. Re-verified live: Draft → Publish → Back showed "Published" immediately; Published → Archive → Back showed "Archived" immediately; Archived → Restore → Back showed "Draft" immediately — all without an app restart. |
+| **Introduced** | This session (Phase 56) — the list screen was new code; never shipped in a state that reloaded correctly. |
+| **Root cause** | `CatalogueViewModel`'s product list was loaded only from its `init` block's company-session subscription, with no signal wired for "the user returned to this already-composed screen." |
+| **Evidence** | Live real-device reproduction and fix verification 2026-08-24, device `I2407`/`10BF44124K000E3`, real company ESTIMATION, product "Handwoven Basket" (test data, subsequently Archived by this same session as courtesy cleanup — Catalogue has no delete capability by design). |
+
+---
+
 ## TD-043 — Connector Stock Item Fetch list never requests PARENT/CATEGORY/BASEUNITS/CLOSINGBALANCE/GSTAPPLICABLE, even though the mapper already parses them (gated, pending live validation)
 
 | Field | Value |
@@ -802,6 +834,8 @@ Engineering-tracked compromises, defects, and deferred work.
 
 | ID | Summary | Priority | Status | Target |
 |----|---------|----------|--------|--------|
+| TD-046 | Catalogue product list showed stale lifecycle-state chips after returning from the detail screen — found live on real-device walkthrough | P1 | **FIXED (2026-08-24, Phase 56), live-verified on real device.** `CatalogueRoute` now refreshes on every RESUMED entry; `load()` guards against the resulting cold-start race. | Fixed — see entry |
+| TD-045 | CatalogueClock blocked ~45s on every Catalogue write whenever the paired Connector was unreachable — found live on real-device walkthrough | P1 | **FIXED (2026-08-24, Phase 56), live-verified on real device.** `CatalogueClockImpl.now()` now bounded by a 2.5s `withTimeoutOrNull`, independent of the shared retry policy. | Fixed — see entry |
 | TD-044 | No user/role/authentication system exists anywhere in BUDCOM — Catalogue's locked Owner-only Publish/Archive rule is structurally wired but currently enforced against a hardcoded `true`, not a real identity | P2 | **OPEN, disclosed (2026-08-24, Phase 56).** `isOwner` threaded end-to-end so a real signal later needs one call-site change. | Not scheduled — cross-cutting, out of Catalogue's own scope |
 | TD-043 | Connector Stock Item Fetch list never requests PARENT/CATEGORY/BASEUNITS/CLOSINGBALANCE/GSTAPPLICABLE, even though `mapStockItem()` already parses them — same bug class as TD-035/TD-042 | P2 | **PARTIALLY ADDRESSED (2026-08-24, Phase 56): gated `STOCK_ITEM_RICH_FETCH_FIELDS`/`stockItemsEnrichedFields` added, registered `EXPERIMENTAL_DISABLED`/disabled pending live Tally validation. Routine `stockItems` sync completely untouched.** | Blocks Catalogue's Stock-group override level until live-validated |
 | TD-042 | Ledger Alias (real Debtor mobile numbers + shortcuts) never reached Android — Connector never requested it, and Tally exports it via LANGUAGENAME.LIST, never a flat ALIAS tag | P1 | **FIXED (2026-08-23, Phase 55): both gaps fixed — LEDGER_RICH_FETCH_FIELDS gained ALIAS, mapLedger now resolves alias from LANGUAGENAME.LIST/NAME.LIST. Live-verified: 511/949 real ledgers now carry alias, 486/873 real customers got a validated phone.** | Fixed — see entry |

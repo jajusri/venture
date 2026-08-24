@@ -3355,13 +3355,10 @@ green after every Milestone 0 change.
 
 ### H. What was not done, and why
 
-- **No live Tally validation** of `STOCK_ITEM_RICH_FETCH_FIELDS` — no live Tally connection existed
-  in this session; the operation stays `EXPERIMENTAL_DISABLED`/`disabled` until a future session
-  performs and records that validation, per this project's own standing discipline.
-- **No instrumented-test run** (Room migration test, any future asset-store/Context-coupled test) —
-  no Android emulator/device was available in this session. Tests are written, not executed.
-- **No real device/company-switch/UI walkthrough** — same reason. Nothing in this phase claims
-  physical or human-visual validation.
+- **No live Tally validation** of `STOCK_ITEM_RICH_FETCH_FIELDS` — no live Tally-request validation
+  was performed this session (see §I below for what *was* validated live); the operation stays
+  `EXPERIMENTAL_DISABLED`/`disabled` until a future session performs and records that validation,
+  per this project's own standing discipline.
 - **No item-level sharing, no full version history, no tiered pricing, no Prospect→Ledger, no
   multi-language** — all explicitly out of the locked MVP-1.4 scope, not touched.
 - **Category-level sharing has no dedicated category-picker UI yet** — the mechanism
@@ -3371,3 +3368,59 @@ green after every Milestone 0 change.
 - **Branch UI** (a company-level branch selector) was not built — `Branch`/override-by-branch is
   fully implemented and tested at the repository/domain layer; no screen exposes it yet, since no
   business in this repository's data has more than one branch to demonstrate it against.
+- **No currency code on a manually-entered price** — the detail screen's Price field has no
+  currency selector, so `CatalogueEnrichmentUpdate.manualPriceCurrencyCode` is always `null` for a
+  UI-entered price; a shared/published price shows e.g. "Price: 499" with no "INR" suffix. Found
+  live (§I) reading the actual generated share file's content, not fixed this session — a small,
+  genuine product-UX gap (does it need a selector, or a silent fixed default?) rather than a
+  unilateral call this session should make.
+
+### I. Live real-device validation (device `I2407`/`10BF44124K000E3`, real paired company ESTIMATION) — performed after the report above was first drafted
+
+A real, already-paired device was available after all (`adb devices -l` found it mid-session,
+screen awake, battery 100%, only this project's own dev/debug builds installed — no production
+install to disturb). Ran the actual instrumented migration suite and a full hands-on walkthrough
+rather than leaving §H's original "no device available" limitation standing.
+
+**Instrumented tests, real device**: `connectedDevDebugAndroidTest` filtered to
+`AppDatabaseMigrationTest` — **10/10 passed**, including the new
+`migrate10To11_preservesExistingRowsAndAddsCatalogueTablesOnly` (0.105s) — the first genuine
+physical confirmation that the Catalogue migration behaves correctly against Room's real SQLite
+implementation, not just an assumption from reading the migration SQL.
+
+**Built and installed `prod`-flavor debug APK over the existing, already-paired
+`com.budcom.android.debug` install** (real company ESTIMATION, "Tally connected" shown, real
+synced Ledgers/Vouchers/Stock Items) — confirmed the reinstall preserved pairing/session/Room data
+before doing anything further. Full hands-on walkthrough via `adb shell input`/`uiautomator dump`/
+`screencap` (screenshots inspected directly, not assumed): Dashboard's new Catalogue tile → empty
+list → manual Draft creation ("Handwoven Basket") → detail screen (description, price mode, price)
+→ Save → Submit-for-review-vs-Publish choice → Publish → Archive → Restore (back to Draft) →
+Public/Private toggle → Share (Private correctly refused with "No published products to share
+yet." when nothing was Published) → Publish again → Share succeeded, producing a real Android
+share sheet (real WhatsApp contacts/Gmail/Quick Share targets from this device) and a real
+generated file, whose actual on-device content was read directly
+(`run-as ... cat .../catalogue-share/*.txt`) and confirmed correct: header, scope label, product
+name, price line, description.
+
+**Two real defects found and fixed live, both now TD-045 and TD-046 (registry)** — see those
+entries for full detail. In summary: (1) every Catalogue write blocked for ~45s whenever the
+paired Connector was unreachable (an ordinary state, not an edge case) — `CatalogueClockImpl`
+now bounds the probe to 2.5s independent of the shared retry policy; (2) the product list never
+refreshed after returning from the detail screen post-mutation — `CatalogueRoute` now refreshes on
+every RESUMED lifecycle entry, with a cold-start race guarded in `CatalogueViewModel.load()`. Both
+fixes were rebuilt, reinstalled, and re-verified live on the same device before being accepted —
+this ledger entry does not claim a fix works without having watched it work. Both fixes also
+covered by new/updated unit tests (`CatalogueClockImplTest`, 4 tests) and the full suite re-run
+green after each change.
+
+**Courtesy cleanup**: the test product was left `Archived` (Catalogue has no delete capability by
+design) and the Public toggle was returned to off before ending the session, so the real
+ESTIMATION company's app was left in a clean, non-disruptive state — confirmed via a final
+`uiautomator dump` read of the actual switch state, not assumed from a screenshot (one screenshot
+during this cleanup visually still showed the toggle in its old position due to capture timing;
+the dump was treated as authoritative over the image).
+
+**Still not done**: live Tally-request validation for TD-043 (this device's own Connector was
+unreachable throughout, so no live Tally traffic was possible or attempted — consistent with this
+project's safety rules); a real second-company isolation walkthrough; exercising the Excel/
+category-sharing/branch paths physically (no UI exists yet for the latter two, per §H).

@@ -13,11 +13,15 @@ foundation (§6, migration 10→11), Tally identity/reconciliation (§14), overr
 the Stock-group level — see TD-043), lifecycle (§7), pricing governance infra (§12, pending a Tally
 rate field — see the Development Ledger entry), asset store (§10), sharing (§11, plain-text instead
 of PDF — disclosed simplification), Excel contract/validation (§9, minus a chosen file-format
-library), and essential UI (§17, minus a branch selector and category-picker). **Not yet done**:
-Milestone 0's live Tally validation (TD-043, gated safely disabled), any instrumented/real-device
-test run (no emulator/device was available), a real Owner/staff identity to enforce §18's
-Owner-only rule against (TD-044, currently a hardcoded placeholder). See the Development Ledger
-entry for the complete, itemized account of what was and was not done, and why.
+library), and essential UI (§17, minus a branch selector and category-picker). **Also
+PHYSICALLY VALIDATED this same session** (Development Ledger §47.I): the Catalogue Room migration
+(10/10 instrumented tests on a real device) and a full hands-on Draft→Publish→Archive→Restore→
+Share walkthrough against a real paired company — which found and fixed two real defects live
+(TD-045, TD-046) that no unit test had caught. **Not yet done**: Milestone 0's live Tally-request
+validation specifically (TD-043, gated safely disabled — distinct from the app-level physical
+validation already done), a real Owner/staff identity to enforce §18's Owner-only rule against
+(TD-044, currently a hardcoded placeholder). See the Development Ledger entry for the complete,
+itemized account of what was and was not done, and why.
 
 This revision supersedes this document's own pre-brainstorm content (§§5, 12 of the prior revision,
 preserved in git history) — those sections posed the nine open questions PDL-020 then resolved and
