@@ -1,4 +1,5 @@
 import { LEDGER_RICH_FETCH_FIELDS, LEDGER_CONTACT_FETCH_FIELDS } from '../core/ledger-identity.js';
+import { STOCK_ITEM_RICH_FETCH_FIELDS } from '../core/stock-item-identity.js';
 import type { TallyXmlRequestSpec } from '../../tally/xml/request-builder.js';
 
 /** Tally collection/object IDs for master data extraction. */
@@ -109,6 +110,16 @@ export const MasterDataTemplates = {
         'OPENINGBALANCE',
         'OPENINGRATE',
       ],
+    }),
+  // TD-043 / Catalogue Milestone 0 prerequisite -- NOT part of the routine stock-item sync above.
+  // Deliberately separate additive Fetch list (same collection, `List of Stock Items`), mirroring
+  // `ledgersContactDetails`'s relationship to `ledgers`: gated `EXPERIMENTAL_DISABLED`/`disabled`
+  // in the operation registry until live-validated against real Tally, so no unvalidated request
+  // shape reaches production. See `STOCK_ITEM_RICH_FETCH_FIELDS`'s own doc comment.
+  stockItemsEnrichedFields: (companyName: string) =>
+    buildCollectionTemplate(TallyMasterDataCollections.StockItems, {
+      companyName,
+      collectionModifyFetch: [...STOCK_ITEM_RICH_FETCH_FIELDS],
     }),
   units: (companyName: string) =>
     buildCollectionTemplate(TallyMasterDataCollections.Units, { companyName }),

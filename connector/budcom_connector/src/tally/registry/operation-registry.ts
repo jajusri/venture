@@ -37,6 +37,7 @@ export const ApprovedOperationId = {
   StockGroups: 'STOCK_GROUPS',
   StockCategories: 'STOCK_CATEGORIES',
   StockItems: 'STOCK_ITEMS',
+  StockItemsEnrichedFields: 'STOCK_ITEMS_ENRICHED_FIELDS',
   Godowns: 'GODOWNS',
   CostCategories: 'COST_CATEGORIES',
   CostCentres: 'COST_CENTRES',
@@ -332,6 +333,40 @@ const REGISTRY: Readonly<Record<ApprovedOperationId, ApprovedOperation>> = Objec
         throw new Error(`Operation for ${TallyMasterDataCollections.StockItems} requires a company context`);
       }
       return MasterDataTemplates.stockItems(params.companyName);
+    },
+  },
+  // TD-043 / Catalogue Milestone 0 prerequisite. Mirrors `LedgersContactDetails` exactly: a
+  // separate, additive Fetch-field variant of an already-VERIFIED_SAFE collection (`StockItems`
+  // above stays untouched and production), gated fully disabled until live-validated. `PARENT`/
+  // `CATEGORY`/`BASEUNITS`/`CLOSINGBALANCE`/`GSTAPPLICABLE` are already parsed by `mapStockItem()`
+  // but have never been requested from live Tally -- see `STOCK_ITEM_RICH_FETCH_FIELDS`'s doc
+  // comment. Required before Catalogue's Stock-group override level (architecture §8/§21) can
+  // resolve against real `parentGroup` data. Do not flip `rolloutStatus`/`classification` without
+  // recording live Tally validation evidence in `evidenceSource` first.
+  [ApprovedOperationId.StockItemsEnrichedFields]: {
+    operationId: ApprovedOperationId.StockItemsEnrichedFields,
+    erpType: 'tally',
+    adapterVersion: ADAPTER_VERSION,
+    tallyEvidenceBuild: EVIDENCE_BUILD,
+    capability: TallyCapability.MasterRead,
+    tallyRequest: 'Export',
+    requestKind: 'Collection',
+    tallyId: TallyMasterDataCollections.StockItems,
+    classification: 'EXPERIMENTAL_DISABLED',
+    risk: 'MEDIUM',
+    requiresCompany: true,
+    maxRequestBytes: 65_536,
+    maxResponseBytes: RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES,
+    timeoutMs: 45_000,
+    autoApproveConditional: false,
+    evidenceSource: 'PENDING VALIDATION -- STOCK_ITEM_RICH_FETCH_FIELDS never sent to live Tally',
+    rolloutStatus: 'disabled',
+    render: () => {
+      throw new Error(
+        'STOCK_ITEMS_ENRICHED_FIELDS is disabled: STOCK_ITEM_RICH_FETCH_FIELDS has not yet been ' +
+          'validated against live Tally (see operation-registry.ts comment, TD-043). Do not ' +
+          'enable this operation until validation evidence is recorded here.',
+      );
     },
   },
   [ApprovedOperationId.Godowns]: masterCollection(

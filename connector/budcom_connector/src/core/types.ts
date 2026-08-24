@@ -37,6 +37,15 @@ export interface HealthReport {
   readonly databaseAccessible: boolean;
   /** ISO timestamp this Connector process actually started, derived from process.uptime(). */
   readonly processStartedAt: string;
+  /**
+   * Authoritative server-side clock reading at report time (epoch millis). MVP-1.4 Catalogue
+   * (docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md §15) needs a non-device-local
+   * timestamp source for publication/conflict decisions; this Connector process (running on the
+   * business's own Desktop) is the closest thing to a "server" in this LAN-local architecture, and
+   * already stamps ISO timestamps elsewhere (sync runs, pairing sessions). Reusing the existing
+   * `/health` endpoint rather than adding a new route.
+   */
+  readonly serverTimeEpochMillis: number;
 }
 
 export interface ReadinessReport {

@@ -97,6 +97,7 @@ export class HealthService {
       repositoryAvailable,
       databaseAccessible,
       processStartedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+      serverTimeEpochMillis: Date.now(),
     };
   }
 

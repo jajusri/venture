@@ -147,6 +147,50 @@ describe('entity mappers', () => {
   });
 
   /**
+   * TD-043 / Catalogue Milestone 0 prerequisite fixture-only round-trip. Proves `mapStockItem()`
+   * already correctly parses `CATEGORY`/`CLOSINGBALANCE`/`GSTAPPLICABLE`/`ISINACTIVE` off the XML
+   * node -- the mapper was never the gap. The gap is that live Tally's response never carries
+   * these tags today because the routine `stockItems` Fetch list never requests them (see
+   * `STOCK_ITEM_RICH_FETCH_FIELDS` in `stock-item-identity.ts`, gated `EXPERIMENTAL_DISABLED` in
+   * the operation registry pending live validation). This fixture is deliberately inline and
+   * separate from the shared `SAMPLE_STOCK_ITEMS_RESPONSE` (used by three other test files) rather
+   * than adding tags to that shared fixture, to keep this regression test's blast radius to zero.
+   */
+  it('parses CATEGORY/CLOSINGBALANCE/GSTAPPLICABLE/ISINACTIVE when Tally does emit them (TD-043)', () => {
+    const enrichedResponse = `<ENVELOPE>
+  <BODY>
+    <DATA>
+      <COLLECTION>
+        <STOCKITEM NAME="Widget B">
+          <NAME>Widget B</NAME>
+          <GUID TYPE="String">6a2a5ccc-6394-4ccb-bb34-113991142c4f-0000041c</GUID>
+          <ALTERID TYPE="Number">2054</ALTERID>
+          <PARENT>Finished Goods</PARENT>
+          <CATEGORY>Electronics</CATEGORY>
+          <BASEUNITS>Nos</BASEUNITS>
+          <HSNCODE>8471</HSNCODE>
+          <CLOSINGBALANCE>150.00 Dr</CLOSINGBALANCE>
+          <GSTAPPLICABLE>Applicable</GSTAPPLICABLE>
+          <ISINACTIVE>No</ISINACTIVE>
+        </STOCKITEM>
+      </COLLECTION>
+    </DATA>
+  </BODY>
+</ENVELOPE>`;
+    const document = collectionParser.parseDocument(enrichedResponse);
+    const nodes = collectionParser.parseNodes(document, { nodeName: 'STOCKITEM' });
+    const item = mapStockItem(collectionParser, nodes[0]!);
+    expect(item).toMatchObject({
+      name: 'Widget B',
+      parentGroup: 'Finished Goods',
+      category: 'Electronics',
+      status: 'active',
+    });
+    expect(item?.closingBalance).toBeTruthy();
+    expect(item?.gstRate).toBe('Applicable');
+  });
+
+  /**
    * TD-035 permanent regression coverage. `PARENT` was excluded from the Ledgers TDL FETCH
    * request (2026-08-03, commit 8706a80) as a workaround for TD-001 -- a Tally export artifact
    * where a group/parent value can arrive as `&#4; <name>` (decimal numeric reference to the

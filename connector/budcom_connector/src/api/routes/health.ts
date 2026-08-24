@@ -29,6 +29,7 @@ export function createHealthRouter(healthService: HealthService): Router {
         startupCorrelationId: report.startupCorrelationId ?? null,
         repositoryAvailable: report.repositoryAvailable,
         databaseAccessible: report.databaseAccessible,
+        serverTimeEpochMillis: report.serverTimeEpochMillis,
       });
     }),
   );
