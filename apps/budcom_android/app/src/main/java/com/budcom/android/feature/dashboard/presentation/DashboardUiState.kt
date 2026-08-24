@@ -74,6 +74,7 @@ sealed interface DashboardEvent {
     data object OpenConnect : DashboardEvent
     data object OpenDincharya : DashboardEvent
     data object OpenBusinessProfile : DashboardEvent
+    data object OpenCatalogue : DashboardEvent
     data object OpenSearch : DashboardEvent
     data object OpenSync : DashboardEvent
     data object OpenDiagnostics : DashboardEvent

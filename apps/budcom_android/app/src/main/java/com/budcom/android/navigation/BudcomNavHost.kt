@@ -13,6 +13,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.budcom.android.feature.businessprofile.presentation.BusinessProfileRoute
+import com.budcom.android.feature.catalogue.presentation.CatalogueDetailRoute
+import com.budcom.android.feature.catalogue.presentation.CatalogueDetailViewModel
+import com.budcom.android.feature.catalogue.presentation.CatalogueRoute
 import com.budcom.android.feature.company.presentation.CompanyRoute
 import com.budcom.android.feature.connect.presentation.ConnectRoute
 import com.budcom.android.feature.connect.presentation.PartyDetailRoute
@@ -98,6 +101,7 @@ fun BudcomNavHost(
                 onOpenConnect = { navController.navigate(Routes.connect()) },
                 onOpenDincharya = { navController.navigate(Routes.DINCHARYA) },
                 onOpenBusinessProfile = { navController.navigate(Routes.BUSINESS_PROFILE) },
+                onOpenCatalogue = { navController.navigate(Routes.CATALOGUE) },
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenSync = { navController.navigate(Routes.SYNC) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
@@ -252,6 +256,23 @@ fun BudcomNavHost(
         }
         composable(route = Routes.BUSINESS_PROFILE) {
             BusinessProfileRoute()
+        }
+        composable(route = Routes.CATALOGUE) {
+            CatalogueRoute(
+                onOpenProductDetail = { productId ->
+                    navController.navigate(Routes.catalogueDetail(productId))
+                },
+            )
+        }
+        composable(
+            route = Routes.CATALOGUE_DETAIL,
+            arguments = listOf(
+                navArgument(CatalogueDetailViewModel.PRODUCT_ID_ARG) {
+                    type = NavType.StringType
+                },
+            ),
+        ) {
+            CatalogueDetailRoute(onBack = { navController.popBackStack() })
         }
         composable(
             route = Routes.PARTY_DETAIL,

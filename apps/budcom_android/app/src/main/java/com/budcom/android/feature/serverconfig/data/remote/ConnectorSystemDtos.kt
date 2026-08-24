@@ -26,6 +26,12 @@ data class HealthResponseDto(
      */
     val repositoryAvailable: Boolean = false,
     val databaseAccessible: Boolean = false,
+    /**
+     * Authoritative server-side clock reading (epoch millis) at report time. Absent on older
+     * Connector builds that predate this field — default keeps an otherwise-valid health payload
+     * from being rejected, mirroring [repositoryAvailable]'s own back-compat discipline above.
+     */
+    val serverTimeEpochMillis: Long? = null,
 )
 
 @Serializable

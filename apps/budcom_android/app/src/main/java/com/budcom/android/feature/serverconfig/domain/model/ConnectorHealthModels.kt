@@ -19,6 +19,7 @@ data class ConnectorHealth(
     val startupCorrelationId: String?,
     val repositoryAvailable: Boolean,
     val databaseAccessible: Boolean,
+    val serverTimeEpochMillis: Long? = null,
 )
 
 /**

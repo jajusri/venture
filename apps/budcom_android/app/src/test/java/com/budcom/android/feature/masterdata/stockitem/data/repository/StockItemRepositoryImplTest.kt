@@ -514,6 +514,12 @@ private class FakeStockLocal : StockItemLocalDataSource {
             dataFreshnessAt = "cached",
         )
     }
+
+    override suspend fun findById(companyId: String, id: String): StockItem? =
+        stored[companyId]?.firstOrNull { it.id == id }
+
+    override suspend fun listAllForCompany(companyId: String): List<StockItem> =
+        stored[companyId].orEmpty()
 }
 
 private class FakeSelectedCompanyStore(

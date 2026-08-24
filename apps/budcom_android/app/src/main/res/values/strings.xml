@@ -203,6 +203,8 @@
 
     <string name="dashboard_action_business_profile">Business Profile</string>
     <string name="dashboard_primary_business_profile_subtitle">Your trusted business identity</string>
+    <string name="dashboard_action_catalogue">Catalogue</string>
+    <string name="dashboard_primary_catalogue_subtitle">Products ready to share with customers</string>
 
     <string name="business_profile_title">Business Profile</string>
     <string name="business_profile_empty_message">No Business Profile set up yet for this company. Set one up so Connect and future BUDCOM features can present your business correctly.</string>

@@ -1,0 +1,129 @@
+package com.budcom.android.feature.catalogue.presentation
+
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.budcom.android.feature.catalogue.domain.model.CatalogueProduct
+import com.budcom.android.feature.catalogue.domain.port.CatalogueClock
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueEnrichmentUpdate
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueLifecycleResult
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository
+import com.budcom.android.feature.company.domain.port.CompanySessionPort
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+@HiltViewModel
+class CatalogueDetailViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val repository: CatalogueRepository,
+    private val companySession: CompanySessionPort,
+    private val clock: CatalogueClock,
+) : ViewModel() {
+
+    private val productId: String = requireNotNull(savedStateHandle.get<String>(PRODUCT_ID_ARG)) { "productId is required" }
+
+    private val _uiState = MutableStateFlow(CatalogueDetailUiState())
+    val uiState: StateFlow<CatalogueDetailUiState> = _uiState.asStateFlow()
+
+    /**
+     * Owner-only enforcement is structurally wired end-to-end (architecture §7/§18:
+     * [com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleTransitions],
+     * [CatalogueRepository.transitionLifecycle]'s `isOwner` parameter), but this codebase has no
+     * existing user/role/authentication concept anywhere to source a real signal from — a
+     * pre-existing, whole-app characteristic Catalogue cannot and should not invent unilaterally.
+     * Hardcoded `true` here (single-device-per-business assumption, consistent with every other
+     * screen in this app today) is the smallest architecture-consistent choice; flagged as a named
+     * limitation for explicit product-owner attention (see the MVP-1.4 implementation report,
+     * technical debt registry).
+     */
+    private val isOwner = true
+
+    init {
+        viewModelScope.launch {
+            val companyId = companySession.observeSelectedCompanyId().first()
+            if (companyId == null) {
+                _uiState.update { it.copy(isLoading = false, notFound = true) }
+                return@launch
+            }
+            reload(companyId)
+        }
+    }
+
+    fun onEvent(event: CatalogueDetailEvent) {
+        when (event) {
+            is CatalogueDetailEvent.DescriptionChanged -> _uiState.update { it.copy(descriptionDraft = event.value, isDirty = true) }
+            is CatalogueDetailEvent.SpecificationsChanged -> _uiState.update { it.copy(specificationsDraft = event.value, isDirty = true) }
+            is CatalogueDetailEvent.CategoryChanged -> _uiState.update { it.copy(categoryDraft = event.value, isDirty = true) }
+            is CatalogueDetailEvent.PriceDisplayModeChanged -> _uiState.update { it.copy(priceDisplayMode = event.mode, isDirty = true) }
+            is CatalogueDetailEvent.ManualPriceChanged -> _uiState.update { it.copy(manualPriceDraft = event.value, isDirty = true) }
+            CatalogueDetailEvent.SaveEnrichment -> saveEnrichment()
+            is CatalogueDetailEvent.Transition -> transition(event.action)
+            CatalogueDetailEvent.DismissMessage -> _uiState.update { it.copy(message = null) }
+        }
+    }
+
+    private suspend fun reload(companyId: String) {
+        val product = repository.findProduct(companyId, productId)
+        if (product == null) {
+            _uiState.update { it.copy(isLoading = false, notFound = true) }
+            return
+        }
+        _uiState.update { it.applyProduct(product) }
+    }
+
+    private fun saveEnrichment() {
+        val product = _uiState.value.product ?: return
+        val state = _uiState.value
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSaving = true) }
+            val updated = repository.updateEnrichment(
+                product.companyId,
+                product.productId,
+                CatalogueEnrichmentUpdate(
+                    description = state.descriptionDraft,
+                    specifications = state.specificationsDraft,
+                    customerFacingCategory = state.categoryDraft.ifBlank { null },
+                    priceDisplayMode = state.priceDisplayMode,
+                    manualPriceAmount = state.manualPriceDraft.ifBlank { null },
+                ),
+                clock.now(),
+            )
+            _uiState.update {
+                if (updated != null) it.applyProduct(updated).copy(isSaving = false, isDirty = false, message = "Saved")
+                else it.copy(isSaving = false, message = "Could not save changes")
+            }
+        }
+    }
+
+    private fun transition(action: com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleAction) {
+        val product = _uiState.value.product ?: return
+        viewModelScope.launch {
+            when (val result = repository.transitionLifecycle(product.companyId, product.productId, action, isOwner, clock.now())) {
+                is CatalogueLifecycleResult.Success -> _uiState.update { it.applyProduct(result.product).copy(message = "Updated") }
+                CatalogueLifecycleResult.Rejected -> _uiState.update { it.copy(message = "That action isn't allowed right now") }
+                CatalogueLifecycleResult.ProductNotFound -> _uiState.update { it.copy(notFound = true) }
+            }
+        }
+    }
+
+    private fun CatalogueDetailUiState.applyProduct(product: CatalogueProduct): CatalogueDetailUiState = copy(
+        isLoading = false,
+        notFound = false,
+        product = product,
+        descriptionDraft = product.description.orEmpty(),
+        specificationsDraft = product.specifications.orEmpty(),
+        categoryDraft = product.customerFacingCategory.orEmpty(),
+        priceDisplayMode = product.priceDisplayMode,
+        manualPriceDraft = product.manualPriceAmount.orEmpty(),
+    )
+
+    companion object {
+        const val PRODUCT_ID_ARG = "productId"
+    }
+}

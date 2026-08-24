@@ -3,4 +3,5 @@
     <cache-path name="invoice_share" path="invoice-share/" />
     <cache-path name="ledger_statement_share" path="ledger-statement-share/" />
     <cache-path name="party_xml_export" path="party-xml-export/" />
+    <cache-path name="catalogue_share" path="catalogue-share/" />
 </paths>

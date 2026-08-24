@@ -24,6 +24,8 @@ object Routes {
     const val CONNECT = "connect?q={q}"
     const val DINCHARYA = "dincharya"
     const val BUSINESS_PROFILE = "business_profile"
+    const val CATALOGUE = "catalogue"
+    const val CATALOGUE_DETAIL = "catalogue/{productId}"
     const val PARTY_DETAIL = "connect/party/{partyId}"
     const val PROSPECT_CREATE = "connect/prospect/new"
     const val PARTY_XML_EXPORT = "connect/party/{partyId}/xml-export"
@@ -53,4 +55,7 @@ object Routes {
 
     fun voucherDetails(voucherId: String): String =
         "vouchers/detail/${Uri.encode(voucherId)}"
+
+    fun catalogueDetail(productId: String): String =
+        "catalogue/${Uri.encode(productId)}"
 }

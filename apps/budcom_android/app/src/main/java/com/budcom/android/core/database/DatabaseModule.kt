@@ -11,6 +11,13 @@ import com.budcom.android.feature.masterdata.stockitem.data.local.StockItemDao
 import com.budcom.android.feature.voucher.data.local.VoucherDao
 import com.budcom.android.core.connection.data.local.PairedConnectorDao
 import com.budcom.android.feature.businessprofile.data.local.BusinessProfileDao
+import com.budcom.android.feature.catalogue.data.local.BranchDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueAssetDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueProductDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueProductSourceLinkDao
+import com.budcom.android.feature.catalogue.data.local.CataloguePublishedSnapshotDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueSettingsDao
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyDao
 import com.budcom.android.feature.party.data.local.PartyExportEventDao
@@ -68,7 +75,7 @@ object DatabaseModule {
             DatabaseConstants.NAME,
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-            MIGRATION_8_9, MIGRATION_9_10,
+            MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -126,6 +133,27 @@ object DatabaseModule {
 
     @Provides
     fun provideBusinessProfileDao(db: AppDatabase): BusinessProfileDao = db.businessProfileDao()
+
+    @Provides
+    fun provideCatalogueProductDao(db: AppDatabase): CatalogueProductDao = db.catalogueProductDao()
+
+    @Provides
+    fun provideCatalogueProductSourceLinkDao(db: AppDatabase): CatalogueProductSourceLinkDao = db.catalogueProductSourceLinkDao()
+
+    @Provides
+    fun provideBranchDao(db: AppDatabase): BranchDao = db.branchDao()
+
+    @Provides
+    fun provideCatalogueOverrideDao(db: AppDatabase): CatalogueOverrideDao = db.catalogueOverrideDao()
+
+    @Provides
+    fun provideCataloguePublishedSnapshotDao(db: AppDatabase): CataloguePublishedSnapshotDao = db.cataloguePublishedSnapshotDao()
+
+    @Provides
+    fun provideCatalogueAssetDao(db: AppDatabase): CatalogueAssetDao = db.catalogueAssetDao()
+
+    @Provides
+    fun provideCatalogueSettingsDao(db: AppDatabase): CatalogueSettingsDao = db.catalogueSettingsDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -395,6 +423,102 @@ object DatabaseModule {
                     "`phone` TEXT, `phoneNormalized` TEXT, `email` TEXT, `gstin` TEXT, `website` TEXT, " +
                     "`description` TEXT, `logoAssetPath` TEXT, `createdAt` INTEGER NOT NULL, " +
                     "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`))",
+            )
+        }
+    }
+
+    /**
+     * Additive-only (MVP-1.4 Catalogue, architecture §19): adds the seven new Catalogue tables.
+     * No existing table is touched, dropped, or destructively recreated — every pre-existing row
+     * in every prior table survives unchanged. Deliberately no `cached_stock_items` column is
+     * added or touched here: Catalogue always resolves Tally-owned fields via a live join on
+     * `catalogue_product_source_link.externalStockItemId`, never a mirrored copy (see
+     * `CatalogueEntities.kt`'s own doc comment). An existing install with no Catalogue data simply
+     * has seven empty tables until first used.
+     */
+    val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `catalogue_product` (" +
+                    "`companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `source` TEXT NOT NULL, " +
+                    "`linkedStockItemId` TEXT, `sku` TEXT, `displayNameOverride` TEXT, `description` TEXT, " +
+                    "`specifications` TEXT, `customerFacingCategory` TEXT, `priceDisplayMode` TEXT NOT NULL, " +
+                    "`manualPriceAmount` TEXT, `manualPriceCurrencyCode` TEXT, `lifecycleState` TEXT NOT NULL, " +
+                    "`sourceAvailable` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, " +
+                    "`updatedAt` INTEGER NOT NULL, `updatedAtSource` TEXT NOT NULL, `archivedAt` INTEGER, " +
+                    "`archivedAtSource` TEXT, PRIMARY KEY(`companyId`, `productId`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_catalogue_product_companyId` ON `catalogue_product` (`companyId`)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_catalogue_product_companyId_lifecycleState` " +
+                    "ON `catalogue_product` (`companyId`, `lifecycleState`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_catalogue_product_companyId_linkedStockItemId` " +
+                    "ON `catalogue_product` (`companyId`, `linkedStockItemId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `catalogue_product_source_link` (" +
+                    "`companyId` TEXT NOT NULL, `sourceType` TEXT NOT NULL, `externalStockItemId` TEXT NOT NULL, " +
+                    "`productId` TEXT NOT NULL, `lastConfirmedAt` INTEGER NOT NULL, `lastConfirmedAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `sourceType`, `externalStockItemId`))",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_catalogue_product_source_link_companyId_productId` " +
+                    "ON `catalogue_product_source_link` (`companyId`, `productId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `catalogue_branch` (" +
+                    "`companyId` TEXT NOT NULL, `branchId` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                    "`isActive` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, " +
+                    "`updatedAt` INTEGER NOT NULL, `updatedAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `branchId`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_catalogue_branch_companyId` ON `catalogue_branch` (`companyId`)")
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `catalogue_override` (" +
+                    "`companyId` TEXT NOT NULL, `scopeType` TEXT NOT NULL, `scopeKey` TEXT NOT NULL, " +
+                    "`attributeName` TEXT NOT NULL, `value` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                    "`updatedAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `scopeType`, `scopeKey`, `attributeName`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_catalogue_override_companyId_attributeName` " +
+                    "ON `catalogue_override` (`companyId`, `attributeName`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `catalogue_published_snapshot` (" +
+                    "`companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `displayName` TEXT NOT NULL, " +
+                    "`description` TEXT, `specifications` TEXT, `customerFacingCategory` TEXT, " +
+                    "`priceDisplayMode` TEXT NOT NULL, `resolvedPriceAmount` TEXT, `resolvedPriceCurrencyCode` TEXT, " +
+                    "`primaryAssetId` TEXT, `publishedAt` INTEGER NOT NULL, `publishedAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `productId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_catalogue_published_snapshot_companyId` " +
+                    "ON `catalogue_published_snapshot` (`companyId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `catalogue_asset` (" +
+                    "`companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `assetId` TEXT NOT NULL, " +
+                    "`isPrimary` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, `filePath` TEXT NOT NULL, " +
+                    "`createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `productId`, `assetId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_catalogue_asset_companyId_productId` " +
+                    "ON `catalogue_asset` (`companyId`, `productId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `catalogue_settings` (" +
+                    "`companyId` TEXT NOT NULL, `isPublic` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                    "`updatedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`))",
             )
         }
     }

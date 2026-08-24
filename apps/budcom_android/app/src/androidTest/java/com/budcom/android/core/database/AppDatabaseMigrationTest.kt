@@ -1013,4 +1013,152 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Proves the version 10 -> 11 migration (MVP-1.4 Catalogue) preserves every pre-existing row
+     * and adds exactly seven new, empty tables — never a destructive recreation. Also proves every
+     * new table is genuinely insert/query-usable and its column set matches the entity definition
+     * exactly, the same discipline every migration in this codebase has followed since
+     * MIGRATION_5_6.
+     */
+    @Test
+    fun migrate10To11_preservesExistingRowsAndAddsCatalogueTablesOnly() {
+        val db1011DbName = "migration-test-db-10-11"
+
+        var db = helper.createDatabase(db1011DbName, 10)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO cached_stock_items (companyId, id, name, alias, parentGroup, category, baseUnit, " +
+                "partNumber, hsnCode, gstRate, status, closingAmount, closingCurrencyCode, closingSide, " +
+                "dataQuality, syncedAt, dataFreshnessAt) VALUES ('acme-001', 'guid:widget', 'Widget', NULL, " +
+                "'Finished Goods', NULL, 'PCS', NULL, NULL, NULL, 'ACTIVE', '10', NULL, NULL, 'GOOD', " +
+                "'2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db1011DbName, 11, false, DatabaseModule.MIGRATION_10_11)
+
+        db.query("SELECT name FROM cached_companies WHERE id = 'acme-001'").use { cursor ->
+            assertTrue("existing company row must survive the migration", cursor.moveToFirst())
+            assertEquals("Acme Corp", cursor.getString(0))
+        }
+        db.query("SELECT name FROM cached_stock_items WHERE companyId = 'acme-001' AND id = 'guid:widget'").use { cursor ->
+            assertTrue("existing stock item row must survive the migration", cursor.moveToFirst())
+            assertEquals("Widget", cursor.getString(0))
+        }
+
+        fun columnsOf(table: String): Map<String, String> {
+            val columns = mutableMapOf<String, String>()
+            db.query("PRAGMA table_info(`$table`)").use { cursor ->
+                val nameIdx = cursor.getColumnIndexOrThrow("name")
+                val typeIdx = cursor.getColumnIndexOrThrow("type")
+                while (cursor.moveToNext()) {
+                    columns[cursor.getString(nameIdx)] = cursor.getString(typeIdx)
+                }
+            }
+            return columns
+        }
+
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "productId" to "TEXT", "source" to "TEXT", "linkedStockItemId" to "TEXT",
+                "sku" to "TEXT", "displayNameOverride" to "TEXT", "description" to "TEXT", "specifications" to "TEXT",
+                "customerFacingCategory" to "TEXT", "priceDisplayMode" to "TEXT", "manualPriceAmount" to "TEXT",
+                "manualPriceCurrencyCode" to "TEXT", "lifecycleState" to "TEXT", "sourceAvailable" to "INTEGER",
+                "createdAt" to "INTEGER", "createdAtSource" to "TEXT", "updatedAt" to "INTEGER",
+                "updatedAtSource" to "TEXT", "archivedAt" to "INTEGER", "archivedAtSource" to "TEXT",
+            ),
+            columnsOf("catalogue_product"),
+        )
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "sourceType" to "TEXT", "externalStockItemId" to "TEXT",
+                "productId" to "TEXT", "lastConfirmedAt" to "INTEGER", "lastConfirmedAtSource" to "TEXT",
+            ),
+            columnsOf("catalogue_product_source_link"),
+        )
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "branchId" to "TEXT", "name" to "TEXT", "isActive" to "INTEGER",
+                "createdAt" to "INTEGER", "createdAtSource" to "TEXT", "updatedAt" to "INTEGER",
+                "updatedAtSource" to "TEXT",
+            ),
+            columnsOf("catalogue_branch"),
+        )
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "scopeType" to "TEXT", "scopeKey" to "TEXT", "attributeName" to "TEXT",
+                "value" to "TEXT", "updatedAt" to "INTEGER", "updatedAtSource" to "TEXT",
+            ),
+            columnsOf("catalogue_override"),
+        )
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "productId" to "TEXT", "displayName" to "TEXT", "description" to "TEXT",
+                "specifications" to "TEXT", "customerFacingCategory" to "TEXT", "priceDisplayMode" to "TEXT",
+                "resolvedPriceAmount" to "TEXT", "resolvedPriceCurrencyCode" to "TEXT", "primaryAssetId" to "TEXT",
+                "publishedAt" to "INTEGER", "publishedAtSource" to "TEXT",
+            ),
+            columnsOf("catalogue_published_snapshot"),
+        )
+        assertEquals(
+            mapOf(
+                "companyId" to "TEXT", "productId" to "TEXT", "assetId" to "TEXT", "isPrimary" to "INTEGER",
+                "sortOrder" to "INTEGER", "filePath" to "TEXT", "createdAt" to "INTEGER", "createdAtSource" to "TEXT",
+            ),
+            columnsOf("catalogue_asset"),
+        )
+        assertEquals(
+            mapOf("companyId" to "TEXT", "isPublic" to "INTEGER", "updatedAt" to "INTEGER", "updatedAtSource" to "TEXT"),
+            columnsOf("catalogue_settings"),
+        )
+
+        // Every new table starts genuinely empty -- no fabricated/backfilled row for any
+        // pre-existing company or stock item.
+        listOf(
+            "catalogue_product", "catalogue_product_source_link", "catalogue_branch",
+            "catalogue_override", "catalogue_published_snapshot", "catalogue_asset", "catalogue_settings",
+        ).forEach { table ->
+            db.query("SELECT COUNT(*) FROM $table").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("$table must start empty", 0, cursor.getInt(0))
+            }
+        }
+
+        // Every new table is genuinely usable -- insert and read back a real row, including the
+        // source-link natural key that resolves a Stock Item to its Catalogue Product.
+        db.execSQL(
+            "INSERT INTO catalogue_product (companyId, productId, source, linkedStockItemId, sku, " +
+                "displayNameOverride, description, specifications, customerFacingCategory, priceDisplayMode, " +
+                "manualPriceAmount, manualPriceCurrencyCode, lifecycleState, sourceAvailable, createdAt, " +
+                "createdAtSource, updatedAt, updatedAtSource, archivedAt, archivedAtSource) VALUES " +
+                "('acme-001', 'prod-1', 'TALLY', 'guid:widget', NULL, NULL, 'A fine widget', NULL, NULL, " +
+                "'OPEN', NULL, NULL, 'DRAFT', 1, 1736899200000, 'DEVICE_LOCAL_PROVISIONAL', 1736899200000, " +
+                "'DEVICE_LOCAL_PROVISIONAL', NULL, NULL)",
+        )
+        db.query(
+            "SELECT description FROM catalogue_product WHERE companyId = 'acme-001' AND productId = 'prod-1'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("A fine widget", cursor.getString(0))
+        }
+
+        db.execSQL(
+            "INSERT INTO catalogue_product_source_link (companyId, sourceType, externalStockItemId, productId, " +
+                "lastConfirmedAt, lastConfirmedAtSource) VALUES ('acme-001', 'tally_stock_item', 'guid:widget', " +
+                "'prod-1', 1736899200000, 'DEVICE_LOCAL_PROVISIONAL')",
+        )
+        db.query(
+            "SELECT productId FROM catalogue_product_source_link WHERE companyId = 'acme-001' " +
+                "AND sourceType = 'tally_stock_item' AND externalStockItemId = 'guid:widget'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("prod-1", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

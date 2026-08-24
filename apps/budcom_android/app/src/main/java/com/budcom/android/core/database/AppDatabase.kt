@@ -18,6 +18,20 @@ import com.budcom.android.core.connection.data.local.PairedConnectorDao
 import com.budcom.android.core.connection.data.local.PairedConnectorEntity
 import com.budcom.android.feature.businessprofile.data.local.BusinessProfileDao
 import com.budcom.android.feature.businessprofile.data.local.BusinessProfileEntity
+import com.budcom.android.feature.catalogue.data.local.BranchDao
+import com.budcom.android.feature.catalogue.data.local.BranchEntity
+import com.budcom.android.feature.catalogue.data.local.CatalogueAssetDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueAssetEntity
+import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueOverrideEntity
+import com.budcom.android.feature.catalogue.data.local.CatalogueProductDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueProductEntity
+import com.budcom.android.feature.catalogue.data.local.CatalogueProductSourceLinkDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueProductSourceLinkEntity
+import com.budcom.android.feature.catalogue.data.local.CataloguePublishedSnapshotDao
+import com.budcom.android.feature.catalogue.data.local.CataloguePublishedSnapshotEntity
+import com.budcom.android.feature.catalogue.data.local.CatalogueSettingsDao
+import com.budcom.android.feature.catalogue.data.local.CatalogueSettingsEntity
 import com.budcom.android.feature.party.data.local.PartyContactPersonDao
 import com.budcom.android.feature.party.data.local.PartyContactPersonEntity
 import com.budcom.android.feature.party.data.local.PartyDao
@@ -61,6 +75,13 @@ import com.budcom.android.feature.party.data.local.TagEntity
         PartyExportEventEntity::class,
         PartyIssueEntity::class,
         BusinessProfileEntity::class,
+        CatalogueProductEntity::class,
+        CatalogueProductSourceLinkEntity::class,
+        BranchEntity::class,
+        CatalogueOverrideEntity::class,
+        CataloguePublishedSnapshotEntity::class,
+        CatalogueAssetEntity::class,
+        CatalogueSettingsEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -83,4 +104,11 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun partyIssueDao(): PartyIssueDao
     abstract fun partyTimelineDao(): PartyTimelineDao
     abstract fun businessProfileDao(): BusinessProfileDao
+    abstract fun catalogueProductDao(): CatalogueProductDao
+    abstract fun catalogueProductSourceLinkDao(): CatalogueProductSourceLinkDao
+    abstract fun branchDao(): BranchDao
+    abstract fun catalogueOverrideDao(): CatalogueOverrideDao
+    abstract fun cataloguePublishedSnapshotDao(): CataloguePublishedSnapshotDao
+    abstract fun catalogueAssetDao(): CatalogueAssetDao
+    abstract fun catalogueSettingsDao(): CatalogueSettingsDao
 }

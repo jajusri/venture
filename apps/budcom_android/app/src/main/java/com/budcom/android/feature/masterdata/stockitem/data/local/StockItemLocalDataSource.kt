@@ -20,6 +20,8 @@ interface StockItemLocalDataSource {
     suspend fun upsert(companyId: String, items: List<StockItem>, dataFreshnessAt: String?)
     suspend fun replaceAll(companyId: String, items: List<StockItem>, dataFreshnessAt: String?)
     suspend fun query(companyId: String, query: StockItemQuery): StockItemPage?
+    suspend fun findById(companyId: String, id: String): StockItem?
+    suspend fun listAllForCompany(companyId: String): List<StockItem>
 }
 
 @Singleton
@@ -69,6 +71,12 @@ class RoomStockItemLocalDataSource @Inject constructor(
             dataFreshnessAt = freshness,
         )
     }
+
+    override suspend fun findById(companyId: String, id: String): StockItem? =
+        stockItemDao.findById(companyId, id)?.toDomain()
+
+    override suspend fun listAllForCompany(companyId: String): List<StockItem> =
+        stockItemDao.findAllForCompany(companyId).map { it.toDomain() }
 }
 
 internal fun StockItem.toEntity(companyId: String, dataFreshnessAt: String?): StockItemEntity = StockItemEntity(

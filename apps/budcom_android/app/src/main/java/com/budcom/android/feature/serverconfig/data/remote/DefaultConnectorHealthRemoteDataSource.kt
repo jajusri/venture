@@ -75,6 +75,7 @@ internal fun HealthResponseDto.toDomain(): ConnectorHealth = ConnectorHealth(
     startupCorrelationId = startupCorrelationId,
     repositoryAvailable = repositoryAvailable,
     databaseAccessible = databaseAccessible,
+    serverTimeEpochMillis = serverTimeEpochMillis,
 )
 
 internal fun ReadinessResponseDto.toDomain(httpStatus: Int): ConnectorReadiness = ConnectorReadiness(

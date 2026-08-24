@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -79,6 +80,7 @@ fun DashboardRoute(
     onOpenConnect: () -> Unit,
     onOpenDincharya: () -> Unit,
     onOpenBusinessProfile: () -> Unit,
+    onOpenCatalogue: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenSync: () -> Unit,
     onOpenDiagnostics: () -> Unit,
@@ -97,6 +99,7 @@ fun DashboardRoute(
                 DashboardNavigation.Connect -> onOpenConnect()
                 DashboardNavigation.Dincharya -> onOpenDincharya()
                 DashboardNavigation.BusinessProfile -> onOpenBusinessProfile()
+                DashboardNavigation.Catalogue -> onOpenCatalogue()
                 DashboardNavigation.Search -> onOpenSearch()
                 DashboardNavigation.Sync -> onOpenSync()
                 DashboardNavigation.Diagnostics -> onOpenDiagnostics()
@@ -408,6 +411,13 @@ private fun HomePrimaryEntries(onEvent: (DashboardEvent) -> Unit) {
             subtitle = stringResource(R.string.dashboard_primary_business_profile_subtitle),
             testTag = "dashboard_primary_business_profile",
             onClick = { onEvent(DashboardEvent.OpenBusinessProfile) },
+        )
+        HomePrimaryEntryRow(
+            icon = Icons.Filled.ShoppingCart,
+            title = stringResource(R.string.dashboard_action_catalogue),
+            subtitle = stringResource(R.string.dashboard_primary_catalogue_subtitle),
+            testTag = "dashboard_primary_catalogue",
+            onClick = { onEvent(DashboardEvent.OpenCatalogue) },
         )
     }
 }

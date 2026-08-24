@@ -17,6 +17,17 @@ interface StockItemDao {
     @Query("DELETE FROM cached_stock_items WHERE companyId = :companyId")
     suspend fun deleteForCompany(companyId: String)
 
+    /** Single-row lookup by stable id -- used by Catalogue (MVP-1.4) to resolve a linked Stock
+     * Item's Tally-authoritative display fields live at read time, never by mirroring a copy. */
+    @Query("SELECT * FROM cached_stock_items WHERE companyId = :companyId AND id = :id")
+    suspend fun findById(companyId: String, id: String): StockItemEntity?
+
+    /** Unpaged, whole-company read -- used by Catalogue (MVP-1.4) for its own reconciliation sweep
+     * (rename/disappearance/reappearance detection) and manual stock-item-to-link picker, never
+     * for a user-facing paged list (that remains [queryPage]). */
+    @Query("SELECT * FROM cached_stock_items WHERE companyId = :companyId")
+    suspend fun findAllForCompany(companyId: String): List<StockItemEntity>
+
     @Transaction
     suspend fun replaceAllForCompany(companyId: String, entities: List<StockItemEntity>) {
         deleteForCompany(companyId)
