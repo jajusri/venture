@@ -800,17 +800,29 @@ open and out of scope. All nine of `docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-A
 open product decisions are now locked as **PDL-020** — MVP-1.4 Brainstorm 1's output has been
 supplied and recorded; that document's §5.3 no longer needs a separate brainstorming pass.
 
-**Next task: an MVP-1.4-A implementation prompt.** PDL-020 now provides implementation-ready scope for
-§5.3's nine questions; `docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md` §12's candidate
-1.4-A/B/C sub-milestone split remains the structural starting point. **Do NOT begin MVP-1.4
-implementation from this document alone** — Phase 39's own governing task explicitly did not
-authorize implementation; a separate, explicit go-ahead is still required before writing any
-Catalogue code, table, or screen.
+**Phase 56 — MVP-1.4 Catalogue: full-stack implementation, IMPLEMENTED + AUTOMATED-VALIDATED, not
+physically validated (2026-08-24).** The Brainstorm Outcome doc's Final Scope Lock superseded the
+1.4-A/B/C sub-milestone split (absorbed as one complete Catalogue milestone where foundational; see
+that doc's header), the architecture document above was produced from that lock, and this session's
+governing prompt was the separate, explicit go-ahead both documents required before implementation.
+Implemented: data foundation (7 new Room tables, additive `MIGRATION_10_11`, `DatabaseConstants.VERSION`
+10→11), Tally Stock Item identity/reconciliation (live-joined, never mirrored — see architecture §6),
+the full Item→Branch→Stock-group→Catalogue-wide override engine, Draft→Review→Publish→Archive
+lifecycle, enrichment + asset store, price-sync-mode infrastructure, category/full-catalogue sharing
+(plain-text, disclosed simplification — no PDF renderer this pass), the Excel validation/commit
+contract (no file-format library chosen — disclosed scope boundary), and essential list/detail UI
+wired into Dashboard. 94 new Catalogue unit tests, 1,425/1,425 total Android JVM tests green, 0 lint
+errors, `assembleDevDebug` green. **Not done, disclosed**: TD-043 (Stock Item Fetch-field gap gated
+`EXPERIMENTAL_DISABLED`, no live Tally access this session to validate it), TD-044 (no real Owner/
+staff identity anywhere in BUDCOM — `isOwner` hardcoded `true`), no instrumented/real-device test run
+(no emulator/device available), no branch-selector or category-picker UI. Full itemized record:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §47. **Not pushed to origin** — local commits only, push
+requires separate authorization per this session's own instructions.
 
-**Independently, not blocking MVP-1.4:** StockItems' `PARENT`/`BASEUNITS`/`GSTAPPLICABLE` TDL-fetch
-exclusion remains open (`docs/technical-debt/registry.md` TD-035) and would need its own safety
-investigation — mirroring Phase 39 §B's methodology — before any Catalogue feature groups products by
-Tally Stock Group.
+**Independently, not blocking the above:** StockItems' `PARENT`/`BASEUNITS`/`GSTAPPLICABLE`/
+`CATEGORY`/`CLOSINGBALANCE` TDL-fetch exclusion is now tracked as **TD-043** (registry), superseding
+the informal mention below — gated infrastructure exists; live validation is the remaining step
+before Catalogue's Stock-group override level can be relied on against real data.
 
 Two independent items from prior sessions also remain open, unaffected by and not blocking the
 above:
@@ -828,6 +840,10 @@ above:
    exact enumerated steps or against Business Profile/Dincharya specifically — treat this item as
    narrowed, not closed, until someone walks §E14 itself end-to-end.
 
-**Not started:** MVP-1.4 (planning/recovery review is the next authorized step, not implementation);
-external/public distribution. Do not begin distribution before signing exists and the product owner
-explicitly authorizes it.
+**MVP-1.4 Catalogue: implemented this session (Phase 56 above), not yet physically validated, not
+pushed.** Remaining before it can be considered release-ready: live Tally validation of TD-043,
+resolving TD-044's owner/role gap, a real-device/instrumented test pass, and the disclosed UI/Excel/
+sharing scope gaps listed in Phase 56 and the Development Ledger §47 entry.
+
+**Not started:** external/public distribution. Do not begin distribution before signing exists and
+the product owner explicitly authorizes it.

@@ -3162,3 +3162,212 @@ number). **How to apply**: if the user wants that shortfall narrowed, the next s
 disclosed conversation about relaxing the strict-10-digit rule (e.g. tolerating an 11-digit value
 with a leading 0/91) or a genuine multi-value alias schema (to stop losing the shortcut when a
 phone also exists) — neither was requested this session and neither was attempted speculatively.
+
+## 47. Phase 56 — MVP-1.4 Catalogue: full-stack implementation (IMPLEMENTED + AUTOMATED-VALIDATED,
+not physically validated)
+
+New session. User authorized full autonomous implementation of the already-locked MVP-1.4 Catalogue
+scope (`docs/architecture/BUDCOM-MVP-1-4-CATALOGUE-ARCHITECTURE.md`, `...BRAINSTORM-OUTCOME.md`) —
+the architecture document's own §23 "Claude autonomy boundary" explicitly required a separate,
+explicit go-ahead before any Catalogue code was written; this session's instruction was that
+go-ahead. Read both documents plus PDL-020 and the Technical Debt Registry before writing any code,
+per the architecture document's own §1/§2 findings (zero Catalogue code existed anywhere; the
+Stock-group override level has a live data-availability gap identical to TD-035/TD-042).
+
+**Pre-existing uncommitted work found and preserved, not discarded.** `git status` at session start
+showed unstaged changes to `ConnectScreen.kt`/`ConnectScreenTest.kt` (Connect card UI polish: Alias
+line removed per product decision, Call/WhatsApp AssistChips replaced with IconButtons) — self-
+consistent, imports correct, test updated to match. Committed separately as its own commit before
+starting Catalogue work, to establish a clean baseline without losing unrelated in-progress work.
+
+### A. Milestone 0 — Connector Stock Item Fetch-field prerequisite (TD-043, new)
+
+Confirmed the architecture document's own finding directly: `mapStockItem()`
+(`entity-mappers.ts`) has always parsed `PARENT`/`CATEGORY`/`BASEUNITS`/`CLOSINGBALANCE`/
+`GSTAPPLICABLE`, but the routine `stockItems` Fetch list has never requested any of them — same
+bug class as TD-035 (Ledgers `PARENT`)/TD-042 (Ledger Alias). **Deliberately did not modify the
+existing, already-VERIFIED_SAFE `stockItems` Fetch list or template** — this session has no live
+Tally connection to validate a changed request shape against, and the task's own safety rules
+forbid sending an experimental/modified Tally request shape to production. Instead, mirrored the
+exact `LEDGER_CONTACT_FETCH_FIELDS`/`LedgersContactDetails` precedent: added
+`STOCK_ITEM_RICH_FETCH_FIELDS` (`stock-item-identity.ts`) and a new, separate
+`MasterDataTemplates.stockItemsEnrichedFields` template (`master-data-templates.ts`), registered as
+`ApprovedOperationId.StockItemsEnrichedFields` in `operation-registry.ts` with
+`classification: 'EXPERIMENTAL_DISABLED'`, `rolloutStatus: 'disabled'`, and a `render()` that
+throws until live-validation evidence is recorded — exactly the same gate `LEDGERS_CONTACT_DETAILS`
+uses. Zero change to any request Connector actually sends today. Added a fixture-only regression
+test (`entity-mappers.test.ts`, inline XML, deliberately not touching the shared
+`SAMPLE_STOCK_ITEMS_RESPONSE` fixture used by three other test files) proving `mapStockItem`
+already parses `CATEGORY`/`CLOSINGBALANCE`/`GSTAPPLICABLE`/`ISINACTIVE` correctly — the mapper was
+never the gap. Also added `serverTimeEpochMillis` to the Connector's existing `GET /health`
+response (`core/types.ts`, `services/health/health-service.ts`, `api/routes/health.ts`) — additive,
+zero Tally involvement, gives Android's new `CatalogueClock` (§D below) a real authoritative-clock
+reading to reuse via the already-existing `ConnectorStatusPort.probeConnection()`, rather than a
+new route. Connector suite: 112 tests in the affected files re-run green (26 in
+`entity-mappers.test.ts`, up from 25); full connector suite and `tsc --noEmit` also re-run clean
+after every change in this phase.
+
+**Stock-group override level remains explicitly gated behind this being live-validated** — exactly
+as the architecture document's own Milestone 0 stop condition requires. Item/Branch/Catalogue-wide
+override levels do not depend on this and are fully implemented and tested (§C below).
+
+### B. Data foundation — seven new Room tables, additive migration 10→11
+
+New `feature/catalogue/data/local/CatalogueEntities.kt` + `CatalogueDao.kt`:
+`catalogue_product`, `catalogue_product_source_link`, `catalogue_branch`, `catalogue_override`,
+`catalogue_published_snapshot`, `catalogue_asset`, `catalogue_settings`. `DatabaseConstants.VERSION`
+9→10 already used; bumped 10→11 here. **Deliberate design choice beyond what the architecture
+document itself proposed**: Catalogue never mirrors a Tally-owned field (name/unit/HSN/GST/stock
+group) into its own tables at all — every read resolves them live via a join against the existing
+`cached_stock_items` table (through a new, additive `StockItemDao.findById`/`findAllForCompany` +
+a new cross-feature `StockItemLookupPort`/`StockItemLookupPortImpl`, mirroring the existing
+`SearchStockItemsPort` convention). This makes "Tally sync must not silently destroy Catalogue
+enrichment" (architecture §6) true by construction — there is no mirrored copy for any sync to ever
+overwrite — rather than requiring a carefully-written partial-update/COALESCE query. Company
+isolation follows the exact `(companyId, ...)` composite-key + explicit-parameter convention every
+other entity in this codebase already uses.
+
+Migration test added: `AppDatabaseMigrationTest.migrate10To11_preservesExistingRowsAndAddsCatalogueTablesOnly`,
+same discipline as every migration test since `MIGRATION_5_6` — starts from a real version-10
+database with pre-existing company/stock-item rows, runs the exact production `MIGRATION_10_11`
+object, asserts every pre-existing row survives, every new table's column set matches its entity
+exactly, every table starts genuinely empty, and every table is insert/query-usable. **This is an
+androidTest (instrumented) — written but not run; no emulator/device was available in this
+session.** Flagged explicitly, not silently claimed as passing.
+
+### C. Override engine, lifecycle, enrichment, pricing, branches
+
+`CatalogueOverrideResolver` (pure function, `domain/model/`) implements the LOCKED
+Item → Branch → Stock-group → Catalogue-wide precedence exactly — first match wins, no merging.
+`CatalogueLifecycleTransitions` (pure function) implements Draft→Review→Publish→Archive with every
+locked rule: Draft→Review by any authorized staff (no owner requirement); Publish valid from Draft
+*or* Review (solo-business fast path) but Owner-only; Archive Owner-only from Published only;
+Unarchive Owner-only back to Draft; every invalid transition returns a rejection, never a silent
+no-op. "Editing a Published product creates a new pending Draft, never an in-place mutation of the
+live Published record" (architecture §7) is implemented as `ReopenForEdit` moving the *same*
+product's working row back to Draft while `catalogue_published_snapshot` — a separate table,
+atomically overwritten only on the next successful Publish — stays untouched; deliberately not a
+forked second `productId` needing a later merge-back, a mechanism the architecture document itself
+never fully specified. `CatalogueRepositoryImpl` wires all of this together plus branch CRUD,
+override set/resolve/clear, Stock Item reconciliation (`reconcileStockItemLinks`: disappearance
+flags `sourceAvailable=false` without deleting/archiving, reappearance auto-clears it, mirrored in
+20 repository-level tests including two-company adversarial isolation), and the Public/Private
+catalogue-level setting (`catalogue_settings`, defaults Private).
+
+**Pricing governance** implemented as designed (`PriceSyncMode.Auto`/`Manual` resolved through the
+same override chain) with one disclosed, deliberate limitation: Android's `StockItem` domain model
+has no Tally "rate" field anywhere in the existing sync pipeline today (the Connector fetches
+`OPENINGRATE` but never maps/persists it) — so `PublishSnapshot`'s resolved price is always the
+Catalogue-owned `manualPriceAmount` regardless of which sync mode resolves, until a future milestone
+adds a persisted Tally rate field. The override-chain infrastructure itself is correct and fully
+tested now, ready for that data once it exists.
+
+**Authoritative timestamp (architecture §15, LOCKED)** — resolved via new `CatalogueClock`
+(`domain/port/` + `data/CatalogueClockImpl.kt`): reuses the existing, stable
+`ConnectorStatusPort.probeConnection()` (no new Connector route needed beyond §A's additive
+`serverTimeEpochMillis` field); a successful probe yields a `CatalogueTimestampSource.Connector`
+reading, a failed/offline probe falls back to the device clock tagged
+`DeviceLocalProvisional` — visible and inspectable on every stored timestamp, never silently
+treated as equally authoritative. The offline-multi-device-race edge case the architecture document
+itself calls "genuinely unresolved" (§15/§22 item 2) remains exactly that — not invented around.
+
+**Asset store** (`feature/catalogue/storage/`): `CatalogueAssetStore`/`AndroidCatalogueAssetStore`,
+a second *instance* of `BusinessProfileLogoStore`'s exact pattern (allowlist, streaming size cap,
+sanitized path segments, path-containment on read), multi-image-per-product via
+`(companyId, productId, assetId)`. Path-traversal and size-cap logic unit-tested directly (11 tests
+on the extracted pure helpers); the Context/ContentResolver-coupled methods themselves would need
+an instrumented test — the same gap `BusinessProfileLogoStore` itself already has, not a new
+regression in project discipline.
+
+### D. Sharing (category-level + full-catalogue, LOCKED scope)
+
+`feature/catalogue/sharing/`: `CatalogueShareCacheBoundary`/`CatalogueShareCachePolicy` (near-
+identical to `LedgerStatementShareCacheBoundary`/`...CachePolicy`, own cache directory per this
+codebase's own stated reasoning for not sharing instances across domains), `CatalogueShareContent`
+(pure — Private-catalogue structural refusal *before* any product content is ever read, and reads
+exclusively from `listAllPublished`/`listPublishedForCategory`, both of which only ever return the
+atomic published snapshot), `CatalogueShareTextRenderer`, `AndroidCatalogueShareCoordinator`
+(`Intent.ACTION_SEND` + `FileProvider`, reusing the existing `${applicationId}.invoice-files`
+authority with one new additive `<cache-path>` entry).
+
+**Deliberate simplification, disclosed, not silently lowered**: the share file is plain text, not a
+PDF. The Ledger statement PDF renderer (`LedgerStatementPdfRenderer`, `android.graphics.pdf.PdfDocument`,
+~500 lines of pagination/wrapping logic) has no directly reusable shape for a product-catalogue
+layout, and this session had no way to visually verify a hand-rolled PDF renderer's actual rendered
+output (no emulator/device). Plain text satisfies "generate a file, hand it to the OS share sheet"
+(architecture §11) and is trivially, verifiably correct; the `CatalogueShareCoordinator` interface
+does not change if a PDF renderer replaces this later. Adversarial tests: Private catalogue refused
+before `listAllPublished`/`listPublishedForCategory` is ever called (proven via a call-flag on the
+fake repository, not just a discarded result); empty-published-set refused with an honest message,
+never an empty file; category scope never leaks another category's products.
+
+### E. Excel foundation (contract + validation + commit, no file-format library chosen)
+
+`feature/catalogue/domain/excel/`: `CatalogueExcelColumns` (the full reserved native-name set,
+membership-check based per architecture §9's own "avoid a brittle schema" requirement, plus
+`validateCustomColumnName` implementing the LOCKED "custom column cannot reuse a
+native/future-native name; clear rename prompt on conflict" rule directly), `CatalogueExcelValidator`
+(pure: required-field checks, malformed-price detection scoped to Open display mode only,
+duplicate-row-within-file last-wins with both rows flagged, stable-identifier create-vs-update
+matching), `CatalogueExcelImportUseCase` (commits a previewed result into Manual Drafts/enrichment
+updates only — never touches lifecycle state, matching "Publish/Archive transitions happen only
+through the lifecycle UI, never via Excel re-import"). **Deliberately does not choose or depend on
+an actual `.xlsx`/`.csv` parsing library** — that is a real new-dependency decision this pass does
+not make unilaterally; a future session wiring a real file reader only needs to produce
+`CatalogueExcelRow`s, everything downstream already exists and is tested (24 tests: column
+reservation, validator matrix, commit use case).
+
+### F. Essential UI
+
+`feature/catalogue/presentation/`: `CatalogueScreen`/`CatalogueViewModel` (product list, manual-
+draft creation dialog, Public/Private toggle, Share-full-catalogue action, company-switch reload
+discipline mirroring `ConnectViewModel`'s own `TD-037`-class guard) and
+`CatalogueDetailScreen`/`CatalogueDetailViewModel` (Tally-owned fields shown read-only, Catalogue-
+owned fields editable only in Draft/Review, lifecycle action buttons driven directly by
+`CatalogueLifecycleTransitions`, source-unavailable banner). Wired into `Dashboard` as a sixth
+primary entry (`HomePrimaryEntryRow`, `Icons.Filled.ShoppingCart`, confirmed present in the
+project's `material-icons-core` artifact before use) — "one more `DashboardEvent.OpenX`," the exact
+precedent the Dashboard's own doc comment already documents for every prior addition. New routes
+`Routes.CATALOGUE`/`Routes.CATALOGUE_DETAIL` in `BudcomNavHost`.
+
+**Disclosed limitation, not a security regression**: `CatalogueLifecycleTransitions`'s `isOwner`
+parameter is structurally wired end-to-end exactly as architecture §7/§18 require, but this
+codebase has no user/role/authentication concept anywhere to source a real signal from — a
+pre-existing, whole-app characteristic (verified: `grep -r "isOwner\|UserRole"` across the app
+found nothing outside this session's own new Catalogue files). `CatalogueDetailViewModel` hardcodes
+`isOwner = true` (single-device-per-business assumption, consistent with every other screen today),
+documented in code and tracked as new TD-044 (registry). This does not weaken any existing control
+— Catalogue is new capability, not a control being removed — but it does mean "Owner-only Publish"
+is not yet actually access-controlled against a real identity, only against the always-true
+placeholder. Flagged for explicit product-owner attention before any team-business deployment.
+
+### G. Tests, build, lint
+
+Android JVM unit tests: **1,425 total, 0 failures** (full `testDevDebugUnitTest` run, not scoped to
+Catalogue), of which **94 are new Catalogue tests** across override resolution (10), lifecycle
+transitions (10), repository incl. company-isolation/reconciliation/publish-atomicity (20),
+presentation/ViewModel (17), asset-store path-traversal/size-cap helpers (11), sharing incl.
+Private-refusal adversarial tests (17), Excel contract/validator/commit (24 — recount: see actual
+suite for exact per-file split). `compileDevDebugKotlin` and `compileDevDebugUnitTestKotlin` both
+green. `lintDevDebug`: 0 errors both before and after the sharing/Excel additions (84 pre-existing
+warnings, none Catalogue-related). Connector: `tsc --noEmit` clean, full `vitest run` re-confirmed
+green after every Milestone 0 change.
+
+### H. What was not done, and why
+
+- **No live Tally validation** of `STOCK_ITEM_RICH_FETCH_FIELDS` — no live Tally connection existed
+  in this session; the operation stays `EXPERIMENTAL_DISABLED`/`disabled` until a future session
+  performs and records that validation, per this project's own standing discipline.
+- **No instrumented-test run** (Room migration test, any future asset-store/Context-coupled test) —
+  no Android emulator/device was available in this session. Tests are written, not executed.
+- **No real device/company-switch/UI walkthrough** — same reason. Nothing in this phase claims
+  physical or human-visual validation.
+- **No item-level sharing, no full version history, no tiered pricing, no Prospect→Ledger, no
+  multi-language** — all explicitly out of the locked MVP-1.4 scope, not touched.
+- **Category-level sharing has no dedicated category-picker UI yet** — the mechanism
+  (`CatalogueShareScope.Category`) is fully implemented and tested; only "Share full catalogue" is
+  wired into `CatalogueScreen` for this pass, since the existing free-text customer-facing-category
+  field has no UI surfacing the distinct set of categories in use yet.
+- **Branch UI** (a company-level branch selector) was not built — `Branch`/override-by-branch is
+  fully implemented and tested at the repository/domain layer; no screen exposes it yet, since no
+  business in this repository's data has more than one branch to demonstrate it against.
