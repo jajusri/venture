@@ -18,9 +18,10 @@ import androidx.compose.material.pullrefresh.pullRefresh
 import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -320,7 +321,7 @@ private fun ConnectRowCard(row: ConnectRowUi, onEvent: (ConnectEvent) -> Unit) {
                 }
             },
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
                     text = row.displayName,
@@ -353,50 +354,51 @@ private fun ConnectRowCard(row: ConnectRowUi, onEvent: (ConnectEvent) -> Unit) {
                 )
             }
 
-            // Kept on its own line, never merged into the phone/tags text above, so a short
-            // numeric Alias (which may be what surfaced this Party via the search shortcut) is
-            // never visually confusable with the phone number shown just above it.
-            row.linkedLedgerAlias?.let {
-                Text(
-                    text = "Alias: $it",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.testTag("connect_alias_${row.partyId}"),
-                )
-            }
+            // Alias is intentionally not shown on the card (deliberate product decision — a short
+            // numeric Alias, which may be what surfaced this Party via the search shortcut, reads
+            // as noise/confusable-with-phone in the compact card layout). Still available in
+            // ConnectRowUi/party detail if ever needed again.
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(
-                    onClick = { onEvent(ConnectEvent.CallTapped(row.phoneE164)) },
-                    label = { Text("Call") },
-                    modifier = Modifier
-                        .testTag("connect_call_${row.partyId}")
-                        .semantics { contentDescription = "Call ${row.displayName}" },
-                )
-                AssistChip(
-                    onClick = { onEvent(ConnectEvent.WhatsAppTapped(row.phoneE164)) },
-                    label = { Text("WhatsApp") },
-                    modifier = Modifier
-                        .testTag("connect_whatsapp_${row.partyId}")
-                        .semantics { contentDescription = "Message ${row.displayName} on WhatsApp" },
-                )
-            }
-
-            if (row.hasAccountingLink) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { onEvent(ConnectEvent.ViewLedgerTapped(row.linkedLedgerId)) },
-                        modifier = Modifier.testTag("connect_view_ledger_${row.partyId}"),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(
+                        onClick = { onEvent(ConnectEvent.CallTapped(row.phoneE164)) },
+                        modifier = Modifier
+                            .testTag("connect_call_${row.partyId}")
+                            .semantics { contentDescription = "Call ${row.displayName}" },
                     ) {
-                        Text(stringResource(R.string.connect_view_ledger))
+                        Icon(Icons.Filled.Call, contentDescription = null)
                     }
-                    OutlinedButton(
-                        onClick = {
-                            row.linkedLedgerName?.let { onEvent(ConnectEvent.ViewVouchersTapped(it)) }
-                        },
-                        modifier = Modifier.testTag("connect_view_vouchers_${row.partyId}"),
+                    IconButton(
+                        onClick = { onEvent(ConnectEvent.WhatsAppTapped(row.phoneE164)) },
+                        modifier = Modifier
+                            .testTag("connect_whatsapp_${row.partyId}")
+                            .semantics { contentDescription = "Message ${row.displayName} on WhatsApp" },
                     ) {
-                        Text(stringResource(R.string.connect_view_vouchers))
+                        Icon(Icons.Filled.Send, contentDescription = null)
+                    }
+                }
+
+                if (row.hasAccountingLink) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { onEvent(ConnectEvent.ViewLedgerTapped(row.linkedLedgerId)) },
+                            modifier = Modifier.testTag("connect_view_ledger_${row.partyId}"),
+                        ) {
+                            Text(stringResource(R.string.connect_view_ledger))
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                row.linkedLedgerName?.let { onEvent(ConnectEvent.ViewVouchersTapped(it)) }
+                            },
+                            modifier = Modifier.testTag("connect_view_vouchers_${row.partyId}"),
+                        ) {
+                            Text(stringResource(R.string.connect_view_vouchers))
+                        }
                     }
                 }
             }

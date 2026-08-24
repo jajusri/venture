@@ -87,30 +87,15 @@ class ConnectScreenTest {
         composeRule.onNodeWithTag("connect_view_vouchers_p1").assertIsDisplayed()
     }
 
-    // The row Card sets onClick, which Compose's semantics automatically marks
-    // mergeDescendants = true (so TalkBack reads the whole row as one unit) -- this collapses a
-    // plain, non-interactive Text leaf's own testTag out of the default (merged) query tree, even
-    // though the text is genuinely composed and correctly included in the row's own merged
-    // accessibility description (confirmed live: real-device screenshot and this test's own
-    // unmerged-tree dump both show "Alias: 25" present). useUnmergedTree = true is the standard,
-    // documented way to assert on a merged-away descendant directly -- this is a test-query detail,
-    // not a change to what's rendered. Interactive children (Call/WhatsApp/View Ledger buttons)
-    // aren't affected by this because Compose does not merge semantics past another node that is
-    // itself a distinct clickable/Role-bearing element.
+    // Alias is deliberately never shown on the Connect card (product decision) -- this is a
+    // regression guard proving that even when the linked Ledger has an Alias, no alias-tagged node
+    // is composed at all, unmerged tree included, so this can't silently come back.
     @Test
-    fun aliasIsShownOnItsOwnLineWhenTheLinkedLedgerHasOne() {
+    fun aliasIsNeverShownOnTheCardEvenWhenTheLinkedLedgerHasOne() {
         composeRule.setContent {
             BudcomTheme { ConnectScreen(state = ConnectUiState(isInitialLoading = false, rows = listOf(row(linkedLedgerAlias = "25"))), onEvent = {}) }
         }
-        composeRule.onNodeWithTag("connect_alias_p1", useUnmergedTree = true).assertIsDisplayed()
-    }
-
-    @Test
-    fun aliasIsAbsentWhenTheLinkedLedgerHasNone() {
-        composeRule.setContent {
-            BudcomTheme { ConnectScreen(state = ConnectUiState(isInitialLoading = false, rows = listOf(row())), onEvent = {}) }
-        }
-        composeRule.onNodeWithTag("connect_alias_p1").assertDoesNotExist()
+        composeRule.onNodeWithTag("connect_alias_p1", useUnmergedTree = true).assertDoesNotExist()
     }
 
     @Test
