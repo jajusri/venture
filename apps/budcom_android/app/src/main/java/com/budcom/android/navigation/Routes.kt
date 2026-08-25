@@ -27,6 +27,7 @@ object Routes {
     const val CATALOGUE = "catalogue"
     const val CATALOGUE_DETAIL = "catalogue/{productId}"
     const val CATALOGUE_STOCK_ITEM_PICKER = "catalogue/link-stock-item"
+    const val TRANSACTION_COMPOSER = "transaction/compose"
     const val PARTY_DETAIL = "connect/party/{partyId}"
     const val PROSPECT_CREATE = "connect/prospect/new"
     const val PARTY_XML_EXPORT = "connect/party/{partyId}/xml-export"

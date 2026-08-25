@@ -38,6 +38,7 @@ import com.budcom.android.feature.search.presentation.UniversalSearchRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
 import com.budcom.android.feature.settings.presentation.SettingsRoute
 import com.budcom.android.feature.sync.presentation.SyncRoute
+import com.budcom.android.feature.transaction.presentation.TransactionComposerRoute
 import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsViewModel
@@ -264,7 +265,11 @@ fun BudcomNavHost(
                     navController.navigate(Routes.catalogueDetail(productId))
                 },
                 onOpenStockItemPicker = { navController.navigate(Routes.CATALOGUE_STOCK_ITEM_PICKER) },
+                onOpenTransactionComposer = { navController.navigate(Routes.TRANSACTION_COMPOSER) },
             )
+        }
+        composable(route = Routes.TRANSACTION_COMPOSER) {
+            TransactionComposerRoute()
         }
         composable(
             route = Routes.CATALOGUE_DETAIL,

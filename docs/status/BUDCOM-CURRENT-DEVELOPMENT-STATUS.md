@@ -79,8 +79,15 @@ rendering, quantity +/−/remove, Estimate/PO toggle, WhatsApp share and same-co
 wired to the real ViewModel. **Not wired into navigation** (nav graph deliberately not touched —
 the exact one-hook wiring is documented in the Ledger), New-SKUs data source not connected to live
 Catalogue data, no seller UI, no Compose UI tests (this project has none anywhere; ViewModel tests
-already cover every event). Compiles clean; 103 Transaction Mode tests green. Full detail:
-`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–59 (Phases 65–68).
+already cover every event). Compiles clean; 103 Transaction Mode tests green. **Phase 69** (final
+pass this quota window) connected the screen to real Catalogue data
+(`CatalogueRepository.listAllPublished`, no more placeholder New SKUs), wired real navigation (a
+new toolbar button on Catalogue opens the transaction screen — `Routes.TRANSACTION_COMPOSER`), and
+built the Dev APK: `apps/budcom_android/app/build/outputs/apk/dev/debug/app-dev-debug.apk`. 108
+Transaction Mode tests green, no regression in `CatalogueViewModelTest`. `adb` unavailable in this
+environment, so device installation/manual smoke test were not attempted — the APK is built and
+ready for manual install. Reorder/Last-Order UI, Seller UI, and the real Q18 resolver remain future
+work. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–60 (Phases 65–69).
 
 **Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening (focused
 polish/performance task, not a milestone — no version bump).** Fixed the same

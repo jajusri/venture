@@ -3,6 +3,10 @@ package com.budcom.android.feature.transaction.presentation
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.budcom.android.feature.catalogue.domain.model.CataloguePriceState
+import com.budcom.android.feature.catalogue.domain.model.CataloguePublishedSnapshot
+import com.budcom.android.feature.catalogue.domain.model.resolveCataloguePriceState
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.transaction.domain.model.BuyAgainEntry
 import com.budcom.android.feature.transaction.domain.model.BuyAgainListBuilder
@@ -45,6 +49,7 @@ import javax.inject.Inject
 class TransactionComposerViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: TransactionRepository,
+    private val catalogueRepository: CatalogueRepository,
     private val shareCoordinator: TransactionShareCoordinator,
     private val companySession: CompanySessionPort,
     private val clock: TransactionClock,
@@ -72,6 +77,8 @@ class TransactionComposerViewModel @Inject constructor(
                 it.copy(draft = TransactionDraftOperations.empty(resolvedCompanyId, buyerPartyId, TransactionSubmissionType.Estimate))
             }
             loadBuyAgain(resolvedCompanyId)
+            loadNewSkus(resolvedCompanyId)
+            _uiState.update { it.copy(isLoading = false) }
         }
     }
 
@@ -108,13 +115,23 @@ class TransactionComposerViewModel @Inject constructor(
     }
 
     private suspend fun loadBuyAgain(companyId: String) {
-        val partyId = buyerPartyId
-        if (partyId == null) {
-            _uiState.update { it.copy(isLoading = false) }
-            return
-        }
+        val partyId = buyerPartyId ?: return
         val history = repository.findCompletedPurchaseHistory(companyId, partyId)
-        _uiState.update { it.copy(buyAgainEntries = BuyAgainListBuilder.build(history), isLoading = false) }
+        _uiState.update { it.copy(buyAgainEntries = BuyAgainListBuilder.build(history)) }
+    }
+
+    /**
+     * Phase A integration point: the smallest clean read into Catalogue's existing repository —
+     * `listAllPublished` is the exact same customer-visible-only read
+     * [com.budcom.android.feature.catalogue.sharing.CatalogueShareContent] already uses, so a
+     * Draft/Review/Archived product structurally cannot reach this buyer-facing list. No duplicate
+     * product table, no second pricing engine — [resolveCataloguePriceState] is Catalogue's own
+     * existing three-state resolver, reused unchanged.
+     */
+    private suspend fun loadNewSkus(companyId: String) {
+        val published = catalogueRepository.listAllPublished(companyId)
+        val rows = published.map { it.toNewSkuRow() }
+        _uiState.update { it.copy(newSkus = rows) }
     }
 
     private fun submit(channel: TransactionDeliveryChannel) {
@@ -157,3 +174,15 @@ class TransactionComposerViewModel @Inject constructor(
         const val BUYER_PARTY_ID_ARG = "buyerPartyId"
     }
 }
+
+private fun CataloguePublishedSnapshot.toNewSkuRow(): TransactionNewSkuRow = TransactionNewSkuRow(
+    linkedProductId = productId,
+    displayName = displayName,
+    unit = null,
+    sku = null,
+    priceState = when (val state = resolveCataloguePriceState(priceDisplayMode, resolvedPriceAmount, resolvedPriceCurrencyCode)) {
+        is CataloguePriceState.ActualPrice -> com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState.ActualPrice(state.amount, state.currencyCode)
+        CataloguePriceState.NoPriceSupplied -> com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState.NoPriceSupplied
+        CataloguePriceState.ContactForPrice -> com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState.ContactForPrice
+    },
+)

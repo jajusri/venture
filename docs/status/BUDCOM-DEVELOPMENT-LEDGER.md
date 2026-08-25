@@ -4698,3 +4698,75 @@ seller-side, not Q18-complete.** Everything claimed above is what actually compi
 by already-passing tests; nothing here is aspirational. This closes out this quota window's
 autonomous Transaction Mode work — working tree left clean after this phase's commit, nothing
 pushed to `origin`.
+
+---
+
+## 60. Phase 69 — Transaction Mode: real Catalogue data, navigation wiring, Dev APK build (final
+pass, ~2.8% weekly quota)
+
+**Priority call, stated up front:** this phase's own brief explicitly said "prioritize actual
+usability and a stable APK over additional architecture." Given that, Reorder/Last-Order UI wiring
+(next on the brief's own numbered list) was deliberately skipped in favor of getting a real,
+buildable, navigable APK into the user's hands for their two-day manual test window — a smaller,
+finished, working increment over a longer, riskier one.
+
+### A. Phase A — real Catalogue data wired in (no more placeholder `newSkus` parameter)
+
+`TransactionComposerViewModel` now takes `CatalogueRepository` as a fourth constructor dependency
+(already bound in Hilt via the existing `CatalogueBindModule` — zero new DI wiring needed) and
+loads `catalogueRepository.listAllPublished(companyId)` in `init`, mapped to
+`TransactionNewSkuRow` via Catalogue's own existing `resolveCataloguePriceState` — the exact same
+customer-visible-only read `CatalogueShareContent` itself already uses, so a Draft/Review/Archived
+product is structurally unreachable from this buyer-facing list. `TransactionComposerScreen`/
+`Route` no longer accept an external `newSkus`/`onSelectNewSku` parameter at all — `state.newSkus`
+is now the single source, selecting a row dispatches the same `AddOrIncrementProduct` event every
+other selection path already used. **Known, disclosed limitation:** `CataloguePublishedSnapshot`
+carries no Unit/SKU field, so `TransactionNewSkuRow.unit`/`.sku` are `null` for real Catalogue
+products — an honest gap (already-nullable fields), not a defect. **Not attempted:** Q18 access-
+grant resolution for New SKUs (Phase F's own instruction — "if the resolver is not yet implemented,
+keep the existing boundary" — every New SKU's price state stays Catalogue's own company-wide
+resolution, never `Hidden`, flagged directly in code).
+
+### B. Phase L — navigation wired in
+
+`Routes.TRANSACTION_COMPOSER = "transaction/compose"` (plain, no-arg — `buyerPartyId` stays
+optional exactly as `TransactionComposerViewModel` already supported), one `composable(...)` entry
+in the existing `BudcomNavHost`, and one new entry point: a `ShoppingCart`-icon `IconButton` added
+to `CatalogueScreen`'s existing `TopAppBar` actions row (same `IconButton`/`Icon`/`testTag`
+convention already used for Share/More there), wired through a new `onOpenTransactionComposer`
+parameter on `CatalogueRoute`/`CatalogueScreen` (defaulted to a no-op on the stateless `Screen` so
+nothing else calling it directly breaks). **The user can now reach the buyer transaction screen
+from Catalogue's own toolbar** — not a hidden developer-only route.
+
+### C. Tests / build
+
+**5 new unit tests** (`TransactionComposerRealCatalogueTest`): real published products reach
+`state.newSkus`, an Open-priced product shows its actual amount, an Open-priced product with no
+amount yet is "No price supplied" (never collapsed into Contact-for-price), a Contact-for-price
+product renders correctly, and selecting a real New SKU adds it to the draft immediately. Plus a
+new `FakeCatalogueRepository` (only `listAllPublished` implemented, matching every other large-
+interface fake this session's own established discipline). **108 Transaction Mode tests total, 0
+failures.** Re-ran `CatalogueViewModelTest` (30 tests, 0 failures) specifically because
+`CatalogueScreen.kt` was touched — confirmed no regression there. Compile-clean
+(`compileDevDebugKotlin` + `compileDevDebugUnitTestKotlin`), both on the first attempt. Full
+1,600+-test historical suite not re-run given quota (targeted regression check on the one touched
+existing file's own ViewModel tests was judged sufficient and disclosed as such, not silently
+skipped). No lint.
+
+### D. Dev APK
+
+**`assembleDevDebug` succeeded on the first attempt.** Exact path:
+`apps/budcom_android/app/build/outputs/apk/dev/debug/app-dev-debug.apk` (~15.6 MB, built
+2026-08-25). No signing/package-identity change of any kind — the existing `devDebug` variant,
+unchanged convention. **`adb` is not present in this shell** (confirmed directly, same as every
+prior phase this session) — per this phase's own explicit instruction, device installation and the
+manual smoke check were **not attempted**, and no time was spent troubleshooting ADB/USB/Wi-Fi. The
+APK exists and is ready for the user to install manually via their own device/file-transfer method.
+
+### E. Decision
+
+**Real Catalogue data flows into the buyer screen, the screen is reachable from the app's own
+navigation, and a Dev APK exists at the path above — none of that was true at the start of this
+phase.** Reorder/Last-Order UI, Seller UI, Q18's real resolver, and physical-device verification all
+remain future work, named explicitly, not implied complete. This is the last phase of this quota
+window. Working tree left clean after this phase's commit; nothing pushed to `origin`.

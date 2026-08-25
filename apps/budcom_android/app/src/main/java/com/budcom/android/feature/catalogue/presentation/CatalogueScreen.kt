@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -66,6 +67,7 @@ import kotlinx.coroutines.withContext
 fun CatalogueRoute(
     onOpenProductDetail: (String) -> Unit,
     onOpenStockItemPicker: () -> Unit,
+    onOpenTransactionComposer: () -> Unit,
     viewModel: CatalogueViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -127,7 +129,12 @@ fun CatalogueRoute(
             viewModel.onEvent(CatalogueEvent.Refresh)
         }
     }
-    CatalogueScreen(state = state, onEvent = viewModel::onEvent, onOpenProductDetail = onOpenProductDetail)
+    CatalogueScreen(
+        state = state,
+        onEvent = viewModel::onEvent,
+        onOpenProductDetail = onOpenProductDetail,
+        onOpenTransactionComposer = onOpenTransactionComposer,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,12 +143,19 @@ fun CatalogueScreen(
     state: CatalogueUiState,
     onEvent: (CatalogueEvent) -> Unit,
     onOpenProductDetail: (String) -> Unit,
+    onOpenTransactionComposer: () -> Unit = {},
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Catalogue") },
                 actions = {
+                    IconButton(
+                        onClick = onOpenTransactionComposer,
+                        modifier = Modifier.testTag("catalogue_new_order_button"),
+                    ) {
+                        Icon(Icons.Filled.ShoppingCart, contentDescription = "New order")
+                    }
                     Switch(
                         checked = state.isPublic,
                         onCheckedChange = { onEvent(CatalogueEvent.SetPublic(it)) },

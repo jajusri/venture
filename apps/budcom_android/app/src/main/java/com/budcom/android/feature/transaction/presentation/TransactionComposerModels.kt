@@ -20,7 +20,33 @@ data class TransactionComposerUiState(
     val isLoading: Boolean = true,
     val draft: TransactionDraft? = null,
     val buyAgainEntries: List<BuyAgainEntry> = emptyList(),
+    /** Real Catalogue Published products (architecture: only the customer-visible published
+     * snapshot may ever appear on a buyer-facing surface — the same read
+     * [com.budcom.android.feature.catalogue.sharing.CatalogueShareContent] itself uses). Loaded by
+     * [TransactionComposerViewModel] directly from the existing `CatalogueRepository` — no
+     * duplicate product table, no second pricing engine. */
+    val newSkus: List<TransactionNewSkuRow> = emptyList(),
     val message: String? = null,
+)
+
+/** A "New SKUs" row — mapped 1:1 from `CataloguePublishedSnapshot` (architecture, Catalogue's own
+ * customer-visible read model). `unit`/`sku` are `null` here because the published snapshot itself
+ * does not carry those fields — an honest limitation, not a placeholder pretending otherwise; a
+ * submitted line item's `snapshotUnit`/`snapshotSku` will simply be null for a product selected
+ * this way, which is an already-supported nullable case, not a new one.
+ *
+ * [priceState] never reflects [TransactionDraftPriceState.Hidden] when mapped from a published
+ * snapshot directly — that would require resolving this specific buyer's
+ * [com.budcom.android.feature.transaction.domain.model.CatalogueAccessGrant], the still-unresolved
+ * Q18 boundary (architecture Finding 3). This mapping deliberately stops at Catalogue's own
+ * company-wide resolved state (Open+price / Open+no-price / Contact-for-price) and goes no further
+ * — flagged here rather than guessed at. */
+data class TransactionNewSkuRow(
+    val linkedProductId: String,
+    val displayName: String,
+    val unit: String?,
+    val sku: String?,
+    val priceState: TransactionDraftPriceState,
 )
 
 sealed interface TransactionComposerEvent {

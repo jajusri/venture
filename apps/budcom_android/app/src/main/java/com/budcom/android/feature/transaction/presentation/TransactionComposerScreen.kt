@@ -43,21 +43,6 @@ import com.budcom.android.feature.transaction.domain.model.TransactionDraftLine
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState
 import com.budcom.android.feature.transaction.domain.model.TransactionSubmissionType
 
-/** A "New SKUs" row — deliberately a small, screen-owned projection rather than a dependency on
- * [com.budcom.android.feature.catalogue.domain.model.CatalogueProduct] directly: this keeps
- * [TransactionComposerViewModel] free of any Catalogue-repository dependency, matching every prior
- * phase's own "received pre-resolved, not computed here" discipline
- * ([TransactionDraftPriceState] itself, [com.budcom.android.feature.transaction.sharing.TransactionSharePriceVisibility]).
- * The screen that eventually hosts this one (see this class's own KDoc on [TransactionComposerRoute])
- * is responsible for mapping its own already-loaded Catalogue product list into this shape. */
-data class TransactionNewSkuRow(
-    val linkedProductId: String,
-    val displayName: String,
-    val unit: String?,
-    val sku: String?,
-    val priceState: TransactionDraftPriceState,
-)
-
 /**
  * The buyer transaction composer — Q2/Q3/Q5's locked one-screen UX: Selected products (always
  * first, always visible), Previously Bought (expandable, Q3's second priority tier), New SKUs
@@ -65,18 +50,12 @@ data class TransactionNewSkuRow(
  * [com.budcom.android.feature.catalogue.presentation.CatalogueScreen]'s own existing lazy-list/
  * Scaffold/testTag conventions exactly — no new design system introduced.
  *
- * **Integration note, not yet wired (deliberately, this pass):** [newSkus] is not sourced by this
- * screen or its ViewModel — the intended host is a future screen sitting alongside/inside the
- * existing Catalogue browsing surface, which already loads a company's product list and would map
- * it into [TransactionNewSkuRow] (resolving each product's [TransactionDraftPriceState] the same
- * way every other price-visibility decision in this feature already expects to receive it
- * pre-resolved). This screen and [TransactionComposerViewModel] are both fully functional without
- * that host existing yet — `newSkus` simply renders empty until one is wired in.
+ * **New SKUs are real Catalogue data** (Phase A): [TransactionComposerViewModel] loads them
+ * directly from the existing `CatalogueRepository.listAllPublished`, so `state.newSkus` is never
+ * empty unless the company genuinely has no published products yet.
  */
 @Composable
 fun TransactionComposerRoute(
-    newSkus: List<TransactionNewSkuRow> = emptyList(),
-    onSelectNewSku: (TransactionNewSkuRow) -> Unit = {},
     viewModel: TransactionComposerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -90,28 +69,14 @@ fun TransactionComposerRoute(
         }
     }
 
-    TransactionComposerScreen(
-        state = state,
-        newSkus = newSkus,
-        onEvent = viewModel::onEvent,
-        onSelectNewSku = { row ->
-            viewModel.onEvent(
-                TransactionComposerEvent.AddOrIncrementProduct(
-                    row.linkedProductId, row.displayName, row.unit, row.sku, row.priceState,
-                ),
-            )
-            onSelectNewSku(row)
-        },
-    )
+    TransactionComposerScreen(state = state, onEvent = viewModel::onEvent)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TransactionComposerScreen(
     state: TransactionComposerUiState,
-    newSkus: List<TransactionNewSkuRow>,
     onEvent: (TransactionComposerEvent) -> Unit,
-    onSelectNewSku: (TransactionNewSkuRow) -> Unit,
 ) {
     var previouslyBoughtExpanded by remember { mutableStateOf(false) }
 
@@ -186,7 +151,7 @@ fun TransactionComposerScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         )
                     }
-                    if (newSkus.isEmpty()) {
+                    if (state.newSkus.isEmpty()) {
                         item {
                             Text(
                                 "No other catalogue products to show.",
@@ -196,8 +161,17 @@ fun TransactionComposerScreen(
                             )
                         }
                     } else {
-                        items(newSkus, key = { "new-${it.linkedProductId}" }) { row ->
-                            NewSkuRow(row = row, onClick = { onSelectNewSku(row) })
+                        items(state.newSkus, key = { "new-${it.linkedProductId}" }) { row ->
+                            NewSkuRow(
+                                row = row,
+                                onClick = {
+                                    onEvent(
+                                        TransactionComposerEvent.AddOrIncrementProduct(
+                                            row.linkedProductId, row.displayName, row.unit, row.sku, row.priceState,
+                                        ),
+                                    )
+                                },
+                            )
                         }
                     }
 

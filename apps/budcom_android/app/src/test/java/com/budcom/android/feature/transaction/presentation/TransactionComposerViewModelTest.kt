@@ -1,8 +1,26 @@
 package com.budcom.android.feature.transaction.presentation
 
 import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppResult
+import com.budcom.android.feature.catalogue.domain.model.Branch
+import com.budcom.android.feature.catalogue.domain.model.CatalogueAsset
+import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleAction
+import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState
+import com.budcom.android.feature.catalogue.domain.model.CatalogueOverrideAttribute
+import com.budcom.android.feature.catalogue.domain.model.CatalogueOverrideRow
+import com.budcom.android.feature.catalogue.domain.model.CatalogueOverrideScope
+import com.budcom.android.feature.catalogue.domain.model.CatalogueProduct
+import com.budcom.android.feature.catalogue.domain.model.CataloguePublishedSnapshot
+import com.budcom.android.feature.catalogue.domain.model.CatalogueTimestamp
+import com.budcom.android.feature.catalogue.domain.model.PriceDisplayMode
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueEnrichmentUpdate
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueLifecycleResult
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueReconciliationResult
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository
+import com.budcom.android.feature.catalogue.storage.CatalogueAssetResult
+import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
@@ -59,12 +77,13 @@ class TransactionComposerViewModelTest {
 
     private fun viewModel(
         repository: FakeTransactionRepository = FakeTransactionRepository(),
+        catalogueRepository: FakeCatalogueRepository = FakeCatalogueRepository(),
         shareCoordinator: FakeTransactionShareCoordinator = FakeTransactionShareCoordinator(),
         buyerPartyId: String? = "buyer-1",
         companyId: String? = "co-1",
     ) = TransactionComposerViewModel(
         SavedStateHandle(buildMap { buyerPartyId?.let { put(TransactionComposerViewModel.BUYER_PARTY_ID_ARG, it) } }),
-        repository, shareCoordinator, FakeCompanySessionPort(companyId), FakeTransactionClock(),
+        repository, catalogueRepository, shareCoordinator, FakeCompanySessionPort(companyId), FakeTransactionClock(),
     )
 
     private fun line(estimatePoId: String, productId: String, name: String, quantity: String) = TransactionLineItem(
@@ -212,7 +231,137 @@ class TransactionComposerViewModelTest {
     }
 }
 
+// ============================== Phase A: real Catalogue data ==============================
+
+class TransactionComposerRealCatalogueTest {
+    private val dispatcher = StandardTestDispatcher()
+
+    @Before
+    fun setUp() { Dispatchers.setMain(dispatcher) }
+
+    @After
+    fun tearDown() { Dispatchers.resetMain() }
+
+    private fun snapshot(
+        productId: String, displayName: String,
+        priceDisplayMode: PriceDisplayMode = PriceDisplayMode.Open, amount: String? = "100",
+    ) = CataloguePublishedSnapshot(
+        companyId = "co-1", productId = productId, displayName = displayName, description = null,
+        specifications = null, customerFacingCategory = null, priceDisplayMode = priceDisplayMode,
+        resolvedPriceAmount = amount, resolvedPriceCurrencyCode = if (amount != null) "INR" else null,
+        primaryAssetId = null, publishedAt = CatalogueTimestamp(1_000L, com.budcom.android.feature.catalogue.domain.model.CatalogueTimestampSource.DeviceLocalProvisional),
+    )
+
+    @Test
+    fun `real published Catalogue products reach the composer as New SKUs`() = runTest(dispatcher) {
+        val catalogueRepository = FakeCatalogueRepository()
+        catalogueRepository.published["co-1"] = listOf(snapshot("p1", "Real Widget"))
+        val vm = TransactionComposerViewModel(
+            SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
+            FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
+            FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(1, vm.uiState.value.newSkus.size)
+        assertEquals("Real Widget", vm.uiState.value.newSkus.single().displayName)
+    }
+
+    @Test
+    fun `an Open-priced New SKU shows its actual price, never Contact-for-price`() = runTest(dispatcher) {
+        val catalogueRepository = FakeCatalogueRepository()
+        catalogueRepository.published["co-1"] = listOf(snapshot("p1", "Widget", PriceDisplayMode.Open, "250"))
+        val vm = TransactionComposerViewModel(
+            SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
+            FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
+            FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+        val priceState = vm.uiState.value.newSkus.single().priceState as TransactionDraftPriceState.ActualPrice
+        assertEquals("250", priceState.unitAmount)
+    }
+
+    @Test
+    fun `an Open-priced product with no amount yet is No price supplied, never Contact-for-price`() = runTest(dispatcher) {
+        val catalogueRepository = FakeCatalogueRepository()
+        catalogueRepository.published["co-1"] = listOf(snapshot("p1", "Widget", PriceDisplayMode.Open, amount = null))
+        val vm = TransactionComposerViewModel(
+            SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
+            FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
+            FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(TransactionDraftPriceState.NoPriceSupplied, vm.uiState.value.newSkus.single().priceState)
+    }
+
+    @Test
+    fun `a Contact-for-price product is rendered as Contact for price`() = runTest(dispatcher) {
+        val catalogueRepository = FakeCatalogueRepository()
+        catalogueRepository.published["co-1"] = listOf(snapshot("p1", "Widget", PriceDisplayMode.ContactForPrice, amount = null))
+        val vm = TransactionComposerViewModel(
+            SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
+            FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
+            FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+        assertEquals(TransactionDraftPriceState.ContactForPrice, vm.uiState.value.newSkus.single().priceState)
+    }
+
+    @Test
+    fun `selecting a real New SKU adds it to the draft's selected products immediately`() = runTest(dispatcher) {
+        val catalogueRepository = FakeCatalogueRepository()
+        catalogueRepository.published["co-1"] = listOf(snapshot("p1", "Real Widget"))
+        val vm = TransactionComposerViewModel(
+            SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
+            FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
+            FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+        val row = vm.uiState.value.newSkus.single()
+        vm.onEvent(TransactionComposerEvent.AddOrIncrementProduct(row.linkedProductId, row.displayName, row.unit, row.sku, row.priceState))
+        assertEquals(1, vm.uiState.value.draft!!.lines.size)
+        assertEquals("Real Widget", vm.uiState.value.draft!!.lines.single().snapshotProductName)
+    }
+}
+
 // ============================== fakes ==============================
+
+/** Only [listAllPublished] is meaningfully implemented — the only method
+ * [TransactionComposerViewModel] actually calls; every other member of this large, unrelated
+ * interface is intentionally unsupported here, matching every other large-interface fake this
+ * session already established the same discipline for. */
+private class FakeCatalogueRepository : CatalogueRepository {
+    val published = mutableMapOf<String, List<CataloguePublishedSnapshot>>()
+    override suspend fun listAllPublished(companyId: String): List<CataloguePublishedSnapshot> = published[companyId].orEmpty()
+
+    private fun unsupported(): Nothing = throw UnsupportedOperationException("not used by TransactionComposerViewModelTest")
+    override suspend fun createDraftFromStockItem(companyId: String, stockItemId: String, timestamp: CatalogueTimestamp): CatalogueProduct? = unsupported()
+    override suspend fun createManualDraft(companyId: String, displayName: String, timestamp: CatalogueTimestamp): CatalogueProduct = unsupported()
+    override suspend fun createDraftsFromStockItems(companyId: String, stockItemIds: List<String>, timestamp: CatalogueTimestamp, onProgress: suspend (linked: Int, total: Int) -> Unit): Int = unsupported()
+    override suspend fun warmStockItemCache(companyId: String): Unit = unsupported()
+    override suspend fun listUnlinkedStockItems(companyId: String): List<StockItem> = unsupported()
+    override suspend fun findProduct(companyId: String, productId: String): CatalogueProduct? = unsupported()
+    override suspend fun listProducts(companyId: String): List<CatalogueProduct> = unsupported()
+    override suspend fun listProductsByState(companyId: String, state: CatalogueLifecycleState): List<CatalogueProduct> = unsupported()
+    override suspend fun updateEnrichment(companyId: String, productId: String, update: CatalogueEnrichmentUpdate, timestamp: CatalogueTimestamp): CatalogueProduct? = unsupported()
+    override suspend fun transitionLifecycle(companyId: String, productId: String, action: CatalogueLifecycleAction, isOwner: Boolean, timestamp: CatalogueTimestamp): CatalogueLifecycleResult = unsupported()
+    override suspend fun reconcileStockItemLinks(companyId: String, timestamp: CatalogueTimestamp): CatalogueReconciliationResult = unsupported()
+    override suspend fun upsertBranch(companyId: String, branchId: String, name: String, isActive: Boolean, timestamp: CatalogueTimestamp): Branch = unsupported()
+    override suspend fun listBranches(companyId: String): List<Branch> = unsupported()
+    override suspend fun setOverride(companyId: String, scope: CatalogueOverrideScope, attribute: CatalogueOverrideAttribute, value: String, timestamp: CatalogueTimestamp): Unit = unsupported()
+    override suspend fun clearOverride(companyId: String, scope: CatalogueOverrideScope, attribute: CatalogueOverrideAttribute): Unit = unsupported()
+    override suspend fun resolveOverride(companyId: String, productId: String, branchId: String?, attribute: CatalogueOverrideAttribute): CatalogueOverrideRow? = unsupported()
+    override suspend fun upsertCustomFields(companyId: String, productId: String, values: Map<String, String?>, timestamp: CatalogueTimestamp): Unit = unsupported()
+    override suspend fun listCustomFields(companyId: String, productId: String): Map<String, String?> = unsupported()
+    override suspend fun listAllCustomFieldColumnNames(companyId: String): List<String> = unsupported()
+    override suspend fun listPublishedForCategory(companyId: String, category: String): List<CataloguePublishedSnapshot> = unsupported()
+    override suspend fun isPublic(companyId: String): Boolean = unsupported()
+    override suspend fun setPublic(companyId: String, isPublic: Boolean, timestamp: CatalogueTimestamp): Unit = unsupported()
+    override suspend fun addAsset(companyId: String, productId: String, sourceUri: Uri, timestamp: CatalogueTimestamp): CatalogueAssetResult = unsupported()
+    override suspend fun listAssets(companyId: String, productId: String): List<CatalogueAsset> = unsupported()
+    override suspend fun setPrimaryAsset(companyId: String, productId: String, assetId: String, timestamp: CatalogueTimestamp): Unit = unsupported()
+    override suspend fun deleteAsset(companyId: String, productId: String, assetId: String): Unit = unsupported()
+    override fun resolveAssetFile(companyId: String, productId: String, filePath: String): java.io.File? = unsupported()
+}
 
 private class FakeTransactionClock : TransactionClock {
     override suspend fun now() = TransactionTimestamp(1_000L, TransactionTimestampSource.DeviceLocalProvisional)
