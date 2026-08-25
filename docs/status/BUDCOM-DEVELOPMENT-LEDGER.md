@@ -4611,3 +4611,90 @@ not.** This is a deliberate, disclosed scope boundary drawn by a quota-risk judg
 half-finished feature — everything committed this phase compiles, is tested, and is real, callable
 behavior. Working tree left clean after this phase's commit; nothing pushed to `origin`. This is the
 last phase of this quota window; no further feature was started after it.
+
+---
+
+## 59. Phase 68 — Transaction Mode: buyer Compose screen (final pass, ~3% weekly quota)
+
+**Scope:** builds the actual `@Composable` screen Phase 67 deliberately deferred, now that
+`CatalogueScreen.kt` was inspected first (Route/Screen split, `hiltViewModel()`,
+`collectAsStateWithLifecycle()`, `LaunchedEffect` for one-shot effects, `testTag`, Scaffold/
+LazyColumn/Card conventions) — reused exactly, no new design system, no new UI library.
+
+### A. What was added
+
+`TransactionComposerScreen.kt`: `TransactionComposerRoute` (stateful wrapper — collects
+`viewModel.uiState`, forwards `LaunchShareIntent` effects straight to `context.startActivity(...)`,
+identical shape to `CatalogueRoute`'s own `viewModel.shareIntent.collect { context.startActivity(it) }`)
++ `TransactionComposerScreen` (stateless, `state`/`onEvent` parameters — directly reusable in a
+future Compose preview/any future UI test without needing a real ViewModel).
+
+**One `LazyColumn`, three sections, exactly as locked:** Selected products (quantity +/− via plain
+"−"/"+" `TextButton`s — deliberately not icon-based, to avoid depending on an icon not already
+proven to resolve in this codebase — plus a `Delete`-icon remove button, matching
+`CatalogueScreen`'s own proven `Icons.Filled.*` core-icon usage), an "Expand all previously bought
+items" toggle (local `remember { mutableStateOf(false) }` — a pure UI toggle, not transaction data,
+so it correctly stays out of `TransactionComposerUiState` per this phase's own "ViewModel remains
+authoritative for the draft" rule, which is about the *draft*, not incidental UI chrome), New SKUs.
+Selecting a Previously Bought or New SKU row calls the exact same `AddOrIncrementProduct`/
+`SelectBuyAgainItem` events either path already used — never a second selection mechanism, verified
+directly in code, not merely asserted.
+
+**Price rendering — all four states, verified never inferred from amount presence:**
+`priceLabel(TransactionDraftPriceState)` is a plain `when` with no fallback branch that could leak an
+amount for `Hidden` (its branch returns the literal string `"Contact for price"`, structurally
+incapable of reading `unitAmount` because that field doesn't exist on that branch of the sealed
+type). `totalLabel` mirrors `TransactionShareTextRenderer`'s own precedent: `"Total: Contact for
+price"` whenever `TransactionDraft.totalAmount` is null, never a fabricated partial sum.
+
+**WhatsApp wired end-to-end**: `ShareViaWhatsApp` → ViewModel → `LaunchShareIntent` effect →
+`context.startActivity`, the existing OS chooser, nothing new. **In-app submit exposed** (`Submit`
+button → `SubmitInApp`), correctly scoped to the same-company case per Phase 67's own ViewModel
+KDoc — the screen adds no new claim about cross-company transport.
+
+**Explicitly not wired this phase (documented, not silently skipped):**
+
+- **"New SKUs" data source.** `TransactionComposerScreen` takes `newSkus: List<TransactionNewSkuRow>`
+  as a plain parameter — deliberately not loaded by `TransactionComposerViewModel` itself, keeping
+  that ViewModel free of any `CatalogueRepository` dependency (matching this feature's own
+  "received pre-resolved, not computed here" discipline used everywhere else). A future host screen
+  maps its own already-loaded Catalogue product list into `TransactionNewSkuRow`.
+- **Navigation.** The nav graph was **not inspected or touched this phase** (a deliberate risk cut —
+  reading and safely modifying unfamiliar navigation code with this little quota margin was judged
+  not worth the risk of damaging an existing, working nav graph). The exact hook a future pass needs,
+  inferred from `CatalogueScreen.kt`'s own proven `composable(route) { CatalogueRoute(...) }`
+  pattern: add one `composable(TRANSACTION_COMPOSER_ROUTE) { TransactionComposerRoute(newSkus = ...,
+  onSelectNewSku = ...) }` entry to the existing `NavHost`, plus one entry-point button somewhere
+  (Catalogue or Party/Connect detail screen) that navigates to it. Nothing more is required — the
+  screen and ViewModel are already fully self-contained and Hilt-wired.
+- **Reorder/Last Order UI entry point** — `ReorderOperations` (Phase 66) is untouched; no button
+  calls it yet.
+- **Seller UI** — correctly not reached; this phase's own brief made it conditional on the buyer
+  screen finishing with quota to spare, which it did not.
+- **Real Q18 price-visibility resolution for Buy Again/New-SKU rows** — flagged directly in code
+  (`BuyAgainRow`'s own comment): the price state passed when selecting a Buy Again item is currently
+  a placeholder (`ActualPrice("0", null)`), pending the still-unresolved live Catalogue/access-grant
+  resolver (architecture Finding 3) — named explicitly, not silently assumed correct.
+
+### B. Tests / build
+
+**No new Compose UI tests were added** — confirmed this codebase has zero Compose-level UI tests
+anywhere (every existing screen, including `CatalogueScreen`, is tested only at the ViewModel
+layer); inventing a new testing pattern (Robolectric/Compose UI test infra) that doesn't exist
+anywhere else in this project was judged out of scope for a quota-constrained pass, not a gap unique
+to this feature. `TransactionComposerViewModel`'s own 11 tests (Phase 67) already cover every event
+this screen dispatches.
+
+**Compile-clean on the first attempt** (`compileDevDebugKotlin`, Compose compiler included).
+**Re-ran the full Transaction Mode test suite as this phase's regression check: 103 tests, 0
+failures, 0 errors** (up from 92 — no count regression from adding this file). Full 1,600+-test
+historical suite not re-run (purely additive single file, zero existing file modified). No lint
+(disclosed, same reasoning as every prior phase this window). No device/ADB/emulator/live-Tally work.
+
+### C. Decision
+
+**A real, compiling, ViewModel-backed buyer Compose screen — not wired into navigation, not
+seller-side, not Q18-complete.** Everything claimed above is what actually compiled and is covered
+by already-passing tests; nothing here is aspirational. This closes out this quota window's
+autonomous Transaction Mode work — working tree left clean after this phase's commit, nothing
+pushed to `origin`.

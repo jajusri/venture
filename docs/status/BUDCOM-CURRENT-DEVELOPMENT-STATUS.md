@@ -72,8 +72,15 @@ pass this quota window) added `TransactionComposerViewModel` — the buyer-flow 
 (company/draft loading, Buy Again population, inline add/edit/remove, WhatsApp share and same-
 company in-app submit both wired end-to-end) — 11 new tests, all green. **No `@Composable` screen
 was built**: a deliberate, disclosed scope cut given quota risk, not an oversight — the ViewModel is
-real, tested, callable behavior a future screen can bind to directly. Full detail:
-`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–58 (Phases 65–67).
+real, tested, callable behavior a future screen can bind to directly. **Phase 68** (final pass this
+quota window) built that screen — `TransactionComposerScreen`/`TransactionComposerRoute`, one
+`LazyColumn` with Selected/Previously-Bought/New-SKUs sections exactly as locked, four-state price
+rendering, quantity +/−/remove, Estimate/PO toggle, WhatsApp share and same-company submit both
+wired to the real ViewModel. **Not wired into navigation** (nav graph deliberately not touched —
+the exact one-hook wiring is documented in the Ledger), New-SKUs data source not connected to live
+Catalogue data, no seller UI, no Compose UI tests (this project has none anywhere; ViewModel tests
+already cover every event). Compiles clean; 103 Transaction Mode tests green. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–59 (Phases 65–68).
 
 **Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening (focused
 polish/performance task, not a milestone — no version bump).** Fixed the same
