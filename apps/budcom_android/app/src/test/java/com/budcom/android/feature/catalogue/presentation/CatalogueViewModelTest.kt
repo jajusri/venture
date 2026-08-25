@@ -78,6 +78,97 @@ class CatalogueViewModelTest {
         assertTrue(!vm.uiState.value.isInitialLoading)
     }
 
+    // ============================== product-card photo display ==============================
+
+    private fun ts(millis: Long = 1_000L) = CatalogueTimestamp(millis, CatalogueTimestampSource.DeviceLocalProvisional)
+
+    private fun asset(
+        companyId: String = "co-1",
+        productId: String = "p1",
+        assetId: String = "a1",
+        filePath: String = "$companyId/$productId/$assetId.jpg",
+        isPrimary: Boolean = true,
+    ) = com.budcom.android.feature.catalogue.domain.model.CatalogueAsset(
+        companyId = companyId, productId = productId, assetId = assetId, isPrimary = isPrimary, sortOrder = 0,
+        filePath = filePath, createdAt = ts(),
+    )
+
+    @Test
+    fun `a product with an added photo displays it on the product card`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1", displayName = "Widget"))
+        repository.assetsByProduct["co-1" to "p1"] = mutableListOf(asset())
+        val company = FakeCompanySessionPort("co-1")
+
+        val vm = viewModel(repository, company)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val row = vm.uiState.value.products.single()
+        assertTrue("a product with a stored photo must resolve a non-null primaryAssetFile", row.primaryAssetFile != null)
+        assertEquals(java.io.File("co-1/p1/a1.jpg").path, row.primaryAssetFile!!.path)
+    }
+
+    @Test
+    fun `a product with no photo continues to show the existing no-image state`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1", displayName = "Widget"))
+        // No entry added to assetsByProduct at all -- matches a product that has never had a photo.
+        val company = FakeCompanySessionPort("co-1")
+
+        val vm = viewModel(repository, company)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(null, vm.uiState.value.products.single().primaryAssetFile)
+    }
+
+    @Test
+    fun `when multiple assets exist the primary one is used, not merely the first added`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1", displayName = "Widget"))
+        repository.assetsByProduct["co-1" to "p1"] = mutableListOf(
+            asset(assetId = "a1", filePath = "co-1/p1/a1.jpg", isPrimary = false),
+            asset(assetId = "a2", filePath = "co-1/p1/a2.jpg", isPrimary = true),
+        )
+        val company = FakeCompanySessionPort("co-1")
+
+        val vm = viewModel(repository, company)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(java.io.File("co-1/p1/a2.jpg").path, vm.uiState.value.products.single().primaryAssetFile!!.path)
+    }
+
+    @Test
+    fun `a stored asset reference that no longer resolves to a real file never crashes the list`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1", displayName = "Widget"))
+        // An asset row exists, but its filePath deliberately does not match what resolveAssetFile
+        // would recognize (simulates a stale DB reference to a file that was deleted from disk).
+        repository.assetsByProduct["co-1" to "p1"] = mutableListOf(asset(filePath = "co-1/p1/never-resolves.jpg"))
+        repository.brokenAssetFilePaths += "co-1/p1/never-resolves.jpg"
+        val company = FakeCompanySessionPort("co-1")
+
+        val vm = viewModel(repository, company)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("Widget", vm.uiState.value.products.single().displayName)
+        assertEquals(null, vm.uiState.value.products.single().primaryAssetFile)
+    }
+
+    @Test
+    fun `a product's photo never resolves to another company's asset with the same product id`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-A"] = mutableListOf(sampleProduct(companyId = "co-A", productId = "p1", displayName = "A Item"))
+        repository.products["co-B"] = mutableListOf(sampleProduct(companyId = "co-B", productId = "p1", displayName = "B Item"))
+        // Only company B's identically-numbered product has a photo.
+        repository.assetsByProduct["co-B" to "p1"] = mutableListOf(asset(companyId = "co-B", productId = "p1"))
+        val company = FakeCompanySessionPort("co-A")
+
+        val vm = viewModel(repository, company)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(null, vm.uiState.value.products.single().primaryAssetFile)
+    }
+
     @Test
     fun `switching companies reloads the list from scratch`() = runTest(dispatcher) {
         val repository = FakeCatalogueRepository()
@@ -742,7 +833,21 @@ val unlinkedStockItems = mutableMapOf<String, MutableList<com.budcom.android.fea
         if (wasPrimary && list.isNotEmpty()) list[0] = list[0].copy(isPrimary = true)
     }
 
-    override fun resolveAssetFile(companyId: String, productId: String, filePath: String): java.io.File? = null
+    /** Simulates a stored asset row whose file has since gone missing from disk -- the real
+     * [com.budcom.android.feature.catalogue.storage.CatalogueAssetStore.resolveAssetFile] would
+     * return `null` in exactly this situation too (file-existence check), never throw. */
+    val brokenAssetFilePaths = mutableSetOf<String>()
+
+    /** Mirrors the real [com.budcom.android.feature.catalogue.data.repository.CatalogueRepositoryImpl.resolveAssetFile]'s
+     * company/product-scoped resolution: only returns a file for an asset that actually exists in
+     * [assetsByProduct] under this exact `(companyId, productId)` pair -- never for another
+     * company's/product's asset, and `null` (not a made-up file) whenever no such asset exists or
+     * its path is listed in [brokenAssetFilePaths]. */
+    override fun resolveAssetFile(companyId: String, productId: String, filePath: String): java.io.File? {
+        if (filePath in brokenAssetFilePaths) return null
+        val exists = assetsByProduct[companyId to productId]?.any { it.filePath == filePath } == true
+        return if (exists) java.io.File(filePath) else null
+    }
 
     override suspend fun createManualDraft(companyId: String, displayName: String, timestamp: CatalogueTimestamp): CatalogueProduct {
         val product = sampleProduct(companyId = companyId, productId = "manual-${nextId++}", displayName = displayName)

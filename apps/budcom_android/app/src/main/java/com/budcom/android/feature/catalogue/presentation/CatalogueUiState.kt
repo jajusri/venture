@@ -3,6 +3,7 @@ package com.budcom.android.feature.catalogue.presentation
 import com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelImportPreview
 import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState
 import com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource
+import java.io.File
 
 data class CatalogueBranchUi(
     val branchId: String,
@@ -15,6 +16,12 @@ data class CatalogueProductRowUi(
     val lifecycleState: CatalogueLifecycleState,
     val sourceAvailable: Boolean,
     val source: CatalogueProductSource,
+    /** The product's primary photo, already resolved via the existing
+     * [com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository.resolveAssetFile]
+     * path-containment check -- `null` when the product has no photo, matching the existing
+     * no-image state (this was never a rendered field on this row before; the underlying asset
+     * storage/resolution was already correct, only the list row never carried it). */
+    val primaryAssetFile: File? = null,
 )
 
 data class CatalogueUiState(

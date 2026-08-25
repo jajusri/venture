@@ -146,11 +146,16 @@ class CatalogueViewModel @Inject constructor(
                 // is a fresh install/company-switch with a stale stored id from before) silently
                 // falls back to the catalogue-wide default rather than showing a dangling selection.
                 ?.takeIf { stored -> branches.any { it.branchId == stored } }
+            // Photo display fix: the list row never carried a resolved primary-asset file before,
+            // even though the asset was already stored and already correctly resolvable (the exact
+            // same read the Detail screen's own PhotosSection already uses) -- this reuses
+            // listAssets/resolveAssetFile unchanged, per product, both already company-scoped.
+            val rows = products.map { p -> p.toRowUi(primaryAssetFile(id, p.productId)) }
             _uiState.update {
                 it.copy(
                     isInitialLoading = false,
                     isRefreshing = false,
-                    products = products.map { p -> p.toRowUi() },
+                    products = rows,
                     isPublic = isPublic,
                     branches = branches.map { CatalogueBranchUi(it.branchId, it.name) },
                     selectedBranchId = selectedBranchId,
@@ -158,6 +163,18 @@ class CatalogueViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    /** Resolves a product's primary photo file, if any -- reuses [CatalogueRepository.listAssets]/
+     * [CatalogueRepository.resolveAssetFile] exactly as-is, both already `companyId`-scoped
+     * (composite key + path-containment check in the underlying asset store), so this can never
+     * resolve a file belonging to another company. Returns `null` (never throws) for a product
+     * with no photo, or if the primary asset's own file has since gone missing -- a stale/invalid
+     * reference must never crash the list, only fall back to the existing no-image state. */
+    private suspend fun primaryAssetFile(companyId: String, productId: String): java.io.File? {
+        val assets = repository.listAssets(companyId, productId)
+        val primary = assets.firstOrNull { it.isPrimary } ?: assets.firstOrNull() ?: return null
+        return repository.resolveAssetFile(companyId, productId, primary.filePath)
     }
 
     private fun confirmAddManual() {
@@ -286,10 +303,11 @@ class CatalogueViewModel @Inject constructor(
     }
 }
 
-private fun CatalogueProduct.toRowUi() = CatalogueProductRowUi(
+private fun CatalogueProduct.toRowUi(primaryAssetFile: java.io.File?) = CatalogueProductRowUi(
     productId = productId,
     displayName = displayName,
     lifecycleState = lifecycleState,
     sourceAvailable = sourceAvailable,
     source = source,
+    primaryAssetFile = primaryAssetFile,
 )

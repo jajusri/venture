@@ -1,7 +1,11 @@
 package com.budcom.android.feature.catalogue.presentation
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,9 +15,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -48,6 +54,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
@@ -470,33 +479,74 @@ private fun CatalogueProductRow(row: CatalogueProductRowUi, onClick: () -> Unit)
             .testTag("catalogue_product_${row.productId}"),
         onClick = onClick,
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = row.displayName, style = MaterialTheme.typography.titleSmall)
-                LifecycleChip(row.lifecycleState)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = if (row.source == CatalogueProductSource.Tally) "From Tally stock" else "Manually added",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (!row.sourceAvailable) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.Warning,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.testTag("catalogue_unavailable_${row.productId}"),
-                        )
-                        Text(
-                            text = "Source unavailable",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.error,
-                        )
+        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+            CatalogueProductThumbnail(row = row)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(text = row.displayName, style = MaterialTheme.typography.titleSmall)
+                    LifecycleChip(row.lifecycleState)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = if (row.source == CatalogueProductSource.Tally) "From Tally stock" else "Manually added",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (!row.sourceAvailable) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.testTag("catalogue_unavailable_${row.productId}"),
+                            )
+                            Text(
+                                text = "Source unavailable",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Photo-display fix: the product's already-stored, already-resolved primary asset file
+ * ([CatalogueProductRowUi.primaryAssetFile], resolved by [CatalogueViewModel] via the existing
+ * [com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository.listAssets]/
+ * `resolveAssetFile`) simply had nowhere to render in this list row before -- this reuses the exact
+ * decode-on-a-background-thread pattern [com.budcom.android.feature.catalogue.presentation.CatalogueDetailScreen]'s
+ * own `AssetThumbnail` already established (itself mirroring `BusinessProfileScreen`'s logo
+ * display), not a new image-loading mechanism. A missing/invalid file (deleted from disk, stale
+ * reference) decodes to `null` and falls back to the existing no-image placeholder, never crashing.
+ */
+@Composable
+private fun CatalogueProductThumbnail(row: CatalogueProductRowUi) {
+    var bitmap by remember(row.primaryAssetFile) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(row.primaryAssetFile) {
+        bitmap = row.primaryAssetFile?.let { file ->
+            withContext(Dispatchers.IO) { runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull() }
+        }
+    }
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .testTag("catalogue_product_thumbnail_${row.productId}"),
+        contentAlignment = Alignment.Center,
+    ) {
+        val current = bitmap
+        if (current != null) {
+            Image(
+                bitmap = current.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
         }
     }
 }
