@@ -4032,3 +4032,90 @@ batching/caching logic or pure UI progress state.
 
 Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
 practice.
+
+## 53. Phase 62 — TD-050 live re-verification against real Jaju Sanitations data, end to end
+(2026-08-25)
+
+Direct continuation of Phase 61, same day, user-directed: "start Live re-verification of TD-050/
+TD-051 against real Jaju Sanitations data." Phase 61's own attempt to relaunch the Desktop app from
+this automated shell had failed (Electron's embedded PowerShell network-probe subprocess never
+completed); this phase re-attempted it and found the Desktop app already running as a normally-
+launched instance (user-started), sidestepping the shell-spawning quirk entirely rather than working
+around it.
+
+### A. Root-causing the Phase 61 launch blocker, for the record
+
+Before using the now-running instance, isolated *why* the automated launch had failed, since the
+Ledger should not carry an unexplained "infrastructure gap." A minimal, hand-built Electron harness
+(`app.whenReady()` + a bare `execFile('powershell.exe', ...)`) succeeded in 414ms from this exact
+shell — ruling out "Electron can't spawn PowerShell here" as the cause. Re-testing with the real
+production `ROUTE_QUERY_SCRIPT` (`route-querier.ts`, four chained `Get-Net*` cmdlets) showed it
+reliably takes ~3.2s under this machine's real conditions — safely under the code's own 5s
+`QUERY_TIMEOUT_MS`, so not a timeout either. The specific conjunction that broke Phase 61's attempt
+(concurrent heavy Gradle-daemon CPU load from that same session's own lint/test runs, launched
+moments before the Desktop relaunch) was not re-isolated further once a normally-running instance
+made it moot — recorded as the leading explanation, not proven beyond doubt. No code changed; this
+was pure diagnosis to avoid leaving a vague "shell can't launch GUI apps" claim unexamined.
+
+### B. Live re-verification of TD-050, end to end, against real Jaju Sanitations data
+
+With the Connector confirmed live (`/health`: `tallyReachable: true`, `ConnectorSession: "Selected
+company: Jaju Sanitations"`) and the device on the same trusted `192.168.29.x` router, built and
+installed the **Prod-flavor** debug variant (`installProdDebug` — `com.budcom.android.debug`, the
+package that actually carries this device's real pairing/data; Phase 61's `installDevDebug` had
+targeted the empty `com.budcom.android.dev.debug` sibling package by mistake, caught and corrected
+this phase) carrying the TD-050/TD-051 fix.
+
+Before touching anything, inspected the real on-device database directly (`run-as ... sqlite3`,
+after discovering the correct file is `budcom.db`, not the empty stray `budcom_database` file also
+present) and found Jaju Sanitations' Catalogue already fully populated from a prior session: 954
+`cached_stock_items` rows, 954 `catalogue_product` rows (953 Draft + **1 Published**, with real
+enrichment). Because a real, already-Published product's data must not be put at risk, deliberately
+**did not** reset/delete any Jaju cache or Catalogue rows to manufacture an empty-cache scenario —
+confirmed instead `catalogue_settings` has no row for Jaju (Catalogue defaults closed/non-public for
+this company), so the safe, fully non-destructive test was to trigger a *real* Stock Item sync and
+observe `cached_stock_items.syncedAt`, which changes on every genuine re-extraction even when the
+underlying data is unchanged.
+
+Sequence, driven by hand via `adb`/`uiautomator` exactly as an owner would (each step screenshotted):
+1. Real "Sync Now" for Stock Items, Jaju Sanitations: **954/954 processed, added 0, updated 954,
+   failed 0** — the identical shape as the original report (`added 954`/`updated 954` the first time
+   these items existed; `updated 954` now that they already exist), confirming this is a real Tally
+   re-extraction, not a no-op.
+2. Immediately after, queried `cached_stock_items.syncedAt` for `jaju-sanitations` directly:
+   **unchanged**, still the old `2026-08-24T16:59:55.975Z` — a live, real-time reproduction of the
+   exact original defect (a successful Sync Now that never touches Android's own Room cache).
+3. Opened Catalogue → "Link from Tally stock" (the picker `warmStockItemCache()` now guards).
+4. Re-queried immediately: `cached_stock_items.syncedAt` had jumped to **`2026-08-25T04:30:20.723Z`**
+   — a fresh timestamp distinct from (not merely equal to) the Sync screen's own reported
+   `2026-08-25T04:30:21.360Z`, proving `warmStockItemCache()` performed its own genuine live Tally
+   pull the moment the picker loaded, not a read of already-stale data.
+5. The picker rendered **"Every synced Tally stock item is already in your Catalogue."** — the
+   correct, honest state (all 954 already linked), not the original bug's false-empty/silent-failure
+   shape.
+6. Re-queried `catalogue_product` afterward: still 954 (953 Draft + 1 Published), the Published
+   product's enrichment fields unchanged — confirmed zero side effects from this walkthrough.
+
+This is definitive, live, first-hand proof of TD-050's fix mechanism against real data, captured with
+direct before/after database evidence rather than trusting UI text alone. TD-050 marked **FIXED,
+live-re-verified** in the registry.
+
+### C. TD-051 — live timing re-measurement not possible against Jaju; honestly left open
+
+Since all 954 real Jaju stock items are already linked (from a prior session, before this task began),
+a real Link-all run today has nothing to do there — there is no way to freshly re-time the ~45-minute
+figure against this specific company without either resetting real linked/Published data (declined,
+per §B) or using a different company outside this task's named scope. TD-051's algorithmic fix
+(chunked batch writes) remains proven only at the unit-test level; a live timing re-measurement is
+recorded as still open, pending either a genuinely large fresh unlinked dataset or explicit
+authorization to safely reset one.
+
+### D. Documentation only — no further code change this phase
+
+No production code was touched this phase (Phase 61's fix was already correct and is what got
+live-verified). Updated `docs/technical-debt/registry.md` (TD-050 status/evidence, TD-051 status
+note) to reflect this session's live evidence. Full detail above; `docs/technical-debt/registry.md`
+TD-050 (now live-verified), TD-051 (timing re-measurement still open).
+
+Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
+practice.

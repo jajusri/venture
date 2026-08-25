@@ -852,20 +852,23 @@ above:
    exact enumerated steps or against Business Profile/Dincharya specifically — treat this item as
    narrowed, not closed, until someone walks §E14 itself end-to-end.
 
-**MVP-1.4 Catalogue: implemented (Phase 56), then hardened and extended across Phases 57–61
+**MVP-1.4 Catalogue: implemented (Phase 56), then hardened and extended across Phases 57–62
 (2026-08-24/25), not yet pushed.** Since Phase 56: TD-047 (Manual product Unit) resolved with a
 Branch selector and Excel import/export UI added (Phase 59); a fresh company-isolation audit found
 and fixed TD-048 (asset-store path validation) and a mid-session product lock on explicit price
 states found and fixed TD-049 (Phase 60); a live second-company (Jaju Sanitations) walkthrough then
 found and fixed **TD-050** (Stock Item "Sync Now" never populated Android's Room cache — Catalogue's
 Link-from-stock/Link-all saw zero items for a freshly-synced company) and **TD-051** (Link-all took
-~45 minutes for 1,208 real items, now chunked/batched with progress reporting) (Phase 61). Android
-JVM: 1,558/1,558 tests both variants, lint clean. **Remaining before release-ready**: live
-re-verification of TD-050/TD-051 against real Jaju Sanitations data specifically (Phase 61's own
-attempt was blocked by an in-session Electron/Connector relaunch limitation, not network or
-security — see Ledger §52), live Tally-request validation of TD-043, resolving TD-044's owner/role
-gap, and the remaining disclosed UI/override-editing scope gaps listed in the Development Ledger
-§47–§52 entries.
+~45 minutes for 1,208 real items, now chunked/batched with progress reporting) (Phase 61). **TD-050
+live-re-verified end to end against real Jaju Sanitations data (Phase 62)**: direct on-device
+`sqlite3` evidence proved a real Sync Now leaves `cached_stock_items` stale while Catalogue's
+"Link from stock" picker genuinely refreshes it, with zero side effects on the company's existing
+linked/Published Catalogue data. Android JVM: 1,558/1,558 tests both variants, lint clean.
+**Remaining before release-ready**: TD-051's live timing re-measurement (all 954 real Jaju stock
+items are already linked, so nothing remains to time a fresh Link-all against without touching real
+Published-product data — see Ledger §53C), live Tally-request validation of TD-043, resolving
+TD-044's owner/role gap, and the remaining disclosed UI/override-editing scope gaps listed in the
+Development Ledger §47–§53 entries.
 
 **Not started:** external/public distribution. Do not begin distribution before signing exists and
 the product owner explicitly authorizes it.
