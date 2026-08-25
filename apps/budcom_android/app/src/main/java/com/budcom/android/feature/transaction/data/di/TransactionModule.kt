@@ -8,6 +8,8 @@ import com.budcom.android.feature.transaction.domain.port.NoOpTransactionReminde
 import com.budcom.android.feature.transaction.domain.port.TransactionReminderScheduler
 import com.budcom.android.feature.transaction.domain.port.TransactionSubmissionPort
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
+import com.budcom.android.feature.transaction.sharing.AndroidTransactionShareCoordinator
+import com.budcom.android.feature.transaction.sharing.TransactionShareCoordinator
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -40,4 +42,8 @@ abstract class TransactionBindModule {
     @Binds
     @Singleton
     abstract fun bindTransactionReminderScheduler(impl: NoOpTransactionReminderScheduler): TransactionReminderScheduler
+
+    @Binds
+    @Singleton
+    abstract fun bindTransactionShareCoordinator(impl: AndroidTransactionShareCoordinator): TransactionShareCoordinator
 }

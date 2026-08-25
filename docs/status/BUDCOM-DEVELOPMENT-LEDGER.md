@@ -4360,3 +4360,84 @@ buildable-without-inventing-missing-infrastructure is done; every item it named 
 (transport, real scheduling, real pricing tiers) is preserved as an explicit, documented,
 swap-in-ready port rather than faked. Working tree left clean after this phase's commit; nothing
 pushed to `origin`, per standing practice.
+
+---
+
+## 56. Phase 65 — Transaction Mode: WhatsApp Estimate/PO sharing slice (domain/export boundary only)
+
+**Scope:** one focused slice on top of Phase 64's foundation — a domain/export boundary that turns
+an already-created `EstimatePo` into a shareable plain-text representation through the existing OS
+share-sheet mechanism, giving the WhatsApp path (Q6/Q7's `WHATSAPP_SHARED` delivery channel) a
+structurally-ready foundation for a future UI. No UI was built this phase either.
+
+### A. What was added
+
+`feature/transaction/sharing/`: `TransactionShareModels.kt` (`TransactionShareCoordinator`
+interface, `TransactionSharePriceVisibility` enum), `TransactionShareContent.kt` (pure resolver,
+refuses an empty-line-item estimate before any file is touched), `TransactionShareTextRenderer.kt`
+(pure renderer — Estimate vs Purchase Order labeling, per-line quantity/unit/price, an optional
+Terms Acknowledgment section explicitly labeled "not a legal contract," never a document-generation/
+signature path), `TransactionShareCacheBoundary.kt` (path-containment boundary + bounded-eviction
+cache policy), `AndroidTransactionShareCoordinator.kt` (the actual `Intent.ACTION_SEND` producer).
+Wired into the existing `TransactionBindModule`.
+
+**Reuses, does not duplicate:** the exact same `Intent.ACTION_SEND`/`Intent.createChooser` pattern
+Catalogue/Ledger/Voucher sharing already use (the OS chooser already lists WhatsApp/WhatsApp
+Business when installed — this codebase has never built a direct WhatsApp-package intent, and this
+phase doesn't start now), and `InvoiceShareFileOperations` directly (zero new file-operations code)
+for the cache boundary — mirrors `CatalogueShareCacheBoundary`/`CatalogueShareCachePolicy`'s exact
+shape, its own directory (`transaction-share`), same isolation-from-other-cache-domains reasoning.
+**Zero Catalogue code touched** — `AndroidTransactionShareCoordinator` has no dependency on
+`CatalogueRepository`, `TransactionSubmissionPort`, or any cross-company concept at all; that
+absence is itself the "no cross-company transport accidentally invoked" guarantee (a structural,
+compile-time fact about the class's dependency list, not something that needed a runtime check).
+
+### B. The price-visibility rule (task's own "IMPORTANT PRICE RULE")
+
+`TransactionSharePriceVisibility` is deliberately **not resolved inside this package** — it is
+received as an already-decided input. Resolving it live against Catalogue's override chain +
+`CatalogueAccessGrant` is left to the not-yet-built calling ViewModel/use-case; this keeps the
+adversarial "never leak a hidden price" property provable by a pure unit test with zero
+repository/Android dependency. Four distinct, separately tested states:
+
+1. Open + price supplied → the actual amount is shown.
+2. Open + no price supplied yet → `"Not supplied yet"` — explicitly never collapsed into state 3.
+3. A line marked Contact-for-price (seller's deliberate per-item choice, made at submission time) →
+   `"Contact for price"`, even when overall visibility is `Visible`.
+4. `TransactionSharePriceVisibility.Hidden` (recipient not currently authorized) → **every** line
+   renders `"Contact for price"` regardless of its own stored amount/flag — `TransactionShareTextRenderer.priceLine`
+   never even reads the amount field in this branch, so there is no code path that could leak a
+   number by accident. The total line receives the identical treatment (a total is itself a
+   price-revealing figure).
+
+### C. Tests / build
+
+15 new unit tests (`TransactionShareContentTest`: empty-estimate refusal, successful resolution;
+`TransactionShareTextRendererTest`: Estimate vs PO labeling, all four price states individually and
+their pairwise distinguishability, total-line fallback-to-Contact-for-price when any line is
+unpriced, line-item preservation for multiple lines, terms section present only when explicitly
+supplied and always labeled non-legal) — all green. **Full JVM suite re-run: 1,617 tests, 0
+failures, 0 errors**, 143 test classes. Compile-clean (`compileDevDebugKotlin` +
+`compileDevDebugUnitTestKotlin`). No lint run this phase either (same token-budget scope decision as
+Phase 64). No device/emulator/ADB/live-Tally work of any kind this phase, per this phase's own
+explicit constraint.
+
+### D. What remains — explicitly not this phase
+
+- **No UI** — no ViewModel/screen calls any of this yet; that is the next milestone this slice was
+  built to make "structurally ready" for.
+- **Cross-company in-app transport** (Finding 1) — completely untouched; `TransactionSubmissionPort`
+  and its Local-only binding are exactly as Phase 64 left them.
+- **Notification/reminder infrastructure** (Finding 2) — untouched.
+- **Q18 pricing-tier semantics** (Finding 3) — untouched; the price-visibility *resolution* (as
+  opposed to its *rendering*, built this phase) against a live `CatalogueAccessGrant` is still not
+  wired anywhere.
+- **Live device/WhatsApp-app validation** — the OS chooser's actual behavior on a real device
+  (does WhatsApp appear, does the file actually send) was not exercised this session; only the
+  domain/export logic and the coordinator's Kotlin-level contract are verified.
+
+### E. Decision
+
+**A small, clean, tested WhatsApp Estimate/PO sharing slice — not the WhatsApp path "complete,"**
+since no UI calls it yet and the price-visibility *decision* still has no live resolver wired to it.
+Working tree left clean after this phase's commit; nothing pushed to `origin`.
