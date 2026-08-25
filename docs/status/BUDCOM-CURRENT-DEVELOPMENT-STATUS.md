@@ -67,8 +67,13 @@ composition/editing layer (`TransactionDraft`/`TransactionDraftOperations` — a
 submission conversion feeding `createEstimatePo` directly), a deterministic Buy Again list builder,
 and reorder-from-last-order (structurally immutable — no repository dependency, cannot write back to
 the original transaction) — 33 new tests, all pure JVM/domain, all green, zero existing file
-touched. Still no UI, still no transport/notification/payment infrastructure. Full detail:
-`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–57 (Phases 65–66).
+touched. Still no UI, still no transport/notification/payment infrastructure. **Phase 67** (final
+pass this quota window) added `TransactionComposerViewModel` — the buyer-flow application layer
+(company/draft loading, Buy Again population, inline add/edit/remove, WhatsApp share and same-
+company in-app submit both wired end-to-end) — 11 new tests, all green. **No `@Composable` screen
+was built**: a deliberate, disclosed scope cut given quota risk, not an oversight — the ViewModel is
+real, tested, callable behavior a future screen can bind to directly. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–58 (Phases 65–67).
 
 **Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening (focused
 polish/performance task, not a milestone — no version bump).** Fixed the same
