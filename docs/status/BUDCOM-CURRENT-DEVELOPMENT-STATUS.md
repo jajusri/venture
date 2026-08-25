@@ -35,6 +35,14 @@ built and installed this session. **Installed** on device `I2407i` (`10BF44124K0
 requirement (that run's own known side effect removed the prior install; reinstalled and
 re-verified, see §5).
 **DESKTOP `0.4.18`** / **CONNECTOR `0.4.6`** — unchanged, not touched, and not required by MVP-1.3.
+**MVP-1.4 STATUS: COMPLETE (2026-08-25).** Every LOCKED requirement in
+`docs/architecture/BUDCOM-MVP-1_4-CATALOGUE-BRAINSTORM-OUTCOME.md`'s Final Scope Lock is
+implemented, tested, and — for the two defects found via real second-company live data — either
+live-verified (TD-050) or unit/implementation-verified with an honestly-documented, non-blocking
+live-timing evidence gap (TD-051). No version bump/freeze candidate APK has been produced for this
+milestone as part of this decision — that remains a separate, explicitly-authorized future action,
+not implied by "COMPLETE" here. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §54 (Phase
+63, the final gate audit and decision).
 
 **Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening (focused
 polish/performance task, not a milestone — no version bump).** Fixed the same
@@ -852,23 +860,25 @@ above:
    exact enumerated steps or against Business Profile/Dincharya specifically — treat this item as
    narrowed, not closed, until someone walks §E14 itself end-to-end.
 
-**MVP-1.4 Catalogue: implemented (Phase 56), then hardened and extended across Phases 57–62
-(2026-08-24/25), not yet pushed.** Since Phase 56: TD-047 (Manual product Unit) resolved with a
-Branch selector and Excel import/export UI added (Phase 59); a fresh company-isolation audit found
-and fixed TD-048 (asset-store path validation) and a mid-session product lock on explicit price
-states found and fixed TD-049 (Phase 60); a live second-company (Jaju Sanitations) walkthrough then
-found and fixed **TD-050** (Stock Item "Sync Now" never populated Android's Room cache — Catalogue's
-Link-from-stock/Link-all saw zero items for a freshly-synced company) and **TD-051** (Link-all took
-~45 minutes for 1,208 real items, now chunked/batched with progress reporting) (Phase 61). **TD-050
-live-re-verified end to end against real Jaju Sanitations data (Phase 62)**: direct on-device
-`sqlite3` evidence proved a real Sync Now leaves `cached_stock_items` stale while Catalogue's
-"Link from stock" picker genuinely refreshes it, with zero side effects on the company's existing
-linked/Published Catalogue data. Android JVM: 1,558/1,558 tests both variants, lint clean.
-**Remaining before release-ready**: TD-051's live timing re-measurement (all 954 real Jaju stock
-items are already linked, so nothing remains to time a fresh Link-all against without touching real
-Published-product data — see Ledger §53C), live Tally-request validation of TD-043, resolving
-TD-044's owner/role gap, and the remaining disclosed UI/override-editing scope gaps listed in the
-Development Ledger §47–§53 entries.
+**MVP-1.4 Catalogue: COMPLETE (Phase 63, 2026-08-25), not yet pushed.** Implemented (Phase 56), then
+hardened and extended across Phases 57–63. Since Phase 56: TD-047 (Manual product Unit) resolved
+with a Branch selector and Excel import/export UI added (Phase 59); a fresh company-isolation audit
+found and fixed TD-048 (asset-store path validation) and a mid-session product lock on explicit
+price states found and fixed TD-049 (Phase 60); a live second-company (Jaju Sanitations) walkthrough
+found and fixed **TD-050** (Stock Item "Sync Now" never populated Android's Room cache) and
+**TD-051** (Link-all took ~45 minutes for 1,208 real items, now chunked/batched with progress
+reporting) (Phase 61); **TD-050 live-re-verified end to end against real Jaju Sanitations data**
+(Phase 62) via direct on-device `sqlite3` evidence, zero side effects. Phase 63 confirmed **no safe
+naturally-unlinked real dataset exists** for a TD-051 live timing re-measurement (both connected
+companies — Jaju 954/954, ESTIMATION 1,508/1,508 — are fully linked; declined to manufacture one by
+disturbing real data) and completed a full source-level audit of every LOCKED requirement in the
+Final Scope Lock, finding all satisfied. Android JVM: 1,558/1,558 tests both variants, lint clean.
+**Non-blocking, pre-existing, already-disclosed limitations** (none newly discovered, none treated
+as blockers per the governing decision): TD-051's live wall-clock timing (evidence limitation, not a
+defect); live Tally-request validation of TD-043 (blocks only the Stock-group override refinement,
+not core Catalogue); TD-044's owner/role identity gap (cross-cutting, out of Catalogue's own scope);
+override-editing UI for any attribute (deliberately deferred since Phase 60, not part of the Final
+Scope Lock's own enumerated LOCKED bullets). Full detail: Development Ledger §47–§54.
 
 **Not started:** external/public distribution. Do not begin distribution before signing exists and
 the product owner explicitly authorizes it.

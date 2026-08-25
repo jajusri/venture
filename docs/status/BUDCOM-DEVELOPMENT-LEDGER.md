@@ -4119,3 +4119,93 @@ TD-050 (now live-verified), TD-051 (timing re-measurement still open).
 
 Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
 practice.
+
+## 54. Phase 63 — MVP-1.4 final gate: TD-051 evidence-limitation confirmation + full locked-
+requirement audit + MVP-1.4 COMPLETE decision (2026-08-25)
+
+Direct continuation of Phase 62, same day, user-directed final gate. Explicitly bounded: do not
+manufacture a destructive TD-051 timing test against Jaju Sanitations' real data (including its one
+Published product), check whether any other already-connected real company offers a safe naturally-
+unlinked dataset first, then audit the full LOCKED MVP-1.4 requirement set against the actual
+codebase (not assumed from prior reports) and render one final COMPLETE/NOT-COMPLETE decision.
+
+### A. TD-051 — confirmed no safe naturally-unlinked real dataset exists
+
+Queried the real on-device database for every company Android has ever synced. Both are fully
+linked: **Jaju Sanitations** (954 `cached_stock_items` = 954 `catalogue_product_source_link` rows,
+per Phase 62) and, newly checked this phase, **ESTIMATION** (1,508 `cached_stock_items` = 1,508
+`catalogue_product_source_link` rows, plus 1 independent Manual product — also 100% linked). No
+third company is onboarded to this device's Catalogue (a `dv` company is visible via the Connector's
+`/companies` endpoint but was never synced to Android by any prior session — using it would mean
+*onboarding a new real company* for the first time, not merely inspecting one already connected, so
+per this task's own "already-connected" framing it was correctly left untouched rather than treated
+as a loophole). Per the governing instruction, no data was reset/unlinked to manufacture a timing
+run. TD-051 is recorded as **FIXED, unit/implementation-verified; live wall-clock timing
+UNAVAILABLE — an evidence limitation, not a product defect** (`docs/technical-debt/registry.md`
+TD-051, updated this phase).
+
+### B. Full LOCKED MVP-1.4 requirement audit
+
+Delegated a read-only, source-level (not ledger-prose-level) audit of all 20 checklist items named
+by the governing task against `docs/architecture/BUDCOM-MVP-1_4-CATALOGUE-BRAINSTORM-OUTCOME.md`
+(the authoritative Final Scope Lock), the architecture document, and the actual current source tree.
+**18 of 20 items PASS outright** with direct file/function-level evidence (data foundation, Tally
+identity/reconciliation, lifecycle state machine, owner-enrichment vs. Tally-authoritative structural
+protection, Excel contract + import/export UI + custom fields, branch selector, TD-047 Manual Unit,
+assets/TD-048, category/full-catalogue sharing, buyer-visibility isolation — re-confirmed zero
+Connect/Party coupling, price-state semantics/TD-049, company isolation, and TD-050/TD-051
+themselves). **2 items (override-editing UI, and the related owner-identity gap behind Publish/
+Archive) were flagged as CONCERN by the audit** but, cross-checked directly against the brainstorm
+document's own explicitly-enumerated "Locked Catalogue Decisions" (lines 35-44 of the Final Scope
+Lock): only the override **resolution order** itself (Item → Branch → Stock-group → Catalogue-wide)
+carries the document's own `LOCKED` tag, and that resolver (`CatalogueOverrideResolver`) exists,
+is correct, and is tested — override-*editing* UI was never one of the document's enumerated locked
+bullets, and its absence was already investigated, reasoned about, and deliberately deferred as a
+non-blocking scope decision in Phase 60 (avoiding an "oversized speculative subsystem" per that
+phase's own instruction), not newly discovered here. Similarly, TD-044 (no real owner/role identity)
+has stood as `OPEN, disclosed, "Not scheduled — cross-cutting, out of Catalogue's own scope"` in the
+registry since Phase 56 — a pre-existing, already-accepted, cross-cutting limitation, not a new
+Catalogue gap. Per the governing task's own explicit instruction not to treat previously-deferred
+functionality as an artificial blocker, **neither is treated as a blocker for this gate.**
+
+### C. Tests / build
+
+No production code was changed this phase (pure verification + documentation). Per the governing
+task's own "run only appropriate validation for anything changed" instruction, the full JVM suite was
+not re-run — it relies on Phase 61's already-recorded **1,558/1,558 both variants, 0 lint errors**,
+unchanged since (confirmed via `git log`/`git status` that no source file has changed since that
+commit).
+
+### D. What remains open, honestly, and why none of it blocks this gate
+
+- **TD-051 live wall-clock timing** — evidence limitation (§A), not a defect; the correctness/
+  durability/non-corruption properties that actually matter for release-readiness are proven (unit
+  tests + the live picker-path exercise in Phase 62).
+- **Override-editing UI** (any attribute, not just `PriceSyncMode`) — deliberately deferred since
+  Phase 60, not part of the document's own enumerated LOCKED bullets, requires a schema decision
+  (`priceDisplayMode` nullability) not safe to rush into this gate.
+- **TD-044** (no real owner/role identity anywhere in BUDCOM) — pre-existing, cross-cutting, out of
+  Catalogue's scope by the registry's own standing classification.
+- **TD-043** (Stock Item enriched-fetch fields, `EXPERIMENTAL_DISABLED`) — blocks only the
+  Stock-group override *level* specifically (an advanced refinement on top of the already-working
+  Item-level override), not core Catalogue linking/lifecycle/sharing, which are unaffected and
+  already live-proven against real 954/1,508-item companies.
+
+None of these were introduced or newly discovered this phase; all were already disclosed in earlier
+sessions' own documentation, consistent with this task's explicit instruction not to reopen or
+manufacture new scope.
+
+### E. FINAL DECISION
+
+**MVP-1.4 COMPLETE.** Every LOCKED requirement enumerated in the Final Scope Lock document is
+genuinely implemented, tested, and — for the two defects discovered via real second-company live
+data (TD-050, TD-051) — either fully live-verified (TD-050) or unit/implementation-verified with an
+honestly-documented, non-blocking live-timing evidence gap (TD-051). Company isolation, the
+buyer-visibility/seller-authority boundary, and the price-state semantics lock were all independently
+re-confirmed intact this phase, not merely carried forward from memory. No genuine blocker remains.
+
+Full detail: `docs/technical-debt/registry.md` TD-051 (updated); this section for the full audit
+outcome.
+
+Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
+practice.
