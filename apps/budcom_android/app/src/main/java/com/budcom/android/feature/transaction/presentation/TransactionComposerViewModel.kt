@@ -10,6 +10,9 @@ import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepositor
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.transaction.domain.model.BuyAgainEntry
 import com.budcom.android.feature.transaction.domain.model.BuyAgainListBuilder
+import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
+import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
+import com.budcom.android.feature.transaction.domain.model.ReorderOperations
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
 import com.budcom.android.feature.transaction.domain.model.TransactionDraft
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftOperations
@@ -65,6 +68,13 @@ class TransactionComposerViewModel @Inject constructor(
 
     private var companyId: String? = null
 
+    /** Cached by [loadLastOrder], never exposed directly via [uiState] — only
+     * [TransactionComposerUiState.lastOrderAvailable] (a plain boolean) is. Never written to by
+     * anything in this class: [reorderLastOrder] only ever *reads* this transaction to build a new
+     * [TransactionDraft], the same structural "cannot mutate the original" guarantee
+     * [ReorderOperations] itself already relies on (no repository write dependency at all). */
+    private var lastCompletedTransaction: CommercialTransaction? = null
+
     init {
         viewModelScope.launch {
             val resolvedCompanyId = companySession.observeSelectedCompanyId().first()
@@ -78,6 +88,7 @@ class TransactionComposerViewModel @Inject constructor(
             }
             loadBuyAgain(resolvedCompanyId)
             loadNewSkus(resolvedCompanyId)
+            loadLastOrder(resolvedCompanyId)
             _uiState.update { it.copy(isLoading = false) }
         }
     }
@@ -94,6 +105,7 @@ class TransactionComposerViewModel @Inject constructor(
             is TransactionComposerEvent.SetQuantity -> updateDraft { TransactionDraftOperations.setQuantity(it, event.linkedProductId, event.quantity) }
             is TransactionComposerEvent.RemoveProduct -> updateDraft { TransactionDraftOperations.removeLine(it, event.linkedProductId) }
             is TransactionComposerEvent.SubmissionTypeChanged -> updateDraft { it.copy(submissionType = event.type) }
+            TransactionComposerEvent.ReorderLastOrder -> reorderLastOrder()
             TransactionComposerEvent.ShareViaWhatsApp -> submit(TransactionDeliveryChannel.WhatsAppShared)
             TransactionComposerEvent.SubmitInApp -> submit(TransactionDeliveryChannel.InAppSubmitted)
             TransactionComposerEvent.DismissMessage -> _uiState.update { it.copy(message = null) }
@@ -130,8 +142,58 @@ class TransactionComposerViewModel @Inject constructor(
      */
     private suspend fun loadNewSkus(companyId: String) {
         val published = catalogueRepository.listAllPublished(companyId)
-        val rows = published.map { it.toNewSkuRow() }
+        // Unit/SKU gap fix: the published snapshot itself carries neither field, but the full
+        // CatalogueProduct domain object (read-only, already-existing repository method) does —
+        // this is a real data source, not a guess, and CatalogueProduct is never used to bypass
+        // the Published-only visibility guarantee above (only listAllPublished decides *which*
+        // products appear here at all; findProduct here only enriches an already-decided row).
+        val rows = published.map { snapshot ->
+            val fullProduct = catalogueRepository.findProduct(companyId, snapshot.productId)
+            snapshot.toNewSkuRow(unit = fullProduct?.unit, sku = fullProduct?.sku)
+        }
         _uiState.update { it.copy(newSkus = rows) }
+    }
+
+    private suspend fun loadLastOrder(companyId: String) {
+        val partyId = buyerPartyId ?: return
+        val last = repository.findTransactionsForCounterparty(companyId, partyId)
+            .filter { it.state == CommercialTransactionState.Completed }
+            .maxByOrNull { it.acceptedAt.epochMillis }
+        lastCompletedTransaction = last
+        _uiState.update { it.copy(lastOrderAvailable = last != null) }
+    }
+
+    /**
+     * Task's own explicit rule: "CREATE NEW TRANSACTION FROM OLD TRANSACTION, not MUTATE THE OLD
+     * TRANSACTION." [ReorderOperations.fromCompletedTransaction] has no repository/DAO dependency
+     * at all, so this function is structurally incapable of writing back to
+     * [lastCompletedTransaction] or its line items — the only repository call here is the
+     * read-only [TransactionRepository.findEstimatePoById]. The current draft's selected lines are
+     * fully **replaced** (not merged) — "create a NEW TransactionDraft," matching the task's own
+     * wording, not an ambiguous partial merge.
+     *
+     * Price state is resolved from the CURRENT `state.newSkus` list, never the historical price
+     * the original order actually used (a reorder must reflect today's price, not a stale one —
+     * the exact discipline [ReorderOperations]'s own `resolvePriceState` callback was designed
+     * for). A product no longer in `newSkus` (e.g. since archived) safely falls back to
+     * Contact-for-price rather than guessing or showing a stale number.
+     */
+    private fun reorderLastOrder() {
+        val co = companyId ?: return
+        val transaction = lastCompletedTransaction
+        if (transaction == null) {
+            _uiState.update { it.copy(message = "No previous completed order yet.") }
+            return
+        }
+        viewModelScope.launch {
+            val estimatePo = repository.findEstimatePoById(co, transaction.estimatePoId) ?: return@launch
+            val currentNewSkus = _uiState.value.newSkus.associateBy { it.linkedProductId }
+            val submissionType = _uiState.value.draft?.submissionType ?: TransactionSubmissionType.Estimate
+            val newDraft = ReorderOperations.fromCompletedTransaction(
+                co, transaction.buyerPartyId, submissionType, estimatePo.lineItems,
+            ) { item -> currentNewSkus[item.linkedProductId]?.priceState ?: TransactionDraftPriceState.ContactForPrice }
+            _uiState.update { it.copy(draft = newDraft) }
+        }
     }
 
     private fun submit(channel: TransactionDeliveryChannel) {
@@ -175,11 +237,11 @@ class TransactionComposerViewModel @Inject constructor(
     }
 }
 
-private fun CataloguePublishedSnapshot.toNewSkuRow(): TransactionNewSkuRow = TransactionNewSkuRow(
+private fun CataloguePublishedSnapshot.toNewSkuRow(unit: String?, sku: String?): TransactionNewSkuRow = TransactionNewSkuRow(
     linkedProductId = productId,
     displayName = displayName,
-    unit = null,
-    sku = null,
+    unit = unit,
+    sku = sku,
     priceState = when (val state = resolveCataloguePriceState(priceDisplayMode, resolvedPriceAmount, resolvedPriceCurrencyCode)) {
         is CataloguePriceState.ActualPrice -> com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState.ActualPrice(state.amount, state.currencyCode)
         CataloguePriceState.NoPriceSupplied -> com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState.NoPriceSupplied

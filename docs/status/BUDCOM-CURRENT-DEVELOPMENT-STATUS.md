@@ -87,7 +87,15 @@ built the Dev APK: `apps/budcom_android/app/build/outputs/apk/dev/debug/app-dev-
 Transaction Mode tests green, no regression in `CatalogueViewModelTest`. `adb` unavailable in this
 environment, so device installation/manual smoke test were not attempted — the APK is built and
 ready for manual install. Reorder/Last-Order UI, Seller UI, and the real Q18 resolver remain future
-work. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–60 (Phases 65–69).
+work. **Phase 70** (final pass this quota window) wired Last Order/Reorder end-to-end into
+`TransactionComposerViewModel` (a "Last Order — reorder" button, `ReorderOperations` reused
+unmodified, verified not to mutate the original transaction), closed the Unit/SKU gap with real
+`CatalogueRepository.findProduct` data (no more `null` placeholders), and investigated Q18 price-
+visibility wiring but concluded it cannot be done safely without inventing semantics — left
+untouched, documented rather than guessed. 115 Transaction Mode tests green. Dev APK rebuilt:
+`apps/budcom_android/app/build/outputs/apk/dev/debug/app-dev-debug.apk`. Seller Inbox UI
+deliberately not attempted. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–61 (Phases
+65–70).
 
 **Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening (focused
 polish/performance task, not a milestone — no version bump).** Fixed the same

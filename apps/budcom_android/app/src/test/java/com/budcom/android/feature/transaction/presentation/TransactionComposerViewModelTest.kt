@@ -229,6 +229,106 @@ class TransactionComposerViewModelTest {
         assertEquals(TransactionDeliveryChannel.InAppSubmitted, repository.createdEstimatePos.single().deliveryChannel)
         assertEquals(0, shareCoordinator.prepareCallCount)
     }
+
+    // ============================== Last Order / Reorder ==============================
+
+    private fun ts(millis: Long) = TransactionTimestamp(millis, TransactionTimestampSource.DeviceLocalProvisional)
+
+    private fun completedTransaction(companyId: String, buyerPartyId: String, estimatePoId: String, acceptedAtMillis: Long) = CommercialTransaction(
+        companyId = companyId, transactionId = "$estimatePoId-tx", estimatePoId = estimatePoId, buyerPartyId = buyerPartyId,
+        state = com.budcom.android.feature.transaction.domain.model.CommercialTransactionState.Completed,
+        totalAmount = "500", currencyCode = "INR", acceptedAt = ts(acceptedAtMillis), completedAt = ts(acceptedAtMillis + 1),
+    )
+
+    private fun estimatePoWithLine(companyId: String, estimatePoId: String, buyerPartyId: String, productId: String, qty: String) = EstimatePo(
+        companyId = companyId, estimatePoId = estimatePoId, entryPointType = com.budcom.android.feature.transaction.domain.model.TransactionEntryPointType.Catalogue,
+        submissionType = com.budcom.android.feature.transaction.domain.model.TransactionSubmissionType.Estimate,
+        deliveryChannel = TransactionDeliveryChannel.WhatsAppShared, buyerPartyId = buyerPartyId, totalAmount = "500", currencyCode = "INR",
+        status = com.budcom.android.feature.transaction.domain.model.EstimatePoStatus.Shared, submittedAt = ts(0),
+        lineItems = listOf(line(estimatePoId, productId, "Widget", qty)),
+    )
+
+    @Test
+    fun `no last order available when the buyer has no completed transactions`() = runTest(dispatcher) {
+        val vm = viewModel()
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(!vm.uiState.value.lastOrderAvailable)
+    }
+
+    @Test
+    fun `last order becomes available once a completed transaction exists for this buyer`() = runTest(dispatcher) {
+        val repository = FakeTransactionRepository()
+        repository.transactionsForCounterparty["co-1|buyer-1"] = listOf(completedTransaction("co-1", "buyer-1", "e-old", 100))
+        repository.estimatePosById["co-1|e-old"] = estimatePoWithLine("co-1", "e-old", "buyer-1", "p1", "3")
+        val vm = viewModel(repository = repository)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value.lastOrderAvailable)
+    }
+
+    @Test
+    fun `reordering populates the draft with the last order's products immediately`() = runTest(dispatcher) {
+        val repository = FakeTransactionRepository()
+        repository.transactionsForCounterparty["co-1|buyer-1"] = listOf(completedTransaction("co-1", "buyer-1", "e-old", 100))
+        repository.estimatePosById["co-1|e-old"] = estimatePoWithLine("co-1", "e-old", "buyer-1", "p1", "3")
+        val vm = viewModel(repository = repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(TransactionComposerEvent.ReorderLastOrder)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(1, vm.uiState.value.draft!!.lines.size)
+        assertEquals("Widget", vm.uiState.value.draft!!.lines.single().snapshotProductName)
+        assertEquals("3", vm.uiState.value.draft!!.lines.single().quantity)
+    }
+
+    @Test
+    fun `reordering never mutates the original completed transaction`() = runTest(dispatcher) {
+        val repository = FakeTransactionRepository()
+        val original = completedTransaction("co-1", "buyer-1", "e-old", 100)
+        val originalCopy = original.copy()
+        repository.transactionsForCounterparty["co-1|buyer-1"] = listOf(original)
+        repository.estimatePosById["co-1|e-old"] = estimatePoWithLine("co-1", "e-old", "buyer-1", "p1", "3")
+        val vm = viewModel(repository = repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(TransactionComposerEvent.ReorderLastOrder)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(originalCopy, repository.transactionsForCounterparty["co-1|buyer-1"]!!.single())
+    }
+
+    @Test
+    fun `a reordered draft can be edited afterward - quantity change works`() = runTest(dispatcher) {
+        val repository = FakeTransactionRepository()
+        repository.transactionsForCounterparty["co-1|buyer-1"] = listOf(completedTransaction("co-1", "buyer-1", "e-old", 100))
+        repository.estimatePosById["co-1|e-old"] = estimatePoWithLine("co-1", "e-old", "buyer-1", "p1", "3")
+        val vm = viewModel(repository = repository)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(TransactionComposerEvent.ReorderLastOrder)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(TransactionComposerEvent.SetQuantity("p1", "10"))
+        assertEquals("10", vm.uiState.value.draft!!.lines.single().quantity)
+    }
+
+    @Test
+    fun `attempting to reorder with no last order shows a message and never crashes`() = runTest(dispatcher) {
+        val vm = viewModel()
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(TransactionComposerEvent.ReorderLastOrder)
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(vm.uiState.value.message != null)
+        assertTrue(vm.uiState.value.draft!!.isEmpty)
+    }
+
+    @Test
+    fun `company isolation - a completed transaction under a different company never appears as this company's last order`() = runTest(dispatcher) {
+        val repository = FakeTransactionRepository()
+        repository.transactionsForCounterparty["co-OTHER|buyer-1"] = listOf(completedTransaction("co-OTHER", "buyer-1", "e-old", 100))
+        val vm = viewModel(repository = repository) // resolves to companyId = "co-1"
+        dispatcher.scheduler.advanceUntilIdle()
+        assertTrue(!vm.uiState.value.lastOrderAvailable)
+    }
 }
 
 // ============================== Phase A: real Catalogue data ==============================
@@ -333,13 +433,15 @@ private class FakeCatalogueRepository : CatalogueRepository {
     val published = mutableMapOf<String, List<CataloguePublishedSnapshot>>()
     override suspend fun listAllPublished(companyId: String): List<CataloguePublishedSnapshot> = published[companyId].orEmpty()
 
+    val products = mutableMapOf<String, CatalogueProduct>()
+    override suspend fun findProduct(companyId: String, productId: String): CatalogueProduct? = products["$companyId|$productId"]
+
     private fun unsupported(): Nothing = throw UnsupportedOperationException("not used by TransactionComposerViewModelTest")
     override suspend fun createDraftFromStockItem(companyId: String, stockItemId: String, timestamp: CatalogueTimestamp): CatalogueProduct? = unsupported()
     override suspend fun createManualDraft(companyId: String, displayName: String, timestamp: CatalogueTimestamp): CatalogueProduct = unsupported()
     override suspend fun createDraftsFromStockItems(companyId: String, stockItemIds: List<String>, timestamp: CatalogueTimestamp, onProgress: suspend (linked: Int, total: Int) -> Unit): Int = unsupported()
     override suspend fun warmStockItemCache(companyId: String): Unit = unsupported()
     override suspend fun listUnlinkedStockItems(companyId: String): List<StockItem> = unsupported()
-    override suspend fun findProduct(companyId: String, productId: String): CatalogueProduct? = unsupported()
     override suspend fun listProducts(companyId: String): List<CatalogueProduct> = unsupported()
     override suspend fun listProductsByState(companyId: String, state: CatalogueLifecycleState): List<CatalogueProduct> = unsupported()
     override suspend fun updateEnrichment(companyId: String, productId: String, update: CatalogueEnrichmentUpdate, timestamp: CatalogueTimestamp): CatalogueProduct? = unsupported()
@@ -418,8 +520,14 @@ private class FakeTransactionRepository : TransactionRepository {
     override suspend fun findCompletedPurchaseHistory(companyId: String, buyerPartyId: String): List<TransactionLineItem> =
         completedHistory["$companyId|$buyerPartyId"].orEmpty()
 
+    val transactionsForCounterparty = mutableMapOf<String, List<CommercialTransaction>>()
+    override suspend fun findTransactionsForCounterparty(companyId: String, buyerPartyId: String): List<CommercialTransaction> =
+        transactionsForCounterparty["$companyId|$buyerPartyId"].orEmpty()
+
+    val estimatePosById = mutableMapOf<String, EstimatePo>()
+    override suspend fun findEstimatePoById(companyId: String, estimatePoId: String): EstimatePo? = estimatePosById["$companyId|$estimatePoId"]
+
     private fun unsupported(): Nothing = throw UnsupportedOperationException("not used by TransactionComposerViewModelTest")
-    override suspend fun findEstimatePoById(companyId: String, estimatePoId: String): EstimatePo? = unsupported()
     override suspend fun findSellerInboxEntry(companyId: String, inboxEntryId: String): SellerInboxEntry? = unsupported()
     override suspend fun findAllSellerInboxEntries(companyId: String): List<SellerInboxEntry> = unsupported()
     override suspend fun acknowledgeSellerInboxEntry(companyId: String, inboxEntryId: String, timestamp: TransactionTimestamp): SellerInboxActionResult = unsupported()
@@ -432,7 +540,6 @@ private class FakeTransactionRepository : TransactionRepository {
     override suspend fun findPaymentEventsForTransaction(companyId: String, transactionId: String): List<PaymentEvent> = unsupported()
     override suspend fun recordPaymentClaim(companyId: String, transactionId: String, claimedAmount: String, currencyCode: String?, isFinalOrPartial: PaymentClaimStatus, timestamp: TransactionTimestamp): PaymentEvent? = unsupported()
     override suspend fun confirmPaymentReceived(companyId: String, transactionId: String, paymentEventId: String, timestamp: TransactionTimestamp, discrepancyNote: String?): CommercialTransaction? = unsupported()
-    override suspend fun findTransactionsForCounterparty(companyId: String, buyerPartyId: String): List<CommercialTransaction> = unsupported()
     override suspend fun findAllTransactionsForCompany(companyId: String): List<CommercialTransaction> = unsupported()
     override suspend fun findTransactionSnapshot(companyId: String, transactionId: String): TransactionSnapshot? = unsupported()
     override suspend fun grantCatalogueAccess(companyId: String, buyerPartyId: String, expiresAt: TransactionTimestamp?, timestamp: TransactionTimestamp): CatalogueAccessGrant = unsupported()

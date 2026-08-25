@@ -4770,3 +4770,78 @@ navigation, and a Dev APK exists at the path above — none of that was true at 
 phase.** Reorder/Last-Order UI, Seller UI, Q18's real resolver, and physical-device verification all
 remain future work, named explicitly, not implied complete. This is the last phase of this quota
 window. Working tree left clean after this phase's commit; nothing pushed to `origin`.
+
+---
+
+## 61. Phase 70 — Transaction Mode: Last Order/Reorder wired, Unit/SKU gap closed, Q18 gap formally
+documented (final pass, ~2.5% weekly quota)
+
+**Priority order followed exactly as this phase's own brief specified: Reorder first, then the
+Unit/SKU data gap (a real fix existed), then Q18 (no safe fix existed — documented instead of
+guessed), then explicitly skipped Seller Inbox UI to protect this build's stability.**
+
+### A. Last Order / Reorder — wired into `TransactionComposerViewModel`
+
+`ReorderOperations` (Phase 66) is unmodified — reused exactly as instructed. On load, the ViewModel
+now also calls `TransactionRepository.findTransactionsForCounterparty`, filters to
+`CommercialTransactionState.Completed`, and caches the most recent one (by `acceptedAt`) in a
+**private, never-written-to** field — `TransactionComposerUiState.lastOrderAvailable` is the only
+thing exposed, driving a new "Last Order — reorder" `TextButton` (shown only when true; a normal
+absent-button state otherwise, never a crash). Dispatching `ReorderLastOrder` reads the transaction's
+original `EstimatePo` (`findEstimatePoById`, read-only), resolves each line's **current** price state
+from `state.newSkus` (falling back to Contact-for-price for a since-archived product, never a stale
+number), and **replaces** the current draft via `ReorderOperations.fromCompletedTransaction` — which
+has no repository/DAO dependency of its own, so it is structurally incapable of writing back to the
+original transaction. Verified directly, not just asserted: a dedicated test confirms the original
+`CommercialTransaction` object is byte-for-byte unchanged in the fake repository's own store after a
+reorder. A reordered draft is then editable exactly like any other (quantity-change test included).
+
+### B. Unit/SKU gap — closed with real data, not a guess
+
+Investigated first, per this phase's own instruction. `CataloguePublishedSnapshot` (the safe,
+customer-visible-only read) genuinely carries no Unit/SKU field — but the full `CatalogueProduct`
+domain object (already-existing `CatalogueRepository.findProduct`, read-only) does. `loadNewSkus`
+now does one additional `findProduct` read per published product to enrich `TransactionNewSkuRow.unit`/
+`.sku` with real values — `listAllPublished` still alone decides *which* products are customer-
+visible at all; `findProduct` only enriches an already-decided row, never expands the visible set.
+No schema change, no Tally-side logic copied, no invented values.
+
+### C. Q18 price-visibility — investigated, deliberately NOT wired, documented instead of guessed
+
+Considered wiring `TransactionRepository.findActiveCatalogueAccessGrant` into New-SKU price
+resolution. **Concluded this cannot be done safely without inventing semantics**: a
+`CatalogueAccessGrant` only flips *visibility*, but Catalogue's own `resolvedPriceAmount` is
+typically `null` under `ContactForPrice` mode in the first place — there is no actual price number
+for a grant to reveal in the common case. Wiring this half-heartedly risked either showing nothing
+(no behavior change, wasted code) or, worse under time pressure, a subtly wrong path that violates
+"never show a hidden numeric amount." Left completely untouched, exactly as the architecture
+document's own Finding 3 already named it — this phase adds direct confirmation, not a new finding.
+
+### D. Buyer screen hardening review
+
+Reviewed `TransactionComposerScreen`/`ViewModel` against this phase's own 13-point checklist by
+direct code reading (no changes needed — all prior behavior confirmed intact): Selected-first,
+Previously-Bought-before-New-SKUs, real New SKUs, inline add/increment, quantity +/-, remove, empty
+state, Estimate/PO control, four distinct price states (`priceLabel`'s `Hidden` branch still
+structurally cannot read an amount), share/submit still correctly bounded. No cosmetic changes made.
+
+### E. Tests / build / APK
+
+**7 new unit tests** (Reorder availability true/false, reorder populates the draft, reorder never
+mutates the original transaction, a reordered draft remains editable, reordering with no last order
+shows a message without crashing, company isolation for last-order visibility). **115 Transaction
+Mode tests total, 0 failures.** Re-ran `CatalogueViewModelTest` again as the targeted regression
+check (unchanged from Phase 69, still 30/30) since Catalogue reads were touched again. Compile-clean,
+both main and test sources, first attempt. No lint (disclosed). Full historical suite not re-run
+(quota). **`assembleDevDebug` rebuilt successfully** with these changes —
+`apps/budcom_android/app/build/outputs/apk/dev/debug/app-dev-debug.apk` (freshly timestamped,
+2026-08-25 17:14). `adb` re-confirmed unavailable; no device work attempted, no troubleshooting.
+
+### F. Decision
+
+**Last Order/Reorder is real, wired, and tested end-to-end at the ViewModel layer — not merely
+domain code anymore.** The Unit/SKU gap is genuinely closed with real Catalogue data. Q18 remains
+honestly unresolved, now with direct confirmation that a safe fix doesn't exist yet, not just an
+open question. Seller Inbox UI was not attempted, by deliberate choice, to protect this build's
+stability for the user's two-day manual test window. This is the last phase of this quota window —
+working tree left clean after this phase's commit, nothing pushed to `origin`.

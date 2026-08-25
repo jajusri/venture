@@ -26,6 +26,10 @@ data class TransactionComposerUiState(
      * [TransactionComposerViewModel] directly from the existing `CatalogueRepository` — no
      * duplicate product table, no second pricing engine. */
     val newSkus: List<TransactionNewSkuRow> = emptyList(),
+    /** True once loading has determined a completed transaction exists for this buyer — drives
+     * whether the "Last Order" action is shown at all (task's own "if a previous completed
+     * transaction does not exist, show a normal empty state, do not crash"). */
+    val lastOrderAvailable: Boolean = false,
     val message: String? = null,
 )
 
@@ -70,6 +74,13 @@ sealed interface TransactionComposerEvent {
 
     /** WhatsApp path (Q6/Q7's `WHATSAPP_SHARED` channel) — the only delivery channel that is
      * fully, safely implemented end-to-end today. */
+    /** Q17/task's own "Last Order": replaces the current draft with a fresh one built from the
+     * buyer's most recent completed transaction via
+     * [com.budcom.android.feature.transaction.domain.model.ReorderOperations] — never mutates that
+     * transaction (see [TransactionComposerViewModel]'s own KDoc on `reorderLastOrder`). A no-op
+     * with a user-facing message if no completed transaction exists yet. */
+    data object ReorderLastOrder : TransactionComposerEvent
+
     data object ShareViaWhatsApp : TransactionComposerEvent
 
     /** In-app path (`IN_APP_SUBMITTED`). Only legitimately supported for the same-company case
