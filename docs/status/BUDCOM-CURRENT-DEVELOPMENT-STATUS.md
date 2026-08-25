@@ -94,8 +94,17 @@ unmodified, verified not to mutate the original transaction), closed the Unit/SK
 visibility wiring but concluded it cannot be done safely without inventing semantics — left
 untouched, documented rather than guessed. 115 Transaction Mode tests green. Dev APK rebuilt:
 `apps/budcom_android/app/build/outputs/apk/dev/debug/app-dev-debug.apk`. Seller Inbox UI
-deliberately not attempted. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–61 (Phases
-65–70).
+deliberately not attempted. **Phase 71** — physically installed on the user's own device over the
+existing paired `com.budcom.android.debug` install (data preserved) and manually tested against real
+Jaju Sanitations Catalogue data via adb. Confirmed live: navigation, real SKU display, inline
+selection/increment, quantity controls, Estimate/PO toggle. **Found and fixed three real defects
+live**: WhatsApp share was completely broken (missing `FileProvider` cache-path entry for the new
+`transaction-share` directory — now fixed and re-verified, real OS chooser opens with WhatsApp
+listed), the draft was discarded even when sharing failed (now only resets on confirmed success),
+and the Share button label didn't reflect the Estimate/PO selection (now fixed). Submit (same-
+company path) confirmed working live too. Previously Bought/Last Order could not be exercised from
+this entry point (no buyer context passed — pre-existing, documented gap). 115/115 tests green after
+fixes. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–62 (Phases 65–71).
 
 **Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening (focused
 polish/performance task, not a milestone — no version bump).** Fixed the same

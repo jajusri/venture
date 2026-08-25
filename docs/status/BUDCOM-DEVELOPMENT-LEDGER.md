@@ -4845,3 +4845,84 @@ honestly unresolved, now with direct confirmation that a safe fix doesn't exist 
 open question. Seller Inbox UI was not attempted, by deliberate choice, to protect this build's
 stability for the user's two-day manual test window. This is the last phase of this quota window —
 working tree left clean after this phase's commit, nothing pushed to `origin`.
+
+---
+
+## 62. Phase 71 — physical-device manual verification against real Jaju Sanitations data; three real
+defects found and fixed live
+
+**Interactive, user-directed session (not autonomous quota).** Installed the `prod`-flavor debug
+build over the user's own already-paired, already-synced device install (`com.budcom.android.debug`
+on `I2407`, serial `10BF44124K000E3`) — `-r` reinstall, data/pairing preserved — and manually drove
+the buyer transaction screen end-to-end via `adb shell input`/`uiautomator dump`/`screencap`,
+inspecting real screenshots at every step rather than assuming success.
+
+### A. Confirmed working, live, against real data
+
+Cart-icon navigation entry point on Catalogue → Transaction Composer; real Catalogue SKUs appear as
+New SKUs (correctly reads only the Published snapshot — a product mid-edit and showing "Draft" in
+the owner list still correctly surfaces its last-Published snapshot here, confirming the atomic-
+snapshot architecture from Catalogue Phase 56 holds across features); selecting a product adds it to
+Selected Products; **selecting the same product again increments quantity rather than creating a
+duplicate line** (Qty 1→2, verified visually); +/− quantity controls; Remove; Estimate/Purchase
+Order toggle with selection preserved through edits; Previously Bought's empty state ("No previously
+completed orders yet"); price states rendering correctly (No price supplied / Contact for price).
+
+### B. Three real defects found live, root-caused, fixed, and re-verified live — none catchable by
+unit tests, since none of this feature's tests touch real Android resources/FileProvider
+
+1. **WhatsApp share was completely broken** — tapping Share always failed with "The share file
+   could not be generated." Root cause, found via logcat/manifest/resource inspection:
+   `res/xml/invoice_share_paths.xml` (the FileProvider's declared root list) was never given a
+   `transaction-share` `<cache-path>` entry when Phase 65 added that cache directory — every
+   `FileProvider.getUriForFile()` call for it threw, silently swallowed by the existing
+   `runCatching` (the same swallow-and-return-a-generic-message shape every other share coordinator
+   in this codebase already uses, so this wasn't new sloppy error handling, just a missing resource
+   entry). **Fixed**: added the missing `<cache-path name="transaction_share" path="transaction-share/" />`
+   line. **Re-verified live**: the real Android "Share file" chooser opened with a correctly-named
+   file (`<uuid>-budcom-estimate.txt`, 279 B) and WhatsApp genuinely listed as a target — did not tap
+   through to an actual contact/send, to avoid sending a real test message to a real WhatsApp
+   contact.
+2. **The draft was silently discarded even when sharing failed** — `TransactionComposerViewModel.submit()`
+   reset the draft to empty unconditionally after calling `shareViaWhatsApp`, regardless of whether
+   it actually succeeded. A buyer whose share failed (as in defect 1, before the fix) would have
+   lost their entire selection with no way to retry without rebuilding it. **Fixed**: `shareViaWhatsApp`
+   now returns whether it actually succeeded; the draft is only reset on `true`. Submit's own path
+   (which has no comparable failure branch) is unaffected.
+3. **The Share button always read "Share Estimate," even with Purchase Order selected** — cosmetic,
+   but a real, live-observed defect (screenshot evidence: PO selected, button still said "Share
+   Estimate"). **Fixed**: label now switches to "Share Purchase Order" based on `state.draft?.submissionType`.
+
+### C. Also confirmed working after the fixes, live
+
+Re-tested Share after the fix: real OS chooser opens correctly, dismissed cleanly via back button, no
+crash, draft correctly reset only on this genuine success. Re-tested Submit: "Sent to your seller
+inbox." message appears, draft resets — a real `EstimatePo` (`IN_APP_SUBMITTED`) and
+`SellerInboxEntry` were created in the local database via the existing, unmodified
+`LocalTransactionSubmissionPort`.
+
+### D. Not testable from this entry point — a pre-existing, already-documented limitation, not a
+new finding
+
+The Catalogue toolbar entry point calls `TransactionComposerRoute()` with no `buyerPartyId` argument
+(Phase 69's own report already named this). With `buyerPartyId = null`, `loadBuyAgain`/`loadLastOrder`
+both early-return, so **Previously Bought's populated state and the "Last Order" button could not be
+exercised live this session** — not a defect surfaced by testing, the same navigation-context gap
+already on record.
+
+### E. Tests / build
+
+Full Transaction Mode suite re-run after the fixes: **115/115 green**, compile-clean
+(`compileProdDebugKotlin` + `compileDevDebugUnitTestKotlin`). `assembleProdDebug` rebuilt twice this
+session (once to install baseline, once with the three fixes) and installed both times via
+`adb install -r` — data preserved throughout, nothing reset, no Tally data touched, no
+Catalogue/completed-transaction data modified. One transient `adb` "device offline" (phone
+screen-lock, not a code issue) resolved by restarting the adb server, no device-side troubleshooting
+needed.
+
+### F. Decision
+
+**Real, physical confirmation on the user's own device against real business data (Jaju Sanitations)
+— not a simulation.** Three genuine defects were found, fixed, and the fixes themselves re-verified
+live, not just re-compiled. This is the strongest evidence this feature has had all session that the
+integration actually works end-to-end, not merely that its unit tests pass.

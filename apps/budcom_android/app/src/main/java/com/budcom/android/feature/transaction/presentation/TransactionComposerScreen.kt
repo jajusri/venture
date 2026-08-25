@@ -300,6 +300,9 @@ private fun NewSkuRow(row: TransactionNewSkuRow, onClick: () -> Unit) {
 @Composable
 private fun ReviewAndShareSection(state: TransactionComposerUiState, onEvent: (TransactionComposerEvent) -> Unit) {
     val hasItems = state.draft?.isEmpty == false
+    // Found via live device testing: this label was hardcoded to "Share Estimate" even when
+    // Purchase Order was selected.
+    val shareLabel = if (state.draft?.submissionType == TransactionSubmissionType.PurchaseOrder) "Share Purchase Order" else "Share Estimate"
     Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             "Sharing sends an Estimate/PO as a plain document — it is not automatically an accepted order.",
@@ -311,7 +314,7 @@ private fun ReviewAndShareSection(state: TransactionComposerUiState, onEvent: (T
                 onClick = { onEvent(TransactionComposerEvent.ShareViaWhatsApp) },
                 enabled = hasItems,
                 modifier = Modifier.testTag("composer_share_whatsapp"),
-            ) { Text("Share Estimate") }
+            ) { Text(shareLabel) }
             TextButton(
                 onClick = { onEvent(TransactionComposerEvent.SubmitInApp) },
                 enabled = hasItems,

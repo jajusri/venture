@@ -209,25 +209,46 @@ class TransactionComposerViewModel @Inject constructor(
                 val estimatePo = repository.createEstimatePo(
                     co, TransactionEntryPointType.Catalogue, draft.submissionType, channel, draft.buyerPartyId, result.lineItems, now,
                 )
-                if (channel == TransactionDeliveryChannel.WhatsAppShared) {
+                // Found via live device testing: the draft must only reset when the follow-up
+                // action actually succeeded -- resetting unconditionally silently discarded the
+                // buyer's selection on a share-generation failure, even though nothing was
+                // actually shared. The EstimatePo record itself is always created regardless
+                // (that part cannot fail the same way), matching Submit's own always-succeeds shape.
+                val succeeded = if (channel == TransactionDeliveryChannel.WhatsAppShared) {
                     shareViaWhatsApp(co, estimatePo)
                 } else {
                     _uiState.update { it.copy(message = "Sent to your seller inbox.") }
+                    true
                 }
-                _uiState.update { it.copy(draft = TransactionDraftOperations.empty(co, draft.buyerPartyId, draft.submissionType)) }
+                if (succeeded) {
+                    _uiState.update { it.copy(draft = TransactionDraftOperations.empty(co, draft.buyerPartyId, draft.submissionType)) }
+                }
             }
         }
     }
 
-    private suspend fun shareViaWhatsApp(companyId: String, estimatePo: com.budcom.android.feature.transaction.domain.model.EstimatePo) {
+    /** @return true if the OS share intent was successfully created and handed off (matching how
+     * [com.budcom.android.feature.catalogue.presentation.CatalogueRoute]'s own analogous share
+     * flow never waits for the user to actually complete the chooser either) — false if generation
+     * itself failed, in which case the caller must not discard the buyer's draft. */
+    private suspend fun shareViaWhatsApp(companyId: String, estimatePo: com.budcom.android.feature.transaction.domain.model.EstimatePo): Boolean {
         // toSubmission() already refused any Hidden-price line before this point (see
         // DraftToSubmissionResult.UnauthorizedPriceLines above) — every line that reached here is
         // guaranteed authorized, so Visible is correct by construction, not an assumption made here.
-        when (val prepared = shareCoordinator.prepareShare(companyId, estimatePo, TransactionSharePriceVisibility.Visible, null, null, null)) {
-            is TransactionShareResult.Failure -> _uiState.update { it.copy(message = prepared.message) }
+        return when (val prepared = shareCoordinator.prepareShare(companyId, estimatePo, TransactionSharePriceVisibility.Visible, null, null, null)) {
+            is TransactionShareResult.Failure -> {
+                _uiState.update { it.copy(message = prepared.message) }
+                false
+            }
             is TransactionShareResult.Success -> when (val intentResult = shareCoordinator.createShareIntent(prepared.value)) {
-                is TransactionShareResult.Success -> _effects.emit(TransactionComposerEffect.LaunchShareIntent(intentResult.value))
-                is TransactionShareResult.Failure -> _uiState.update { it.copy(message = intentResult.message) }
+                is TransactionShareResult.Success -> {
+                    _effects.emit(TransactionComposerEffect.LaunchShareIntent(intentResult.value))
+                    true
+                }
+                is TransactionShareResult.Failure -> {
+                    _uiState.update { it.copy(message = intentResult.message) }
+                    false
+                }
             }
         }
     }

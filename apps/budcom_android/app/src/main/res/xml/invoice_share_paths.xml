@@ -5,4 +5,5 @@
     <cache-path name="party_xml_export" path="party-xml-export/" />
     <cache-path name="catalogue_share" path="catalogue-share/" />
     <cache-path name="catalogue_camera" path="catalogue-camera/" />
+    <cache-path name="transaction_share" path="transaction-share/" />
 </paths>
