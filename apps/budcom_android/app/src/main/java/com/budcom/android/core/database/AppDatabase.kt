@@ -52,6 +52,22 @@ import com.budcom.android.feature.party.data.local.PartyTagCrossRefEntity
 import com.budcom.android.feature.party.data.local.PartyTimelineDao
 import com.budcom.android.feature.party.data.local.TagDao
 import com.budcom.android.feature.party.data.local.TagEntity
+import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantDao
+import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantEntity
+import com.budcom.android.feature.transaction.data.local.CommercialTransactionDao
+import com.budcom.android.feature.transaction.data.local.CommercialTransactionEntity
+import com.budcom.android.feature.transaction.data.local.EstimatePoDao
+import com.budcom.android.feature.transaction.data.local.EstimatePoEntity
+import com.budcom.android.feature.transaction.data.local.EstimatePoLineItemDao
+import com.budcom.android.feature.transaction.data.local.EstimatePoLineItemEntity
+import com.budcom.android.feature.transaction.data.local.LedgerIntentDao
+import com.budcom.android.feature.transaction.data.local.LedgerIntentEntity
+import com.budcom.android.feature.transaction.data.local.PaymentEventDao
+import com.budcom.android.feature.transaction.data.local.PaymentEventEntity
+import com.budcom.android.feature.transaction.data.local.SellerInboxEntryDao
+import com.budcom.android.feature.transaction.data.local.SellerInboxEntryEntity
+import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentDao
+import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEntity
 
 @Database(
     entities = [
@@ -85,6 +101,14 @@ import com.budcom.android.feature.party.data.local.TagEntity
         CatalogueAssetEntity::class,
         CatalogueSettingsEntity::class,
         CatalogueCustomFieldEntity::class,
+        EstimatePoEntity::class,
+        EstimatePoLineItemEntity::class,
+        SellerInboxEntryEntity::class,
+        CommercialTransactionEntity::class,
+        TermsAcknowledgmentEntity::class,
+        PaymentEventEntity::class,
+        LedgerIntentEntity::class,
+        CatalogueAccessGrantEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -115,4 +139,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun catalogueAssetDao(): CatalogueAssetDao
     abstract fun catalogueSettingsDao(): CatalogueSettingsDao
     abstract fun catalogueCustomFieldDao(): CatalogueCustomFieldDao
+    abstract fun estimatePoDao(): EstimatePoDao
+    abstract fun estimatePoLineItemDao(): EstimatePoLineItemDao
+    abstract fun sellerInboxEntryDao(): SellerInboxEntryDao
+    abstract fun commercialTransactionDao(): CommercialTransactionDao
+    abstract fun termsAcknowledgmentDao(): TermsAcknowledgmentDao
+    abstract fun paymentEventDao(): PaymentEventDao
+    abstract fun ledgerIntentDao(): LedgerIntentDao
+    abstract fun catalogueAccessGrantDao(): CatalogueAccessGrantDao
 }

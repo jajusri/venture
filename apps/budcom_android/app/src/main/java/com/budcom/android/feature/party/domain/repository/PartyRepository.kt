@@ -233,4 +233,18 @@ interface PartyRepository {
 
     /** Bounded, newest-first — the lightweight export audit trail for one Party. */
     suspend fun getExportHistory(companyId: String, partyId: String, limit: Int = 20): List<PartyExportEvent>
+
+    // ---- Transaction Mode integration point (docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md §6) ----
+
+    /**
+     * Flips an existing Party's [PartyClassification] from [PartyClassification.Prospect] to
+     * [PartyClassification.Customer] — the entire "Prospect becomes a Ledger only by explicit
+     * seller action" mechanism (Transaction Mode Q9) reuses this single, already-existing, already-
+     * mutable column; no schema change. Idempotent by design: a no-op (returns the Party unchanged)
+     * if it is already `Customer`/`Supplier`/`Other`, since the seller's Accept action can
+     * legitimately fire more than once over time against the same buyer. Never creates a Tally
+     * Ledger, never touches [PartySourceLink] — that reconciliation path is untouched and reused
+     * exactly as-is once a real Tally ledger for this Party syncs back later.
+     */
+    suspend fun promoteProspectToCustomer(companyId: String, partyId: String): Party?
 }

@@ -525,6 +525,22 @@ class PartyRepositoryImpl @Inject constructor(
     override suspend fun getSourceLinkForParty(companyId: String, partyId: String): PartySourceLink? =
         withContext(dispatchers.io) { sourceLinkDao.findByPartyId(companyId, partyId).firstOrNull()?.toDomain() }
 
+    // ---- Transaction Mode integration point (docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md §6) ----
+
+    override suspend fun promoteProspectToCustomer(companyId: String, partyId: String): Party? = withContext(dispatchers.io) {
+        val existing = partyDao.findById(companyId, partyId) ?: return@withContext null
+        if (existing.classification != PartyClassification.Prospect.asColumn()) {
+            // Already Customer/Supplier/Other — idempotent no-op, not an error (see interface doc).
+            return@withContext existing.toDomain()
+        }
+        val updated = existing.copy(
+            classification = PartyClassification.Customer.asColumn(),
+            updatedAt = timeProvider.nowEpochMillis(),
+        )
+        partyDao.upsert(updated)
+        updated.toDomain()
+    }
+
     override suspend fun upsertContactPerson(
         companyId: String,
         partyId: String,

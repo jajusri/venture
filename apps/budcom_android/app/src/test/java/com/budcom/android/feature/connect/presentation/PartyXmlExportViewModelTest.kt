@@ -285,6 +285,7 @@ private class InMemoryExportPartyRepository : PartyRepository {
     }
 
     override suspend fun getPartyById(companyId: String, partyId: String): Party? = parties[companyId to partyId]
+    override suspend fun promoteProspectToCustomer(companyId: String, partyId: String): Party? = error("unused")
     override suspend fun getPartyForLedger(companyId: String, ledgerId: String): Party? = null
     override suspend fun listByClassification(companyId: String, classification: PartyClassification, page: Int, pageSize: Int) =
         PartyPage(emptyList(), page, pageSize, 0)

@@ -1291,4 +1291,65 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    /**
+     * Transaction Mode foundation (docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md §14):
+     * proves the eight new tables land correctly and that a pre-existing `catalogue_product` row
+     * (an unrelated, untouched table) survives unchanged — this is the specific class of defect
+     * this whole test file exists to catch (see this file's own top-of-file doc comment): a version
+     * bump for one feature silently wiping or corrupting completely unrelated existing data.
+     */
+    @Test
+    fun migrate13To14_preservesExistingRowsAndAddsTransactionModeTablesOnly() {
+        val db1314DbName = "migration-test-db-13-14"
+
+        var db = helper.createDatabase(db1314DbName, 13)
+        db.execSQL(
+            "INSERT INTO cached_companies (id, name, financialYear, booksFrom, baseCurrency) " +
+                "VALUES ('acme-001', 'Acme Corp', '2025-26', '2025-04-01', 'INR')",
+        )
+        db.execSQL(
+            "INSERT INTO catalogue_product (companyId, productId, source, linkedStockItemId, sku, " +
+                "displayNameOverride, manualUnit, description, specifications, customerFacingCategory, priceDisplayMode, " +
+                "manualPriceAmount, manualPriceCurrencyCode, lifecycleState, sourceAvailable, createdAt, " +
+                "createdAtSource, updatedAt, updatedAtSource, archivedAt, archivedAtSource) VALUES " +
+                "('acme-001', 'prod-1', 'MANUAL', NULL, NULL, 'Handwoven Basket', NULL, 'A fine basket', NULL, NULL, " +
+                "'OPEN', NULL, NULL, 'DRAFT', 1, 1736899200000, 'DEVICE_LOCAL_PROVISIONAL', 1736899200000, " +
+                "'DEVICE_LOCAL_PROVISIONAL', NULL, NULL)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(db1314DbName, 14, false, DatabaseModule.MIGRATION_13_14)
+
+        db.query(
+            "SELECT displayNameOverride FROM catalogue_product WHERE companyId = 'acme-001' AND productId = 'prod-1'",
+        ).use { cursor ->
+            assertTrue("pre-existing, unrelated catalogue_product row must survive untouched", cursor.moveToFirst())
+            assertEquals("Handwoven Basket", cursor.getString(0))
+        }
+
+        val newTables = listOf(
+            "txn_estimate_po", "txn_estimate_po_line_item", "txn_seller_inbox_entry", "commercial_transaction",
+            "txn_terms_acknowledgment", "txn_payment_event", "txn_ledger_intent", "catalogue_access_grant",
+        )
+        newTables.forEach { table ->
+            db.query("SELECT COUNT(*) FROM $table").use { cursor ->
+                assertTrue("$table must exist and be queryable after migration", cursor.moveToFirst())
+                assertEquals("$table must start empty on an existing install", 0, cursor.getInt(0))
+            }
+        }
+
+        db.execSQL(
+            "INSERT INTO txn_estimate_po (companyId, estimatePoId, entryPointType, submissionType, deliveryChannel, " +
+                "buyerPartyId, totalAmount, currencyCode, status, submittedAt, submittedAtSource) VALUES " +
+                "('acme-001', 'estimate-1', 'CATALOGUE', 'ESTIMATE', 'WHATSAPP_SHARED', NULL, '1000', 'INR', " +
+                "'SHARED', 1736899200000, 'DEVICE_LOCAL_PROVISIONAL')",
+        )
+        db.query("SELECT totalAmount FROM txn_estimate_po WHERE companyId = 'acme-001' AND estimatePoId = 'estimate-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("1000", cursor.getString(0))
+        }
+
+        db.close()
+    }
 }

@@ -392,6 +392,7 @@ private class SyncVmFakePartyRepository : PartyRepository {
     var shouldThrow = false
 
     override suspend fun getPartyById(companyId: String, partyId: String): Party? = error("unused")
+    override suspend fun promoteProspectToCustomer(companyId: String, partyId: String): Party? = error("unused")
     override suspend fun getPartyForLedger(companyId: String, ledgerId: String): Party? = error("unused")
     override suspend fun listByClassification(
         companyId: String,

@@ -336,6 +336,7 @@ private class FakePartyRepo(private val shouldThrow: Boolean = false) : PartyRep
     var reconcileCalls = 0
 
     override suspend fun getPartyById(companyId: String, partyId: String): Party? = error("unused")
+    override suspend fun promoteProspectToCustomer(companyId: String, partyId: String): Party? = error("unused")
     override suspend fun getPartyForLedger(companyId: String, ledgerId: String): Party? = error("unused")
     override suspend fun listByClassification(
         companyId: String,

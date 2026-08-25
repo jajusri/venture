@@ -76,7 +76,7 @@ object DatabaseModule {
             DatabaseConstants.NAME,
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-            MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+            MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -158,6 +158,30 @@ object DatabaseModule {
 
     @Provides
     fun provideCatalogueCustomFieldDao(db: AppDatabase): CatalogueCustomFieldDao = db.catalogueCustomFieldDao()
+
+    @Provides
+    fun provideEstimatePoDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.EstimatePoDao = db.estimatePoDao()
+
+    @Provides
+    fun provideEstimatePoLineItemDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.EstimatePoLineItemDao = db.estimatePoLineItemDao()
+
+    @Provides
+    fun provideSellerInboxEntryDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.SellerInboxEntryDao = db.sellerInboxEntryDao()
+
+    @Provides
+    fun provideCommercialTransactionDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.CommercialTransactionDao = db.commercialTransactionDao()
+
+    @Provides
+    fun provideTermsAcknowledgmentDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentDao = db.termsAcknowledgmentDao()
+
+    @Provides
+    fun providePaymentEventDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.PaymentEventDao = db.paymentEventDao()
+
+    @Provides
+    fun provideLedgerIntentDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.LedgerIntentDao = db.ledgerIntentDao()
+
+    @Provides
+    fun provideCatalogueAccessGrantDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantDao = db.catalogueAccessGrantDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -559,6 +583,126 @@ object DatabaseModule {
     val MIGRATION_12_13 = object : Migration(12, 13) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE `catalogue_product` ADD COLUMN `manualUnit` TEXT")
+        }
+    }
+
+    /**
+     * Transaction Mode foundation (docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md §14):
+     * eight new, additive-only tables. No existing table (`cached_parties`, `cached_ledgers`,
+     * `cached_stock_items`, any `catalogue_*` table) is touched — mirrors the exact
+     * `MIGRATION_10_11` precedent of bundling every new table for one cohesive feature landing
+     * together into a single migration.
+     */
+    val MIGRATION_13_14 = object : Migration(13, 14) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_estimate_po` (" +
+                    "`companyId` TEXT NOT NULL, `estimatePoId` TEXT NOT NULL, `entryPointType` TEXT NOT NULL, " +
+                    "`submissionType` TEXT NOT NULL, `deliveryChannel` TEXT NOT NULL, `buyerPartyId` TEXT, " +
+                    "`totalAmount` TEXT NOT NULL, `currencyCode` TEXT, `status` TEXT NOT NULL, " +
+                    "`submittedAt` INTEGER NOT NULL, `submittedAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `estimatePoId`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_txn_estimate_po_companyId` ON `txn_estimate_po` (`companyId`)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_estimate_po_companyId_buyerPartyId` " +
+                    "ON `txn_estimate_po` (`companyId`, `buyerPartyId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_estimate_po_line_item` (" +
+                    "`companyId` TEXT NOT NULL, `estimatePoId` TEXT NOT NULL, `lineItemId` TEXT NOT NULL, " +
+                    "`linkedProductId` TEXT, `snapshotProductName` TEXT NOT NULL, `snapshotUnit` TEXT, " +
+                    "`snapshotSku` TEXT, `quantity` TEXT NOT NULL, `unitPriceAmount` TEXT, " +
+                    "`unitPriceCurrencyCode` TEXT, `lineTotalAmount` TEXT, `isContactForPrice` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `estimatePoId`, `lineItemId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_estimate_po_line_item_companyId_estimatePoId` " +
+                    "ON `txn_estimate_po_line_item` (`companyId`, `estimatePoId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_seller_inbox_entry` (" +
+                    "`companyId` TEXT NOT NULL, `inboxEntryId` TEXT NOT NULL, `estimatePoId` TEXT NOT NULL, " +
+                    "`state` TEXT NOT NULL, `acknowledgedAt` INTEGER, `acknowledgedAtSource` TEXT, " +
+                    "`changeRequestNote` TEXT, `respondedAt` INTEGER, `respondedAtSource` TEXT, " +
+                    "`convertedTransactionId` TEXT, PRIMARY KEY(`companyId`, `inboxEntryId`))",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_seller_inbox_entry_companyId_estimatePoId` " +
+                    "ON `txn_seller_inbox_entry` (`companyId`, `estimatePoId`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_seller_inbox_entry_companyId_state` " +
+                    "ON `txn_seller_inbox_entry` (`companyId`, `state`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `commercial_transaction` (" +
+                    "`companyId` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `estimatePoId` TEXT NOT NULL, " +
+                    "`buyerPartyId` TEXT NOT NULL, `state` TEXT NOT NULL, `totalAmount` TEXT NOT NULL, " +
+                    "`currencyCode` TEXT, `acceptedAt` INTEGER NOT NULL, `acceptedAtSource` TEXT NOT NULL, " +
+                    "`completedAt` INTEGER, `completedAtSource` TEXT, " +
+                    "PRIMARY KEY(`companyId`, `transactionId`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_commercial_transaction_companyId` ON `commercial_transaction` (`companyId`)")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_commercial_transaction_companyId_buyerPartyId` " +
+                    "ON `commercial_transaction` (`companyId`, `buyerPartyId`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_commercial_transaction_companyId_state` " +
+                    "ON `commercial_transaction` (`companyId`, `state`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_terms_acknowledgment` (" +
+                    "`companyId` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `paymentTiming` TEXT NOT NULL, " +
+                    "`creditDays` INTEGER, `partialAdvancePercent` TEXT, `partialBalanceTiming` TEXT, " +
+                    "`amount` TEXT NOT NULL, `currencyCode` TEXT, `note` TEXT, `proposedAt` INTEGER NOT NULL, " +
+                    "`proposedAtSource` TEXT NOT NULL, `buyerConfirmedAt` INTEGER, `buyerConfirmedAtSource` TEXT, " +
+                    "`sellerConfirmedAt` INTEGER, `sellerConfirmedAtSource` TEXT, " +
+                    "PRIMARY KEY(`companyId`, `transactionId`))",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_payment_event` (" +
+                    "`companyId` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `paymentEventId` TEXT NOT NULL, " +
+                    "`installmentSequence` INTEGER NOT NULL, `buyerClaimStatus` TEXT NOT NULL, " +
+                    "`buyerClaimedAmount` TEXT NOT NULL, `currencyCode` TEXT, `buyerClaimedAt` INTEGER NOT NULL, " +
+                    "`buyerClaimedAtSource` TEXT NOT NULL, `sellerConfirmed` INTEGER NOT NULL, " +
+                    "`sellerConfirmedAt` INTEGER, `sellerConfirmedAtSource` TEXT, `sellerDiscrepancyNote` TEXT, " +
+                    "PRIMARY KEY(`companyId`, `transactionId`, `paymentEventId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_payment_event_companyId_transactionId` " +
+                    "ON `txn_payment_event` (`companyId`, `transactionId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_ledger_intent` (" +
+                    "`companyId` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `buyerPartyId` TEXT NOT NULL, " +
+                    "`chosenLedgerGroup` TEXT NOT NULL, `promotedProspectAt` INTEGER, `promotedProspectAtSource` TEXT, " +
+                    "`recordedAt` INTEGER NOT NULL, `recordedAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `transactionId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_ledger_intent_companyId_buyerPartyId` " +
+                    "ON `txn_ledger_intent` (`companyId`, `buyerPartyId`)",
+            )
+
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `catalogue_access_grant` (" +
+                    "`companyId` TEXT NOT NULL, `grantId` TEXT NOT NULL, `buyerPartyId` TEXT NOT NULL, " +
+                    "`priceVisibility` TEXT NOT NULL, `grantedAt` INTEGER NOT NULL, `grantedAtSource` TEXT NOT NULL, " +
+                    "`expiresAt` INTEGER, `revokedAt` INTEGER, `revokedAtSource` TEXT, " +
+                    "PRIMARY KEY(`companyId`, `grantId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_catalogue_access_grant_companyId_buyerPartyId` " +
+                    "ON `catalogue_access_grant` (`companyId`, `buyerPartyId`)",
+            )
         }
     }
 }

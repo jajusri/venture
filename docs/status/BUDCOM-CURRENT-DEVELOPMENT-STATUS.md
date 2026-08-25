@@ -44,6 +44,22 @@ milestone as part of this decision — that remains a separate, explicitly-autho
 not implied by "COMPLETE" here. Full detail: `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §54 (Phase
 63, the final gate audit and decision).
 
+**TRANSACTION MODE STATUS: FOUNDATIONAL DATA/DOMAIN LAYER IMPLEMENTED (2026-08-25) — NOT UI-COMPLETE,
+NOT TRANSPORT-COMPLETE, NOT PRODUCT-AUTHORIZED FOR FULL BUILD.** Per
+`docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md` (RECOMMENDED, not LOCKED, same status as
+former MVP-1.4a/b/c) and its own three named findings, an autonomous implementation sprint built the
+new `feature/transaction/` module: generic entry-point-agnostic Estimate/PO, seller inbox, the
+Pending Confirmation → Agreed → Payment Initiated → Payment Confirmed → Completed state machine
+(fully derived, Overdue always a read-time modifier), Terms Acknowledgment, Prospect → Ledger reuse
+of the existing Party foundation, buying-history foundation, and the Q18 Catalogue access grant —
+`MIGRATION_13_14`, 44 new unit tests, full 1,602-test JVM suite green, zero existing table touched.
+**Deliberately not built:** any UI/ViewModel/Screen, real cross-company transport (only a same-company
+`LocalTransactionSubmissionPort` stub is bound), a real notification/reminder scheduler (a
+`NoOpTransactionReminderScheduler` is bound — shared gap with Catalogue's own five still-undelivered
+notification types), and real Catalogue pricing tiers for Q18. No real-device/instrumented validation
+this phase (mobile-hotspot session constraint, no device/emulator available). Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §55 (Phase 64).
+
 **Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening (focused
 polish/performance task, not a milestone — no version bump).** Fixed the same
 Load/Refresh-delegate-to-one-identical-method bug Phase 3E fixed for Vouchers, but on the Ledger

@@ -50,6 +50,7 @@ class ApplyLedgerContactDetailsBulkUseCaseTest {
 /** Every member throws by default -- tests override only what they exercise. */
 private abstract class ThrowingPartyRepository : PartyRepository {
     override suspend fun getPartyById(companyId: String, partyId: String): Party? = error("unused")
+    override suspend fun promoteProspectToCustomer(companyId: String, partyId: String): Party? = error("unused")
     override suspend fun getPartyForLedger(companyId: String, ledgerId: String): Party? = error("unused")
     override suspend fun listByClassification(companyId: String, classification: com.budcom.android.feature.party.domain.model.PartyClassification, page: Int, pageSize: Int): PartyPage = error("unused")
     override suspend fun searchParties(companyId: String, query: String, classification: com.budcom.android.feature.party.domain.model.PartyClassification?, page: Int, pageSize: Int): PartyPage = error("unused")

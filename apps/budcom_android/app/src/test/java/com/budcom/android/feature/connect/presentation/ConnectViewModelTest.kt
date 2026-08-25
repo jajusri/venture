@@ -534,6 +534,7 @@ private class FakePartyRepository : PartyRepository {
     var lastContactDetailsItems: List<LedgerContactDetails>? = null
 
     override suspend fun getPartyById(companyId: String, partyId: String): Party? = null
+    override suspend fun promoteProspectToCustomer(companyId: String, partyId: String): Party? = null
     override suspend fun getPartyForLedger(companyId: String, ledgerId: String): Party? = null
 
     override suspend fun listByClassification(

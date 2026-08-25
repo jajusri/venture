@@ -4209,3 +4209,154 @@ outcome.
 
 Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
 practice.
+
+---
+
+## 55. Phase 64 — Transaction Mode: foundational data/domain implementation (architecture-authorized
+autonomous sprint)
+
+**Scope:** implements the safe, local, non-transport-dependent foundation of Transaction Mode
+(`docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md`) against the locked Q1–18 Brainstorm
+Outcome decisions, per an explicit, detailed autonomous-implementation brief. Deliberately does
+**not** implement anything requiring cross-company transport, a real notification/reminder
+scheduler, or any UI — those boundaries are architecturally unresolved (Findings 1/2/3 of the
+architecture document) and are preserved as clean, documented ports rather than faked.
+
+### A. What was implemented
+
+- **New feature module** `feature/transaction/` (Android): `domain/model` (entity-agnostic domain
+  types, enums with explicit column-value mappings, `TransactionClock`/`TransactionTimestamp`
+  mirroring Catalogue's own authoritative-timestamp discipline), `domain/model/TransactionStateMachine.kt`
+  (pure-function seller-inbox transitions + transaction-state derivation, mirroring
+  `CatalogueLifecycleTransitions`'s own null-on-invalid-transition discipline), `domain/port`
+  (`TransactionSubmissionPort`, `TransactionReminderScheduler` — the two hard architectural
+  boundaries, see below), `domain/repository/TransactionRepository.kt`, `data/local`
+  (8 new Room entities + DAOs), `data/repository/TransactionRepositoryImpl.kt`, `data/di/TransactionModule.kt`.
+- **Generic, entry-point-agnostic Estimate/PO** (architecture §4): `txn_estimate_po` +
+  `txn_estimate_po_line_item`, with `entryPointType` already carrying an unused `"CHAT"` value for a
+  future Vartalap producer with zero schema change, and every line item snapshotting product name/
+  unit/SKU/price at submission time rather than a live Catalogue reference — verified by test that a
+  submitted line's snapshot is unaffected by anything happening to Catalogue afterward.
+- **Seller inbox** (architecture §5): `txn_seller_inbox_entry`, company-scoped, only ever created
+  for `IN_APP_SUBMITTED` deliveries (never `WHATSAPP_SHARED`) — enforced structurally in
+  `TransactionRepositoryImpl.createEstimatePo`, not by convention. Full New → Acknowledged/
+  ChangesRequested/Accepted → Converted transition set, with every terminal/closed state (
+  ChangesRequested, Accepted, Converted) rejecting all further actions.
+- **Transaction state machine** (architecture §8, Q12/Q13/Q16/Q17): `commercial_transaction` +
+  `txn_terms_acknowledgment` + `txn_payment_event`. `PendingConfirmation → Agreed → PaymentInitiated
+  → PaymentConfirmed → Completed` fully derived from raw persisted facts (confirmation timestamps,
+  payment-event rows), never an independently-settable column — `TransactionStateDerivation.deriveState`
+  is the single source of truth, funneled through one `recomputeAndPersistState` write path in the
+  repository. Overdue is never a state-machine value — always a read-time modifier computed from a
+  resolved due date, `null` (never guessed) for `ON_DELIVERY`/`PARTIAL` payment timing per the
+  architecture document's own Risk 6.
+- **A real bug found and fixed during this implementation, before any commit:** the first draft of
+  `deriveState` checked `transaction.completedAt != null` as the *only* path to `Completed`, but
+  `completedAt` is itself only ever set when `deriveState` returns `Completed` — a circular
+  condition that made `Completed` permanently unreachable. Caught by the JVM test suite (3 failures
+  on first run), root-caused, fixed (the real trigger is `isPaymentConfirmed(...)`, with
+  `completedAt != null` only pinning an already-completed transaction on later recomputes), and
+  re-verified green. No TD registry entry opened — caught and fixed within the same implementation
+  pass, never shipped in a broken state.
+- **Prospect → Ledger** (architecture §6, Q9): reuses `PartyEntity.classification`'s existing,
+  already-mutable column — added `PartyRepository.promoteProspectToCustomer(companyId, partyId)`
+  (additive interface method, zero schema change) and its `PartyRepositoryImpl` implementation
+  (idempotent: no-op if already non-Prospect). The seller's Debtor/Creditor ledger-group choice is
+  recorded in a **new** `txn_ledger_intent` table, deliberately not a column on `PartyEntity` (this
+  task's own constraint forbids touching existing tables) — feeds the *existing*,
+  human-mediated `PartyExportEventEntity`/Tally-XML-export path later; no Tally write of any kind is
+  introduced. Every one of the 8 pre-existing test-suite fakes of `PartyRepository` across
+  `feature/party`/`feature/connect`/`feature/sync` tests needed one added stub override to keep
+  compiling — mechanical, no behavior change, all pre-existing tests still pass unmodified otherwise.
+- **Buying-history foundation** (task's own "buying history" requirement):
+  `TransactionRepository.findCompletedPurchaseHistory` reads only `CommercialTransactionState.Completed`
+  transactions' line items — verified by test that a transaction stuck at `PendingConfirmation` never
+  contributes a phantom "previously bought" row. No recommendation engine, no fabricated quantities.
+- **Q18 chat-based Catalogue access grant** (architecture §10): `catalogue_access_grant`, buyer-
+  scoped, checked-on-read expiry (no scheduler exists to expire it on a timer — see below), layered
+  *alongside* Catalogue's existing Item→Branch→Stock-group→Catalogue-wide override chain (which has
+  no buyer dimension to extend). `priceVisibility` is modeled as effectively binary (`"OPEN"` only)
+  since Catalogue's real, implemented pricing model has no tiers — the architecture document's own
+  Finding 3 is preserved as an explicit open interpretation, not resolved by inventing a tier system.
+  **Catalogue's existing price-rendering code is completely untouched.**
+- **The two hard architectural boundaries, preserved as clean ports, not faked:**
+  - `TransactionSubmissionPort` — the cross-company transport gap (architecture Finding 1). Only
+    `LocalTransactionSubmissionPort` is bound: it handles exactly the same-company case (a seller
+    drafting on behalf of a walk-in/phone buyer) and does not simulate, poll, or assume any
+    cross-installation channel. A real adapter is a one-line Hilt-binding swap away, with zero change
+    to domain/repository code.
+  - `TransactionReminderScheduler` — the notification-infrastructure gap (architecture Finding 2,
+    which also affects Catalogue's own five still-undelivered notification types). Only
+    `NoOpTransactionReminderScheduler` is bound — confirmed this session there is still zero
+    `NotificationChannel`/`Worker` implementation anywhere in this app.
+- **Migration:** `MIGRATION_13_14` (`DatabaseConstants.VERSION` 13→14), eight new `CREATE TABLE`
+  statements, zero changes to any existing table — verified directly against
+  `cached_parties`/`cached_ledgers`/`cached_stock_items`/every `catalogue_*` table's DDL.
+
+### B. What was deliberately NOT implemented (and why)
+
+- **No ViewModel/Screen/UI of any kind.** The task's own 17-step implementation pipeline never lists
+  a presentation step — scope is data/domain/repository, matching "do not redesign the completed
+  Catalogue UI."
+- **No real cross-company transport, no real scheduler** — see the two ports above. Building either
+  for real requires a separate, explicit product/infrastructure decision this task was not
+  authorized to make (and explicitly told not to fake).
+- **No rating/flag/reputation/trust-score field or hook of any kind** — re-verified directly against
+  every new table this session added: no column anywhere resembles a counterparty-characterizing
+  signal, and — most importantly — `cached_parties` gained zero new columns, which is the one table
+  where such a hook would actually be dangerous (a persistent, cross-transaction property of a
+  counterparty).
+- **No payment gateway, no UPI/card field, no money movement of any kind** — `txn_payment_event`
+  is a status/claim/confirm record only, exactly as Q16 locks.
+
+### C. Tests / build
+
+- **44 new unit tests** (`TransactionStateMachineTest.kt`: 14 pure state-machine tests including
+  every valid/invalid seller-inbox transition, asymmetric Mutual-Agreement waiting states, the full
+  `deriveState` matrix, due-date resolution incl. the `ON_DELIVERY`/`PARTIAL`-unresolved case, and
+  Overdue-modifier behavior; `TransactionRepositoryImplTest.kt`: 24 repository-level tests via fakes
+  covering company isolation (identical `buyerPartyId` across two companies never cross-contaminates),
+  full lifecycle progression, line-item snapshot integrity, seller-inbox transitions, Prospect→Ledger
+  promotion + idempotency, buying-history provenance, and access-grant expiry/revocation — all green).
+- **Full JVM suite re-run, not merely the new tests: 1,602 tests, 0 failures, 0 errors**, across 141
+  test classes (dev-debug variant) — confirms zero regression anywhere else in the app from the
+  `PartyRepository` interface extension.
+- **Compile-clean**: `compileDevDebugKotlin` + `compileDevDebugUnitTestKotlin` both succeed with no
+  warnings surfaced.
+- **Android Lint was not run this phase** — a deliberate scope decision given this session's own
+  explicit token/time-budget priority instruction ("do not keep looking for more things to inspect
+  merely to fill the session" once compile + full test suite are both clean); flagged here rather
+  than silently skipped.
+- **`AppDatabaseMigrationTest.kt`** gained a `migrate13To14` instrumented test (proves the 8 new
+  tables land correctly and an unrelated pre-existing `catalogue_product` row survives untouched) —
+  **written but not executed this session**: instrumented (`androidTest`) tests require a connected
+  device or emulator, and this session had neither (`adb` itself was not present in the shell,
+  consistent with the stated mobile-hotspot/no-device-validation constraint for this sprint).
+- **No live Tally/Connector validation attempted** — out of scope for this sprint by explicit
+  instruction; nothing in this phase touches the Connector or any Tally-facing code path at all.
+
+### D. What remains open (the same three findings the architecture document already named, now also
+implementation-confirmed rather than merely analyzed)
+
+1. **Cross-company transport** (Finding 1) — the in-app seller-inbox/Mutual-Agreement/payment-
+   cross-confirmation loop has no way for a buyer's installation to reach a different seller's
+   installation. `LocalTransactionSubmissionPort` covers only the same-company case.
+2. **Notification/reminder infrastructure** (Finding 2) — `NoOpTransactionReminderScheduler` means
+   Q14's reminder ladder currently does nothing observable; this is shared with Catalogue's own five
+   still-undelivered notification types, not a new gap.
+3. **Q18 pricing-tier semantics** (Finding 3) — `priceVisibility` stays a single-valued placeholder
+   pending an explicit product decision on whether real tiers are ever authorized.
+4. **Instrumented/real-device validation** — deferred for this entire phase, per the stated
+   mobile-hotspot constraint; the migration test exists and is ready to run whenever a device/
+   emulator is available.
+5. **No UI** — the domain/repository foundation is ready for a future Catalogue-integration/inbox
+   screen milestone; none was built this phase.
+
+### E. Decision
+
+**Foundational, non-UI, non-transport Transaction Mode scope is implemented, tested, and
+committed — not "Transaction Mode complete."** Every item this phase's own governing brief listed as
+buildable-without-inventing-missing-infrastructure is done; every item it named as a hard boundary
+(transport, real scheduling, real pricing tiers) is preserved as an explicit, documented,
+swap-in-ready port rather than faked. Working tree left clean after this phase's commit; nothing
+pushed to `origin`, per standing practice.
