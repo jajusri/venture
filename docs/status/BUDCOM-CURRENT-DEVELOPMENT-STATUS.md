@@ -60,6 +60,16 @@ notification types), and real Catalogue pricing tiers for Q18. No real-device/in
 this phase (mobile-hotspot session constraint, no device/emulator available). Full detail:
 `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §55 (Phase 64).
 
+**Phase 65** added a WhatsApp Estimate/PO sharing domain/export boundary (reuses the existing
+`Intent.ACTION_SEND` mechanism, four-state price-visibility rendering that never leaks a hidden
+price) — no UI wired to it. **Phase 66** (final pass for this quota window) added the buyer-side
+composition/editing layer (`TransactionDraft`/`TransactionDraftOperations` — add/remove/set-quantity,
+submission conversion feeding `createEstimatePo` directly), a deterministic Buy Again list builder,
+and reorder-from-last-order (structurally immutable — no repository dependency, cannot write back to
+the original transaction) — 33 new tests, all pure JVM/domain, all green, zero existing file
+touched. Still no UI, still no transport/notification/payment infrastructure. Full detail:
+`docs/status/BUDCOM-DEVELOPMENT-LEDGER.md` §56–57 (Phases 65–66).
+
 **Phase 36 — Ledger Sharing Discoverability + Offline Ledger Performance Hardening (focused
 polish/performance task, not a milestone — no version bump).** Fixed the same
 Load/Refresh-delegate-to-one-identical-method bug Phase 3E fixed for Vouchers, but on the Ledger

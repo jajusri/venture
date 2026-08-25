@@ -4441,3 +4441,100 @@ explicit constraint.
 **A small, clean, tested WhatsApp Estimate/PO sharing slice — not the WhatsApp path "complete,"**
 since no UI calls it yet and the price-visibility *decision* still has no live resolver wired to it.
 Working tree left clean after this phase's commit; nothing pushed to `origin`.
+
+---
+
+## 57. Phase 66 — Transaction Mode: buyer composition/editing layer, Buy Again, reorder-from-last-
+order (final pass, ~4% weekly quota — scope deliberately narrow)
+
+**Scope, deliberately narrow given the quota constraint this phase's own governing brief stated
+explicitly:** one coherent, fully-tested, zero-new-persistence domain slice — the buyer-side
+"select products → adjust quantities → submit" composition layer the previous two phases' data/
+domain/sharing foundation had no code above it yet, plus the two buying-history-derived features
+(Buy Again, reorder) that foundation was always meant to feed.
+
+### A. What was added
+
+`feature/transaction/domain/model/`:
+
+- **`TransactionDraft.kt`** — a buyer's in-progress, editable product selection.
+  Deliberately **not a Room entity/new table** — Q5's "one continuous, persistent, expandable/
+  collapsible state" describes UI behavior, not a database requirement, and this task's own brief
+  repeatedly warns against inventing infrastructure beyond what's asked; keeping this as a plain
+  in-memory domain object avoids a speculative migration. `TransactionDraftPriceState` is the
+  locked four-state distinction (`ActualPrice` / `NoPriceSupplied` / `ContactForPrice` / `Hidden`),
+  received pre-resolved by every caller — never derived from whether an amount happens to exist,
+  matching this phase's own explicit rule. `totalAmount` is `null` (never a partial sum) unless
+  every line is an `ActualPrice`.
+- **`TransactionDraftOperations.kt`** — pure editing functions (`addOrIncrementLine` — re-adding an
+  already-selected product increments in place rather than duplicating the row, the concrete
+  mechanism behind the locked "+/– always available, selected products stay at the top" UX;
+  `setQuantity` — zero/negative removes the line; `removeLine`) plus `toSubmission`, which converts
+  a draft directly into the `List<NewLineItem>` shape `TransactionRepository.createEstimatePo`
+  already accepts unchanged — refusing (not silently downgrading) a submission containing any
+  `Hidden`-price line, since submission, unlike a read-only re-share, is a commercial commitment.
+- **`BuyAgainListBuilder.kt`** — deduplicates `TransactionRepository.findCompletedPurchaseHistory`'s
+  flat line-item list into one entry per product, most-recently-purchased first, with a plain
+  purchase count. No prediction, no scoring — every field traces to a real completed transaction.
+- **`ReorderOperations.kt`** — `fromCompletedTransaction` builds a fresh `TransactionDraft` from a
+  completed order's own (already-immutable, snapshot) line items. Has no repository/DAO dependency
+  at all, so it is structurally incapable of writing back to the original transaction — "create new
+  from old, never mutate the old" is a compile-time fact about this object's dependency list, not
+  merely a convention. Takes price state via a caller-supplied resolver rather than trusting the
+  original order's historical price, since a reorder must reflect today's authorization/price, not
+  a stale one.
+
+**The WhatsApp/submission seam needed no new glue code (Phase 8's finding, not a gap):**
+`toSubmission` → `createEstimatePo` → `TransactionShareCoordinator.prepareShare` already compose
+directly, parameter-type to parameter-type, because Phase 64/65's own signatures were already
+shaped to match. Writing a pass-through wrapper class here would have added abstraction with no
+behavior — skipped deliberately, not from lack of time.
+
+### B. Explicitly not done this phase, and why
+
+- **No UI** (Phase 14) — correctly the lowest priority per this phase's own brief; the composition
+  layer above is what a future screen would call, nothing more was safe to attempt with quota this
+  constrained.
+- **Products of Interest** (Phase 5) — the brainstorm/architecture documents never lock a precise
+  definition beyond "previously bought / recently selected / repeatedly ordered," and this phase's
+  own instruction is explicit: do not invent semantics if the definition isn't locked. `BuyAgainListBuilder`
+  already provides the "previously bought" + "repeatedly ordered" (`purchaseCount`) traceable inputs
+  a future Products-of-Interest view could read from directly — no separate boundary was built
+  since one doesn't yet have a distinct, locked meaning from Buy Again to boundary against.
+- **Accounting-software intelligence boundary** (Phase 6) — no code change needed: `findCompletedPurchaseHistory`/
+  `BuyAgainListBuilder` already only ever read BUDCOM's own synced transaction data (never
+  fabricated, never a new Tally request); the "if accounting software is connected, prefer its
+  history" principle (Q8) has no concrete accounting-integration surface anywhere in this codebase
+  yet to boundary against, so nothing here was invented for it.
+- **Seller Inbox** (Phase 7) — re-inspected against this phase's checklist (companyId-first
+  isolation, existing-Party-identity-only, idempotent repeated actions, invalid transitions
+  rejected) — Phase 64's implementation already satisfies every point with existing, passing tests;
+  no code change was needed or made.
+- **Cross-company transport, notifications, payment gateway, pricing tiers** — untouched, exactly as
+  every prior phase left them; this phase's own brief explicitly forbids attempting any of them.
+
+### C. Tests / build
+
+**33 new unit tests**, all pure JVM, zero Android/repository dependency: `TransactionDraftOperationsTest`
+(22 — composition, add/increment/remove/set-quantity including zero-and-negative edge cases, line
+order preservation, total recalculation and its null-on-any-non-visible-line rule, submission
+success/empty-rejection/Hidden-price-refusal, Estimate-vs-PO preservation), `BuyAgainListBuilderTest`
+(6 — dedup, most-recent-quantity-wins, most-recent-product-first ordering, unlinked-line exclusion,
+traceability), `ReorderOperationsTest` (5 — including the two immutability tests: the original
+`CommercialTransaction` object is unchanged after building a draft from it, and editing the new
+draft cannot reach the original line items). All green.
+
+**Compile-clean** (`compileDevDebugKotlin` + `compileDevDebugUnitTestKotlin`). **The full 1,617-test
+JVM suite was deliberately not re-run this phase** — every change this phase is a brand-new file;
+zero existing file was modified (confirmed via `git status` before committing), so there is no
+plausible regression surface for the rest of the suite to catch, and this phase's own brief
+explicitly permits skipping the full run when quota is tight. No lint run (same disclosed reason as
+Phases 64/65). No device/ADB/emulator/live-Tally work of any kind.
+
+### D. Decision
+
+**A tightly-scoped, fully additive, fully tested buyer-composition/history slice — not a UI, not
+Transaction Mode "complete."** Chosen deliberately over attempting a shallow pass across all 18
+requested phases, per this phase's own explicit instruction to stop cleanly at one coherent tested
+checkpoint rather than begin several incomplete ones under a severe quota constraint. Working tree
+left clean after this phase's commit; nothing pushed to `origin`.
