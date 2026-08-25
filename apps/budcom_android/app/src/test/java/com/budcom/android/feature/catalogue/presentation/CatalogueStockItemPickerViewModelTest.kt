@@ -170,4 +170,107 @@ class CatalogueStockItemPickerViewModelTest {
 
         assertTrue(linkedAllCounts.isEmpty())
     }
+
+    // ============================== TD-050: Room warm-up before linking ==============================
+
+    @Test
+    fun `the Stock Item cache is warmed for the current company before the picker lists unlinked items`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.unlinkedStockItems["co-1"] = mutableListOf(stockItem("guid:a", "Widget A"))
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf("co-1"), repository.warmStockItemCacheCalls)
+        assertEquals(listOf("Widget A"), vm.uiState.value.allItems.map { it.name })
+    }
+
+    @Test
+    fun `cold Room for a fresh company is warmed before the picker lists unlinked items`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        // Room starts cold for this company -- nothing cached locally yet, exactly TD-050's
+        // "user never opened the Stock Items browser" scenario. onWarmStockItemCache simulates
+        // what the real StockItemRepositoryImpl.loadStockItems()/warmFullSnapshot() pull does.
+        repository.onWarmStockItemCache = { companyId ->
+            repository.unlinkedStockItems[companyId] = mutableListOf(stockItem("guid:a", "Widget A"))
+        }
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(listOf("co-1"), repository.warmStockItemCacheCalls)
+        assertEquals(
+            "the picker must see the just-warmed items, not whatever was cached (nothing) before the warm-up",
+            listOf("Widget A"),
+            vm.uiState.value.allItems.map { it.name },
+        )
+        assertTrue(!vm.uiState.value.isLoading)
+    }
+
+    @Test
+    fun `no company selected never triggers a warm-up call`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        viewModel(repository, companyId = null)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(repository.warmStockItemCacheCalls.isEmpty())
+    }
+
+    // ============================== TD-051: Link-all progress reporting ==============================
+
+    @Test
+    fun `ConfirmLinkAll reports progress from 0 through every intermediate chunk up to the final count`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.linkAllChunkSize = 2
+        repository.unlinkedStockItems["co-1"] = mutableListOf(
+            stockItem("guid:a", "A"), stockItem("guid:b", "B"), stockItem("guid:c", "C"),
+            stockItem("guid:d", "D"), stockItem("guid:e", "E"),
+        )
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val progressSnapshots = mutableListOf<LinkAllProgress?>()
+        val job = launch { vm.uiState.collect { progressSnapshots += it.linkAllProgress } }
+        vm.onEvent(CatalogueStockItemPickerEvent.OpenLinkAllConfirmation)
+        vm.onEvent(CatalogueStockItemPickerEvent.ConfirmLinkAll)
+        dispatcher.scheduler.advanceUntilIdle()
+        job.cancel()
+
+        // chunkSize=2 over 5 items -> chunks of [2, 2, 1]: progress goes 0 -> 2 -> 4 -> 5, out of 5.
+        val nonNullProgress = progressSnapshots.filterNotNull()
+        assertEquals(listOf(0, 2, 4, 5), nonNullProgress.map { it.linked })
+        assertTrue("every progress snapshot must report the same total", nonNullProgress.all { it.total == 5 })
+        // The final emitted uiState clears progress back to null once the run completes.
+        assertEquals(null, vm.uiState.value.linkAllProgress)
+        assertTrue(!vm.uiState.value.isLinking)
+    }
+
+    @Test
+    fun `a link-all failure mid-run still stops isLinking, clears progress, and reports only the truly-linked count`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.linkAllChunkSize = 2
+        repository.failLinkAllAfterLinked = 2 // fails right after the first chunk of 2 commits
+        repository.unlinkedStockItems["co-1"] = mutableListOf(
+            stockItem("guid:a", "A"), stockItem("guid:b", "B"),
+            stockItem("guid:c", "C"), stockItem("guid:d", "D"),
+        )
+        val vm = viewModel(repository)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        val linkedAllCounts = mutableListOf<Int>()
+        val job = launch { vm.linkedAll.collect { linkedAllCounts.add(it) } }
+        vm.onEvent(CatalogueStockItemPickerEvent.OpenLinkAllConfirmation)
+        vm.onEvent(CatalogueStockItemPickerEvent.ConfirmLinkAll)
+        dispatcher.scheduler.advanceUntilIdle()
+        job.cancel()
+
+        assertEquals(
+            "the emitted count must equal what the repository actually reported as linked, never an overcount",
+            listOf(2),
+            linkedAllCounts,
+        )
+        assertEquals(2, repository.products["co-1"]?.size)
+        assertTrue("must not hang in the linking state after a failure", !vm.uiState.value.isLinking)
+        assertEquals("progress must be cleared, not left showing a stale in-flight value", null, vm.uiState.value.linkAllProgress)
+        // The 2 items the first chunk actually linked must no longer show up as unlinked.
+        assertEquals(2, vm.uiState.value.allItems.size)
+    }
 }

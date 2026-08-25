@@ -11,6 +11,11 @@ interface CatalogueProductDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: CatalogueProductEntity)
 
+    /** Batched write for Link-all (TD-051 perf fix) — Room wraps a List-parameter `@Insert` in a
+     * single transaction, so this is one commit for the whole chunk rather than one per row. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<CatalogueProductEntity>)
+
     @Query("SELECT * FROM catalogue_product WHERE companyId = :companyId AND productId = :productId")
     suspend fun findById(companyId: String, productId: String): CatalogueProductEntity?
 
@@ -30,6 +35,10 @@ interface CatalogueProductDao {
 interface CatalogueProductSourceLinkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: CatalogueProductSourceLinkEntity)
+
+    /** Batched write for Link-all (TD-051 perf fix) — see [CatalogueProductDao.upsertAll]. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<CatalogueProductSourceLinkEntity>)
 
     /** The critical identity-resolution lookup (mirrors
      * [com.budcom.android.feature.party.data.local.PartySourceLinkDao.findByExternalKey]): a

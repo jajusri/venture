@@ -6,6 +6,7 @@ import com.budcom.android.feature.catalogue.domain.port.CatalogueClock
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +52,11 @@ class CatalogueStockItemPickerViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false) }
                 return@launch
             }
+            // TD-050: a company whose Stock Items browser was never separately opened would
+            // otherwise have an empty/stale local cache here even after a real "Sync Now" — this
+            // guarantees freshness itself rather than depending on that unrelated screen having
+            // been visited first. See CatalogueRepository.warmStockItemCache's own doc comment.
+            repository.warmStockItemCache(id)
             val items = repository.listUnlinkedStockItems(id)
             _uiState.update { it.copy(isLoading = false, allItems = items) }
         }
@@ -77,22 +83,36 @@ class CatalogueStockItemPickerViewModel @Inject constructor(
         }
     }
 
-    /** Creates a Draft for every currently-unlinked Stock Item, one at a time, reusing the same
-     * per-item path as [pick] rather than a separate bulk repository call — this is a local Room
-     * loop, not a network operation, so sequential writes stay fast even for a large stock list. */
+    /** Creates a Draft for every currently-unlinked Stock Item via the batched, chunked-
+     * transactional repository call (TD-051) rather than one repository call per item — see
+     * [CatalogueRepository.createDraftsFromStockItems]'s own doc comment for why. */
     private fun linkAll() {
         val id = companyId ?: return
         if (_uiState.value.isLinking) return
         val stockItemIds = _uiState.value.allItems.map { it.id }
         if (stockItemIds.isEmpty()) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isLinking = true, showLinkAllConfirmation = false) }
-            var linkedCount = 0
-            for (stockItemId in stockItemIds) {
-                if (repository.createDraftFromStockItem(id, stockItemId, clock.now()) != null) linkedCount++
+            val total = stockItemIds.size
+            _uiState.update {
+                it.copy(isLinking = true, showLinkAllConfirmation = false, linkAllProgress = LinkAllProgress(0, total))
+            }
+            // Tracks the last count the repository actually reported as persisted, so a failure
+            // partway through still leaves [linkedCount] equal to what is truly on disk -- never
+            // an overcount, since the repository's own onProgress contract only fires after a
+            // chunk has already committed (see that method's doc comment).
+            var lastReportedLinked = 0
+            val linkedCount = try {
+                repository.createDraftsFromStockItems(id, stockItemIds, clock.now()) { linked, linkedTotal ->
+                    lastReportedLinked = linked
+                    _uiState.update { it.copy(linkAllProgress = LinkAllProgress(linked, linkedTotal)) }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                lastReportedLinked
             }
             val remaining = repository.listUnlinkedStockItems(id)
-            _uiState.update { it.copy(isLinking = false, allItems = remaining) }
+            _uiState.update { it.copy(isLinking = false, allItems = remaining, linkAllProgress = null) }
             _linkedAll.emit(linkedCount)
         }
     }

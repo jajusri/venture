@@ -81,9 +81,71 @@ class CatalogueRepositoryImpl @Inject constructor(
             return@withContext productDao.findById(companyId, existingLink.productId)?.let { toDomain(companyId, it) }
         }
         val stockItem = stockItemLookup.findById(companyId, stockItemId) ?: return@withContext null
+        val (productEntity, linkEntity) = buildDraftEntities(companyId, stockItemId, stockItem, timestamp)
+        productDao.upsert(productEntity)
+        sourceLinkDao.upsert(linkEntity)
+        toDomain(companyId, productEntity, stockItem)
+    }
+
+    override suspend fun createDraftsFromStockItems(
+        companyId: String,
+        stockItemIds: List<String>,
+        timestamp: CatalogueTimestamp,
+        onProgress: suspend (linked: Int, total: Int) -> Unit,
+    ): Int = withContext(dispatchers.io) {
+        val total = stockItemIds.size
+        if (total == 0) return@withContext 0
+
+        // Loaded once for the whole batch rather than per item -- this, plus upsertAll below, is
+        // what collapses ~3 DB round-trips per item down to a handful of calls for the whole run
+        // (TD-051: was ~2 sec/item, ~45 min for 1,208 items).
+        val alreadyLinked = sourceLinkDao.findAllForCompany(companyId).mapTo(mutableSetOf()) { it.externalStockItemId }
+        val stockItemsById = stockItemLookup.listAllForCompany(companyId).associateBy { it.id }
+
+        var linked = 0
+        onProgress(linked, total)
+        for (chunk in stockItemIds.chunked(CATALOGUE_LINK_ALL_CHUNK_SIZE)) {
+            val products = mutableListOf<CatalogueProductEntity>()
+            val links = mutableListOf<CatalogueProductSourceLinkEntity>()
+            for (stockItemId in chunk) {
+                // Same two idempotency/availability skips as createDraftFromStockItem: an
+                // already-linked id is never duplicated, and a stock item no longer cached
+                // locally (e.g. removed between listing and confirming) is silently skipped
+                // rather than failing the whole run.
+                if (stockItemId in alreadyLinked) continue
+                val stockItem = stockItemsById[stockItemId] ?: continue
+                val (productEntity, linkEntity) = buildDraftEntities(companyId, stockItemId, stockItem, timestamp)
+                products += productEntity
+                links += linkEntity
+                alreadyLinked += stockItemId
+            }
+            if (products.isNotEmpty()) {
+                // Each of these two calls is its own single-transaction batch (Room wraps a
+                // List-parameter @Insert in one commit) -- this chunk either contributes both its
+                // products and their links, or (on a mid-chunk failure) neither, since the product
+                // write always happens first and nothing here reads a half-written chunk back.
+                productDao.upsertAll(products)
+                sourceLinkDao.upsertAll(links)
+                linked += products.size
+            }
+            onProgress(linked, total)
+        }
+        linked
+    }
+
+    override suspend fun warmStockItemCache(companyId: String): Unit = withContext(dispatchers.io) {
+        stockItemLookup.warmStockItemCache(companyId)
+    }
+
+    private fun buildDraftEntities(
+        companyId: String,
+        stockItemId: String,
+        stockItem: StockItem,
+        timestamp: CatalogueTimestamp,
+    ): Pair<CatalogueProductEntity, CatalogueProductSourceLinkEntity> {
         val productId = UUID.randomUUID().toString()
         val (epoch, source) = timestamp.toPair()
-        val entity = CatalogueProductEntity(
+        val productEntity = CatalogueProductEntity(
             companyId = companyId,
             productId = productId,
             source = CatalogueProductSource.Tally.name,
@@ -106,18 +168,15 @@ class CatalogueRepositoryImpl @Inject constructor(
             archivedAt = null,
             archivedAtSource = null,
         )
-        productDao.upsert(entity)
-        sourceLinkDao.upsert(
-            CatalogueProductSourceLinkEntity(
-                companyId = companyId,
-                sourceType = CATALOGUE_SOURCE_TYPE_TALLY_STOCK_ITEM,
-                externalStockItemId = stockItemId,
-                productId = productId,
-                lastConfirmedAt = epoch,
-                lastConfirmedAtSource = source,
-            ),
+        val linkEntity = CatalogueProductSourceLinkEntity(
+            companyId = companyId,
+            sourceType = CATALOGUE_SOURCE_TYPE_TALLY_STOCK_ITEM,
+            externalStockItemId = stockItemId,
+            productId = productId,
+            lastConfirmedAt = epoch,
+            lastConfirmedAtSource = source,
         )
-        toDomain(companyId, entity, stockItem)
+        return productEntity to linkEntity
     }
 
     override suspend fun createManualDraft(
@@ -476,6 +535,13 @@ class CatalogueRepositoryImpl @Inject constructor(
         )
     }
 }
+
+/** Batch size for [CatalogueRepositoryImpl.createDraftsFromStockItems]'s chunked writes (TD-051)
+ * — small enough that [onProgress] (see that method's own doc comment) updates at a reasonable
+ * interval during a large Link-all run, large enough that the number of DB transactions stays
+ * tiny (1,208 items -> 7 chunks, not 1,208 single-row transactions). `internal` so tests can
+ * construct exact multi-chunk scenarios against the same value production uses. */
+internal const val CATALOGUE_LINK_ALL_CHUNK_SIZE = 200
 
 private fun CatalogueTimestamp.toPair(): Pair<Long, String> = epochMillis to source.name
 private fun entityTimestamp(epochMillis: Long, sourceName: String): CatalogueTimestamp =

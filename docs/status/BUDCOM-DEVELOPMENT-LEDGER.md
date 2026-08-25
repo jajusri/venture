@@ -3912,3 +3912,123 @@ domain logic) with zero Connector/Tally/pairing-code involvement.
 
 Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
 practice.
+
+## 52. Phase 61 — MVP-1.4 Catalogue: live second-company (Jaju Sanitations) walkthrough finds and
+fixes TD-050 + TD-051; live re-verification blocked by an in-session infrastructure gap, not
+network/security
+
+Continued from Phase 60 (`78b9d40`). A prior instance of this session began a live real-device
+walkthrough against a second real company, Jaju Sanitations, specifically to exercise Catalogue's
+"Link from stock"/"Link all" flow against genuinely different data than ESTIMATION had ever
+provided — and hit its own session limit mid-task, leaving fully implemented, tested,
+**uncommitted** code in the working tree with no registry/ledger write-up. This continuation's
+first responsibility was reconstructing that exact stopping point from repository evidence alone
+(uncommitted diff contents, `git log`/`git status`, the registry's own last-recorded ID) rather
+than restarting or guessing — confirmed the ledger/registry's last entry was Phase 60/TD-049
+(matching `HEAD` exactly), and that every uncommitted file change was already a complete,
+internally-consistent fix for two genuine live defects, not a partial stub.
+
+### A. TD-050 — Stock Item "Sync Now" never populated Android's own Room cache (FIXED)
+
+Live evidence (already captured before the session limit, reconstructed from the uncommitted code's
+own doc comments and independently re-verified this session): two consecutive Jaju Sanitations
+Stock Item syncs both reported `added 954, updated 954, failed 0`, yet `cached_stock_items` held
+zero Jaju rows — Catalogue's stock-item picker read this as "nothing left to link" rather than
+"never synced." Root cause **independently confirmed by this session via direct source inspection**
+(not taken on the prior instance's comment alone): `SyncUseCases.kt`'s `StartTargetSyncUseCase` has
+carried a Room-refresh completion step for Vouchers since its original implementation and for
+Ledgers since TD-039 (Phase 46) — `SyncTarget.StockItems -> started` (line 99) still returns the
+raw Connector-only result, the identical bug class TD-039 fixed, never extended to Stock Items.
+Fixed at Catalogue's actual read boundary rather than by widening the Sync screen's behavior: new
+`StockItemLookupPort.warmStockItemCache(companyId)` (the one deliberate exception to this port's
+local-cache-only contract) reuses the existing `LoadStockItemsUseCase`/`StockItemRepositoryImpl`
+full-snapshot warm path — the same mechanism the Stock Items Browser's own `init` already
+performs — swallowing a fetch failure exactly like every other degrade-to-cache path in this
+codebase. `CatalogueStockItemPickerViewModel.load()` now calls it before listing unlinked items, so
+the picker guarantees its own freshness instead of depending on an unrelated screen having been
+visited first. The general `SyncUseCases.kt` asymmetry is deliberately left open as a named,
+lower-priority residual gap (full detail and reasoning: `docs/technical-debt/registry.md` TD-050) —
+no other reachable UI path currently depends on it.
+
+### B. TD-051 — "Link all" took ~45 minutes for 1,208 real items (FIXED, classified first per this
+task's own explicit instruction not to auto-optimize blindly)
+
+Same live walkthrough surfaced a second finding once TD-050 unblocked real data: a genuine
+1,208-item Link-all ran at roughly 2 items/sec (~45 minutes wall-clock), because `linkAll()` called
+the single-item repository path once per item — three separate DB round-trips (already-linked
+lookup, Stock Item lookup, two individual `upsert()` calls) repeated ~1,200 times. Classified first,
+per this task's own explicit instruction: confirmed by direct inspection this is a pure
+scalability/UX issue, not a correctness, timeout, or partial-state defect — every item that
+completed was and remained correctly linked, nothing was ever left half-written, and a
+killed/backgrounded run simply resumed cleanly (idempotent skip on already-linked ids). Fixed with a
+new `CatalogueRepository.createDraftsFromStockItems()`: loads the already-linked set and the full
+Stock Item snapshot once for the whole batch, then writes in fixed 200-item chunks via new
+`upsertAll()` Room batch inserts (one transaction per chunk, not per row) — collapsing roughly 2,400
+individual transactions down to single-digit chunk commits. Each chunk commits independently, so a
+mid-run failure leaves every earlier chunk durably linked and reports exactly the true persisted
+count, never an overcount. `CatalogueStockItemPickerViewModel`/`Screen` gained a `LinkAllProgress`
+state and `LinearProgressIndicator` row, updating once per chunk, replacing the previous
+indeterminate spinner for what had been a genuinely long-running action. Full detail:
+`docs/technical-debt/registry.md` TD-051.
+
+### C. Live re-verification attempted, blocked by an infrastructure gap in this shell — not network,
+not security
+
+Per this task's own explicit network-safety instruction, checked the actual current state before
+attempting anything rather than assuming either a safe or unsafe network: the paired device
+(`10BF44124K000E3`) is on `JioFiber-PARme_5G` at `192.168.29.111`, the same trusted home-router
+subnet (`192.168.29.x`) Phase 44 already validated live Tally sync against — genuinely not a mobile
+hotspot, confirmed via `adb shell dumpsys wifi` rather than assumed. The development laptop is on
+the same subnet (`192.168.29.34`), matching the Desktop app's own recorded LAN-bound configuration
+from Phase 52. Attempted a real Desktop relaunch (`npm start`, `ELECTRON_RUN_AS_NODE` correctly
+unset first, unlike the blocker Phase 51 hit) specifically to re-verify TD-050/TD-051 against real
+Jaju Sanitations data end-to-end: the Electron process launched, but its own live log
+(`budcom-desktop.log`, timestamps matching this exact session) showed repeated
+`network_resolution_failed` (the app's internal PowerShell-based active-network probe failing when
+spawned as Electron's own child process) followed by `Company discovery failed: Cannot reach the
+connector service` — the embedded Connector never came up as a result. Directly verified this is not
+a real network or PowerShell problem: an identical `Get-NetRoute` PowerShell command run directly in
+this session's own shell succeeded immediately with the correct default route. This is a
+shell-spawning/sandboxing artifact specific to how this automated environment's process tree
+interacts with Electron's own child-process invocation of `powershell.exe`, not a genuine network or
+security condition — named honestly as a disclosed infrastructure limitation rather than worked
+around. Per this task's own explicit instruction, no LAN-exposure/security-bypass workaround was
+attempted (a standalone non-Electron Connector was considered and rejected for the same reason Phase
+51 rejected it: it would require deliberately bypassing `requireDeviceAuthForLan`'s intentional
+gate). The failed launch was cleanly terminated (`taskkill`), leaving no orphaned process. **TD-050's
+fix, TD-051's fix, and the original live-discovered Jaju/1,208-item evidence are genuine and
+independently corroborated by direct source inspection — only a fresh live re-walkthrough against
+the fix itself could not be completed this session.**
+
+### D. Testing, build, and safety confirmation
+
+Android JVM unit tests: **1,558 total, 0 failures** (both `testDevDebugUnitTest` and
+`testDevReleaseUnitTest`, up from Phase 60's 1,543; +15 net this phase: 3 new
+`StockItemLookupPortImplTest` + 1 repository delegation test + 3 ViewModel warm-cache tests for
+TD-050; 6 repository + 2 ViewModel tests for TD-051 — two other touched test files
+(`CatalogueViewModelTest.kt`, `CatalogueShareContentTest.kt`) only extended shared fake-repository
+scaffolding to satisfy the two new `CatalogueRepository` interface methods, adding no new test
+cases of their own). `compileDevDebugKotlin`/`compileDevDebugUnitTestKotlin`/
+`compileDevReleaseUnitTestKotlin` all clean; `lintDevDebug` re-run clean (see final report for the
+exact error/warning count). No live Tally/Connector communication was attempted beyond the blocked
+relaunch in §C (no experimental Tally request shape invented, no live data modified); no
+company-isolation or security boundary touched — every change this phase is either local Room
+batching/caching logic or pure UI progress state.
+
+### E. What was not done, and why
+
+- **Live re-verification of TD-050/TD-051 against real Jaju Sanitations data** — blocked by the §C
+  infrastructure gap, not by network/security policy; the single remaining categorical gate for
+  MVP-1.4, same standing status as every prior phase's own "Live Tally/Connector validation"
+  disclosure.
+- **`SyncUseCases.kt` Stock Item Room-refresh symmetry fix** (mirroring TD-039's `Ledgers` case
+  exactly) — deliberately deferred, see TD-050's own entry; a real, named architectural
+  inconsistency, but not currently reachable by any UI path now that both known consumers
+  (the Stock Items Browser and Catalogue) self-heal independently.
+- **A device-side re-check of TD-048 (asset isolation) and TD-049 (price-state wording) against real
+  Jaju Sanitations data** — both remain proven at the JVM-test level from Phase 60; a live
+  cross-company walkthrough exercising them with two genuinely different real companies open was
+  planned but not reached, for the same §C reason.
+
+Working tree left clean after this phase's commit; nothing pushed to `origin`, per standing
+practice.

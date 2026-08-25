@@ -18,4 +18,19 @@ import com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem
 interface StockItemLookupPort {
     suspend fun findById(companyId: String, stockItemId: String): StockItem?
     suspend fun listAllForCompany(companyId: String): List<StockItem>
+
+    /**
+     * Deliberately the one exception to this port's local-cache-only rule above. TD-050
+     * (2026-08-24 live validation): the Sync screen's "Sync Now" for Stock Items only updates the
+     * Connector's own database — it never populates this port's Room cache. Only a pull through
+     * [com.budcom.android.feature.masterdata.stockitem.domain.usecase.LoadStockItemsUseCase]
+     * (the same one the Stock Items browser already performs) does that. A Catalogue user who
+     * never separately opened that browser would otherwise hit an empty/stale [listAllForCompany]
+     * with no indication why — this exists so Catalogue's "Link from stock"/"Link all" flow can
+     * guarantee freshness itself rather than depending on the user having taken an unrelated,
+     * easily-missed action first. Failure (offline, Connector unreachable) is swallowed here and
+     * simply leaves the existing cache as-is, exactly like every other degrade-to-cache path in
+     * this codebase — never blocks or fails the caller.
+     */
+    suspend fun warmStockItemCache(companyId: String)
 }

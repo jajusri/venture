@@ -16,6 +16,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -95,6 +96,7 @@ fun CatalogueStockItemPickerScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("catalogue_picker_search"),
             )
+            state.linkAllProgress?.let { progress -> LinkAllProgressRow(progress) }
             Box(modifier = Modifier.fillMaxSize()) {
                 when {
                     state.isLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
@@ -120,6 +122,27 @@ fun CatalogueStockItemPickerScreen(
                 }
             }
         }
+    }
+}
+
+/** Shown only while a "Link all" run is in flight (non-null [LinkAllProgress]) — updates once per
+ * batch as [CatalogueRepository.createDraftsFromStockItems][com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository.createDraftsFromStockItems]
+ * reports progress, matching the Sync screen's own `LinearProgressIndicator` pattern. */
+@Composable
+private fun LinkAllProgressRow(progress: LinkAllProgress) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("catalogue_picker_link_all_progress"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = "${progress.linked} / ${progress.total} — ${progress.percent}%",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LinearProgressIndicator(
+            progress = { if (progress.total == 0) 0f else progress.linked / progress.total.toFloat() },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

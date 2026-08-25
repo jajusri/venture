@@ -103,6 +103,13 @@ private class FakeShareRepository(private val isPublic: Boolean) : CatalogueRepo
 
     override suspend fun listUnlinkedStockItems(companyId: String): List<com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem> =
         error("not used in these tests")
+    override suspend fun createDraftsFromStockItems(
+        companyId: String,
+        stockItemIds: List<String>,
+        timestamp: CatalogueTimestamp,
+        onProgress: suspend (linked: Int, total: Int) -> Unit,
+    ): Int = error("not used in these tests")
+    override suspend fun warmStockItemCache(companyId: String) = error("not used in these tests")
     override suspend fun addAsset(
         companyId: String,
         productId: String,

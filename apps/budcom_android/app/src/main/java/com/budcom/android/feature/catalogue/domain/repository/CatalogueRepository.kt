@@ -54,6 +54,36 @@ interface CatalogueRepository {
     suspend fun createDraftFromStockItem(companyId: String, stockItemId: String, timestamp: CatalogueTimestamp): CatalogueProduct?
     suspend fun createManualDraft(companyId: String, displayName: String, timestamp: CatalogueTimestamp): CatalogueProduct
 
+    /**
+     * Bulk equivalent of calling [createDraftFromStockItem] once per id (TD-051 perf fix) — writes
+     * in chunks of a small internal batch size via a single `upsertAll` per chunk per table instead
+     * of three separate DB round-trips per item, cutting a 1,200-item Link-all from ~45 minutes to
+     * seconds. Preserves [createDraftFromStockItem]'s own idempotency (an id already linked is
+     * silently skipped, never duplicated) and its "stock item no longer cached locally" skip. Each
+     * chunk commits independently — if a later chunk fails, every earlier chunk's Drafts remain
+     * durably linked (never rolled back), and the exception propagates to the caller after
+     * whatever [onProgress] calls already happened, so the caller's last-reported count is always
+     * exactly what was actually persisted, never an overcount.
+     *
+     * [onProgress] is invoked with `(linked so far, total requested)` once before the first chunk
+     * and once after each chunk commits — a batch interval, never once per single row.
+     *
+     * Returns the total number of Drafts actually created (excludes idempotent skips).
+     */
+    suspend fun createDraftsFromStockItems(
+        companyId: String,
+        stockItemIds: List<String>,
+        timestamp: CatalogueTimestamp,
+        onProgress: suspend (linked: Int, total: Int) -> Unit = { _, _ -> },
+    ): Int
+
+    /** Ensures the locally-cached Stock Item snapshot this repository's [listUnlinkedStockItems]/
+     * [createDraftFromStockItem]/[createDraftsFromStockItems] all read from is warm before a
+     * "Link from stock"/"Link all" flow depends on it (TD-050) — see
+     * [com.budcom.android.feature.masterdata.stockitem.domain.port.StockItemLookupPort.warmStockItemCache]'s
+     * own doc comment for why this is needed and what it does on failure. */
+    suspend fun warmStockItemCache(companyId: String)
+
     /** Every locally-synced Stock Item for [companyId] that has no [CatalogueProduct] linked to it
      * yet — the source list for a "link from Tally stock items" picker UI (architecture §21
      * Milestone 1's own named "create Drafts from Stock Items" action). Local-cache-only, matching

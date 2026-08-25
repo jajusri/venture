@@ -481,6 +481,105 @@ class CatalogueRepositoryImplTest {
         assertEquals(listOf("guid:b"), repo.listUnlinkedStockItems("co-B").map { it.id })
     }
 
+    // ============================== Link all (TD-051 batched writes) ==============================
+
+    @Test
+    fun `createDraftsFromStockItems creates a Draft for every requested Stock Item`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }.apply {
+            put("guid:a", stockItem(id = "guid:a", name = "Widget A"))
+            put("guid:b", stockItem(id = "guid:b", name = "Widget B"))
+        }
+        val repo = repository()
+
+        val linked = repo.createDraftsFromStockItems("co-1", listOf("guid:a", "guid:b"), ts())
+
+        assertEquals(2, linked)
+        assertEquals(2, productDao.store.size)
+        assertEquals(2, sourceLinkDao.store.size)
+        assertEquals(setOf("Widget A", "Widget B"), repo.listProducts("co-1").map { it.displayName }.toSet())
+    }
+
+    @Test
+    fun `createDraftsFromStockItems is idempotent -- an already-linked id is skipped, never duplicated`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }["guid:a"] = stockItem(id = "guid:a")
+        val repo = repository()
+        val existing = repo.createDraftFromStockItem("co-1", "guid:a", ts())!!
+
+        val linked = repo.createDraftsFromStockItems("co-1", listOf("guid:a"), ts(2_000L))
+
+        assertEquals(0, linked)
+        assertEquals(1, productDao.store.size)
+        assertEquals(existing.productId, repo.listProducts("co-1").single().productId)
+    }
+
+    @Test
+    fun `createDraftsFromStockItems silently skips an id no longer cached locally`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }["guid:a"] = stockItem(id = "guid:a")
+        val repo = repository()
+
+        val linked = repo.createDraftsFromStockItems("co-1", listOf("guid:a", "guid:missing"), ts())
+
+        assertEquals(1, linked)
+        assertEquals(1, productDao.store.size)
+    }
+
+    @Test
+    fun `createDraftsFromStockItems with an empty id list returns 0 without touching either DAO`() = runTest(dispatcher) {
+        val linked = repository().createDraftsFromStockItems("co-1", emptyList(), ts())
+        assertEquals(0, linked)
+        assertEquals(0, productDao.store.size)
+    }
+
+    @Test
+    fun `createDraftsFromStockItems reports progress once at start and once per chunk, never per row`() = runTest(dispatcher) {
+        val ids = (1..(CATALOGUE_LINK_ALL_CHUNK_SIZE + 5)).map { "guid:$it" }
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }.apply {
+            ids.forEach { id -> put(id, stockItem(id = id, name = id)) }
+        }
+        val repo = repository()
+        val progressCalls = mutableListOf<Pair<Int, Int>>()
+
+        val linked = repo.createDraftsFromStockItems("co-1", ids, ts()) { linkedSoFar, total ->
+            progressCalls += linkedSoFar to total
+        }
+
+        assertEquals(ids.size, linked)
+        // start + one per chunk (2 chunks for CHUNK_SIZE+5 items) = 3 calls, never one per row.
+        assertEquals(
+            listOf(0 to ids.size, CATALOGUE_LINK_ALL_CHUNK_SIZE to ids.size, ids.size to ids.size),
+            progressCalls,
+        )
+    }
+
+    @Test
+    fun `a mid-run failure leaves every earlier chunk durably linked and never attempts later chunks`() = runTest(dispatcher) {
+        val ids = (1..(CATALOGUE_LINK_ALL_CHUNK_SIZE * 2 + 3)).map { "guid:$it" }
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }.apply {
+            ids.forEach { id -> put(id, stockItem(id = id, name = id)) }
+        }
+        productDao.throwOnUpsertAllCall = 2 // fail on the 2nd chunk's product write
+        val repo = repository()
+        val progressCalls = mutableListOf<Pair<Int, Int>>()
+
+        val error = runCatching {
+            repo.createDraftsFromStockItems("co-1", ids, ts()) { linkedSoFar, total -> progressCalls += linkedSoFar to total }
+        }.exceptionOrNull()
+
+        assertNotNull("the failure must propagate, never be silently swallowed", error)
+        assertEquals("only chunk 1's items are durably persisted", CATALOGUE_LINK_ALL_CHUNK_SIZE, productDao.store.size)
+        assertEquals(CATALOGUE_LINK_ALL_CHUNK_SIZE, sourceLinkDao.store.size)
+        assertEquals("no orphaned product without its source link", productDao.store.size, sourceLinkDao.store.size)
+        // Only the start call and chunk 1's successful completion were reported -- never a count
+        // that overstates what's actually on disk.
+        assertEquals(listOf(0 to ids.size, CATALOGUE_LINK_ALL_CHUNK_SIZE to ids.size), progressCalls)
+    }
+
+    @Test
+    fun `warmStockItemCache delegates to the Stock Item lookup port`() = runTest(dispatcher) {
+        repository().warmStockItemCache("co-1")
+        assertEquals(listOf("co-1"), stockItemLookup.warmCalls)
+    }
+
     // ============================== Assets ==============================
 
     @Test
@@ -646,8 +745,20 @@ class CatalogueRepositoryImplTest {
 
 private class FakeCatalogueProductDao : CatalogueProductDao {
     val store = mutableMapOf<Pair<String, String>, CatalogueProductEntity>()
+    var upsertAllCallCount = 0
+        private set
+
+    /** If set, the Nth call (1-indexed) to [upsertAll] throws instead of writing -- simulates a
+     * mid-Link-all failure to prove earlier chunks stay committed and later chunks never run. */
+    var throwOnUpsertAllCall: Int? = null
+
     override suspend fun upsert(entity: CatalogueProductEntity) {
         store[entity.companyId to entity.productId] = entity
+    }
+    override suspend fun upsertAll(entities: List<CatalogueProductEntity>) {
+        upsertAllCallCount++
+        if (upsertAllCallCount == throwOnUpsertAllCall) error("simulated upsertAll failure")
+        entities.forEach { store[it.companyId to it.productId] = it }
     }
     override suspend fun findById(companyId: String, productId: String): CatalogueProductEntity? = store[companyId to productId]
     override suspend fun findAllForCompany(companyId: String): List<CatalogueProductEntity> =
@@ -662,6 +773,9 @@ private class FakeCatalogueProductSourceLinkDao : CatalogueProductSourceLinkDao 
     val store = mutableMapOf<Triple<String, String, String>, CatalogueProductSourceLinkEntity>()
     override suspend fun upsert(entity: CatalogueProductSourceLinkEntity) {
         store[Triple(entity.companyId, entity.sourceType, entity.externalStockItemId)] = entity
+    }
+    override suspend fun upsertAll(entities: List<CatalogueProductSourceLinkEntity>) {
+        entities.forEach { store[Triple(it.companyId, it.sourceType, it.externalStockItemId)] = it }
     }
     override suspend fun findByExternalKey(companyId: String, sourceType: String, externalStockItemId: String) =
         store[Triple(companyId, sourceType, externalStockItemId)]
@@ -745,8 +859,12 @@ private class FakeCatalogueCustomFieldDao : CatalogueCustomFieldDao {
 
 private class FakeStockItemLookupPort : StockItemLookupPort {
     val stored = mutableMapOf<String, MutableMap<String, StockItem>>()
+    val warmCalls = mutableListOf<String>()
     override suspend fun findById(companyId: String, stockItemId: String): StockItem? = stored[companyId]?.get(stockItemId)
     override suspend fun listAllForCompany(companyId: String): List<StockItem> = stored[companyId]?.values?.toList().orEmpty()
+    override suspend fun warmStockItemCache(companyId: String) {
+        warmCalls += companyId
+    }
 }
 
 private class FakeCatalogueAssetStore : com.budcom.android.feature.catalogue.storage.CatalogueAssetStore {

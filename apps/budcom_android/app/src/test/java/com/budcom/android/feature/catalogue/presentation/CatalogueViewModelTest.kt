@@ -656,6 +656,50 @@ val unlinkedStockItems = mutableMapOf<String, MutableList<com.budcom.android.fea
     override suspend fun listUnlinkedStockItems(companyId: String): List<com.budcom.android.feature.masterdata.stockitem.domain.model.StockItem> =
         unlinkedStockItems[companyId].orEmpty()
 
+    val warmStockItemCacheCalls = mutableListOf<String>()
+    /** Lets a test simulate TD-050's "cold Room" scenario: mutate [unlinkedStockItems] here as if
+     * [warmStockItemCache] were the real Stock Items snapshot pull populating it for the first time. */
+    var onWarmStockItemCache: ((String) -> Unit)? = null
+    override suspend fun warmStockItemCache(companyId: String) {
+        warmStockItemCacheCalls += companyId
+        onWarmStockItemCache?.invoke(companyId)
+    }
+
+    /** Small default so a handful of test items already exercise multiple "chunks" -- production
+     * uses CATALOGUE_LINK_ALL_CHUNK_SIZE (200), this only needs to prove the ViewModel reacts
+     * correctly to more than one onProgress call. */
+    var linkAllChunkSize = 2
+    /** If set, throws once cumulative [linked] reaches this count -- always *after* that chunk's
+     * onProgress call, mirroring the real repository's "onProgress only fires for what already
+     * committed" contract. */
+    var failLinkAllAfterLinked: Int? = null
+
+    override suspend fun createDraftsFromStockItems(
+        companyId: String,
+        stockItemIds: List<String>,
+        timestamp: CatalogueTimestamp,
+        onProgress: suspend (linked: Int, total: Int) -> Unit,
+    ): Int {
+        val total = stockItemIds.size
+        var linked = 0
+        onProgress(0, total)
+        // A real suspension point between chunks (StandardTestDispatcher never runs a collector's
+        // resumption until something here actually yields) -- without it every onProgress call
+        // fires back-to-back in one synchronous burst and StateFlow's conflation means a collector
+        // only ever observes the final value, never the intermediate ones a test needs to assert.
+        kotlinx.coroutines.yield()
+        for (chunk in stockItemIds.chunked(linkAllChunkSize)) {
+            for (id in chunk) {
+                if (createDraftFromStockItem(companyId, id, timestamp) != null) linked++
+            }
+            onProgress(linked, total)
+            kotlinx.coroutines.yield()
+            val failAt = failLinkAllAfterLinked
+            if (failAt != null && linked >= failAt) error("simulated link-all failure")
+        }
+        return linked
+    }
+
     val assetsByProduct = mutableMapOf<Pair<String, String>, MutableList<com.budcom.android.feature.catalogue.domain.model.CatalogueAsset>>()
     var nextAssetId = 0
     var addAssetFailure: com.budcom.android.feature.catalogue.storage.CatalogueAssetFailureReason? = null
