@@ -157,6 +157,21 @@ class TransactionComposerViewModelTest {
     }
 
     @Test
+    fun `adding Previously Bought while shopping preserves existing selection in the same draft`() = runTest(dispatcher) {
+        val repository = FakeTransactionRepository()
+        repository.completedHistory["co-1|buyer-1"] = listOf(line("e1", "history-1", "Previously Bought", "2"))
+        val vm = viewModel(repository = repository)
+        dispatcher.scheduler.advanceUntilIdle()
+        val price = TransactionDraftPriceState.ActualPrice("100", "INR")
+        vm.onEvent(TransactionComposerEvent.AddOrIncrementProduct("selected-1", "Already Selected", "Nos", null, price))
+        vm.onEvent(TransactionComposerEvent.SelectBuyAgainItem(vm.uiState.value.buyAgainEntries.single(), price))
+
+        assertEquals(listOf("selected-1", "history-1"), vm.uiState.value.draft!!.lines.map { it.linkedProductId })
+        assertEquals("1", vm.uiState.value.draft!!.lines.first().quantity)
+        assertEquals("2", vm.uiState.value.draft!!.lines.last().quantity)
+    }
+
+    @Test
     fun `quantity can be increased, decreased, and a product removed`() = runTest(dispatcher) {
         val vm = viewModel()
         dispatcher.scheduler.advanceUntilIdle()
@@ -449,6 +464,25 @@ class TransactionComposerRealCatalogueTest {
         vm.onEvent(TransactionComposerEvent.AddOrIncrementProduct(row.linkedProductId, row.displayName, row.unit, row.sku, row.priceState))
         assertEquals(1, vm.uiState.value.draft!!.lines.size)
         assertEquals("Real Widget", vm.uiState.value.draft!!.lines.single().snapshotProductName)
+    }
+
+    @Test
+    fun `adding a New SKU while shopping preserves existing selected products`() = runTest(dispatcher) {
+        val catalogueRepository = FakeCatalogueRepository()
+        catalogueRepository.published["co-1"] = listOf(snapshot("p2", "New Widget"))
+        val vm = TransactionComposerViewModel(
+            SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
+            FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
+            FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(TransactionComposerEvent.AddOrIncrementProduct("p1", "Existing Widget", "Nos", null, TransactionDraftPriceState.ActualPrice("100", "INR")))
+        val row = vm.uiState.value.newSkus.single()
+        vm.onEvent(TransactionComposerEvent.AddOrIncrementProduct(row.linkedProductId, row.displayName, row.unit, row.sku, row.priceState))
+
+        assertEquals(listOf("p1", "p2"), vm.uiState.value.draft!!.lines.map { it.linkedProductId })
+        assertEquals("Existing Widget", vm.uiState.value.draft!!.lines.first().snapshotProductName)
+        assertEquals("New Widget", vm.uiState.value.draft!!.lines.last().snapshotProductName)
     }
 }
 
