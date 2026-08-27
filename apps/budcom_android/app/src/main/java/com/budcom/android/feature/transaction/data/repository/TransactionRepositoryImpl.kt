@@ -517,6 +517,70 @@ class TransactionRepositoryImpl @Inject constructor(
             archived.toDomain(lines)
         }
 
+    override suspend fun receiveOrderRevisionOnBuyer(
+        buyerCompanyId: String,
+        envelopeId: String,
+        revision: CanonicalOrder,
+        timestamp: TransactionTimestamp,
+    ): CanonicalOrder? = withContext(dispatchers.io) {
+        if (revision.companyId != buyerCompanyId) return@withContext null
+        if (revision.version <= 1) return@withContext null
+        val inboxEntity = recipientInboxDao.findByEnvelopeId(buyerCompanyId, envelopeId) ?: return@withContext null
+        val inbox = inboxEntity.toInboxDomain()
+        if (inbox.objectId != revision.orderId || inbox.objectVersion != revision.version) return@withContext null
+        if (inbox.senderBusinessId == buyerCompanyId) return@withContext null
+        val stored = canonicalOrderDao.findById(buyerCompanyId, revision.orderId)
+        if (stored != null && stored.version >= revision.version) {
+            return@withContext findCanonicalOrderById(buyerCompanyId, revision.orderId)
+        }
+        if (stored != null) archiveCurrentOrderVersion(buyerCompanyId, revision.orderId, timestamp, revision.note)
+        val entity = CanonicalOrderEntity(
+            companyId = buyerCompanyId,
+            orderId = revision.orderId,
+            creationKey = revision.creationKey,
+            sellerCompanyId = revision.sellerCompanyId,
+            buyerPartyId = revision.buyerPartyId,
+            state = CanonicalOrderState.RevisionSent.columnValue,
+            source = revision.source.columnValue,
+            submissionType = revision.submissionType.columnValue,
+            note = revision.note,
+            createdAt = revision.createdAt.epochMillis,
+            createdAtSource = revision.createdAt.source.name,
+            version = revision.version,
+        )
+        if (stored == null) {
+            try {
+                canonicalOrderDao.insert(entity)
+            } catch (_: android.database.SQLException) {
+                return@withContext findCanonicalOrderById(buyerCompanyId, revision.orderId)
+            }
+        } else {
+            canonicalOrderDao.updateVersionStateAndNote(
+                buyerCompanyId, revision.orderId, revision.version, CanonicalOrderState.RevisionSent.columnValue, revision.note,
+            )
+        }
+        canonicalOrderDao.deleteLines(buyerCompanyId, revision.orderId)
+        canonicalOrderDao.upsertLines(
+            revision.lines.map { line ->
+                CanonicalOrderLineEntity(
+                    companyId = buyerCompanyId,
+                    orderId = revision.orderId,
+                    lineId = line.lineId,
+                    linkedProductId = line.linkedProductId,
+                    snapshotProductName = line.snapshotProductName,
+                    snapshotUnit = line.snapshotUnit,
+                    snapshotSku = line.snapshotSku,
+                    quantity = line.quantity,
+                    unitPriceAmount = line.unitPriceAmount,
+                    unitPriceCurrencyCode = line.unitPriceCurrencyCode,
+                    priceState = line.priceState.toColumnValue(),
+                    lineTotalAmount = line.lineTotalAmount,
+                )
+            },
+        )
+        findCanonicalOrderById(buyerCompanyId, revision.orderId)
+    }
+
     private suspend fun archiveCurrentOrderVersion(
         companyId: String,
         orderId: String,

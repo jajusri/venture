@@ -157,6 +157,14 @@ interface TransactionRepository {
     suspend fun findArchivedOrderVersion(companyId: String, orderId: String, version: Int): CanonicalOrder? =
         throw UnsupportedOperationException("Archived order lookup is not implemented by this repository")
 
+    /** Materializes a received seller revision on the buyer device without accepting it. */
+    suspend fun receiveOrderRevisionOnBuyer(
+        buyerCompanyId: String,
+        envelopeId: String,
+        revision: CanonicalOrder,
+        timestamp: TransactionTimestamp,
+    ): CanonicalOrder? = throw UnsupportedOperationException("Revision receive is not implemented by this repository")
+
     // ---- §4: generic Estimate/PO ----
 
     /**

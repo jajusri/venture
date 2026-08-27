@@ -40,6 +40,8 @@ import com.budcom.android.feature.settings.presentation.SettingsRoute
 import com.budcom.android.feature.sync.presentation.SyncRoute
 import com.budcom.android.feature.transaction.presentation.ReceivedOrderRoute
 import com.budcom.android.feature.transaction.presentation.ReceivedOrderViewModel
+import com.budcom.android.feature.transaction.presentation.ReceivedRevisionRoute
+import com.budcom.android.feature.transaction.presentation.ReceivedRevisionViewModel
 import com.budcom.android.feature.transaction.presentation.TransactionComposerRoute
 import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsRoute
@@ -283,6 +285,17 @@ fun BudcomNavHost(
             ),
         ) {
             ReceivedOrderRoute()
+        }
+        composable(
+            route = Routes.RECEIVED_REVISION,
+            arguments = listOf(
+                navArgument(ReceivedRevisionViewModel.ENVELOPE_ID_ARG) { type = NavType.StringType },
+                navArgument(ReceivedRevisionViewModel.SENDER_BUSINESS_ID_ARG) { type = NavType.StringType },
+                navArgument(ReceivedRevisionViewModel.ORDER_ID_ARG) { type = NavType.StringType },
+                navArgument(ReceivedRevisionViewModel.ORDER_VERSION_ARG) { type = NavType.IntType },
+            ),
+        ) {
+            ReceivedRevisionRoute()
         }
         composable(
             route = Routes.CATALOGUE_DETAIL,
