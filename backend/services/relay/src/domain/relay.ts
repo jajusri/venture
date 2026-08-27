@@ -34,8 +34,16 @@ export interface RelaySubmission {
 export interface RelayAcceptance {
   readonly acceptanceId: RelayAcceptanceId;
   readonly envelopeId: RelayEnvelopeId;
+  readonly objectType: string;
+  readonly objectId: string;
+  readonly objectVersion: number;
+  readonly senderBusinessId: string;
+  readonly recipientBusinessId: string;
   readonly acceptedAt: Date;
   readonly status: 'relay_accepted';
+  readonly relayId: string;
+  readonly evidenceProfile: string;
+  readonly evidence: Uint8Array;
 }
 
 export type RelayDeliveryStatus = 'relay_accepted' | 'delivered' | 'rejected';

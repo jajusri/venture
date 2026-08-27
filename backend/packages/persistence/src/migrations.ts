@@ -67,6 +67,13 @@ export const migrations: readonly Migration[] = [{
     envelope_id TEXT PRIMARY KEY REFERENCES relay_envelope(envelope_id), recipient_business_id TEXT NOT NULL,
     recipient_device_id TEXT NOT NULL, received_at TIMESTAMPTZ NOT NULL, recorded_at TIMESTAMPTZ NOT NULL
   );`,
+}, {
+  version: 4,
+  name: 'relay_acceptance_evidence',
+  sql: `ALTER TABLE relay_envelope
+    ADD COLUMN relay_id TEXT NOT NULL,
+    ADD COLUMN acceptance_evidence_profile TEXT NOT NULL,
+    ADD COLUMN acceptance_evidence BYTEA NOT NULL;`,
 }];
 
 export async function runMigrations(database: Database): Promise<void> {

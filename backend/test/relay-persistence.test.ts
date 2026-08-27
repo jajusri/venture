@@ -17,7 +17,9 @@ class RecordingDatabase implements Database {
 const submission: RelaySubmission = { envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
   senderBusinessId: 'sender', senderActorId: 'actor', senderDeviceId: 'device', recipient: { businessId: 'recipient', mailboxId: relayIdentifier('orders', 'MailboxId') },
   authenticatedEnvelope: new Uint8Array([1]), idempotencyKey: 'intent-1', submittedAt: new Date(1) };
-const acceptance: RelayAcceptance = { acceptanceId: relayIdentifier('accept-1', 'RelayAcceptanceId'), envelopeId: submission.envelopeId, acceptedAt: new Date(2), status: 'relay_accepted' };
+const acceptance: RelayAcceptance = { acceptanceId: relayIdentifier('accept-1', 'RelayAcceptanceId'), envelopeId: submission.envelopeId,
+  objectType: 'ORDER', objectId: 'order-1', objectVersion: 1, senderBusinessId: 'sender', recipientBusinessId: 'recipient',
+  acceptedAt: new Date(2), status: 'relay_accepted', relayId: 'relay-1', evidenceProfile: 'test-v1', evidence: new Uint8Array([9]) };
 
 describe('relay PostgreSQL persistence', () => {
   it('has additive bounded mailbox schema without a global sequence', () => {
@@ -30,7 +32,9 @@ describe('relay PostgreSQL persistence', () => {
     const database = new RecordingDatabase();
     const stored = await new PostgresRelayRepository(database).persist(submission, acceptance);
     expect(stored.delivery.mailboxSequence).toBe(7);
+    expect(stored.acceptance.evidence).toEqual(acceptance.evidence);
     expect(database.calls.some((call) => call.sql.includes('ON CONFLICT (recipient_business_id, mailbox_id)'))).toBe(true);
     expect(database.calls.some((call) => call.parameters.includes(submission.authenticatedEnvelope))).toBe(true);
+    expect(database.calls.some((call) => call.sql.includes('acceptance_evidence') && call.parameters.includes(acceptance.evidence))).toBe(true);
   });
 });

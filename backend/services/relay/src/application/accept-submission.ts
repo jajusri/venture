@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { relayIdentifier, validateRelaySubmission, type RelaySubmission } from '../domain/relay.js';
+import { validateRelaySubmission, type RelaySubmission } from '../domain/relay.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../persistence/relay-repository.js';
+import type { RelayAcceptanceIssuer } from './acceptance-evidence.js';
 
 export interface VerifiedRelayAuthority {
   readonly protocolVersion: number;
@@ -26,7 +26,7 @@ function sameSubmission(left: RelaySubmission, right: RelaySubmission): boolean 
 
 export class AcceptRelaySubmission {
   constructor(private readonly repository: RelayRepository, private readonly verifier: RelaySubmissionVerifier,
-    private readonly now: () => Date = () => new Date(), private readonly newId: () => string = randomUUID) {}
+    private readonly acceptanceIssuer: RelayAcceptanceIssuer, private readonly now: () => Date = () => new Date()) {}
 
   async execute(submission: RelaySubmission): Promise<StoredRelayEnvelope> {
     validateRelaySubmission(submission);
@@ -42,7 +42,6 @@ export class AcceptRelaySubmission {
       authority.senderDeviceId !== submission.senderDeviceId || authority.recipientBusinessId !== submission.recipient.businessId ||
       authority.mailboxId !== submission.recipient.mailboxId) throw new Error('Authenticated relay binding mismatch');
     const acceptedAt = this.now();
-    return this.repository.persist(submission, { acceptanceId: relayIdentifier(this.newId(), 'RelayAcceptanceId'),
-      envelopeId: submission.envelopeId, acceptedAt, status: 'relay_accepted' });
+    return this.repository.persist(submission, await this.acceptanceIssuer.issue(submission, acceptedAt));
   }
 }

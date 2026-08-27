@@ -25,11 +25,12 @@ export class PostgresRelayRepository implements RelayRepository {
       [submission.recipient.businessId, submission.recipient.mailboxId]);
       const mailboxSequence = Number(sequence.rows[0]!.mailbox_sequence);
       await tx.query(`INSERT INTO relay_envelope(envelope_id, idempotency_key, protocol_version, object_type, object_id, object_version,
-        sender_business_id, sender_actor_id, sender_device_id, recipient_business_id, mailbox_id, authenticated_envelope, acceptance_id, accepted_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [submission.envelopeId, submission.idempotencyKey,
+        sender_business_id, sender_actor_id, sender_device_id, recipient_business_id, mailbox_id, authenticated_envelope, acceptance_id, accepted_at,
+        relay_id, acceptance_evidence_profile, acceptance_evidence)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, [submission.envelopeId, submission.idempotencyKey,
         submission.protocolVersion, submission.objectType, submission.objectId, submission.objectVersion, submission.senderBusinessId,
         submission.senderActorId, submission.senderDeviceId, submission.recipient.businessId, submission.recipient.mailboxId,
-        submission.authenticatedEnvelope, acceptance.acceptanceId, acceptance.acceptedAt]);
+        submission.authenticatedEnvelope, acceptance.acceptanceId, acceptance.acceptedAt, acceptance.relayId, acceptance.evidenceProfile, acceptance.evidence]);
       await tx.query(`INSERT INTO relay_mailbox_entry(recipient_business_id, mailbox_id, mailbox_sequence, envelope_id, status, created_at)
         VALUES ($1,$2,$3,$4,'relay_accepted',$5)`, [submission.recipient.businessId, submission.recipient.mailboxId,
         mailboxSequence, submission.envelopeId, acceptance.acceptedAt]);
