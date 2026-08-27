@@ -1,11 +1,16 @@
-# Backend (reserved)
+# BUDCOM central backend
 
-Optional cloud services are **not required** for MVP 1 per the product specification.
+This directory contains the separately deployable BUDCOM central services. It is not part of the LAN/Tally Connector.
 
-This directory is reserved for future capabilities such as:
+Only the Trust Service is currently implemented. No relay or public deployment is included.
 
-- Multi-tenant cloud synchronization
-- Subscription billing
-- Remote diagnostics aggregation
+## Trust Service
 
-No backend services are implemented in Milestone 0.
+Requires Node.js 24 LTS. Configuration is read through `TrustServiceConfig`; the HTTP listener defaults to loopback for local development.
+
+```powershell
+npm install
+npm test
+npm run typecheck
+npm run dev
+```

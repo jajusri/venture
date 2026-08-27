@@ -57,6 +57,7 @@ apps/budcom_desktop/dist/
 
 # Connector runtime
 connector/budcom_connector/dist/
+backend/dist/
 connector/budcom_connector/data/
 connector/budcom_connector/test-data/
 connector/budcom_connector/.packaged/
