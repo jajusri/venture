@@ -8,6 +8,7 @@ data class DeviceSigningIdentity(
     val publicKeyFingerprint: String,
     val createdAtEpochMillis: Long,
     val securityLevel: DeviceKeySecurityLevel,
+    val lifecycleStatus: DeviceKeyLifecycleStatus = DeviceKeyLifecycleStatus.Active,
 ) {
     init {
         require(deviceId.isNotBlank())
@@ -26,6 +27,7 @@ data class DeviceSigningIdentity(
 }
 
 enum class DeviceKeySecurityLevel { SecureKeystore, HardwareBacked, StrongBoxBacked, Unavailable }
+enum class DeviceKeyLifecycleStatus { Active, Superseded, Revoked, LostOrUnavailable }
 
 sealed interface DeviceSigningResult {
     data class Success(val signature: ByteArray) : DeviceSigningResult
@@ -38,6 +40,7 @@ interface VartalapDeviceKeyStore {
     suspend fun getCurrentIdentity(): DeviceSigningIdentity?
     suspend fun getOrCreateIdentity(deviceId: String): DeviceSigningIdentity
     suspend fun rotate(deviceId: String): DeviceSigningIdentity
+    suspend fun inspect(deviceId: String, keyVersion: Int): DeviceSigningIdentity?
     suspend fun sign(identity: DeviceSigningIdentity, boundedBytes: ByteArray): DeviceSigningResult
     suspend fun remove(deviceId: String, keyVersion: Int): Boolean
 }

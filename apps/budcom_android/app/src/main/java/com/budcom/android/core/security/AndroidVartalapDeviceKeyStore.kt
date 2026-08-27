@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.core.content.edit
 import com.budcom.android.feature.transaction.domain.port.DeviceKeySecurityLevel
+import com.budcom.android.feature.transaction.domain.port.DeviceKeyLifecycleStatus
 import com.budcom.android.feature.transaction.domain.port.DeviceSigningIdentity
 import com.budcom.android.feature.transaction.domain.port.DeviceSigningResult
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
@@ -62,6 +63,11 @@ class AndroidVartalapDeviceKeyStore @Inject constructor(
         createIdentity(deviceId, current + 1)
     }
 
+    override suspend fun inspect(deviceId: String, keyVersion: Int): DeviceSigningIdentity? = mutex.withLock {
+        if (deviceId.isBlank() || keyVersion <= 0) return@withLock null
+        readIdentity(deviceId, keyVersion)
+    }
+
     override suspend fun sign(identity: DeviceSigningIdentity, boundedBytes: ByteArray): DeviceSigningResult = mutex.withLock {
         if (boundedBytes.isEmpty()) return@withLock DeviceSigningResult.InvalidInput
         val storedIdentity = readIdentity(identity.deviceId, identity.keyVersion)
@@ -109,6 +115,7 @@ class AndroidVartalapDeviceKeyStore @Inject constructor(
             putString(KEY_DEVICE_ID, deviceId)
             putInt(KEY_VERSION, version)
             putLong(KEY_CREATED_AT, createdAt)
+            putLong("created_at.$deviceId.$version", createdAt)
         }
         return readIdentity(deviceId, version) ?: error("Vartalap signing key could not be read")
     }
@@ -124,8 +131,13 @@ class AndroidVartalapDeviceKeyStore @Inject constructor(
             keyInfo == null || !keyInfo.isInsideSecureHardware -> DeviceKeySecurityLevel.SecureKeystore
             else -> DeviceKeySecurityLevel.HardwareBacked
         }
-        return DeviceSigningIdentity(deviceId, alias(deviceId, version), version, publicKey, fingerprint(publicKey), preferences.getLong(KEY_CREATED_AT, System.currentTimeMillis()), security)
+        val currentVersion = preferences.getInt(KEY_VERSION, 0)
+        val status = if (version == currentVersion) DeviceKeyLifecycleStatus.Active else DeviceKeyLifecycleStatus.Superseded
+        return DeviceSigningIdentity(deviceId, alias(deviceId, version), version, publicKey, fingerprint(publicKey), createdAt(deviceId, version), security, status)
     }
+
+    private fun createdAt(deviceId: String, version: Int): Long =
+        preferences.getLong("created_at.$deviceId.$version", preferences.getLong(KEY_CREATED_AT, 0L))
 
     private fun readPrivateKey(deviceId: String, version: Int): PrivateKey? =
         (keyStore.getEntry(alias(deviceId, version), null) as? KeyStore.PrivateKeyEntry)?.privateKey

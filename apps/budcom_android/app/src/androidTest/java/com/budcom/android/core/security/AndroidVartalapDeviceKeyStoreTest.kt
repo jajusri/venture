@@ -3,6 +3,7 @@ package com.budcom.android.core.security
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.budcom.android.feature.transaction.domain.port.DeviceSigningResult
 import com.budcom.android.feature.transaction.domain.port.DeviceKeySecurityLevel
+import com.budcom.android.feature.transaction.domain.port.DeviceKeyLifecycleStatus
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -66,6 +67,10 @@ class AndroidVartalapDeviceKeyStoreTest {
         assertNotEquals(first.keyId, rotated.keyId)
         assertNotEquals(first.publicKeyFingerprint, rotated.publicKeyFingerprint)
         assertTrue(store.getCurrentIdentity()!!.keyVersion == rotated.keyVersion)
+        val historical = store.inspect(deviceId, first.keyVersion)!!
+        assertEquals(DeviceKeyLifecycleStatus.Superseded, historical.lifecycleStatus)
+        assertEquals(first.publicKeyFingerprint, historical.publicKeyFingerprint)
+        assertEquals(first.createdAtEpochMillis, historical.createdAtEpochMillis)
         assertTrue(store.remove(deviceId, rotated.keyVersion))
         assertNull(store.getCurrentIdentity())
     }
