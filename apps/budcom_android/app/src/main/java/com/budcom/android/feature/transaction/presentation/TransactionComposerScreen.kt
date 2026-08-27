@@ -198,6 +198,7 @@ fun TransactionComposerScreen(
                         }
                     }
 
+                    item { ReviewOrderSection(state) }
                     item { ReviewAndShareSection(state, onEvent) }
                 }
             }
@@ -361,6 +362,44 @@ private fun calculateSampleSize(width: Int, height: Int, targetSize: Int): Int {
         sampleSize *= 2
     }
     return sampleSize
+}
+
+@Composable
+private fun ReviewOrderSection(state: TransactionComposerUiState) {
+    val lines = state.draft?.lines.orEmpty()
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("composer_review_order"),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Review order", style = MaterialTheme.typography.titleSmall)
+        if (lines.isEmpty()) {
+            Text(
+                "Nothing selected yet.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("composer_review_empty"),
+            )
+        } else {
+            lines.forEach { line ->
+                Column(modifier = Modifier.fillMaxWidth().testTag("composer_review_${line.linkedProductId}")) {
+                    Text(line.snapshotProductName, style = MaterialTheme.typography.bodyMedium)
+                    val code = line.snapshotSku?.trim()?.takeIf(String::isNotBlank)
+                    Text(
+                        listOfNotNull(code?.let { "SKU: $it" }, "Qty ${line.quantity}", priceLabel(line.priceState), lineTotalLabel(line)).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text(totalLabel(state.draft?.totalAmount), style = MaterialTheme.typography.titleSmall, modifier = Modifier.testTag("composer_review_total"))
+        }
+    }
+}
+
+private fun lineTotalLabel(line: TransactionDraftLine): String? {
+    val price = (line.priceState as? TransactionDraftPriceState.ActualPrice)?.unitAmount?.toBigDecimalOrNull()
+    val quantity = line.quantity.toBigDecimalOrNull()
+    return if (price != null && quantity != null) "Line ${price.multiply(quantity).stripTrailingZeros().toPlainString()}" else null
 }
 
 @Composable
