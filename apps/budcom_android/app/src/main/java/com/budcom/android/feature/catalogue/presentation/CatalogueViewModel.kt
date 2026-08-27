@@ -16,6 +16,7 @@ import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepositor
 import com.budcom.android.feature.catalogue.sharing.CatalogueShareCoordinator
 import com.budcom.android.feature.catalogue.sharing.CatalogueShareResult
 import com.budcom.android.feature.catalogue.sharing.CatalogueShareScope
+import com.budcom.android.feature.catalogue.sharing.PreparedCatalogueShare
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -56,6 +57,7 @@ class CatalogueViewModel @Inject constructor(
      * UI state since the Screen never needs to render individual row data, only the preview's
      * summary counts and flagged reasons. Cleared on commit or dismiss. */
     private var pendingImportRows: List<CatalogueExcelRow> = emptyList()
+    private var pendingPdfSave: PreparedCatalogueShare? = null
 
     init {
         // Mirrors ConnectViewModel's own company-switch discipline (TD-037 class): every company
@@ -88,6 +90,12 @@ class CatalogueViewModel @Inject constructor(
                 _uiState.update { it.copy(showShareMenu = false) }
                 shareFullCatalogue()
             }
+            CatalogueEvent.SaveFullCatalogue -> {
+                _uiState.update { it.copy(showShareMenu = false) }
+                saveFullCatalogue()
+            }
+            is CatalogueEvent.PdfSaveDestinationSelected -> savePdf(event.uri)
+            CatalogueEvent.PdfSaveCancelled -> releasePendingPdf()
             CatalogueEvent.DismissShareMessage -> _uiState.update { it.copy(shareMessage = null) }
             CatalogueEvent.OpenShareMenu -> _uiState.update { it.copy(showShareMenu = true) }
             CatalogueEvent.DismissShareMenu -> _uiState.update { it.copy(showShareMenu = false) }
@@ -275,6 +283,41 @@ class CatalogueViewModel @Inject constructor(
     private fun shareFullCatalogue() {
         val id = companyId ?: return
         viewModelScope.launch { performShare(id, CatalogueShareScope.FullCatalogue) }
+    }
+
+    private fun saveFullCatalogue() {
+        val id = companyId ?: return
+        viewModelScope.launch {
+            val businessName = businessProfileRepository.getProfile(id)?.tradingName
+            when (val prepared = shareCoordinator.prepareShare(id, CatalogueShareScope.FullCatalogue, businessName)) {
+                is CatalogueShareResult.Failure -> _uiState.update { it.copy(shareMessage = prepared.message) }
+                is CatalogueShareResult.Success -> {
+                    pendingPdfSave?.let(shareCoordinator::releaseShare)
+                    pendingPdfSave = prepared.value
+                    _effects.emit(CatalogueEffect.RequestPdfSave(prepared.value.suggestedFilename))
+                }
+            }
+        }
+    }
+
+    private fun savePdf(destination: android.net.Uri?) {
+        val prepared = pendingPdfSave ?: return
+        pendingPdfSave = null
+        if (destination == null) {
+            shareCoordinator.releaseShare(prepared)
+            return
+        }
+        viewModelScope.launch {
+            when (val result = shareCoordinator.savePdf(prepared, destination)) {
+                is CatalogueShareResult.Failure -> _uiState.update { it.copy(shareMessage = result.message) }
+                is CatalogueShareResult.Success -> _uiState.update { it.copy(shareMessage = "Catalogue PDF saved.") }
+            }
+        }
+    }
+
+    private fun releasePendingPdf() {
+        pendingPdfSave?.let(shareCoordinator::releaseShare)
+        pendingPdfSave = null
     }
 
     private fun openCategoryShareDialog() {

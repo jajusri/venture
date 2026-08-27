@@ -88,6 +88,10 @@ fun CatalogueRoute(
     // `pendingCameraUri` across its own two-step camera-capture flow).
     var pendingExportCsv by remember { mutableStateOf<String?>(null) }
 
+    val pdfSaveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        viewModel.onEvent(CatalogueEvent.PdfSaveDestinationSelected(uri))
+    }
+
     val importFilePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         coroutineScope.launch {
@@ -120,6 +124,7 @@ fun CatalogueRoute(
                     pendingExportCsv = effect.csvText
                     exportDestinationLauncher.launch(effect.suggestedFileName)
                 }
+                is CatalogueEffect.RequestPdfSave -> pdfSaveLauncher.launch(effect.suggestedFileName)
             }
         }
     }
@@ -186,6 +191,11 @@ fun CatalogueScreen(
                                 text = { Text("Share full catalogue") },
                                 onClick = { onEvent(CatalogueEvent.ShareFullCatalogue) },
                                 modifier = Modifier.testTag("catalogue_share_menu_full"),
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Save PDF") },
+                                onClick = { onEvent(CatalogueEvent.SaveFullCatalogue) },
+                                modifier = Modifier.testTag("catalogue_share_menu_save_pdf"),
                             )
                             DropdownMenuItem(
                                 text = { Text("Share a category") },

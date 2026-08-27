@@ -1,5 +1,6 @@
 package com.budcom.android.feature.catalogue.presentation
 
+import android.net.Uri
 import com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelImportPreview
 import com.budcom.android.feature.catalogue.domain.model.CatalogueLifecycleState
 import com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource
@@ -78,6 +79,9 @@ sealed interface CatalogueEvent {
     data object ConfirmAddManual : CatalogueEvent
     data class SetPublic(val isPublic: Boolean) : CatalogueEvent
     data object ShareFullCatalogue : CatalogueEvent
+    data object SaveFullCatalogue : CatalogueEvent
+    data class PdfSaveDestinationSelected(val uri: Uri?) : CatalogueEvent
+    data object PdfSaveCancelled : CatalogueEvent
     data object DismissShareMessage : CatalogueEvent
     data object OpenShareMenu : CatalogueEvent
     data object DismissShareMenu : CatalogueEvent
@@ -117,4 +121,5 @@ sealed interface CatalogueEffect {
     data object NavigateToStockItemPicker : CatalogueEffect
     data object RequestExcelImportPick : CatalogueEffect
     data class ExportCsvReady(val csvText: String, val suggestedFileName: String) : CatalogueEffect
+    data class RequestPdfSave(val suggestedFileName: String) : CatalogueEffect
 }

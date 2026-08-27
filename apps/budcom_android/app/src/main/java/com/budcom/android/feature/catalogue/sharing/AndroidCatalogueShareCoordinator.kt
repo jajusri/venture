@@ -27,7 +27,7 @@ class AndroidCatalogueShareCoordinator @Inject constructor(
         scope: CatalogueShareScope,
         businessName: String?,
     ): CatalogueShareResult<PreparedCatalogueShare> = withContext(dispatchers.io) {
-        val content = when (val resolved = CatalogueShareContent.resolve(repository, companyId, scope, businessName)) {
+        val payload = when (val resolved = CatalogueShareContent.resolvePayload(repository, companyId, scope, businessName)) {
             is CatalogueShareResult.Failure -> return@withContext resolved
             is CatalogueShareResult.Success -> resolved.value
         }
@@ -43,7 +43,7 @@ class AndroidCatalogueShareCoordinator @Inject constructor(
             cachePolicy.acquire(file)
             try {
                 cachePolicy.cleanup(directory, System.currentTimeMillis())
-                file.writeText(content)
+                CataloguePdfRenderer.render(payload, repository, file)
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.invoice-files", file)
                 PreparedCatalogueShare(uri.toString(), file.absolutePath, suggestedName)
             } catch (failure: Throwable) {
@@ -60,7 +60,7 @@ class AndroidCatalogueShareCoordinator @Inject constructor(
     override fun createShareIntent(prepared: PreparedCatalogueShare): CatalogueShareResult<Intent> {
         val contentUri = Uri.parse(prepared.contentUri)
         val send = Intent(Intent.ACTION_SEND).apply {
-            type = TEXT_MIME
+            type = PDF_MIME
             putExtra(Intent.EXTRA_STREAM, contentUri)
             clipData = ClipData.newUri(context.contentResolver, prepared.suggestedFilename, contentUri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -74,6 +74,25 @@ class AndroidCatalogueShareCoordinator @Inject constructor(
         return CatalogueShareResult.Success(Intent.createChooser(send, "Share catalogue"))
     }
 
+    override suspend fun savePdf(prepared: PreparedCatalogueShare, destination: Uri): CatalogueShareResult<Unit> =
+        withContext(dispatchers.io) {
+            val source = File(prepared.cacheFilePath)
+            try {
+                runCatching {
+                    require(cachePolicy.isManagedFile(source) && source.isFile)
+                    context.contentResolver.openOutputStream(destination, "w").use { output ->
+                        requireNotNull(output)
+                        source.inputStream().use { input -> input.copyTo(output) }
+                    }
+                }.fold(
+                    onSuccess = { CatalogueShareResult.Success(Unit) },
+                    onFailure = { CatalogueShareResult.Failure("Catalogue PDF could not be saved. Please choose another location.") },
+                )
+            } finally {
+                cachePolicy.release(source)
+            }
+        }
+
     override fun releaseShare(prepared: PreparedCatalogueShare) {
         cachePolicy.release(File(prepared.cacheFilePath))
     }
@@ -83,10 +102,10 @@ class AndroidCatalogueShareCoordinator @Inject constructor(
             CatalogueShareScope.FullCatalogue -> "full-catalogue"
             is CatalogueShareScope.Category -> scope.name.trim().replace(Regex("[^A-Za-z0-9._-]+"), "-").ifBlank { "category" }
         }
-        return "budcom-catalogue-$label.txt"
+        return "budcom-catalogue-$label.pdf"
     }
 
     private companion object {
-        const val TEXT_MIME = "text/plain"
+        const val PDF_MIME = "application/pdf"
     }
 }

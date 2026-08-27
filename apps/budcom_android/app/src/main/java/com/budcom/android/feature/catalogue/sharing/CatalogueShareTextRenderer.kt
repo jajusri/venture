@@ -5,16 +5,9 @@ import com.budcom.android.feature.catalogue.domain.model.CataloguePublishedSnaps
 import com.budcom.android.feature.catalogue.domain.model.resolveCataloguePriceState
 
 /**
- * Renders a Published-only catalogue scope as a plain-text share file.
- *
- * Deliberately plain text rather than a PDF for this MVP-1.4 pass — unlike the Ledger statement's
- * tabular structure (which had a directly reusable rendering shape), a product catalogue's layout
- * has no existing precedent in this codebase, and this environment has no way to visually verify a
- * hand-rolled PDF pagination/wrapping algorithm. A plain-text file is trivially correct (verified
- * here by ordinary string-content unit tests), still satisfies "generate a file, hand it to the OS
- * share sheet" (architecture §11), and the [CatalogueShareCoordinator] contract this renders
- * through does not change if a PDF renderer replaces this later. Named explicitly as a deliberate
- * simplification, not a silently lowered bar — see the MVP-1.4 implementation report.
+ * Renders the same Published-only catalogue scope as a text representation for compatibility with
+ * the existing content-layer tests. Android sharing uses [CataloguePdfRenderer] for the generated
+ * artifact; this pure renderer remains useful for checking the canonical content and price rules.
  *
  * Pure function, no Android dependency — reads exclusively from the [CataloguePublishedSnapshot]
  * list the caller supplies, never from Draft/Review data (that guarantee is enforced by the
