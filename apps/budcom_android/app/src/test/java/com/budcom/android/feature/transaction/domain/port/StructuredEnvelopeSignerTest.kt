@@ -25,7 +25,7 @@ class StructuredEnvelopeSignerTest {
     }
 }
 
-private class SigningFakeKeyStore(private val identity: DeviceSigningIdentity, private val signer: (ByteArray) -> ByteArray) : VartalapDeviceKeyStore {
+internal class SigningFakeKeyStore(private val identity: DeviceSigningIdentity, private val signer: (ByteArray) -> ByteArray) : VartalapDeviceKeyStore {
     override suspend fun getCurrentIdentity() = identity
     override suspend fun getOrCreateIdentity(deviceId: String) = identity
     override suspend fun rotate(deviceId: String) = identity
