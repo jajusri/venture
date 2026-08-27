@@ -3,6 +3,8 @@ package com.budcom.android.feature.transaction.presentation
 import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
+import com.budcom.android.feature.transaction.data.local.PassthroughCommercialDbTransaction
+import com.budcom.android.feature.transaction.domain.CanonicalBuyingCycleCoordinator
 import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
@@ -27,6 +29,7 @@ import com.budcom.android.feature.transaction.domain.port.DeviceKeySecurityLevel
 import com.budcom.android.feature.transaction.domain.port.DeviceSigningIdentity
 import com.budcom.android.feature.transaction.domain.port.DeviceSigningResult
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
+import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
 import com.budcom.android.feature.transaction.domain.model.CatalogueAccessGrant
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
 import com.budcom.android.feature.transaction.domain.model.EstimatePo
@@ -82,6 +85,12 @@ class ReceivedRevisionViewModelTest {
             FakeRevisionKeyStore(),
             FakeRevisionClock(),
             FakeVerifiedAuthorityResolver(),
+            CanonicalBuyingCycleCoordinator(
+                repository,
+                FakeVerifiedAuthorityResolver(),
+                PassthroughCommercialDbTransaction,
+                RelayOutboxDispatcher { },
+            ),
         )
         dispatcher.scheduler.advanceUntilIdle()
         assertFalse(vm.uiState.value.isLoading)

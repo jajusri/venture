@@ -37,8 +37,13 @@ object Routes {
     fun receivedOrder(envelopeId: String, senderBusinessId: String, orderId: String, orderVersion: Int): String =
         "transaction/received/${encodeRouteSegment(envelopeId)}/${encodeRouteSegment(senderBusinessId)}/${encodeRouteSegment(orderId)}/$orderVersion"
 
+    const val SELLER_REVISION = "transaction/seller-revision/{envelopeId}/{buyerBusinessId}/{orderId}/{orderVersion}"
+
     fun receivedRevision(envelopeId: String, senderBusinessId: String, orderId: String, orderVersion: Int): String =
         "transaction/revision/${encodeRouteSegment(envelopeId)}/${encodeRouteSegment(senderBusinessId)}/${encodeRouteSegment(orderId)}/$orderVersion"
+
+    fun sellerRevision(envelopeId: String, buyerBusinessId: String, orderId: String, orderVersion: Int): String =
+        "transaction/seller-revision/${encodeRouteSegment(envelopeId)}/${encodeRouteSegment(buyerBusinessId)}/${encodeRouteSegment(orderId)}/$orderVersion"
     const val PARTY_DETAIL = "connect/party/{partyId}"
     const val PROSPECT_CREATE = "connect/prospect/new"
     const val PARTY_XML_EXPORT = "connect/party/{partyId}/xml-export"

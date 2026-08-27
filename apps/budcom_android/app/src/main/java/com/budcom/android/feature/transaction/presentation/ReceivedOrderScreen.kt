@@ -20,14 +20,21 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
-fun ReceivedOrderRoute(viewModel: ReceivedOrderViewModel = hiltViewModel()) {
+fun ReceivedOrderRoute(
+    viewModel: ReceivedOrderViewModel = hiltViewModel(),
+    onRevise: () -> Unit = {},
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    ReceivedOrderScreen(state = state, onEvent = viewModel::onEvent)
+    ReceivedOrderScreen(state = state, onEvent = viewModel::onEvent, onRevise = onRevise)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReceivedOrderScreen(state: ReceivedOrderUiState, onEvent: (ReceivedOrderEvent) -> Unit) {
+fun ReceivedOrderScreen(
+    state: ReceivedOrderUiState,
+    onEvent: (ReceivedOrderEvent) -> Unit,
+    onRevise: () -> Unit = {},
+) {
     Scaffold(
         topBar = { TopAppBar(title = { Text("Received order") }) },
     ) { padding ->
@@ -49,6 +56,10 @@ fun ReceivedOrderScreen(state: ReceivedOrderUiState, onEvent: (ReceivedOrderEven
                         onClick = { onEvent(ReceivedOrderEvent.ConfirmOrder) },
                         modifier = Modifier.fillMaxWidth().testTag("received_order_confirm"),
                     ) { Text("Confirm Order") }
+                    Button(
+                        onClick = { onRevise() },
+                        modifier = Modifier.fillMaxWidth().testTag("received_order_revise"),
+                    ) { Text("Revise order") }
                 }
             }
             state.message?.let { Text(it, modifier = Modifier.testTag("received_order_message")) }

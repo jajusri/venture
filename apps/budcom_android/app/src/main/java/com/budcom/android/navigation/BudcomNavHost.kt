@@ -40,6 +40,8 @@ import com.budcom.android.feature.settings.presentation.SettingsRoute
 import com.budcom.android.feature.sync.presentation.SyncRoute
 import com.budcom.android.feature.transaction.presentation.ReceivedOrderRoute
 import com.budcom.android.feature.transaction.presentation.ReceivedOrderViewModel
+import com.budcom.android.feature.transaction.presentation.SellerRevisionRoute
+import com.budcom.android.feature.transaction.presentation.SellerRevisionViewModel
 import com.budcom.android.feature.transaction.presentation.ReceivedRevisionRoute
 import com.budcom.android.feature.transaction.presentation.ReceivedRevisionViewModel
 import com.budcom.android.feature.transaction.presentation.StructuredRecipientInboxRoute
@@ -292,8 +294,30 @@ fun BudcomNavHost(
                 navArgument(ReceivedOrderViewModel.ORDER_ID_ARG) { type = NavType.StringType },
                 navArgument(ReceivedOrderViewModel.ORDER_VERSION_ARG) { type = NavType.IntType },
             ),
+        ) { backStack ->
+            ReceivedOrderRoute(
+                onRevise = {
+                    val args = backStack.arguments
+                    val envelopeId = args?.getString(ReceivedOrderViewModel.ENVELOPE_ID_ARG)
+                    val sender = args?.getString(ReceivedOrderViewModel.SENDER_BUSINESS_ID_ARG)
+                    val orderId = args?.getString(ReceivedOrderViewModel.ORDER_ID_ARG)
+                    val version = args?.getInt(ReceivedOrderViewModel.ORDER_VERSION_ARG)
+                    if (envelopeId != null && sender != null && orderId != null && version != null) {
+                        navController.navigate(Routes.sellerRevision(envelopeId, sender, orderId, version))
+                    }
+                },
+            )
+        }
+        composable(
+            route = Routes.SELLER_REVISION,
+            arguments = listOf(
+                navArgument(SellerRevisionViewModel.ENVELOPE_ID_ARG) { type = NavType.StringType },
+                navArgument(SellerRevisionViewModel.BUYER_BUSINESS_ID_ARG) { type = NavType.StringType },
+                navArgument(SellerRevisionViewModel.ORDER_ID_ARG) { type = NavType.StringType },
+                navArgument(SellerRevisionViewModel.ORDER_VERSION_ARG) { type = NavType.IntType },
+            ),
         ) {
-            ReceivedOrderRoute()
+            SellerRevisionRoute()
         }
         composable(
             route = Routes.RECEIVED_REVISION,

@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
+import com.budcom.android.feature.transaction.domain.CanonicalBuyingCycleCoordinator
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderStatusLabels
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
 import com.budcom.android.feature.transaction.domain.model.CommercialAction
@@ -11,7 +12,6 @@ import com.budcom.android.feature.transaction.domain.model.CommercialActionAutho
 import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome
 import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest
 import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityResolver
-import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
@@ -49,6 +49,7 @@ class ReceivedOrderViewModel @Inject constructor(
     private val keyStore: VartalapDeviceKeyStore,
     private val clock: TransactionClock,
     private val authorityResolver: CommercialActionAuthorityResolver,
+    private val coordinator: CanonicalBuyingCycleCoordinator,
 ) : ViewModel() {
     private val envelopeId: String = requireNotNull(savedStateHandle.get<String>(ENVELOPE_ID_ARG))
     private val senderBusinessId: String = requireNotNull(savedStateHandle.get<String>(SENDER_BUSINESS_ID_ARG))
@@ -110,42 +111,38 @@ class ReceivedOrderViewModel @Inject constructor(
     private fun confirmOrder() {
         viewModelScope.launch {
             val companyId = companySession.observeSelectedCompanyId().first() ?: return@launch
-            val authority = verifiedAuthority(companyId, CommercialAction.SellerConfirm)
-            if (authority == null) {
+            val device = keyStore.getCurrentIdentity()
+            if (device == null) {
                 _uiState.update { it.copy(message = "Order could not be confirmed.") }
                 return@launch
             }
-            val eventId = UUID.randomUUID().toString()
-            val recorded = repository.recordOrderConfirmFromSellerAction(
-                companyId,
+            val now = clock.now()
+            val confirmed = coordinator.confirmSellerOrder(
+                CommercialActionAuthorityRequest(
+                    action = CommercialAction.SellerConfirm,
+                    viewerBusinessId = companyId,
+                    expectedActorId = null,
+                    expectedDeviceId = device.deviceId,
+                    expectedDeviceKeyVersion = device.keyVersion,
+                    orderId = orderId,
+                    orderVersion = orderVersion,
+                    inboxOrderId = orderId,
+                    inboxOrderVersion = orderVersion,
+                    sellerBusinessId = companyId,
+                    buyerBusinessId = senderBusinessId,
+                    nowEpochMillis = now.epochMillis,
+                ),
                 envelopeId,
-                authority.toConfirmAuthority(),
-                eventId,
+                UUID.randomUUID().toString(),
                 "confirm:$orderId:v$orderVersion:$companyId",
-                clock.now(),
+                now,
+                senderBusinessId,
             )
-            if (recorded != null) {
-                repository.applyOrderConfirmEvidence(
-                    senderBusinessId,
-                    OrderConfirmEvidence(
-                        eventId = recorded.eventId,
-                        orderId = recorded.orderId,
-                        orderVersion = recorded.orderVersion,
-                        confirmingBusinessId = authority.businessId,
-                        confirmingActorId = authority.actorId,
-                        confirmingDeviceId = authority.deviceId,
-                        senderBusinessId = senderBusinessId,
-                        authorityEpoch = authority.authorityEpoch,
-                        authorityScopeFingerprint = authority.toConfirmAuthority().scopeFingerprint(),
-                        confirmedAt = recorded.occurredAt,
-                    ),
-                )
-            }
             _uiState.update {
                 it.copy(
-                    canConfirm = recorded == null,
-                    statusLabel = if (recorded != null) CanonicalOrderStatusLabels.buyerFacing(CanonicalOrderState.Confirmed) else it.statusLabel,
-                    message = if (recorded != null) "Order confirmed." else "Order could not be confirmed.",
+                    canConfirm = confirmed == null,
+                    statusLabel = if (confirmed != null) CanonicalOrderStatusLabels.buyerFacing(CanonicalOrderState.Confirmed) else it.statusLabel,
+                    message = if (confirmed != null) "Order confirmed." else "Order could not be confirmed.",
                 )
             }
         }

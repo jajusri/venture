@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
+import com.budcom.android.feature.transaction.domain.CanonicalBuyingCycleCoordinator
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderStatusLabels
@@ -12,8 +13,6 @@ import com.budcom.android.feature.transaction.domain.model.CommercialActionAutho
 import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome
 import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest
 import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityResolver
-import com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent
-import com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
@@ -51,6 +50,7 @@ class ReceivedRevisionViewModel @Inject constructor(
     private val keyStore: VartalapDeviceKeyStore,
     private val clock: TransactionClock,
     private val authorityResolver: CommercialActionAuthorityResolver,
+    private val coordinator: CanonicalBuyingCycleCoordinator,
 ) : ViewModel() {
     private val envelopeId: String = requireNotNull(savedStateHandle.get<String>(ENVELOPE_ID_ARG))
     private val senderBusinessId: String = requireNotNull(savedStateHandle.get<String>(SENDER_BUSINESS_ID_ARG))
@@ -100,30 +100,36 @@ class ReceivedRevisionViewModel @Inject constructor(
     private fun acceptChanges() {
         viewModelScope.launch {
             val companyId = companySession.observeSelectedCompanyId().first() ?: return@launch
-            val authority = verifiedAuthority(companyId, CommercialAction.BuyerAcceptRevision)
-            if (authority == null) {
+            val device = keyStore.getCurrentIdentity()
+            if (device == null) {
                 _uiState.update { it.copy(message = "Changes could not be accepted.") }
                 return@launch
             }
-            val eventId = UUID.randomUUID().toString()
-            val recorded = repository.recordOrderRevisionAcceptFromBuyerAction(
-                companyId,
+            val now = clock.now()
+            val accepted = coordinator.acceptRevision(
+                CommercialActionAuthorityRequest(
+                    action = CommercialAction.BuyerAcceptRevision,
+                    viewerBusinessId = companyId,
+                    expectedActorId = null,
+                    expectedDeviceId = device.deviceId,
+                    expectedDeviceKeyVersion = device.keyVersion,
+                    orderId = orderId,
+                    orderVersion = orderVersion,
+                    inboxOrderId = orderId,
+                    inboxOrderVersion = orderVersion,
+                    sellerBusinessId = senderBusinessId,
+                    buyerBusinessId = companyId,
+                    nowEpochMillis = now.epochMillis,
+                ),
                 envelopeId,
-                authority.toConfirmAuthority(),
-                eventId,
+                UUID.randomUUID().toString(),
                 "accept-revision:$orderId:v$orderVersion:$companyId",
-                clock.now(),
+                now,
             )
-            if (recorded == null) {
-                _uiState.update { it.copy(message = "Changes could not be accepted.") }
-                return@launch
-            }
-            val accepted = repository.applyOrderRevisionAcceptEvidence(companyId, recorded.toAcceptEvidence(authority.authorityEpoch))
             _uiState.update {
                 it.copy(
-                    canAcceptChanges = false,
-                    statusLabel = accepted?.let { order -> CanonicalOrderStatusLabels.buyerFacing(order.state) }
-                        ?: CanonicalOrderStatusLabels.buyerFacing(CanonicalOrderState.Confirmed),
+                    canAcceptChanges = accepted == null && it.canAcceptChanges,
+                    statusLabel = accepted?.let { order -> CanonicalOrderStatusLabels.buyerFacing(order.state) } ?: it.statusLabel,
                     message = if (accepted != null) "Changes accepted." else "Changes could not be accepted.",
                 )
             }
@@ -178,15 +184,3 @@ class ReceivedRevisionViewModel @Inject constructor(
         const val ORDER_VERSION_ARG = "orderVersion"
     }
 }
-
-private fun OrderCommercialEvent.toAcceptEvidence(authorityEpoch: Long) = OrderRevisionAcceptEvidence(
-    eventId = eventId,
-    orderId = orderId,
-    orderVersion = orderVersion,
-    acceptingBusinessId = actorBusinessId,
-    acceptingActorId = actorId,
-    acceptingDeviceId = actorDeviceId.orEmpty(),
-    counterpartyBusinessId = counterpartyBusinessId,
-    authorityEpoch = authorityEpoch,
-    acceptedAt = occurredAt,
-)
