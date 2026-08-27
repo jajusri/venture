@@ -15,6 +15,7 @@ data class RelayMailboxDeliveryItem(
     val acceptedAtEpochMillis: Long,
     val acceptanceId: String,
     val authenticatedEnvelope: ByteArray,
+    val commercialSnapshotCanonical: String? = null,
 ) {
     override fun equals(other: Any?): Boolean = other is RelayMailboxDeliveryItem &&
         envelopeId == other.envelopeId &&

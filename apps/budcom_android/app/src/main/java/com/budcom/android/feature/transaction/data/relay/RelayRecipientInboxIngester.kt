@@ -8,6 +8,8 @@ import com.budcom.android.feature.transaction.domain.port.RelayEndpointProvider
 import com.budcom.android.feature.transaction.domain.port.RelayRecipientInboxIngester
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
 import com.budcom.android.feature.transaction.domain.repository.StructuredRecipientInboxRepository
+import com.budcom.android.feature.transaction.domain.model.OrderVersionSnapshot
+import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -17,6 +19,7 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
     private val client: HttpRelayClient,
     private val endpoint: RelayEndpointProvider,
     private val inbox: StructuredRecipientInboxRepository,
+    private val orders: TransactionRepository,
     private val keyStore: VartalapDeviceKeyStore,
     private val credentials: RelayCredentialSource,
     private val clock: TransactionClock,
@@ -38,8 +41,18 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
             ) ?: break
             page.items.forEach { item ->
                 if (StructuredRecipientInboxValidation.validate(item, companyId)) {
+                    val snapshot = item.commercialSnapshotCanonical?.let { OrderVersionSnapshot.parse(it) }
+                    if (snapshot == null ||
+                        snapshot.orderId != item.objectId ||
+                        snapshot.orderVersion != item.objectVersion ||
+                        snapshot.senderBusinessId != item.senderBusinessId ||
+                        snapshot.recipientBusinessId != companyId
+                    ) {
+                        return@forEach
+                    }
                     val stored = inbox.persistIfNew(companyId, item, clock.now())
                     if (stored != null) {
+                        orders.materializeReceivedOrderVersion(companyId, stored.envelopeId, snapshot, stored.ingestedAt)
                         client.acknowledgeDelivery(
                             envelopeId = item.envelopeId,
                             recipientBusinessId = companyId,

@@ -10,6 +10,7 @@ import com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority
 import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
+import com.budcom.android.feature.transaction.domain.model.OrderVersionSnapshot
 import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
 import com.budcom.android.feature.transaction.domain.model.EstimatePo
 import com.budcom.android.feature.transaction.domain.model.LedgerGroupChoice
@@ -156,6 +157,13 @@ interface TransactionRepository {
 
     suspend fun findArchivedOrderVersion(companyId: String, orderId: String, version: Int): CanonicalOrder? =
         throw UnsupportedOperationException("Archived order lookup is not implemented by this repository")
+
+    suspend fun materializeReceivedOrderVersion(
+        recipientCompanyId: String,
+        envelopeId: String,
+        snapshot: OrderVersionSnapshot,
+        timestamp: TransactionTimestamp,
+    ): CanonicalOrder? = throw UnsupportedOperationException("Received order materialization is not implemented by this repository")
 
     /** Materializes a received seller revision on the buyer device without accepting it. */
     suspend fun receiveOrderRevisionOnBuyer(

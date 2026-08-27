@@ -29,13 +29,21 @@ data class AuthenticatedTransportEnvelope(
 }
 
 class AuthenticatedEnvelopeBinder(private val keyStore: VartalapDeviceKeyStore) {
-    suspend fun bind(envelope: EnvelopeSubmission, identity: DeviceSigningIdentity, credential: BusinessDeviceCredential, recipient: RecipientBinding): AuthenticatedTransportEnvelope? {
+    suspend fun bind(
+        envelope: EnvelopeSubmission,
+        identity: DeviceSigningIdentity,
+        credential: BusinessDeviceCredential,
+        recipient: RecipientBinding,
+        commercialSnapshotCanonical: String = "",
+    ): AuthenticatedTransportEnvelope? {
         if (identity.lifecycleStatus != DeviceKeyLifecycleStatus.Active || envelope.senderDeviceId != identity.deviceId ||
             credential.deviceId != identity.deviceId || credential.businessId != envelope.senderBusinessId ||
             envelope.recipientBusinessId != recipient.businessId || envelope.recipientPartyId != recipient.partyId) return null
-        val unsigned = AuthenticatedTransportEnvelope(envelope, credential.actorId, identity.keyId, identity.keyVersion,
+        val unsigned = AuthenticatedTransportEnvelope(
+            envelope, credential.actorId, identity.keyId, identity.keyVersion,
             identity.publicKeyFingerprint, credential.verificationReference, credential.credentialVersion, credential.credentialEpoch,
-            recipient, "SHA256withECDSA", byteArrayOf())
+            recipient, "SHA256withECDSA", byteArrayOf(), commercialSnapshotCanonical,
+        )
         val result = keyStore.sign(identity, unsigned.signingBytes()) as? DeviceSigningResult.Success ?: return null
         return unsigned.copy(signature = result.signature)
     }

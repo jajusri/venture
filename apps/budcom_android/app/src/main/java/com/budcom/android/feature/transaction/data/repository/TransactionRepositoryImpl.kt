@@ -4,6 +4,7 @@ import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantDao
+import com.budcom.android.feature.transaction.data.local.CommercialDbTransaction
 import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantEntity
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderDao
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderEntity
@@ -46,6 +47,8 @@ import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderMaterialChangeClassifier
 import com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
+import com.budcom.android.feature.transaction.domain.model.OrderVersionSnapshot
+import com.budcom.android.feature.transaction.domain.model.toCanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent
 import com.budcom.android.feature.transaction.domain.model.OrderCommercialEventType
 import com.budcom.android.feature.transaction.domain.model.OrderSeenEvidence
@@ -129,6 +132,7 @@ class TransactionRepositoryImpl @Inject constructor(
     private val recipientInboxDao: StructuredRecipientInboxDao,
     private val orderCommercialEventDao: OrderCommercialEventDao,
     private val orderVersionArchiveDao: OrderVersionArchiveDao,
+    private val dbTransaction: CommercialDbTransaction,
 ) : TransactionRepository, OrderSentFromRelayEvidence {
 
     override suspend fun createDraftOrder(
@@ -142,8 +146,9 @@ class TransactionRepositoryImpl @Inject constructor(
         require(draft.lines.none { it.priceState == TransactionDraftPriceState.Hidden })
         val existing = canonicalOrderDao.findByCreationKey(draft.companyId, creationKey)
         if (existing != null) return@withContext existing.toDomain(canonicalOrderDao.findLines(draft.companyId, existing.orderId))
-        val orderId = UUID.randomUUID().toString()
-        val entity = CanonicalOrderEntity(
+        dbTransaction.run {
+            val orderId = UUID.randomUUID().toString()
+            val entity = CanonicalOrderEntity(
             companyId = draft.companyId,
             orderId = orderId,
             creationKey = creationKey,
@@ -162,7 +167,7 @@ class TransactionRepositoryImpl @Inject constructor(
         } catch (_: android.database.SQLException) {
             val raced = canonicalOrderDao.findByCreationKey(draft.companyId, creationKey)
                 ?: throw IllegalStateException("Draft Order could not be created")
-            return@withContext raced.toDomain(canonicalOrderDao.findLines(draft.companyId, raced.orderId))
+            return@run raced.toDomain(canonicalOrderDao.findLines(draft.companyId, raced.orderId))
         }
         canonicalOrderDao.upsertLines(draft.lines.mapIndexed { index, line ->
             CanonicalOrderLineEntity(
@@ -181,6 +186,7 @@ class TransactionRepositoryImpl @Inject constructor(
             )
         })
         entity.toDomain(canonicalOrderDao.findLines(draft.companyId, orderId))
+        }
     }
 
     override suspend fun enqueueOrderDelivery(order: CanonicalOrder, timestamp: TransactionTimestamp): OrderDeliveryEnvelope = withContext(dispatchers.io) {
@@ -359,6 +365,7 @@ class TransactionRepositoryImpl @Inject constructor(
         if (existingRevision != null) {
             return@withContext findCanonicalOrderById(sellerCompanyId, baseline.orderId)
         }
+        dbTransaction.run {
         val stored = canonicalOrderDao.findById(sellerCompanyId, baseline.orderId)
         if (stored == null) {
             canonicalOrderDao.insert(
@@ -442,9 +449,10 @@ class TransactionRepositoryImpl @Inject constructor(
         try {
             orderCommercialEventDao.insert(revisionEvent)
         } catch (_: android.database.SQLException) {
-            return@withContext findCanonicalOrderById(sellerCompanyId, baseline.orderId)
+            return@run findCanonicalOrderById(sellerCompanyId, baseline.orderId)
         }
         findCanonicalOrderById(sellerCompanyId, baseline.orderId)
+        }
     }
 
     override suspend fun markRevisionSent(companyId: String, orderId: String, envelope: OrderDeliveryEnvelope): CanonicalOrder? =
@@ -517,6 +525,64 @@ class TransactionRepositoryImpl @Inject constructor(
             archived.toDomain(lines)
         }
 
+    override suspend fun materializeReceivedOrderVersion(
+        recipientCompanyId: String,
+        envelopeId: String,
+        snapshot: OrderVersionSnapshot,
+        timestamp: TransactionTimestamp,
+    ): CanonicalOrder? = withContext(dispatchers.io) {
+        if (snapshot.recipientBusinessId != recipientCompanyId) return@withContext null
+        if (snapshot.senderBusinessId == recipientCompanyId) return@withContext null
+        val inboxEntity = recipientInboxDao.findByEnvelopeId(recipientCompanyId, envelopeId) ?: return@withContext null
+        if (inboxEntity.objectId != snapshot.orderId || inboxEntity.objectVersion != snapshot.orderVersion) return@withContext null
+        if (inboxEntity.senderBusinessId != snapshot.senderBusinessId) return@withContext null
+        val existing = findCanonicalOrderById(recipientCompanyId, snapshot.orderId)
+        if (existing != null && existing.version == snapshot.orderVersion && existing.lines.map { it.quantity } == snapshot.lines.map { it.quantity }) {
+            return@withContext existing
+        }
+        val state = if (snapshot.orderVersion <= 1) CanonicalOrderState.Sent else CanonicalOrderState.RevisionSent
+        val canonical = snapshot.toCanonicalOrder(recipientCompanyId, state)
+        dbTransaction.run {
+        if (snapshot.orderVersion <= 1) {
+            if (existing != null) return@run existing
+            canonicalOrderDao.insert(
+                CanonicalOrderEntity(
+                    companyId = canonical.companyId,
+                    orderId = canonical.orderId,
+                    creationKey = canonical.creationKey,
+                    sellerCompanyId = canonical.sellerCompanyId,
+                    buyerPartyId = canonical.buyerPartyId,
+                    state = canonical.state.columnValue,
+                    source = canonical.source.columnValue,
+                    submissionType = canonical.submissionType.columnValue,
+                    note = canonical.note,
+                    createdAt = canonical.createdAt.epochMillis,
+                    createdAtSource = canonical.createdAt.source.name,
+                    version = canonical.version,
+                ),
+            )
+            canonicalOrderDao.upsertLines(canonical.lines.map { line ->
+                CanonicalOrderLineEntity(
+                    companyId = recipientCompanyId,
+                    orderId = line.orderId,
+                    lineId = line.lineId,
+                    linkedProductId = line.linkedProductId,
+                    snapshotProductName = line.snapshotProductName,
+                    snapshotUnit = line.snapshotUnit,
+                    snapshotSku = line.snapshotSku,
+                    quantity = line.quantity,
+                    unitPriceAmount = line.unitPriceAmount,
+                    unitPriceCurrencyCode = line.unitPriceCurrencyCode,
+                    priceState = line.priceState.toColumnValue(),
+                    lineTotalAmount = line.lineTotalAmount,
+                )
+            })
+            return@run findCanonicalOrderById(recipientCompanyId, snapshot.orderId)
+        }
+        receiveOrderRevisionOnBuyer(recipientCompanyId, envelopeId, canonical, timestamp)
+        }
+    }
+
     override suspend fun receiveOrderRevisionOnBuyer(
         buyerCompanyId: String,
         envelopeId: String,
@@ -533,6 +599,7 @@ class TransactionRepositoryImpl @Inject constructor(
         if (stored != null && stored.version >= revision.version) {
             return@withContext findCanonicalOrderById(buyerCompanyId, revision.orderId)
         }
+        dbTransaction.run {
         if (stored != null) archiveCurrentOrderVersion(buyerCompanyId, revision.orderId, timestamp, revision.note)
         val entity = CanonicalOrderEntity(
             companyId = buyerCompanyId,
@@ -552,7 +619,7 @@ class TransactionRepositoryImpl @Inject constructor(
             try {
                 canonicalOrderDao.insert(entity)
             } catch (_: android.database.SQLException) {
-                return@withContext findCanonicalOrderById(buyerCompanyId, revision.orderId)
+                return@run findCanonicalOrderById(buyerCompanyId, revision.orderId)
             }
         } else {
             canonicalOrderDao.updateVersionStateAndNote(
@@ -579,6 +646,7 @@ class TransactionRepositoryImpl @Inject constructor(
             },
         )
         findCanonicalOrderById(buyerCompanyId, revision.orderId)
+        }
     }
 
     private suspend fun archiveCurrentOrderVersion(
@@ -1067,7 +1135,7 @@ private fun TransactionDraftLine.lineTotalAmount(): String? {
     return price.multiply(quantity).toPlainString()
 }
 
-private fun CanonicalOrderEntity.toDomain(lines: List<CanonicalOrderLineEntity>): CanonicalOrder = CanonicalOrder(
+internal fun CanonicalOrderEntity.toDomain(lines: List<CanonicalOrderLineEntity>): CanonicalOrder = CanonicalOrder(
     companyId = companyId,
     orderId = orderId,
     creationKey = creationKey,

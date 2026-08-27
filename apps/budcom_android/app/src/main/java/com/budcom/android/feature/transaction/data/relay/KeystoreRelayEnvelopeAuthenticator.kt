@@ -15,6 +15,7 @@ import javax.inject.Singleton
 class KeystoreRelayEnvelopeAuthenticator @Inject constructor(
     private val keyStore: VartalapDeviceKeyStore,
     private val credentials: RelayCredentialSource,
+    private val snapshots: CanonicalOrderVersionSnapshotFactory,
 ) : RelayEnvelopeAuthenticator {
     private val binder = AuthenticatedEnvelopeBinder(keyStore)
 
@@ -22,13 +23,14 @@ class KeystoreRelayEnvelopeAuthenticator @Inject constructor(
         val identity = keyStore.getCurrentIdentity() ?: return null
         val credential = credentials.credentialFor(envelope.senderCompanyId, identity.deviceId) ?: return null
         val recipientBusinessId = envelope.recipientPartyId ?: return null
+        val snapshot = snapshots.forEnvelope(envelope) ?: return null
         val recipient = RecipientBinding(
             businessId = recipientBusinessId,
             partyId = envelope.recipientPartyId,
             mailboxReference = DEFAULT_MAILBOX,
         )
         val submission = EnvelopeSubmission.fromEnvelope(envelope, identity.deviceId, recipientBusinessId)
-        return binder.bind(submission, identity, credential, recipient)
+        return binder.bind(submission, identity, credential, recipient, snapshot.deterministicEncoding())
     }
 
     private companion object {

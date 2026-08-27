@@ -44,10 +44,12 @@ import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentDao
 import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEntity
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderLine
+import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
 import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
 import com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence
-import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
+import com.budcom.android.feature.transaction.domain.model.OrderVersionLineSnapshot
+import com.budcom.android.feature.transaction.domain.model.OrderVersionSnapshot
 import com.budcom.android.feature.transaction.domain.model.OrderTransportState
 import com.budcom.android.feature.transaction.data.local.OrderCommercialEventDao
 import com.budcom.android.feature.transaction.data.local.OrderCommercialEventEntity
@@ -143,6 +145,7 @@ class TransactionRepositoryImplTest {
         estimatePoDao, lineItemDao, sellerInboxEntryDao, transactionDao, termsDao, paymentEventDao,
         ledgerIntentDao, accessGrantDao, submissionPort, reminderScheduler, partyRepository, dispatchers,
         canonicalOrderDao, orderOutboxDao, recipientInboxDao, orderCommercialEventDao, orderVersionArchiveDao,
+        com.budcom.android.feature.transaction.data.local.PassthroughCommercialDbTransaction,
     )
 
     private fun ts(millis: Long) = TransactionTimestamp(millis, TransactionTimestampSource.DeviceLocalProvisional)
@@ -439,6 +442,34 @@ class TransactionRepositoryImplTest {
         )
         assertTrue(transactionDao.store.isEmpty())
         assertEquals(1, canonicalOrderDao.orders.count { it.companyId == "buyer-co" && it.orderId == "order-1" })
+    }
+
+    @Test
+    fun `recipient materializes v1 and v2 snapshots without duplicates or wrong recipient`() = runTest(dispatcher) {
+        val repo = repository()
+        recipientInboxDao.entries += inboxFixture().copy(companyId = "seller-co", senderBusinessId = "buyer-co")
+        val v1 = OrderVersionSnapshot(
+            1, "order-1", 1, "buyer-co", "seller-co", 100, null, "CATALOGUE", "ESTIMATE", "env-1",
+            listOf(OrderVersionLineSnapshot("line-1", "p1", "Widget", "Nos", "SKU-1", "10", "100", "INR", "ACTUAL", "1000")),
+        )
+        val first = repo.materializeReceivedOrderVersion("seller-co", "env-1", v1, ts(200))!!
+        val duplicate = repo.materializeReceivedOrderVersion("seller-co", "env-1", v1, ts(201))!!
+        assertEquals(first.orderId, duplicate.orderId)
+        assertEquals(CanonicalOrderState.Sent, first.state)
+        assertEquals("10", first.lines.single().quantity)
+        assertEquals(1, canonicalOrderDao.orders.count { it.companyId == "seller-co" && it.orderId == "order-1" })
+        assertNull(repo.materializeReceivedOrderVersion("other-co", "env-1", v1, ts(202)))
+        recipientInboxDao.entries += buyerRevisionInboxFixture("env-2", 2)
+        seedBuyerOrderWithLines(CanonicalOrderState.Sent)
+        val v2 = v1.copy(orderVersion = 2, envelopeId = "env-2", recipientBusinessId = "buyer-co", senderBusinessId = "seller-co",
+            lines = listOf(v1.lines.single().copy(quantity = "12")))
+        val revised = repo.materializeReceivedOrderVersion("buyer-co", "env-2", v2, ts(520))!!
+        assertEquals(2, revised.version)
+        assertEquals("12", revised.lines.single().quantity)
+        assertEquals("10", repo.findArchivedOrderVersion("buyer-co", "order-1", 1)!!.lines.single().quantity)
+        assertTrue(transactionDao.store.isEmpty())
+        val hidden = v1.copy(lines = listOf(v1.lines.single().copy(priceState = "HIDDEN", unitPriceAmount = null, lineTotalAmount = null)))
+        assertFalse(hidden.deterministicEncoding().contains("unitPrice:100"))
     }
 
     private suspend fun seedBuyerOrderWithLines(state: CanonicalOrderState) {
@@ -860,6 +891,8 @@ class FakeOrderOutboxDao : OrderOutboxDao {
     override suspend fun findPending(companyId: String) =
         envelopes.filter { it.companyId == companyId && it.state in setOf("QUEUED", "RETRYING") }.sortedBy { it.createdAt }
 
+    override suspend fun findPendingBatch(companyId: String, limit: Int) = findPending(companyId).take(limit)
+
     override suspend fun updateTransportAttempt(
         companyId: String,
         envelopeId: String,
@@ -887,7 +920,9 @@ class FakeTransactionRecipientInboxDao : StructuredRecipientInboxDao {
     override suspend fun insert(entity: StructuredRecipientInboxEntity) { entries += entity }
     override suspend fun findByEnvelopeId(companyId: String, envelopeId: String) =
         entries.firstOrNull { it.companyId == companyId && it.envelopeId == envelopeId }
-    override suspend fun findAll(companyId: String) = entries.filter { it.companyId == companyId }.sortedBy { it.mailboxSequence }
+    override suspend fun findAll(companyId: String) = findPage(companyId, 50, 0)
+    override suspend fun findPage(companyId: String, limit: Int, offset: Int) =
+        entries.filter { it.companyId == companyId }.sortedBy { it.mailboxSequence }.drop(offset).take(limit)
 }
 
 class FakeOrderCommercialEventDao : OrderCommercialEventDao {

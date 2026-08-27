@@ -89,6 +89,9 @@ data class OrderVersionSnapshot(
         .digest(deterministicEncoding().toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte) }
 
+    fun matchesEnvelope(orderId: String, orderVersion: Int, sender: String, recipient: String): Boolean =
+        this.orderId == orderId && this.orderVersion == orderVersion && senderBusinessId == sender && recipientBusinessId == recipient
+
     companion object {
         const val CURRENT_CONTRACT_VERSION = 1
         const val MAX_FIELD = 256
@@ -170,8 +173,43 @@ object OrderVersionSnapshotCodec {
     }
 }
 
-fun OrderVersionSnapshot.matchesEnvelope(orderId: String, orderVersion: Int, sender: String, recipient: String): Boolean =
-    this.orderId == orderId && this.orderVersion == orderVersion && senderBusinessId == sender && recipientBusinessId == recipient
+fun OrderVersionSnapshot.toCanonicalOrder(recipientCompanyId: String, state: CanonicalOrderState): CanonicalOrder =
+    CanonicalOrder(
+        companyId = recipientCompanyId,
+        orderId = orderId,
+        creationKey = "received:$orderId",
+        sellerCompanyId = senderBusinessId,
+        buyerPartyId = recipientBusinessId,
+        state = state,
+        source = TransactionEntryPointType.fromColumn(source),
+        submissionType = TransactionSubmissionType.fromColumn(submissionType),
+        note = note,
+        createdAt = TransactionTimestamp(createdAtEpochMillis, TransactionTimestampSource.DeviceLocalProvisional),
+        version = orderVersion,
+        lines = lines.map { line ->
+            CanonicalOrderLine(
+                orderId = orderId,
+                lineId = line.lineId,
+                linkedProductId = line.linkedProductId,
+                snapshotProductName = line.snapshotProductName,
+                snapshotUnit = line.snapshotUnit,
+                snapshotSku = line.snapshotSku,
+                quantity = line.quantity,
+                unitPriceAmount = line.unitPriceAmount,
+                unitPriceCurrencyCode = line.unitPriceCurrencyCode,
+                priceState = when (line.priceState) {
+                    OrderVersionLineSnapshot.ACTUAL -> TransactionDraftPriceState.ActualPrice(
+                        requireNotNull(line.unitPriceAmount),
+                        line.unitPriceCurrencyCode,
+                    )
+                    OrderVersionLineSnapshot.NO_PRICE -> TransactionDraftPriceState.NoPriceSupplied
+                    OrderVersionLineSnapshot.CONTACT -> TransactionDraftPriceState.ContactForPrice
+                    else -> TransactionDraftPriceState.Hidden
+                },
+                lineTotalAmount = line.lineTotalAmount,
+            )
+        },
+    )
 
 fun OrderVersionSnapshot.detectTamper(expectedFingerprint: String): Boolean = fingerprint() != expectedFingerprint
 

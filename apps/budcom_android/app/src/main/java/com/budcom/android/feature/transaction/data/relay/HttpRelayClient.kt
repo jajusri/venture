@@ -44,6 +44,7 @@ internal data class RelaySubmissionJson(
     val recipientBusinessId: String,
     val mailboxId: String,
     val authenticatedEnvelope: String,
+    val commercialSnapshot: String? = null,
     val submittedAt: String,
 )
 
@@ -84,6 +85,7 @@ internal data class RelayMailboxItemJson(
     val acceptedAt: String,
     val acceptanceId: String,
     val authenticatedEnvelope: String,
+    val commercialSnapshot: String? = null,
 )
 
 @Serializable
@@ -139,6 +141,7 @@ class HttpRelayClient(
                 recipientBusinessId = recipientBusiness,
                 mailboxId = mailbox,
                 authenticatedEnvelope = Base64.getEncoder().encodeToString(authenticated.signingBytes() + authenticated.signature),
+                commercialSnapshot = authenticated.commercialSnapshotCanonical.takeIf { it.isNotBlank() },
                 submittedAt = java.time.Instant.ofEpochMilli(authenticated.envelope.createdAtEpochMillis).toString(),
             ),
         )
@@ -194,6 +197,7 @@ class HttpRelayClient(
                             acceptedAtEpochMillis = runCatching { java.time.Instant.parse(item.acceptedAt).toEpochMilli() }.getOrDefault(nowMillis()),
                             acceptanceId = item.acceptanceId,
                             authenticatedEnvelope = Base64.getDecoder().decode(item.authenticatedEnvelope),
+                            commercialSnapshotCanonical = item.commercialSnapshot,
                         )
                     },
                     nextCursor = parsed.nextCursor,
