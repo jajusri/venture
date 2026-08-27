@@ -1,5 +1,9 @@
 package com.budcom.android.feature.transaction.presentation
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,8 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -29,19 +35,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import java.io.File
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.budcom.android.feature.transaction.domain.model.BuyAgainEntry
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftLine
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState
 import com.budcom.android.feature.transaction.domain.model.TransactionSubmissionType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The buyer transaction composer — Q2/Q3/Q5's locked one-screen UX: Selected products (always
@@ -117,7 +130,7 @@ fun TransactionComposerScreen(
                         }
                     } else {
                         items(draft.lines, key = { "selected-${it.linkedProductId}" }) { line ->
-                            SelectedLineRow(line = line, onEvent = onEvent)
+                            SelectedLineRow(line = line, photo = state.productPhotos[line.linkedProductId], onEvent = onEvent)
                         }
                         item {
                             Text(
@@ -148,7 +161,7 @@ fun TransactionComposerScreen(
                             }
                         } else {
                             items(state.buyAgainEntries, key = { "buyagain-${it.linkedProductId}" }) { entry ->
-                                BuyAgainRow(entry = entry, onEvent = onEvent)
+                                BuyAgainRow(entry = entry, photo = state.productPhotos[entry.linkedProductId], onEvent = onEvent)
                             }
                         }
                     }
@@ -173,6 +186,7 @@ fun TransactionComposerScreen(
                         items(state.newSkus, key = { "new-${it.linkedProductId}" }) { row ->
                             NewSkuRow(
                                 row = row,
+                                photo = state.productPhotos[row.linkedProductId],
                                 onClick = {
                                     onEvent(
                                         TransactionComposerEvent.AddOrIncrementProduct(
@@ -221,34 +235,37 @@ private fun SubmissionTypeRow(state: TransactionComposerUiState, onEvent: (Trans
 }
 
 @Composable
-private fun SelectedLineRow(line: TransactionDraftLine, onEvent: (TransactionComposerEvent) -> Unit) {
+private fun SelectedLineRow(line: TransactionDraftLine, photo: File?, onEvent: (TransactionComposerEvent) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).testTag("composer_selected_${line.linkedProductId}"),
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(text = line.snapshotProductName, style = MaterialTheme.typography.titleSmall)
-            Text(text = priceLabel(line.priceState), style = MaterialTheme.typography.bodyMedium)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(
-                    onClick = { onEvent(TransactionComposerEvent.SetQuantity(line.linkedProductId, decrement(line.quantity))) },
-                    modifier = Modifier.testTag("composer_decrement_${line.linkedProductId}"),
-                ) { Text("−", style = MaterialTheme.typography.titleMedium) }
-                Text(text = "Qty ${line.quantity}", modifier = Modifier.testTag("composer_qty_${line.linkedProductId}"))
-                TextButton(
-                    onClick = { onEvent(TransactionComposerEvent.SetQuantity(line.linkedProductId, increment(line.quantity))) },
-                    modifier = Modifier.testTag("composer_increment_${line.linkedProductId}"),
-                ) { Text("+", style = MaterialTheme.typography.titleMedium) }
-                IconButton(
-                    onClick = { onEvent(TransactionComposerEvent.RemoveProduct(line.linkedProductId)) },
-                    modifier = Modifier.testTag("composer_remove_${line.linkedProductId}"),
-                ) { Icon(Icons.Filled.Delete, contentDescription = "Remove ${line.snapshotProductName}") }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ProductPhoto(photo, line.snapshotProductName)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(text = line.snapshotProductName, style = MaterialTheme.typography.titleSmall)
+                Text(text = priceLabel(line.priceState), style = MaterialTheme.typography.bodyMedium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    TextButton(
+                        onClick = { onEvent(TransactionComposerEvent.SetQuantity(line.linkedProductId, decrement(line.quantity))) },
+                        modifier = Modifier.testTag("composer_decrement_${line.linkedProductId}"),
+                    ) { Text("−", style = MaterialTheme.typography.titleMedium) }
+                    Text(text = "Qty ${line.quantity}", modifier = Modifier.testTag("composer_qty_${line.linkedProductId}"))
+                    TextButton(
+                        onClick = { onEvent(TransactionComposerEvent.SetQuantity(line.linkedProductId, increment(line.quantity))) },
+                        modifier = Modifier.testTag("composer_increment_${line.linkedProductId}"),
+                    ) { Text("+", style = MaterialTheme.typography.titleMedium) }
+                    IconButton(
+                        onClick = { onEvent(TransactionComposerEvent.RemoveProduct(line.linkedProductId)) },
+                        modifier = Modifier.testTag("composer_remove_${line.linkedProductId}"),
+                    ) { Icon(Icons.Filled.Delete, contentDescription = "Remove ${line.snapshotProductName}") }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun BuyAgainRow(entry: BuyAgainEntry, onEvent: (TransactionComposerEvent) -> Unit) {
+private fun BuyAgainRow(entry: BuyAgainEntry, photo: File?, onEvent: (TransactionComposerEvent) -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -269,19 +286,22 @@ private fun BuyAgainRow(entry: BuyAgainEntry, onEvent: (TransactionComposerEvent
             )
         },
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(text = entry.mostRecentSnapshotProductName, style = MaterialTheme.typography.titleSmall)
-            Text(
-                text = "Bought ${entry.purchaseCount} time${if (entry.purchaseCount == 1) "" else "s"} · last qty ${entry.mostRecentQuantity}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ProductPhoto(photo, entry.mostRecentSnapshotProductName)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(text = entry.mostRecentSnapshotProductName, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = "Bought ${entry.purchaseCount} time${if (entry.purchaseCount == 1) "" else "s"} · last qty ${entry.mostRecentQuantity}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun NewSkuRow(row: TransactionNewSkuRow, onClick: () -> Unit) {
+private fun NewSkuRow(row: TransactionNewSkuRow, photo: File?, onClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).testTag("composer_newsku_${row.linkedProductId}"),
         onClick = onClick,
@@ -291,10 +311,56 @@ private fun NewSkuRow(row: TransactionNewSkuRow, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(text = row.displayName, style = MaterialTheme.typography.titleSmall)
+            Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                ProductPhoto(photo, row.displayName)
+                Text(text = row.displayName, style = MaterialTheme.typography.titleSmall)
+            }
             Text(text = priceLabel(row.priceState), style = MaterialTheme.typography.bodyMedium)
         }
     }
+}
+
+@Composable
+private fun ProductPhoto(file: File?, productName: String) {
+    val bitmap by produceState<Bitmap?>(initialValue = null, key1 = file?.absolutePath) {
+        value = if (file == null) null else withContext(Dispatchers.IO) { decodeThumbnail(file) }
+    }
+    Box(
+        modifier = Modifier
+            .size(72.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap!!.asImageBitmap(),
+                contentDescription = productName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text("No image", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+private fun decodeThumbnail(file: File): Bitmap? {
+    if (!file.isFile) return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    val sampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight, 320)
+    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    return BitmapFactory.decodeFile(file.absolutePath, options)
+}
+
+private fun calculateSampleSize(width: Int, height: Int, targetSize: Int): Int {
+    var sampleSize = 1
+    while (width / (sampleSize * 2) >= targetSize && height / (sampleSize * 2) >= targetSize) {
+        sampleSize *= 2
+    }
+    return sampleSize
 }
 
 @Composable

@@ -151,7 +151,25 @@ class TransactionComposerViewModel @Inject constructor(
             val fullProduct = catalogueRepository.findProduct(companyId, snapshot.productId)
             snapshot.toNewSkuRow(unit = fullProduct?.unit, sku = fullProduct?.sku)
         }
-        _uiState.update { it.copy(newSkus = rows) }
+        // Cart-photo fix: same primary-asset resolution CatalogueViewModel's own reload() already
+        // uses (listAssets -> resolveAssetFile, both companyId/productId-scoped) -- reused here
+        // verbatim, not reimplemented, and keyed by productId so every row type on this screen can
+        // share the one map rather than each resolving its own copy.
+        val photos = published.associate { it.productId to primaryAssetFile(companyId, it.productId) }
+        _uiState.update { it.copy(newSkus = rows, productPhotos = photos) }
+    }
+
+    /** Mirrors [com.budcom.android.feature.catalogue.presentation.CatalogueViewModel.primaryAssetFile]
+     * exactly (same two existing repository calls) -- not shared code, matching this codebase's own
+     * established convention of mirroring rather than cross-feature-sharing small ViewModel-local
+     * helpers. Never throws: a product with no photo, or one whose file has gone missing on disk,
+     * both resolve to `null`. */
+    private suspend fun primaryAssetFile(companyId: String, productId: String): java.io.File? {
+        return runCatching {
+            val assets = catalogueRepository.listAssets(companyId, productId)
+            val primary = assets.firstOrNull { it.isPrimary } ?: assets.firstOrNull() ?: return null
+            catalogueRepository.resolveAssetFile(companyId, productId, primary.filePath)
+        }.getOrNull()
     }
 
     private suspend fun loadLastOrder(companyId: String) {

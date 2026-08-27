@@ -1,6 +1,7 @@
 package com.budcom.android.feature.transaction.presentation
 
 import android.content.Intent
+import java.io.File
 import com.budcom.android.feature.transaction.domain.model.BuyAgainEntry
 import com.budcom.android.feature.transaction.domain.model.TransactionDraft
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState
@@ -26,6 +27,13 @@ data class TransactionComposerUiState(
      * [TransactionComposerViewModel] directly from the existing `CatalogueRepository` — no
      * duplicate product table, no second pricing engine. */
     val newSkus: List<TransactionNewSkuRow> = emptyList(),
+    /** Cart-photo fix: the same Catalogue primary-photo file already resolved for the Catalogue
+     * product-list row (`CatalogueViewModel`'s own `primaryAssetFile`, same
+     * `CatalogueRepository.listAssets`/`resolveAssetFile` calls, no new resolution logic) --
+     * keyed by `linkedProductId` so any row on this screen (Selected, Previously Bought, New SKUs)
+     * can look up the same product's photo without a separate resolution path. A missing entry or
+     * a `null` value both mean "no photo," never a crash. */
+    val productPhotos: Map<String, File?> = emptyMap(),
     /** True once loading has determined a completed transaction exists for this buyer — drives
      * whether the "Last Order" action is shown at all (task's own "if a previous completed
      * transaction does not exist, show a normal empty state, do not crash"). */
