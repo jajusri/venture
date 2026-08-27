@@ -164,6 +164,11 @@ data class TransactionLineItem(
 enum class CanonicalOrderState(val columnValue: String) {
     Draft("DRAFT"),
     Sent("SENT"),
+    Seen("SEEN"),
+    Confirmed("CONFIRMED"),
+    RevisionPending("REVISION_PENDING"),
+    RevisionSent("REVISION_SENT"),
+    RevisionSeen("REVISION_SEEN"),
     ;
 
     companion object {
@@ -184,6 +189,58 @@ data class CanonicalOrder(
     val createdAt: TransactionTimestamp,
     val version: Int,
     val lines: List<CanonicalOrderLine>,
+)
+
+enum class OrderCommercialEventType(val columnValue: String) {
+    Seen("SEEN"),
+    Confirmed("CONFIRMED"),
+    RevisionProposed("REVISION_PROPOSED"),
+    RevisionAccepted("REVISION_ACCEPTED"),
+    ;
+
+    companion object {
+        fun fromColumn(value: String): OrderCommercialEventType = entries.first { it.columnValue == value }
+    }
+}
+
+/** Recipient-side fact: the structured Order object was opened for reading. */
+data class OrderStructuredOpenEvent(
+    val eventId: String,
+    val idempotencyKey: String,
+    val orderId: String,
+    val orderVersion: Int,
+    val objectType: String,
+    val viewerBusinessId: String,
+    val viewerActorId: String,
+    val viewerDeviceId: String,
+    val senderBusinessId: String,
+    val openedAt: TransactionTimestamp,
+)
+
+/** Canonical Seen commercial evidence derived from a validated open event. */
+data class OrderSeenEvidence(
+    val eventId: String,
+    val orderId: String,
+    val orderVersion: Int,
+    val viewerBusinessId: String,
+    val viewerActorId: String,
+    val viewerDeviceId: String,
+    val senderBusinessId: String,
+    val seenAt: TransactionTimestamp,
+)
+
+data class OrderCommercialEvent(
+    val companyId: String,
+    val eventId: String,
+    val idempotencyKey: String,
+    val orderId: String,
+    val orderVersion: Int,
+    val eventType: OrderCommercialEventType,
+    val actorBusinessId: String,
+    val actorId: String,
+    val actorDeviceId: String?,
+    val counterpartyBusinessId: String,
+    val occurredAt: TransactionTimestamp,
 )
 
 data class CanonicalOrderLine(

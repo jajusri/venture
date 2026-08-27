@@ -394,6 +394,9 @@ private fun ReviewOrderSection(state: TransactionComposerUiState, onEvent: (Tran
             Text(totalLabel(state.draft?.totalAmount), style = MaterialTheme.typography.titleSmall, modifier = Modifier.testTag("composer_review_total"))
             if (state.canonicalDraftOrder != null) {
                 Text("Draft order saved locally", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("composer_review_saved"))
+                state.canonicalOrderStatusLabel?.let { label ->
+                    Text("Order status: $label", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("composer_order_status"))
+                }
                 TextButton(
                     onClick = { onEvent(TransactionComposerEvent.SendOrder) },
                     enabled = !state.deliveryQueued,

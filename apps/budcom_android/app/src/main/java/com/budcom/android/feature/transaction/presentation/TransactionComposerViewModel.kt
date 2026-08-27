@@ -10,7 +10,8 @@ import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepositor
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.transaction.domain.model.BuyAgainEntry
 import com.budcom.android.feature.transaction.domain.model.BuyAgainListBuilder
-import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderStatusLabels
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
 import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
 import com.budcom.android.feature.transaction.domain.model.ReorderOperations
@@ -248,8 +249,9 @@ class TransactionComposerViewModel @Inject constructor(
         }
         viewModelScope.launch {
             runCatching { repository.enqueueOrderDelivery(order, clock.now()) }
-                .onSuccess {
+                .onSuccess { envelope ->
                     runCatching { relayOutboxDispatcher.submitPending(order.companyId) }
+                    refreshCanonicalOrderStatus(order.companyId, order.orderId)
                     _uiState.update { it.copy(deliveryQueued = true, message = "Waiting to send.") }
                 }
                 .onFailure { _uiState.update { it.copy(message = "Order is still saved locally and can be sent later.") } }
@@ -309,6 +311,18 @@ class TransactionComposerViewModel @Inject constructor(
                     _uiState.update { it.copy(message = intentResult.message) }
                     false
                 }
+            }
+        }
+    }
+
+    private fun refreshCanonicalOrderStatus(companyId: String, orderId: String) {
+        viewModelScope.launch {
+            val latest = repository.findCanonicalOrderById(companyId, orderId) ?: return@launch
+            _uiState.update {
+                it.copy(
+                    canonicalDraftOrder = latest,
+                    canonicalOrderStatusLabel = CanonicalOrderStatusLabels.buyerFacing(latest.state),
+                )
             }
         }
     }

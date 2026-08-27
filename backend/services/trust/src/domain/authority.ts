@@ -16,7 +16,7 @@ export function identifier<Name extends string>(value: string, name: Name): Bran
 
 export interface VerifiedUserPrincipal { readonly actorId: ActorId; readonly verificationId: string; readonly verifiedAt: Date }
 export interface BusinessAuthorityReference { readonly businessId: BusinessId; readonly status: 'active' | 'suspended' | 'revoked' }
-export type AuthorityCapability = 'manage_memberships' | 'approve_memberships' | 'register_devices' | 'revoke_devices' | 'issue_credentials' | 'send_orders';
+export type AuthorityCapability = 'manage_memberships' | 'approve_memberships' | 'register_devices' | 'revoke_devices' | 'issue_credentials' | 'send_orders' | 'confirm_orders';
 export class AuthorityScope {
   readonly capabilities: ReadonlySet<AuthorityCapability>;
   constructor(capabilities: readonly AuthorityCapability[]) {

@@ -3,6 +3,13 @@ package com.budcom.android.feature.transaction.domain.repository
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
+import com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent
+import com.budcom.android.feature.transaction.domain.model.OrderSeenEvidence
+import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
+import com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority
+import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
+import com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence
+import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
 import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
 import com.budcom.android.feature.transaction.domain.model.EstimatePo
 import com.budcom.android.feature.transaction.domain.model.LedgerGroupChoice
@@ -85,6 +92,70 @@ interface TransactionRepository {
         envelope: OrderDeliveryEnvelope,
         evidence: RelayAcceptanceEvidence,
     ): CanonicalOrder? = throw UnsupportedOperationException("Order sent-from-relay is not implemented by this repository")
+
+    /** Records durable Seen evidence when the legitimate recipient opens the structured Order.
+     * Does not mutate the sender's canonical Order snapshot or any accounting record. */
+    suspend fun recordOrderSeenFromOpenEvent(
+        viewerCompanyId: String,
+        envelopeId: String,
+        open: OrderStructuredOpenEvent,
+    ): OrderCommercialEvent? = throw UnsupportedOperationException("Order seen evidence is not implemented by this repository")
+
+    /** Applies validated Seen evidence to the sender-side canonical Order state. */
+    suspend fun applyOrderSeenEvidence(
+        companyId: String,
+        evidence: OrderSeenEvidence,
+    ): CanonicalOrder? = throw UnsupportedOperationException("Order seen application is not implemented by this repository")
+
+    suspend fun findOrderSeenEvidence(
+        companyId: String,
+        orderId: String,
+        orderVersion: Int,
+    ): OrderSeenEvidence? = throw UnsupportedOperationException("Order seen lookup is not implemented by this repository")
+
+    suspend fun findCanonicalOrderById(companyId: String, orderId: String): CanonicalOrder? =
+        throw UnsupportedOperationException("Canonical order lookup is not implemented by this repository")
+
+    suspend fun recordOrderConfirmFromSellerAction(
+        sellerCompanyId: String,
+        envelopeId: String,
+        authority: OrderConfirmAuthority,
+        eventId: String,
+        idempotencyKey: String,
+        timestamp: TransactionTimestamp,
+    ): OrderCommercialEvent? = throw UnsupportedOperationException("Order confirm evidence is not implemented by this repository")
+
+    suspend fun applyOrderConfirmEvidence(companyId: String, evidence: OrderConfirmEvidence): CanonicalOrder? =
+        throw UnsupportedOperationException("Order confirm application is not implemented by this repository")
+
+    suspend fun proposeOrderRevision(
+        sellerCompanyId: String,
+        envelopeId: String,
+        baseline: CanonicalOrder,
+        proposedLines: List<OrderRevisionLineChange>,
+        revisionReason: String?,
+        authority: OrderConfirmAuthority,
+        timestamp: TransactionTimestamp,
+        idempotencyKey: String,
+    ): CanonicalOrder? = throw UnsupportedOperationException("Order revision is not implemented by this repository")
+
+    suspend fun markRevisionSent(companyId: String, orderId: String, envelope: OrderDeliveryEnvelope): CanonicalOrder? =
+        throw UnsupportedOperationException("Revision send state is not implemented by this repository")
+
+    suspend fun recordOrderRevisionAcceptFromBuyerAction(
+        buyerCompanyId: String,
+        envelopeId: String,
+        authority: OrderConfirmAuthority,
+        eventId: String,
+        idempotencyKey: String,
+        timestamp: TransactionTimestamp,
+    ): OrderCommercialEvent? = throw UnsupportedOperationException("Revision accept evidence is not implemented by this repository")
+
+    suspend fun applyOrderRevisionAcceptEvidence(companyId: String, evidence: OrderRevisionAcceptEvidence): CanonicalOrder? =
+        throw UnsupportedOperationException("Revision accept application is not implemented by this repository")
+
+    suspend fun findArchivedOrderVersion(companyId: String, orderId: String, version: Int): CanonicalOrder? =
+        throw UnsupportedOperationException("Archived order lookup is not implemented by this repository")
 
     // ---- §4: generic Estimate/PO ----
 

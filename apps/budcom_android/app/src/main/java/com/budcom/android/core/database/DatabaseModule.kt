@@ -77,7 +77,7 @@ object DatabaseModule {
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
             MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
-            MIGRATION_15_16, MIGRATION_16_17,
+            MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -197,6 +197,14 @@ object DatabaseModule {
     @Provides
     fun provideRecipientInboxCursorDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.RecipientInboxCursorDao =
         db.recipientInboxCursorDao()
+
+    @Provides
+    fun provideOrderCommercialEventDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.OrderCommercialEventDao =
+        db.orderCommercialEventDao()
+
+    @Provides
+    fun provideOrderVersionArchiveDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.OrderVersionArchiveDao =
+        db.orderVersionArchiveDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -785,6 +793,58 @@ object DatabaseModule {
                 "CREATE TABLE IF NOT EXISTS `txn_recipient_inbox_cursor` (" +
                     "`companyId` TEXT NOT NULL, `mailboxId` TEXT NOT NULL, `cursor` TEXT, " +
                     "PRIMARY KEY(`companyId`, `mailboxId`))",
+            )
+        }
+    }
+
+    val MIGRATION_17_18 = object : Migration(17, 18) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_order_commercial_event` (" +
+                    "`companyId` TEXT NOT NULL, `eventId` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, " +
+                    "`orderId` TEXT NOT NULL, `orderVersion` INTEGER NOT NULL, `eventType` TEXT NOT NULL, " +
+                    "`actorBusinessId` TEXT NOT NULL, `actorId` TEXT NOT NULL, `actorDeviceId` TEXT, " +
+                    "`counterpartyBusinessId` TEXT NOT NULL, `occurredAt` INTEGER NOT NULL, `occurredAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `eventId`))",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_order_commercial_event_companyId_idempotencyKey` " +
+                    "ON `txn_order_commercial_event` (`companyId`, `idempotencyKey`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_order_commercial_event_companyId_orderId_orderVersion_eventType` " +
+                    "ON `txn_order_commercial_event` (`companyId`, `orderId`, `orderVersion`, `eventType`)",
+            )
+        }
+    }
+
+    val MIGRATION_18_19 = object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `txn_order_commercial_event` ADD COLUMN `authorityEpoch` INTEGER")
+            db.execSQL("ALTER TABLE `txn_order_commercial_event` ADD COLUMN `authorityScopeFingerprint` TEXT")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_order_version_archive` (" +
+                    "`companyId` TEXT NOT NULL, `orderId` TEXT NOT NULL, `version` INTEGER NOT NULL, " +
+                    "`creationKey` TEXT NOT NULL, `sellerCompanyId` TEXT NOT NULL, `buyerPartyId` TEXT, " +
+                    "`state` TEXT NOT NULL, `source` TEXT NOT NULL, `submissionType` TEXT NOT NULL, `note` TEXT, " +
+                    "`createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, `supersedesVersion` INTEGER, " +
+                    "`revisionReason` TEXT, `archivedAt` INTEGER NOT NULL, `archivedAtSource` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `orderId`, `version`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_order_version_archive_companyId_orderId` " +
+                    "ON `txn_order_version_archive` (`companyId`, `orderId`)",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_order_line_version_archive` (" +
+                    "`companyId` TEXT NOT NULL, `orderId` TEXT NOT NULL, `version` INTEGER NOT NULL, `lineId` TEXT NOT NULL, " +
+                    "`linkedProductId` TEXT, `snapshotProductName` TEXT NOT NULL, `snapshotUnit` TEXT, `snapshotSku` TEXT, " +
+                    "`quantity` TEXT NOT NULL, `unitPriceAmount` TEXT, `unitPriceCurrencyCode` TEXT, `priceState` TEXT NOT NULL, " +
+                    "`lineTotalAmount` TEXT, PRIMARY KEY(`companyId`, `orderId`, `version`, `lineId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_order_line_version_archive_companyId_orderId_version` " +
+                    "ON `txn_order_line_version_archive` (`companyId`, `orderId`, `version`)",
             )
         }
     }

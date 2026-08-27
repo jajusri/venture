@@ -38,6 +38,8 @@ import com.budcom.android.feature.search.presentation.UniversalSearchRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
 import com.budcom.android.feature.settings.presentation.SettingsRoute
 import com.budcom.android.feature.sync.presentation.SyncRoute
+import com.budcom.android.feature.transaction.presentation.ReceivedOrderRoute
+import com.budcom.android.feature.transaction.presentation.ReceivedOrderViewModel
 import com.budcom.android.feature.transaction.presentation.TransactionComposerRoute
 import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsRoute
@@ -270,6 +272,17 @@ fun BudcomNavHost(
         }
         composable(route = Routes.TRANSACTION_COMPOSER) {
             TransactionComposerRoute()
+        }
+        composable(
+            route = Routes.RECEIVED_ORDER,
+            arguments = listOf(
+                navArgument(ReceivedOrderViewModel.ENVELOPE_ID_ARG) { type = NavType.StringType },
+                navArgument(ReceivedOrderViewModel.SENDER_BUSINESS_ID_ARG) { type = NavType.StringType },
+                navArgument(ReceivedOrderViewModel.ORDER_ID_ARG) { type = NavType.StringType },
+                navArgument(ReceivedOrderViewModel.ORDER_VERSION_ARG) { type = NavType.IntType },
+            ),
+        ) {
+            ReceivedOrderRoute()
         }
         composable(
             route = Routes.CATALOGUE_DETAIL,

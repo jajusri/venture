@@ -22,6 +22,15 @@ interface CanonicalOrderDao {
     @Query("UPDATE txn_order SET state = :state WHERE companyId = :companyId AND orderId = :orderId")
     suspend fun updateState(companyId: String, orderId: String, state: String)
 
+    @Query(
+        "UPDATE txn_order SET version = :version, state = :state, note = :note " +
+            "WHERE companyId = :companyId AND orderId = :orderId",
+    )
+    suspend fun updateVersionStateAndNote(companyId: String, orderId: String, version: Int, state: String, note: String?)
+
+    @Query("DELETE FROM txn_order_line WHERE companyId = :companyId AND orderId = :orderId")
+    suspend fun deleteLines(companyId: String, orderId: String)
+
     @Query("SELECT * FROM txn_order_line WHERE companyId = :companyId AND orderId = :orderId ORDER BY lineId ASC")
     suspend fun findLines(companyId: String, orderId: String): List<CanonicalOrderLineEntity>
 }
@@ -72,6 +81,47 @@ interface RecipientInboxCursorDao {
 
     @Query("SELECT * FROM txn_recipient_inbox_cursor WHERE companyId = :companyId AND mailboxId = :mailboxId")
     suspend fun find(companyId: String, mailboxId: String): RecipientInboxCursorEntity?
+}
+
+@Dao
+interface OrderCommercialEventDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entity: OrderCommercialEventEntity)
+
+    @Query("SELECT * FROM txn_order_commercial_event WHERE companyId = :companyId AND idempotencyKey = :idempotencyKey")
+    suspend fun findByIdempotencyKey(companyId: String, idempotencyKey: String): OrderCommercialEventEntity?
+
+    @Query(
+        "SELECT * FROM txn_order_commercial_event WHERE companyId = :companyId AND orderId = :orderId " +
+            "AND orderVersion = :orderVersion AND eventType = :eventType LIMIT 1",
+    )
+    suspend fun findByOrderVersionAndType(
+        companyId: String,
+        orderId: String,
+        orderVersion: Int,
+        eventType: String,
+    ): OrderCommercialEventEntity?
+
+    @Query(
+        "SELECT * FROM txn_order_commercial_event WHERE companyId = :companyId AND orderId = :orderId " +
+            "AND orderVersion = :orderVersion ORDER BY occurredAt ASC",
+    )
+    suspend fun findAllForOrderVersion(companyId: String, orderId: String, orderVersion: Int): List<OrderCommercialEventEntity>
+}
+
+@Dao
+interface OrderVersionArchiveDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertOrder(entity: OrderVersionArchiveEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertLines(entities: List<OrderVersionLineArchiveEntity>)
+
+    @Query("SELECT * FROM txn_order_version_archive WHERE companyId = :companyId AND orderId = :orderId AND version = :version")
+    suspend fun findOrder(companyId: String, orderId: String, version: Int): OrderVersionArchiveEntity?
+
+    @Query("SELECT * FROM txn_order_line_version_archive WHERE companyId = :companyId AND orderId = :orderId AND version = :version ORDER BY lineId ASC")
+    suspend fun findLines(companyId: String, orderId: String, version: Int): List<OrderVersionLineArchiveEntity>
 }
 
 @Dao

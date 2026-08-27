@@ -171,6 +171,57 @@ object CanonicalOrderSentTransitions {
         return when (order.state) {
             CanonicalOrderState.Sent -> CanonicalOrderState.Sent
             CanonicalOrderState.Draft -> CanonicalOrderState.Sent
+            CanonicalOrderState.Seen,
+            CanonicalOrderState.Confirmed,
+            CanonicalOrderState.RevisionPending,
+            CanonicalOrderState.RevisionSent,
+            CanonicalOrderState.RevisionSeen,
+            -> null
+        }
+    }
+}
+
+object RecipientOrderSeenOpenTransitions {
+    fun toEvidence(
+        inbox: StructuredRecipientInboxEntry,
+        open: OrderStructuredOpenEvent,
+        viewerCompanyId: String,
+    ): OrderSeenEvidence? {
+        if (open.viewerBusinessId != viewerCompanyId || inbox.companyId != viewerCompanyId) return null
+        if (open.orderId != inbox.objectId || open.orderVersion != inbox.objectVersion) return null
+        if (open.objectType != inbox.objectType) return null
+        if (open.senderBusinessId != inbox.senderBusinessId) return null
+        if (open.viewerBusinessId == open.senderBusinessId) return null
+        if (open.viewerActorId.isBlank() || open.viewerDeviceId.isBlank()) return null
+        if (open.eventId.isBlank() || open.idempotencyKey.isBlank()) return null
+        if (inbox.transportState != RecipientInboxTransportState.Received) return null
+        return OrderSeenEvidence(
+            eventId = open.eventId,
+            orderId = open.orderId,
+            orderVersion = open.orderVersion,
+            viewerBusinessId = open.viewerBusinessId,
+            viewerActorId = open.viewerActorId,
+            viewerDeviceId = open.viewerDeviceId,
+            senderBusinessId = open.senderBusinessId,
+            seenAt = open.openedAt,
+        )
+    }
+}
+
+object CanonicalOrderSeenTransitions {
+    fun apply(order: CanonicalOrder, evidence: OrderSeenEvidence): CanonicalOrderState? {
+        if (evidence.orderId != order.orderId || evidence.orderVersion != order.version) return null
+        if (evidence.senderBusinessId != order.companyId) return null
+        if (evidence.viewerBusinessId == order.companyId) return null
+        return when (order.state) {
+            CanonicalOrderState.Seen -> CanonicalOrderState.Seen
+            CanonicalOrderState.Sent -> CanonicalOrderState.Seen
+            CanonicalOrderState.RevisionSeen -> CanonicalOrderState.RevisionSeen
+            CanonicalOrderState.RevisionSent -> CanonicalOrderState.RevisionSeen
+            CanonicalOrderState.Draft,
+            CanonicalOrderState.Confirmed,
+            CanonicalOrderState.RevisionPending,
+            -> null
         }
     }
 }

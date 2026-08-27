@@ -10,6 +10,13 @@ import com.budcom.android.feature.transaction.data.local.CanonicalOrderEntity
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderLineEntity
 import com.budcom.android.feature.transaction.data.local.OrderDeliveryEnvelopeEntity
 import com.budcom.android.feature.transaction.data.local.OrderOutboxDao
+import com.budcom.android.feature.transaction.data.local.OrderCommercialEventDao
+import com.budcom.android.feature.transaction.data.local.OrderCommercialEventEntity
+import com.budcom.android.feature.transaction.data.local.OrderVersionArchiveDao
+import com.budcom.android.feature.transaction.data.local.OrderVersionArchiveEntity
+import com.budcom.android.feature.transaction.data.local.OrderVersionLineArchiveEntity
+import com.budcom.android.feature.transaction.data.local.StructuredRecipientInboxDao
+import com.budcom.android.feature.transaction.data.local.StructuredRecipientInboxEntity
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionDao
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionEntity
 import com.budcom.android.feature.transaction.data.local.EstimatePoDao
@@ -29,7 +36,22 @@ import com.budcom.android.feature.transaction.domain.model.CatalogueAccessGrant
 import com.budcom.android.feature.transaction.domain.model.CataloguePriceVisibilityGrant
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderLine
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderConfirmedTransitions
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderRevisionAcceptTransitions
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderSeenTransitions
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderSentTransitions
+import com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority
+import com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthorityValidation
+import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
+import com.budcom.android.feature.transaction.domain.model.OrderMaterialChangeClassifier
+import com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence
+import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
+import com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent
+import com.budcom.android.feature.transaction.domain.model.OrderCommercialEventType
+import com.budcom.android.feature.transaction.domain.model.OrderSeenEvidence
+import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
+import com.budcom.android.feature.transaction.domain.model.RecipientInboxTransportState
+import com.budcom.android.feature.transaction.domain.model.RecipientOrderSeenOpenTransitions
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
 import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
@@ -104,6 +126,9 @@ class TransactionRepositoryImpl @Inject constructor(
     private val dispatchers: DispatcherProvider,
     private val canonicalOrderDao: CanonicalOrderDao,
     private val orderOutboxDao: OrderOutboxDao,
+    private val recipientInboxDao: StructuredRecipientInboxDao,
+    private val orderCommercialEventDao: OrderCommercialEventDao,
+    private val orderVersionArchiveDao: OrderVersionArchiveDao,
 ) : TransactionRepository, OrderSentFromRelayEvidence {
 
     override suspend fun createDraftOrder(
@@ -159,7 +184,7 @@ class TransactionRepositoryImpl @Inject constructor(
     }
 
     override suspend fun enqueueOrderDelivery(order: CanonicalOrder, timestamp: TransactionTimestamp): OrderDeliveryEnvelope = withContext(dispatchers.io) {
-        require(order.state == CanonicalOrderState.Draft)
+        require(order.state == CanonicalOrderState.Draft || order.state == CanonicalOrderState.RevisionPending)
         val key = "order:${order.orderId}:v${order.version}"
         val existing = orderOutboxDao.findByIdempotencyKey(order.companyId, key)
         if (existing != null) return@withContext existing.toDomain()
@@ -199,6 +224,346 @@ class TransactionRepositoryImpl @Inject constructor(
         val next = CanonicalOrderSentTransitions.apply(order, envelope, evidence) ?: return@withContext null
         if (order.state != next) canonicalOrderDao.updateState(companyId, order.orderId, next.columnValue)
         order.copy(state = next)
+    }
+
+    override suspend fun recordOrderSeenFromOpenEvent(
+        viewerCompanyId: String,
+        envelopeId: String,
+        open: OrderStructuredOpenEvent,
+    ): OrderCommercialEvent? = withContext(dispatchers.io) {
+        val inboxEntity = recipientInboxDao.findByEnvelopeId(viewerCompanyId, envelopeId) ?: return@withContext null
+        val inbox = inboxEntity.toInboxDomain()
+        val evidence = RecipientOrderSeenOpenTransitions.toEvidence(inbox, open, viewerCompanyId) ?: return@withContext null
+        val existing = orderCommercialEventDao.findByIdempotencyKey(viewerCompanyId, open.idempotencyKey)
+        if (existing != null) {
+            if (existing.eventId != evidence.eventId || existing.orderId != evidence.orderId || existing.orderVersion != evidence.orderVersion) {
+                return@withContext null
+            }
+            return@withContext existing.toDomain()
+        }
+        val entity = OrderCommercialEventEntity(
+            companyId = viewerCompanyId,
+            eventId = evidence.eventId,
+            idempotencyKey = open.idempotencyKey,
+            orderId = evidence.orderId,
+            orderVersion = evidence.orderVersion,
+            eventType = OrderCommercialEventType.Seen.columnValue,
+            actorBusinessId = evidence.viewerBusinessId,
+            actorId = evidence.viewerActorId,
+            actorDeviceId = evidence.viewerDeviceId,
+            counterpartyBusinessId = evidence.senderBusinessId,
+            occurredAt = evidence.seenAt.epochMillis,
+            occurredAtSource = evidence.seenAt.source.name,
+        )
+        try {
+            orderCommercialEventDao.insert(entity)
+        } catch (_: android.database.SQLException) {
+            return@withContext orderCommercialEventDao.findByIdempotencyKey(viewerCompanyId, open.idempotencyKey)?.toDomain()
+        }
+        entity.toDomain()
+    }
+
+    override suspend fun applyOrderSeenEvidence(
+        companyId: String,
+        evidence: OrderSeenEvidence,
+    ): CanonicalOrder? = withContext(dispatchers.io) {
+        val stored = canonicalOrderDao.findById(companyId, evidence.orderId) ?: return@withContext null
+        val order = stored.toDomain(canonicalOrderDao.findLines(companyId, evidence.orderId))
+        val next = CanonicalOrderSeenTransitions.apply(order, evidence) ?: return@withContext null
+        if (order.state != next) canonicalOrderDao.updateState(companyId, order.orderId, next.columnValue)
+        order.copy(state = next)
+    }
+
+    override suspend fun findOrderSeenEvidence(
+        companyId: String,
+        orderId: String,
+        orderVersion: Int,
+    ): OrderSeenEvidence? = withContext(dispatchers.io) {
+        orderCommercialEventDao.findByOrderVersionAndType(
+            companyId, orderId, orderVersion, OrderCommercialEventType.Seen.columnValue,
+        )?.toSeenEvidence()
+    }
+
+    override suspend fun findCanonicalOrderById(companyId: String, orderId: String): CanonicalOrder? = withContext(dispatchers.io) {
+        val stored = canonicalOrderDao.findById(companyId, orderId) ?: return@withContext null
+        stored.toDomain(canonicalOrderDao.findLines(companyId, orderId))
+    }
+
+    override suspend fun recordOrderConfirmFromSellerAction(
+        sellerCompanyId: String,
+        envelopeId: String,
+        authority: OrderConfirmAuthority,
+        eventId: String,
+        idempotencyKey: String,
+        timestamp: TransactionTimestamp,
+    ): OrderCommercialEvent? = withContext(dispatchers.io) {
+        val existing = orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)
+        if (existing != null) return@withContext existing.toDomain()
+        val inboxEntity = recipientInboxDao.findByEnvelopeId(sellerCompanyId, envelopeId) ?: return@withContext null
+        val inbox = inboxEntity.toInboxDomain()
+        if (!authority.permitsOrderConfirm() || authority.businessId != sellerCompanyId) return@withContext null
+        if (inbox.companyId != sellerCompanyId || inbox.senderBusinessId == sellerCompanyId) return@withContext null
+        orderCommercialEventDao.findByOrderVersionAndType(
+            sellerCompanyId, inbox.objectId, inbox.objectVersion, OrderCommercialEventType.Seen.columnValue,
+        ) ?: return@withContext null
+        val entity = OrderCommercialEventEntity(
+            companyId = sellerCompanyId,
+            eventId = eventId,
+            idempotencyKey = idempotencyKey,
+            orderId = inbox.objectId,
+            orderVersion = inbox.objectVersion,
+            eventType = OrderCommercialEventType.Confirmed.columnValue,
+            actorBusinessId = authority.businessId,
+            actorId = authority.actorId,
+            actorDeviceId = authority.deviceId,
+            counterpartyBusinessId = inbox.senderBusinessId,
+            occurredAt = timestamp.epochMillis,
+            occurredAtSource = timestamp.source.name,
+            authorityEpoch = authority.authorityEpoch,
+            authorityScopeFingerprint = authority.scopeFingerprint(),
+        )
+        try {
+            orderCommercialEventDao.insert(entity)
+        } catch (_: android.database.SQLException) {
+            return@withContext orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)?.toDomain()
+        }
+        entity.toDomain()
+    }
+
+    override suspend fun applyOrderConfirmEvidence(companyId: String, evidence: OrderConfirmEvidence): CanonicalOrder? =
+        withContext(dispatchers.io) {
+            val stored = canonicalOrderDao.findById(companyId, evidence.orderId) ?: return@withContext null
+            val order = stored.toDomain(canonicalOrderDao.findLines(companyId, evidence.orderId))
+            val next = CanonicalOrderConfirmedTransitions.apply(order, evidence) ?: return@withContext null
+            if (order.state != next) canonicalOrderDao.updateState(companyId, order.orderId, next.columnValue)
+            order.copy(state = next)
+        }
+
+    override suspend fun proposeOrderRevision(
+        sellerCompanyId: String,
+        envelopeId: String,
+        baseline: CanonicalOrder,
+        proposedLines: List<OrderRevisionLineChange>,
+        revisionReason: String?,
+        authority: OrderConfirmAuthority,
+        timestamp: TransactionTimestamp,
+        idempotencyKey: String,
+    ): CanonicalOrder? = withContext(dispatchers.io) {
+        if (!authority.permitsOrderConfirm()) return@withContext null
+        val inboxEntity = recipientInboxDao.findByEnvelopeId(sellerCompanyId, envelopeId) ?: return@withContext null
+        val inbox = inboxEntity.toInboxDomain()
+        if (inbox.objectId != baseline.orderId || inbox.objectVersion != baseline.version) return@withContext null
+        val material = OrderMaterialChangeClassifier.classify(baseline, proposedLines, revisionReason)
+        if (!material.isMaterial) return@withContext null
+        val existingRevision = orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)
+        if (existingRevision != null) {
+            return@withContext findCanonicalOrderById(sellerCompanyId, baseline.orderId)
+        }
+        val stored = canonicalOrderDao.findById(sellerCompanyId, baseline.orderId)
+        if (stored == null) {
+            canonicalOrderDao.insert(
+                CanonicalOrderEntity(
+                    companyId = sellerCompanyId,
+                    orderId = baseline.orderId,
+                    creationKey = "revision:${baseline.orderId}",
+                    sellerCompanyId = inbox.senderBusinessId,
+                    buyerPartyId = sellerCompanyId,
+                    state = CanonicalOrderState.Seen.columnValue,
+                    source = baseline.source.columnValue,
+                    submissionType = baseline.submissionType.columnValue,
+                    note = baseline.note,
+                    createdAt = baseline.createdAt.epochMillis,
+                    createdAtSource = baseline.createdAt.source.name,
+                    version = baseline.version,
+                ),
+            )
+            canonicalOrderDao.upsertLines(
+                baseline.lines.map { line ->
+                    CanonicalOrderLineEntity(
+                        companyId = sellerCompanyId,
+                        orderId = baseline.orderId,
+                        lineId = line.lineId,
+                        linkedProductId = line.linkedProductId,
+                        snapshotProductName = line.snapshotProductName,
+                        snapshotUnit = line.snapshotUnit,
+                        snapshotSku = line.snapshotSku,
+                        quantity = line.quantity,
+                        unitPriceAmount = line.unitPriceAmount,
+                        unitPriceCurrencyCode = line.unitPriceCurrencyCode,
+                        priceState = line.priceState.toColumnValue(),
+                        lineTotalAmount = line.lineTotalAmount,
+                    )
+                },
+            )
+        }
+        archiveCurrentOrderVersion(sellerCompanyId, baseline.orderId, timestamp, revisionReason)
+        val nextVersion = baseline.version + 1
+        val nextLines = proposedLines.map { line ->
+            CanonicalOrderLineEntity(
+                companyId = sellerCompanyId,
+                orderId = baseline.orderId,
+                lineId = line.lineId,
+                linkedProductId = line.linkedProductId,
+                snapshotProductName = line.snapshotProductName,
+                snapshotUnit = line.snapshotUnit,
+                snapshotSku = line.snapshotSku,
+                quantity = line.quantity,
+                unitPriceAmount = line.unitPriceAmount,
+                unitPriceCurrencyCode = line.unitPriceCurrencyCode,
+                priceState = line.priceState.toColumnValue(),
+                lineTotalAmount = line.lineTotalAmount,
+            )
+        }
+        canonicalOrderDao.deleteLines(sellerCompanyId, baseline.orderId)
+        canonicalOrderDao.upsertLines(nextLines)
+        canonicalOrderDao.updateVersionStateAndNote(
+            sellerCompanyId,
+            baseline.orderId,
+            nextVersion,
+            CanonicalOrderState.RevisionPending.columnValue,
+            revisionReason,
+        )
+        val revisionEvent = OrderCommercialEventEntity(
+            companyId = sellerCompanyId,
+            eventId = UUID.randomUUID().toString(),
+            idempotencyKey = idempotencyKey,
+            orderId = baseline.orderId,
+            orderVersion = nextVersion,
+            eventType = OrderCommercialEventType.RevisionProposed.columnValue,
+            actorBusinessId = authority.businessId,
+            actorId = authority.actorId,
+            actorDeviceId = authority.deviceId,
+            counterpartyBusinessId = inbox.senderBusinessId,
+            occurredAt = timestamp.epochMillis,
+            occurredAtSource = timestamp.source.name,
+            authorityEpoch = authority.authorityEpoch,
+            authorityScopeFingerprint = authority.scopeFingerprint(),
+        )
+        try {
+            orderCommercialEventDao.insert(revisionEvent)
+        } catch (_: android.database.SQLException) {
+            return@withContext findCanonicalOrderById(sellerCompanyId, baseline.orderId)
+        }
+        findCanonicalOrderById(sellerCompanyId, baseline.orderId)
+    }
+
+    override suspend fun markRevisionSent(companyId: String, orderId: String, envelope: OrderDeliveryEnvelope): CanonicalOrder? =
+        withContext(dispatchers.io) {
+            val stored = canonicalOrderDao.findById(companyId, orderId) ?: return@withContext null
+            val order = stored.toDomain(canonicalOrderDao.findLines(companyId, orderId))
+            if (order.version != envelope.orderVersion) return@withContext null
+            if (order.state != CanonicalOrderState.RevisionPending) return@withContext null
+            canonicalOrderDao.updateState(companyId, orderId, CanonicalOrderState.RevisionSent.columnValue)
+            order.copy(state = CanonicalOrderState.RevisionSent)
+        }
+
+    override suspend fun recordOrderRevisionAcceptFromBuyerAction(
+        buyerCompanyId: String,
+        envelopeId: String,
+        authority: OrderConfirmAuthority,
+        eventId: String,
+        idempotencyKey: String,
+        timestamp: TransactionTimestamp,
+    ): OrderCommercialEvent? = withContext(dispatchers.io) {
+        val existing = orderCommercialEventDao.findByIdempotencyKey(buyerCompanyId, idempotencyKey)
+        if (existing != null) return@withContext existing.toDomain()
+        if (!authority.permitsOrderConfirm()) return@withContext null
+        val inboxEntity = recipientInboxDao.findByEnvelopeId(buyerCompanyId, envelopeId) ?: return@withContext null
+        val inbox = inboxEntity.toInboxDomain()
+        val order = canonicalOrderDao.findById(buyerCompanyId, inbox.objectId) ?: return@withContext null
+        if (order.version != inbox.objectVersion) return@withContext null
+        val seen = orderCommercialEventDao.findByOrderVersionAndType(
+            buyerCompanyId, inbox.objectId, inbox.objectVersion, OrderCommercialEventType.Seen.columnValue,
+        ) ?: return@withContext null
+        val entity = OrderCommercialEventEntity(
+            companyId = buyerCompanyId,
+            eventId = eventId,
+            idempotencyKey = idempotencyKey,
+            orderId = inbox.objectId,
+            orderVersion = inbox.objectVersion,
+            eventType = OrderCommercialEventType.RevisionAccepted.columnValue,
+            actorBusinessId = authority.businessId,
+            actorId = authority.actorId,
+            actorDeviceId = authority.deviceId,
+            counterpartyBusinessId = inbox.senderBusinessId,
+            occurredAt = timestamp.epochMillis,
+            occurredAtSource = timestamp.source.name,
+            authorityEpoch = authority.authorityEpoch,
+            authorityScopeFingerprint = authority.scopeFingerprint(),
+        )
+        try {
+            orderCommercialEventDao.insert(entity)
+        } catch (_: android.database.SQLException) {
+            return@withContext orderCommercialEventDao.findByIdempotencyKey(buyerCompanyId, idempotencyKey)?.toDomain()
+        }
+        entity.toDomain()
+    }
+
+    override suspend fun applyOrderRevisionAcceptEvidence(
+        companyId: String,
+        evidence: OrderRevisionAcceptEvidence,
+    ): CanonicalOrder? = withContext(dispatchers.io) {
+        val stored = canonicalOrderDao.findById(companyId, evidence.orderId) ?: return@withContext null
+        val order = stored.toDomain(canonicalOrderDao.findLines(companyId, evidence.orderId))
+        val next = CanonicalOrderRevisionAcceptTransitions.apply(order, evidence) ?: return@withContext null
+        if (order.state != next) canonicalOrderDao.updateState(companyId, order.orderId, next.columnValue)
+        order.copy(state = next)
+    }
+
+    override suspend fun findArchivedOrderVersion(companyId: String, orderId: String, version: Int): CanonicalOrder? =
+        withContext(dispatchers.io) {
+            val archived = orderVersionArchiveDao.findOrder(companyId, orderId, version) ?: return@withContext null
+            val lines = orderVersionArchiveDao.findLines(companyId, orderId, version)
+            archived.toDomain(lines)
+        }
+
+    private suspend fun archiveCurrentOrderVersion(
+        companyId: String,
+        orderId: String,
+        timestamp: TransactionTimestamp,
+        revisionReason: String?,
+    ) {
+        val stored = canonicalOrderDao.findById(companyId, orderId) ?: return
+        val lines = canonicalOrderDao.findLines(companyId, orderId)
+        orderVersionArchiveDao.insertOrder(
+            OrderVersionArchiveEntity(
+                companyId = stored.companyId,
+                orderId = stored.orderId,
+                version = stored.version,
+                creationKey = stored.creationKey,
+                sellerCompanyId = stored.sellerCompanyId,
+                buyerPartyId = stored.buyerPartyId,
+                state = stored.state,
+                source = stored.source,
+                submissionType = stored.submissionType,
+                note = stored.note,
+                createdAt = stored.createdAt,
+                createdAtSource = stored.createdAtSource,
+                supersedesVersion = if (stored.version > 1) stored.version - 1 else null,
+                revisionReason = revisionReason,
+                archivedAt = timestamp.epochMillis,
+                archivedAtSource = timestamp.source.name,
+            ),
+        )
+        orderVersionArchiveDao.insertLines(
+            lines.map { line ->
+                OrderVersionLineArchiveEntity(
+                    companyId = line.companyId,
+                    orderId = line.orderId,
+                    version = stored.version,
+                    lineId = line.lineId,
+                    linkedProductId = line.linkedProductId,
+                    snapshotProductName = line.snapshotProductName,
+                    snapshotUnit = line.snapshotUnit,
+                    snapshotSku = line.snapshotSku,
+                    quantity = line.quantity,
+                    unitPriceAmount = line.unitPriceAmount,
+                    unitPriceCurrencyCode = line.unitPriceCurrencyCode,
+                    priceState = line.priceState,
+                    lineTotalAmount = line.lineTotalAmount,
+                )
+            },
+        )
     }
 
     // ============================== §4: Estimate/PO ==============================
@@ -774,4 +1139,80 @@ private fun CatalogueAccessGrantEntity.toDomain(): CatalogueAccessGrant = Catalo
     grantedAt = TransactionTimestamp(grantedAt, TransactionTimestampSource.valueOf(grantedAtSource)),
     expiresAtEpochMillis = expiresAt,
     revokedAt = toTimestampOrNull(revokedAt, revokedAtSource),
+)
+
+private fun StructuredRecipientInboxEntity.toInboxDomain() = com.budcom.android.feature.transaction.domain.model.StructuredRecipientInboxEntry(
+    companyId = companyId,
+    envelopeId = envelopeId,
+    idempotencyKey = idempotencyKey,
+    objectType = objectType,
+    objectId = objectId,
+    objectVersion = objectVersion,
+    senderBusinessId = senderBusinessId,
+    senderActorId = senderActorId,
+    senderDeviceId = senderDeviceId,
+    mailboxSequence = mailboxSequence,
+    acceptanceId = acceptanceId,
+    acceptedAt = TransactionTimestamp(acceptedAt, TransactionTimestampSource.valueOf(acceptedAtSource)),
+    ingestedAt = TransactionTimestamp(ingestedAt, TransactionTimestampSource.valueOf(ingestedAtSource)),
+    transportState = RecipientInboxTransportState.fromColumn(transportState),
+)
+
+private fun OrderCommercialEventEntity.toDomain() = OrderCommercialEvent(
+    companyId = companyId,
+    eventId = eventId,
+    idempotencyKey = idempotencyKey,
+    orderId = orderId,
+    orderVersion = orderVersion,
+    eventType = OrderCommercialEventType.fromColumn(eventType),
+    actorBusinessId = actorBusinessId,
+    actorId = actorId,
+    actorDeviceId = actorDeviceId,
+    counterpartyBusinessId = counterpartyBusinessId,
+    occurredAt = TransactionTimestamp(occurredAt, TransactionTimestampSource.valueOf(occurredAtSource)),
+)
+
+private fun OrderCommercialEventEntity.toSeenEvidence() = OrderSeenEvidence(
+    eventId = eventId,
+    orderId = orderId,
+    orderVersion = orderVersion,
+    viewerBusinessId = actorBusinessId,
+    viewerActorId = actorId,
+    viewerDeviceId = actorDeviceId.orEmpty(),
+    senderBusinessId = counterpartyBusinessId,
+    seenAt = TransactionTimestamp(occurredAt, TransactionTimestampSource.valueOf(occurredAtSource)),
+)
+
+private fun OrderVersionArchiveEntity.toDomain(lines: List<OrderVersionLineArchiveEntity>): CanonicalOrder = CanonicalOrder(
+    companyId = companyId,
+    orderId = orderId,
+    creationKey = creationKey,
+    sellerCompanyId = sellerCompanyId,
+    buyerPartyId = buyerPartyId,
+    state = CanonicalOrderState.fromColumn(state),
+    source = TransactionEntryPointType.fromColumn(source),
+    submissionType = TransactionSubmissionType.fromColumn(submissionType),
+    note = note,
+    createdAt = TransactionTimestamp(createdAt, TransactionTimestampSource.valueOf(createdAtSource)),
+    version = version,
+    lines = lines.map { line ->
+        CanonicalOrderLine(
+            orderId = line.orderId,
+            lineId = line.lineId,
+            linkedProductId = line.linkedProductId,
+            snapshotProductName = line.snapshotProductName,
+            snapshotUnit = line.snapshotUnit,
+            snapshotSku = line.snapshotSku,
+            quantity = line.quantity,
+            unitPriceAmount = line.unitPriceAmount,
+            unitPriceCurrencyCode = line.unitPriceCurrencyCode,
+            priceState = when (line.priceState) {
+                "ACTUAL" -> TransactionDraftPriceState.ActualPrice(requireNotNull(line.unitPriceAmount), line.unitPriceCurrencyCode)
+                "NO_PRICE_SUPPLIED" -> TransactionDraftPriceState.NoPriceSupplied
+                "CONTACT_FOR_PRICE" -> TransactionDraftPriceState.ContactForPrice
+                else -> TransactionDraftPriceState.Hidden
+            },
+            lineTotalAmount = line.lineTotalAmount,
+        )
+    },
 )

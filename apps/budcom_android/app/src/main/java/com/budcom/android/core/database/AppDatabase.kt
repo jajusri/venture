@@ -58,6 +58,11 @@ import com.budcom.android.feature.transaction.data.local.CanonicalOrderEntity
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderLineEntity
 import com.budcom.android.feature.transaction.data.local.OrderDeliveryEnvelopeEntity
 import com.budcom.android.feature.transaction.data.local.OrderOutboxDao
+import com.budcom.android.feature.transaction.data.local.OrderCommercialEventEntity
+import com.budcom.android.feature.transaction.data.local.OrderCommercialEventDao
+import com.budcom.android.feature.transaction.data.local.OrderVersionArchiveEntity
+import com.budcom.android.feature.transaction.data.local.OrderVersionLineArchiveEntity
+import com.budcom.android.feature.transaction.data.local.OrderVersionArchiveDao
 import com.budcom.android.feature.transaction.data.local.RecipientInboxCursorDao
 import com.budcom.android.feature.transaction.data.local.RecipientInboxCursorEntity
 import com.budcom.android.feature.transaction.data.local.StructuredRecipientInboxDao
@@ -123,6 +128,9 @@ import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEnti
         OrderDeliveryEnvelopeEntity::class,
         StructuredRecipientInboxEntity::class,
         RecipientInboxCursorEntity::class,
+        OrderCommercialEventEntity::class,
+        OrderVersionArchiveEntity::class,
+        OrderVersionLineArchiveEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -165,4 +173,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun orderOutboxDao(): OrderOutboxDao
     abstract fun structuredRecipientInboxDao(): StructuredRecipientInboxDao
     abstract fun recipientInboxCursorDao(): RecipientInboxCursorDao
+    abstract fun orderCommercialEventDao(): OrderCommercialEventDao
+    abstract fun orderVersionArchiveDao(): OrderVersionArchiveDao
 }

@@ -2,6 +2,7 @@ package com.budcom.android.feature.transaction.domain.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -80,6 +81,71 @@ class CanonicalOrderSentTransitionsTest {
         assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(senderBusinessId = "other")))
         assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(recipientBusinessId = "other")))
         assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(status = "seen")))
+        assertNull(CanonicalOrderSentTransitions.apply(order(CanonicalOrderState.Seen), envelope(), evidence()))
+    }
+}
+
+class RecipientOrderSeenOpenTransitionsTest {
+    private fun inbox(transport: RecipientInboxTransportState = RecipientInboxTransportState.Received) =
+        com.budcom.android.feature.transaction.domain.model.StructuredRecipientInboxEntry(
+            companyId = "seller-co", envelopeId = "env-1", idempotencyKey = "inbox-1",
+            objectType = "CANONICAL_ORDER", objectId = "order-1", objectVersion = 1,
+            senderBusinessId = "buyer-co", senderActorId = "actor-b", senderDeviceId = "device-b",
+            mailboxSequence = 1, acceptanceId = "accept-1",
+            acceptedAt = TransactionTimestamp(1, TransactionTimestampSource.DeviceLocalProvisional),
+            ingestedAt = TransactionTimestamp(2, TransactionTimestampSource.DeviceLocalProvisional),
+            transportState = transport,
+        )
+
+    private fun open() = OrderStructuredOpenEvent(
+        eventId = "seen-1", idempotencyKey = "seen:order-1:v1:seller-co",
+        orderId = "order-1", orderVersion = 1, objectType = "CANONICAL_ORDER",
+        viewerBusinessId = "seller-co", viewerActorId = "actor-s", viewerDeviceId = "device-s",
+        senderBusinessId = "buyer-co", openedAt = TransactionTimestamp(10, TransactionTimestampSource.DeviceLocalProvisional),
+    )
+
+    @Test
+    fun `delivery ingest alone does not create seen evidence`() {
+        assertNotNull(RecipientOrderSeenOpenTransitions.toEvidence(inbox(), open(), "seller-co"))
+        assertNull(
+            RecipientOrderSeenOpenTransitions.toEvidence(
+                inbox().copy(transportState = RecipientInboxTransportState.Received).copy(
+                    objectId = "other-order",
+                ),
+                open(),
+                "seller-co",
+            ),
+        )
+    }
+
+    @Test
+    fun `seen requires structured open with matching order version and legitimate recipient`() {
+        assertNotNull(RecipientOrderSeenOpenTransitions.toEvidence(inbox(), open(), "seller-co"))
+        assertNull(RecipientOrderSeenOpenTransitions.toEvidence(inbox(), open().copy(orderVersion = 2), "seller-co"))
+        assertNull(RecipientOrderSeenOpenTransitions.toEvidence(inbox(), open().copy(viewerBusinessId = "wrong"), "seller-co"))
+        assertNull(RecipientOrderSeenOpenTransitions.toEvidence(inbox(), open().copy(viewerBusinessId = "buyer-co"), "seller-co"))
+    }
+}
+
+class CanonicalOrderSeenTransitionsTest {
+    private fun order(state: CanonicalOrderState = CanonicalOrderState.Sent) = CanonicalOrder(
+        companyId = "buyer-co", orderId = "order-1", creationKey = "k", sellerCompanyId = "buyer-co", buyerPartyId = "seller-co",
+        state = state, source = TransactionEntryPointType.Catalogue, submissionType = TransactionSubmissionType.Estimate,
+        note = null, createdAt = TransactionTimestamp(1, TransactionTimestampSource.DeviceLocalProvisional), version = 1, lines = emptyList(),
+    )
+    private fun evidence() = OrderSeenEvidence(
+        eventId = "seen-1", orderId = "order-1", orderVersion = 1,
+        viewerBusinessId = "seller-co", viewerActorId = "actor-s", viewerDeviceId = "device-s",
+        senderBusinessId = "buyer-co", seenAt = TransactionTimestamp(10, TransactionTimestampSource.DeviceLocalProvisional),
+    )
+
+    @Test
+    fun `sent order becomes seen from matching evidence and never from draft or self-view`() {
+        assertEquals(CanonicalOrderState.Seen, CanonicalOrderSeenTransitions.apply(order(), evidence()))
+        assertEquals(CanonicalOrderState.Seen, CanonicalOrderSeenTransitions.apply(order(CanonicalOrderState.Seen), evidence()))
+        assertNull(CanonicalOrderSeenTransitions.apply(order(CanonicalOrderState.Draft), evidence()))
+        assertNull(CanonicalOrderSeenTransitions.apply(order(), evidence().copy(orderVersion = 2)))
+        assertNull(CanonicalOrderSeenTransitions.apply(order(), evidence().copy(viewerBusinessId = "buyer-co")))
     }
 }
 

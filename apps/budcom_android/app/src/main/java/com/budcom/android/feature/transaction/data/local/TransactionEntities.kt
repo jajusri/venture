@@ -107,6 +107,76 @@ data class RecipientInboxCursorEntity(
     val cursor: String?,
 )
 
+@Entity(
+    tableName = "txn_order_commercial_event",
+    primaryKeys = ["companyId", "eventId"],
+    indices = [
+        Index(value = ["companyId", "idempotencyKey"], unique = true),
+        Index(value = ["companyId", "orderId", "orderVersion", "eventType"]),
+    ],
+)
+data class OrderCommercialEventEntity(
+    val companyId: String,
+    val eventId: String,
+    val idempotencyKey: String,
+    val orderId: String,
+    val orderVersion: Int,
+    val eventType: String,
+    val actorBusinessId: String,
+    val actorId: String,
+    val actorDeviceId: String?,
+    val counterpartyBusinessId: String,
+    val occurredAt: Long,
+    val occurredAtSource: String,
+    val authorityEpoch: Long? = null,
+    val authorityScopeFingerprint: String? = null,
+)
+
+@Entity(
+    tableName = "txn_order_version_archive",
+    primaryKeys = ["companyId", "orderId", "version"],
+    indices = [Index(value = ["companyId", "orderId"])],
+)
+data class OrderVersionArchiveEntity(
+    val companyId: String,
+    val orderId: String,
+    val version: Int,
+    val creationKey: String,
+    val sellerCompanyId: String,
+    val buyerPartyId: String?,
+    val state: String,
+    val source: String,
+    val submissionType: String,
+    val note: String?,
+    val createdAt: Long,
+    val createdAtSource: String,
+    val supersedesVersion: Int?,
+    val revisionReason: String?,
+    val archivedAt: Long,
+    val archivedAtSource: String,
+)
+
+@Entity(
+    tableName = "txn_order_line_version_archive",
+    primaryKeys = ["companyId", "orderId", "version", "lineId"],
+    indices = [Index(value = ["companyId", "orderId", "version"])],
+)
+data class OrderVersionLineArchiveEntity(
+    val companyId: String,
+    val orderId: String,
+    val version: Int,
+    val lineId: String,
+    val linkedProductId: String?,
+    val snapshotProductName: String,
+    val snapshotUnit: String?,
+    val snapshotSku: String?,
+    val quantity: String,
+    val unitPriceAmount: String?,
+    val unitPriceCurrencyCode: String?,
+    val priceState: String,
+    val lineTotalAmount: String?,
+)
+
 /**
  * Transaction Mode Room entities
  * (docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md §4-§10, §12, §14). Every table
