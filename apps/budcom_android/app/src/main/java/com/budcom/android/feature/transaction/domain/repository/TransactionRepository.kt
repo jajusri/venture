@@ -1,6 +1,7 @@
 package com.budcom.android.feature.transaction.domain.repository
 
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.EstimatePo
 import com.budcom.android.feature.transaction.domain.model.LedgerGroupChoice
 import com.budcom.android.feature.transaction.domain.model.PaymentEvent
@@ -12,6 +13,7 @@ import com.budcom.android.feature.transaction.domain.model.TransactionEntryPoint
 import com.budcom.android.feature.transaction.domain.model.TransactionLineItem
 import com.budcom.android.feature.transaction.domain.model.TransactionSubmissionType
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
+import com.budcom.android.feature.transaction.domain.model.TransactionDraft
 
 /** One line item as submitted — no `estimatePoId`/`lineItemId` yet, the repository assigns those. */
 data class NewLineItem(
@@ -62,6 +64,16 @@ sealed interface SellerInboxActionResult {
  * (product snapshots at submission time), never written to.
  */
 interface TransactionRepository {
+
+    /** Creates or returns one durable local Draft Order for the caller's intentional operation.
+     * The key is persisted so retries are idempotent; this operation never sends or changes any
+     * Estimate/PO, seller inbox, commercial transaction, or accounting record. */
+    suspend fun createDraftOrder(
+        draft: TransactionDraft,
+        creationKey: String,
+        note: String? = null,
+        timestamp: TransactionTimestamp,
+    ): CanonicalOrder = throw UnsupportedOperationException("Draft Order creation is not implemented by this repository")
 
     // ---- §4: generic Estimate/PO ----
 

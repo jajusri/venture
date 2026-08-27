@@ -3,6 +3,7 @@ package com.budcom.android.feature.transaction.presentation
 import android.content.Intent
 import java.io.File
 import com.budcom.android.feature.transaction.domain.model.BuyAgainEntry
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.TransactionDraft
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState
 import com.budcom.android.feature.transaction.domain.model.TransactionSubmissionType
@@ -27,6 +28,7 @@ data class TransactionComposerUiState(
      * [TransactionComposerViewModel] directly from the existing `CatalogueRepository` — no
      * duplicate product table, no second pricing engine. */
     val newSkus: List<TransactionNewSkuRow> = emptyList(),
+    val canonicalDraftOrder: CanonicalOrder? = null,
     /** Cart-photo fix: the same Catalogue primary-photo file already resolved for the Catalogue
      * product-list row (`CatalogueViewModel`'s own `primaryAssetFile`, same
      * `CatalogueRepository.listAssets`/`resolveAssetFile` calls, no new resolution logic) --
@@ -88,6 +90,7 @@ sealed interface TransactionComposerEvent {
      * transaction (see [TransactionComposerViewModel]'s own KDoc on `reorderLastOrder`). A no-op
      * with a user-facing message if no completed transaction exists yet. */
     data object ReorderLastOrder : TransactionComposerEvent
+    data object CreateDraftOrder : TransactionComposerEvent
 
     data object ShareViaWhatsApp : TransactionComposerEvent
 

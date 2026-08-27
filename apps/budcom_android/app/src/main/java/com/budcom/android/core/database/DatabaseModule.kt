@@ -76,7 +76,7 @@ object DatabaseModule {
             DatabaseConstants.NAME,
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-            MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14,
+            MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -182,6 +182,9 @@ object DatabaseModule {
 
     @Provides
     fun provideCatalogueAccessGrantDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantDao = db.catalogueAccessGrantDao()
+
+    @Provides
+    fun provideCanonicalOrderDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.CanonicalOrderDao = db.canonicalOrderDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -703,6 +706,30 @@ object DatabaseModule {
                 "CREATE INDEX IF NOT EXISTS `index_catalogue_access_grant_companyId_buyerPartyId` " +
                     "ON `catalogue_access_grant` (`companyId`, `buyerPartyId`)",
             )
+        }
+    }
+
+    val MIGRATION_14_15 = object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_order` (" +
+                    "`companyId` TEXT NOT NULL, `orderId` TEXT NOT NULL, `creationKey` TEXT NOT NULL, " +
+                    "`sellerCompanyId` TEXT NOT NULL, `buyerPartyId` TEXT, `state` TEXT NOT NULL, " +
+                    "`source` TEXT NOT NULL, `submissionType` TEXT NOT NULL, `note` TEXT, " +
+                    "`createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, `version` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `orderId`))",
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_order_companyId_creationKey` ON `txn_order` (`companyId`, `creationKey`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_txn_order_companyId_buyerPartyId` ON `txn_order` (`companyId`, `buyerPartyId`)")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_order_line` (" +
+                    "`companyId` TEXT NOT NULL, `orderId` TEXT NOT NULL, `lineId` TEXT NOT NULL, " +
+                    "`linkedProductId` TEXT, `snapshotProductName` TEXT NOT NULL, `snapshotUnit` TEXT, " +
+                    "`snapshotSku` TEXT, `quantity` TEXT NOT NULL, `unitPriceAmount` TEXT, " +
+                    "`unitPriceCurrencyCode` TEXT, `priceState` TEXT NOT NULL, `lineTotalAmount` TEXT, " +
+                    "PRIMARY KEY(`companyId`, `orderId`, `lineId`))",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_txn_order_line_companyId_orderId` ON `txn_order_line` (`companyId`, `orderId`)")
         }
     }
 }

@@ -6,6 +6,21 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
 @Dao
+interface CanonicalOrderDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entity: CanonicalOrderEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertLines(entities: List<CanonicalOrderLineEntity>)
+
+    @Query("SELECT * FROM txn_order WHERE companyId = :companyId AND creationKey = :creationKey")
+    suspend fun findByCreationKey(companyId: String, creationKey: String): CanonicalOrderEntity?
+
+    @Query("SELECT * FROM txn_order_line WHERE companyId = :companyId AND orderId = :orderId ORDER BY lineId ASC")
+    suspend fun findLines(companyId: String, orderId: String): List<CanonicalOrderLineEntity>
+}
+
+@Dao
 interface EstimatePoDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: EstimatePoEntity)

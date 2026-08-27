@@ -1352,4 +1352,30 @@ class AppDatabaseMigrationTest {
 
         db.close()
     }
+
+    @Test
+    fun migrate14To15_addsCanonicalDraftOrderTablesWithoutChangingExistingTransactionData() {
+        val dbName = "migration-test-db-14-15"
+        var db = helper.createDatabase(dbName, 14)
+        db.execSQL(
+            "INSERT INTO txn_estimate_po (companyId, estimatePoId, entryPointType, submissionType, deliveryChannel, " +
+                "buyerPartyId, totalAmount, currencyCode, status, submittedAt, submittedAtSource) VALUES " +
+                "('acme-001', 'estimate-1', 'CATALOGUE', 'ESTIMATE', 'WHATSAPP_SHARED', NULL, '1000', 'INR', " +
+                "'SHARED', 1736899200000, 'DEVICE_LOCAL_PROVISIONAL')",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(dbName, 15, false, DatabaseModule.MIGRATION_14_15)
+        db.query("SELECT totalAmount FROM txn_estimate_po WHERE companyId = 'acme-001' AND estimatePoId = 'estimate-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("1000", cursor.getString(0))
+        }
+        listOf("txn_order", "txn_order_line").forEach { table ->
+            db.query("SELECT COUNT(*) FROM $table").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+        }
+        db.close()
+    }
 }

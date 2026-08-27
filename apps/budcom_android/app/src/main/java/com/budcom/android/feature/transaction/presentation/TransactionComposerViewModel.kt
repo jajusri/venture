@@ -10,6 +10,7 @@ import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepositor
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.transaction.domain.model.BuyAgainEntry
 import com.budcom.android.feature.transaction.domain.model.BuyAgainListBuilder
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
 import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
 import com.budcom.android.feature.transaction.domain.model.ReorderOperations
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 /**
@@ -74,6 +76,8 @@ class TransactionComposerViewModel @Inject constructor(
      * [TransactionDraft], the same structural "cannot mutate the original" guarantee
      * [ReorderOperations] itself already relies on (no repository write dependency at all). */
     private var lastCompletedTransaction: CommercialTransaction? = null
+    private val draftOrderCreationKey: String = savedStateHandle.get<String>(DRAFT_ORDER_CREATION_KEY)
+        ?: UUID.randomUUID().toString().also { savedStateHandle[DRAFT_ORDER_CREATION_KEY] = it }
 
     init {
         viewModelScope.launch {
@@ -106,6 +110,7 @@ class TransactionComposerViewModel @Inject constructor(
             is TransactionComposerEvent.RemoveProduct -> updateDraft { TransactionDraftOperations.removeLine(it, event.linkedProductId) }
             is TransactionComposerEvent.SubmissionTypeChanged -> updateDraft { it.copy(submissionType = event.type) }
             TransactionComposerEvent.ReorderLastOrder -> reorderLastOrder()
+            TransactionComposerEvent.CreateDraftOrder -> createDraftOrder()
             TransactionComposerEvent.ShareViaWhatsApp -> submit(TransactionDeliveryChannel.WhatsAppShared)
             TransactionComposerEvent.SubmitInApp -> submit(TransactionDeliveryChannel.InAppSubmitted)
             TransactionComposerEvent.DismissMessage -> _uiState.update { it.copy(message = null) }
@@ -214,6 +219,24 @@ class TransactionComposerViewModel @Inject constructor(
         }
     }
 
+    private fun createDraftOrder() {
+        val draft = _uiState.value.draft ?: return
+        viewModelScope.launch {
+            runCatching {
+                repository.createDraftOrder(draft, draftOrderCreationKey, timestamp = clock.now())
+            }.onSuccess { order ->
+                _uiState.update { it.copy(canonicalDraftOrder = order, message = "Draft order saved locally.") }
+            }.onFailure { failure ->
+                val message = if (failure is IllegalArgumentException && draft.lines.any { it.priceState == TransactionDraftPriceState.Hidden }) {
+                    "Some selected items are not priced for this buyer yet."
+                } else {
+                    "Draft order could not be saved locally."
+                }
+                _uiState.update { it.copy(message = message) }
+            }
+        }
+    }
+
     private fun submit(channel: TransactionDeliveryChannel) {
         val co = companyId ?: return
         val draft = _uiState.value.draft ?: return
@@ -273,6 +296,7 @@ class TransactionComposerViewModel @Inject constructor(
 
     companion object {
         const val BUYER_PARTY_ID_ARG = "buyerPartyId"
+        private const val DRAFT_ORDER_CREATION_KEY = "draftOrderCreationKey"
     }
 }
 

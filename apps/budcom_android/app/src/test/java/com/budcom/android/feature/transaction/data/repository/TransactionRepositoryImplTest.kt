@@ -23,6 +23,9 @@ import com.budcom.android.feature.party.domain.model.TimelineEntryPage
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantDao
 import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantEntity
+import com.budcom.android.feature.transaction.data.local.CanonicalOrderDao
+import com.budcom.android.feature.transaction.data.local.CanonicalOrderEntity
+import com.budcom.android.feature.transaction.data.local.CanonicalOrderLineEntity
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionDao
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionEntity
 import com.budcom.android.feature.transaction.data.local.EstimatePoDao
@@ -38,6 +41,8 @@ import com.budcom.android.feature.transaction.data.local.SellerInboxEntryEntity
 import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentDao
 import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEntity
 import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
+import com.budcom.android.feature.transaction.domain.model.TransactionDraftOperations
+import com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState
 import com.budcom.android.feature.transaction.domain.model.LedgerGroupChoice
 import com.budcom.android.feature.transaction.domain.model.PaymentClaimStatus
 import com.budcom.android.feature.transaction.domain.model.PaymentTiming
@@ -82,13 +87,14 @@ class TransactionRepositoryImplTest {
     private val paymentEventDao = FakePaymentEventDao()
     private val ledgerIntentDao = FakeLedgerIntentDao()
     private val accessGrantDao = FakeCatalogueAccessGrantDao()
+    private val canonicalOrderDao = FakeCanonicalOrderDao()
     private val submissionPort = FakeTransactionSubmissionPort(sellerInboxEntryDao)
     private val reminderScheduler = FakeTransactionReminderScheduler()
     private val partyRepository = FakePartyRepository()
 
     private fun repository() = TransactionRepositoryImpl(
         estimatePoDao, lineItemDao, sellerInboxEntryDao, transactionDao, termsDao, paymentEventDao,
-        ledgerIntentDao, accessGrantDao, submissionPort, reminderScheduler, partyRepository, dispatchers,
+        ledgerIntentDao, accessGrantDao, submissionPort, reminderScheduler, partyRepository, dispatchers, canonicalOrderDao,
     )
 
     private fun ts(millis: Long) = TransactionTimestamp(millis, TransactionTimestampSource.DeviceLocalProvisional)
@@ -98,6 +104,42 @@ class TransactionRepositoryImplTest {
         quantity = "10", unitPriceAmount = amount, unitPriceCurrencyCode = "INR", lineTotalAmount = amount,
         isContactForPrice = false,
     )
+
+    @Test
+    fun `draft order creation snapshots the draft and retries by key`() = runTest(dispatcher) {
+        val repo = repository()
+        var draft = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
+        draft = TransactionDraftOperations.addOrIncrementLine(
+            draft, "product-1", "Widget", "Nos", "SKU-1",
+            TransactionDraftPriceState.ActualPrice("100", "INR"), "3",
+        )
+
+        val first = repo.createDraftOrder(draft, "review-1", "Deliver Friday", ts(100))
+        val retry = repo.createDraftOrder(draft.copy(lines = draft.lines.map { it.copy(quantity = "99") }), "review-1", timestamp = ts(200))
+
+        assertEquals(first.orderId, retry.orderId)
+        assertEquals("DRAFT", first.state.columnValue)
+        assertEquals("co-1", first.sellerCompanyId)
+        assertEquals("buyer-1", first.buyerPartyId)
+        assertEquals("3", first.lines.single().quantity)
+        assertEquals("product-1", first.lines.single().linkedProductId)
+        assertEquals(TransactionDraftPriceState.ActualPrice("100", "INR"), first.lines.single().priceState)
+        assertEquals(1, canonicalOrderDao.orders.size)
+        assertTrue(estimatePoDao.store.isEmpty())
+        assertTrue(transactionDao.store.isEmpty())
+    }
+
+    @Test
+    fun `hidden price cannot become a canonical draft order`() = runTest(dispatcher) {
+        val repo = repository()
+        val draft = TransactionDraftOperations.addOrIncrementLine(
+            TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate),
+            "product-1", "Widget", "Nos", "SKU-1", TransactionDraftPriceState.Hidden,
+        )
+
+        assertTrue(runCatching { repo.createDraftOrder(draft, "hidden-1", timestamp = ts(100)) }.isFailure)
+        assertTrue(canonicalOrderDao.orders.isEmpty())
+    }
 
     // ============================== company isolation ==============================
 
@@ -387,6 +429,29 @@ class FakeCatalogueAccessGrantDao : CatalogueAccessGrantDao {
     override suspend fun findById(companyId: String, grantId: String) = store[key(companyId, grantId)]
     override suspend fun findAllForBuyer(companyId: String, buyerPartyId: String) =
         store.values.filter { it.companyId == companyId && it.buyerPartyId == buyerPartyId }.sortedByDescending { it.grantedAt }
+}
+
+class FakeCanonicalOrderDao : CanonicalOrderDao {
+    val orders = mutableListOf<CanonicalOrderEntity>()
+    private val lines = mutableListOf<CanonicalOrderLineEntity>()
+
+    override suspend fun insert(entity: CanonicalOrderEntity) {
+        if (orders.any { it.companyId == entity.companyId && it.creationKey == entity.creationKey }) {
+            throw android.database.SQLException("duplicate creation key")
+        }
+        orders += entity
+    }
+
+    override suspend fun upsertLines(entities: List<CanonicalOrderLineEntity>) {
+        lines.removeAll { old -> entities.any { it.companyId == old.companyId && it.orderId == old.orderId && it.lineId == old.lineId } }
+        lines += entities
+    }
+
+    override suspend fun findByCreationKey(companyId: String, creationKey: String) =
+        orders.firstOrNull { it.companyId == companyId && it.creationKey == creationKey }
+
+    override suspend fun findLines(companyId: String, orderId: String) =
+        lines.filter { it.companyId == companyId && it.orderId == orderId }.sortedBy { it.lineId }
 }
 
 class FakeTransactionSubmissionPort(private val sellerInboxEntryDao: FakeSellerInboxEntryDao) : TransactionSubmissionPort {

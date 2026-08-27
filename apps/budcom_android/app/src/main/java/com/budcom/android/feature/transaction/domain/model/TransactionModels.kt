@@ -161,6 +161,44 @@ data class TransactionLineItem(
     val isContactForPrice: Boolean,
 )
 
+enum class CanonicalOrderState(val columnValue: String) {
+    Draft("DRAFT"),
+    ;
+
+    companion object {
+        fun fromColumn(value: String): CanonicalOrderState = entries.first { it.columnValue == value }
+    }
+}
+
+data class CanonicalOrder(
+    val companyId: String,
+    val orderId: String,
+    val creationKey: String,
+    val sellerCompanyId: String,
+    val buyerPartyId: String?,
+    val state: CanonicalOrderState,
+    val source: TransactionEntryPointType,
+    val submissionType: TransactionSubmissionType,
+    val note: String?,
+    val createdAt: TransactionTimestamp,
+    val version: Int,
+    val lines: List<CanonicalOrderLine>,
+)
+
+data class CanonicalOrderLine(
+    val orderId: String,
+    val lineId: String,
+    val linkedProductId: String?,
+    val snapshotProductName: String,
+    val snapshotUnit: String?,
+    val snapshotSku: String?,
+    val quantity: String,
+    val unitPriceAmount: String?,
+    val unitPriceCurrencyCode: String?,
+    val priceState: TransactionDraftPriceState,
+    val lineTotalAmount: String?,
+)
+
 data class EstimatePo(
     val companyId: String,
     val estimatePoId: String,

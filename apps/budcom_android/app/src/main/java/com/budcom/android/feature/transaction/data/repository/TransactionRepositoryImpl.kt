@@ -5,6 +5,9 @@ import com.budcom.android.feature.party.domain.model.PartyClassification
 import com.budcom.android.feature.party.domain.repository.PartyRepository
 import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantDao
 import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantEntity
+import com.budcom.android.feature.transaction.data.local.CanonicalOrderDao
+import com.budcom.android.feature.transaction.data.local.CanonicalOrderEntity
+import com.budcom.android.feature.transaction.data.local.CanonicalOrderLineEntity
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionDao
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionEntity
 import com.budcom.android.feature.transaction.data.local.EstimatePoDao
@@ -22,6 +25,9 @@ import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEnti
 import com.budcom.android.feature.transaction.data.port.toDomain
 import com.budcom.android.feature.transaction.domain.model.CatalogueAccessGrant
 import com.budcom.android.feature.transaction.domain.model.CataloguePriceVisibilityGrant
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderLine
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
 import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
 import com.budcom.android.feature.transaction.domain.model.EstimatePo
@@ -39,12 +45,16 @@ import com.budcom.android.feature.transaction.domain.model.SellerInboxTransition
 import com.budcom.android.feature.transaction.domain.model.TermsAcknowledgment
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
 import com.budcom.android.feature.transaction.domain.model.TransactionDeliveryChannel
+import com.budcom.android.feature.transaction.domain.model.TransactionDraft
+import com.budcom.android.feature.transaction.domain.model.TransactionDraftLine
+import com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState
 import com.budcom.android.feature.transaction.domain.model.TransactionEntryPointType
 import com.budcom.android.feature.transaction.domain.model.TransactionLineItem
 import com.budcom.android.feature.transaction.domain.model.TransactionStateDerivation
 import com.budcom.android.feature.transaction.domain.model.TransactionSubmissionType
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestampSource
+import com.budcom.android.feature.transaction.domain.model.toBigDecimalOrNullSafe
 import com.budcom.android.feature.transaction.domain.port.TransactionReminderScheduler
 import com.budcom.android.feature.transaction.domain.port.TransactionSubmissionPort
 import com.budcom.android.feature.transaction.domain.repository.AcceptSellerInboxEntryResult
@@ -85,7 +95,60 @@ class TransactionRepositoryImpl @Inject constructor(
     private val reminderScheduler: TransactionReminderScheduler,
     private val partyRepository: PartyRepository,
     private val dispatchers: DispatcherProvider,
+    private val canonicalOrderDao: CanonicalOrderDao,
 ) : TransactionRepository {
+
+    override suspend fun createDraftOrder(
+        draft: TransactionDraft,
+        creationKey: String,
+        note: String?,
+        timestamp: TransactionTimestamp,
+    ): CanonicalOrder = withContext(dispatchers.io) {
+        require(creationKey.isNotBlank())
+        require(draft.lines.isNotEmpty())
+        require(draft.lines.none { it.priceState == TransactionDraftPriceState.Hidden })
+        val existing = canonicalOrderDao.findByCreationKey(draft.companyId, creationKey)
+        if (existing != null) return@withContext existing.toDomain(canonicalOrderDao.findLines(draft.companyId, existing.orderId))
+        val orderId = UUID.randomUUID().toString()
+        val entity = CanonicalOrderEntity(
+            companyId = draft.companyId,
+            orderId = orderId,
+            creationKey = creationKey,
+            sellerCompanyId = draft.companyId,
+            buyerPartyId = draft.buyerPartyId,
+            state = CanonicalOrderState.Draft.columnValue,
+            source = TransactionEntryPointType.Catalogue.columnValue,
+            submissionType = draft.submissionType.columnValue,
+            note = note?.trim()?.takeIf { it.isNotEmpty() },
+            createdAt = timestamp.epochMillis,
+            createdAtSource = timestamp.source.name,
+            version = 1,
+        )
+        try {
+            canonicalOrderDao.insert(entity)
+        } catch (_: android.database.SQLException) {
+            val raced = canonicalOrderDao.findByCreationKey(draft.companyId, creationKey)
+                ?: throw IllegalStateException("Draft Order could not be created")
+            return@withContext raced.toDomain(canonicalOrderDao.findLines(draft.companyId, raced.orderId))
+        }
+        canonicalOrderDao.upsertLines(draft.lines.mapIndexed { index, line ->
+            CanonicalOrderLineEntity(
+                companyId = draft.companyId,
+                orderId = orderId,
+                lineId = index.toString().padStart(8, '0'),
+                linkedProductId = line.linkedProductId,
+                snapshotProductName = line.snapshotProductName,
+                snapshotUnit = line.snapshotUnit,
+                snapshotSku = line.snapshotSku,
+                quantity = line.quantity,
+                unitPriceAmount = (line.priceState as? TransactionDraftPriceState.ActualPrice)?.unitAmount,
+                unitPriceCurrencyCode = (line.priceState as? TransactionDraftPriceState.ActualPrice)?.currencyCode,
+                priceState = line.priceState.toColumnValue(),
+                lineTotalAmount = line.lineTotalAmount(),
+            )
+        })
+        entity.toDomain(canonicalOrderDao.findLines(draft.companyId, orderId))
+    }
 
     // ============================== §4: Estimate/PO ==============================
 
@@ -510,6 +573,53 @@ private fun List<NewLineItem>.sumAmounts(selector: (NewLineItem) -> String?): St
         val amount = selector(item)?.let { runCatching { java.math.BigDecimal(it) }.getOrNull() } ?: java.math.BigDecimal.ZERO
         acc + amount
     }.toPlainString()
+
+private fun TransactionDraftPriceState.toColumnValue(): String = when (this) {
+    is TransactionDraftPriceState.ActualPrice -> "ACTUAL"
+    TransactionDraftPriceState.NoPriceSupplied -> "NO_PRICE_SUPPLIED"
+    TransactionDraftPriceState.ContactForPrice -> "CONTACT_FOR_PRICE"
+    TransactionDraftPriceState.Hidden -> "HIDDEN"
+}
+
+private fun TransactionDraftLine.lineTotalAmount(): String? {
+    val price = (priceState as? TransactionDraftPriceState.ActualPrice)?.unitAmount?.toBigDecimalOrNullSafe() ?: return null
+    val quantity = quantity.toBigDecimalOrNullSafe() ?: return null
+    return price.multiply(quantity).toPlainString()
+}
+
+private fun CanonicalOrderEntity.toDomain(lines: List<CanonicalOrderLineEntity>): CanonicalOrder = CanonicalOrder(
+    companyId = companyId,
+    orderId = orderId,
+    creationKey = creationKey,
+    sellerCompanyId = sellerCompanyId,
+    buyerPartyId = buyerPartyId,
+    state = CanonicalOrderState.fromColumn(state),
+    source = TransactionEntryPointType.fromColumn(source),
+    submissionType = TransactionSubmissionType.fromColumn(submissionType),
+    note = note,
+    createdAt = TransactionTimestamp(createdAt, TransactionTimestampSource.valueOf(createdAtSource)),
+    version = version,
+    lines = lines.map { it.toDomain() },
+)
+
+private fun CanonicalOrderLineEntity.toDomain(): CanonicalOrderLine = CanonicalOrderLine(
+    orderId = orderId,
+    lineId = lineId,
+    linkedProductId = linkedProductId,
+    snapshotProductName = snapshotProductName,
+    snapshotUnit = snapshotUnit,
+    snapshotSku = snapshotSku,
+    quantity = quantity,
+    unitPriceAmount = unitPriceAmount,
+    unitPriceCurrencyCode = unitPriceCurrencyCode,
+    priceState = when (priceState) {
+        "ACTUAL" -> TransactionDraftPriceState.ActualPrice(requireNotNull(unitPriceAmount), unitPriceCurrencyCode)
+        "NO_PRICE_SUPPLIED" -> TransactionDraftPriceState.NoPriceSupplied
+        "CONTACT_FOR_PRICE" -> TransactionDraftPriceState.ContactForPrice
+        else -> TransactionDraftPriceState.Hidden
+    },
+    lineTotalAmount = lineTotalAmount,
+)
 
 private fun EstimatePoLineItemEntity.toDomain(): TransactionLineItem = TransactionLineItem(
     estimatePoId = estimatePoId,

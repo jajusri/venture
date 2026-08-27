@@ -3,6 +3,49 @@ package com.budcom.android.feature.transaction.data.local
 import androidx.room.Entity
 import androidx.room.Index
 
+@Entity(
+    tableName = "txn_order",
+    primaryKeys = ["companyId", "orderId"],
+    indices = [
+        Index(value = ["companyId", "creationKey"], unique = true),
+        Index(value = ["companyId", "buyerPartyId"]),
+    ],
+)
+data class CanonicalOrderEntity(
+    val companyId: String,
+    val orderId: String,
+    val creationKey: String,
+    val sellerCompanyId: String,
+    val buyerPartyId: String?,
+    val state: String,
+    val source: String,
+    val submissionType: String,
+    val note: String?,
+    val createdAt: Long,
+    val createdAtSource: String,
+    val version: Int,
+)
+
+@Entity(
+    tableName = "txn_order_line",
+    primaryKeys = ["companyId", "orderId", "lineId"],
+    indices = [Index(value = ["companyId", "orderId"])],
+)
+data class CanonicalOrderLineEntity(
+    val companyId: String,
+    val orderId: String,
+    val lineId: String,
+    val linkedProductId: String?,
+    val snapshotProductName: String,
+    val snapshotUnit: String?,
+    val snapshotSku: String?,
+    val quantity: String,
+    val unitPriceAmount: String?,
+    val unitPriceCurrencyCode: String?,
+    val priceState: String,
+    val lineTotalAmount: String?,
+)
+
 /**
  * Transaction Mode Room entities
  * (docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md §4-§10, §12, §14). Every table

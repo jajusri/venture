@@ -392,6 +392,9 @@ private fun ReviewOrderSection(state: TransactionComposerUiState) {
                 }
             }
             Text(totalLabel(state.draft?.totalAmount), style = MaterialTheme.typography.titleSmall, modifier = Modifier.testTag("composer_review_total"))
+            if (state.canonicalDraftOrder != null) {
+                Text("Draft order saved locally", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("composer_review_saved"))
+            }
         }
     }
 }
@@ -415,6 +418,11 @@ private fun ReviewAndShareSection(state: TransactionComposerUiState, onEvent: (T
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextButton(
+                onClick = { onEvent(TransactionComposerEvent.CreateDraftOrder) },
+                enabled = hasItems && state.canonicalDraftOrder == null,
+                modifier = Modifier.testTag("composer_save_draft_order"),
+            ) { Text("Save draft locally") }
             TextButton(
                 onClick = { onEvent(TransactionComposerEvent.ShareViaWhatsApp) },
                 enabled = hasItems,
