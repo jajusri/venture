@@ -20,5 +20,9 @@ class CachedTransportCredentialVerifierTest {
         assertEquals(CredentialVerificationOutcome.WrongRecipient, verifier.verify(request.copy(actualRecipient = recipient.copy(partyId = "other"))))
         val stale = CachedTransportCredentialVerifier({ _, _ -> CachedIssuerVerificationKey("issuer-1", "issuer-key-1", "P256-SHA256-v1", pair.public.encoded, false) }, { _, _, _ -> 5 })
         assertEquals(CredentialVerificationOutcome.Revoked, stale.verify(request))
+        val unknown = CachedTransportCredentialVerifier({ _, _ -> null }, { _, _, _ -> 4 })
+        assertEquals(CredentialVerificationOutcome.TemporarilyUnverifiable, unknown.verify(request))
+        assertEquals(CredentialVerificationOutcome.UnsupportedVersion, verifier.verify(request.copy(credential = signed.copy(credentialVersion = 99))))
+        assertEquals(CredentialVerificationOutcome.Expired, verifier.verify(request.copy(nowEpochMillis = 100)))
     }
 }
