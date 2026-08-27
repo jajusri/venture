@@ -102,15 +102,6 @@ fun TransactionComposerScreen(
                 else -> LazyColumn(modifier = Modifier.fillMaxSize().testTag("composer_list")) {
                     item { SubmissionTypeRow(state, onEvent) }
 
-                    if (state.lastOrderAvailable) {
-                        item {
-                            TextButton(
-                                onClick = { onEvent(TransactionComposerEvent.ReorderLastOrder) },
-                                modifier = Modifier.padding(horizontal = 12.dp).testTag("composer_reorder_last_order"),
-                            ) { Text("Last Order — reorder") }
-                        }
-                    }
-
                     val draft = state.draft
                     item {
                         Text(
@@ -138,6 +129,15 @@ fun TransactionComposerScreen(
                                 style = MaterialTheme.typography.titleSmall,
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("composer_total"),
                             )
+                        }
+                    }
+
+                    if (state.lastOrderAvailable) {
+                        item {
+                            TextButton(
+                                onClick = { onEvent(TransactionComposerEvent.ReorderLastOrder) },
+                                modifier = Modifier.padding(horizontal = 12.dp).testTag("composer_reorder_last_order"),
+                            ) { Text("Last Order — reorder") }
                         }
                     }
 

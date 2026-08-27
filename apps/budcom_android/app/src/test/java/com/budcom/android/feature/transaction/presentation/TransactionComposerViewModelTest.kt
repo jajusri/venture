@@ -169,6 +169,35 @@ class TransactionComposerViewModelTest {
         assertTrue(vm.uiState.value.draft!!.isEmpty)
     }
 
+    @Test
+    fun `quantity returning to zero removes only the current selection and preserves history`() = runTest(dispatcher) {
+        val repository = FakeTransactionRepository()
+        repository.completedHistory["co-1|buyer-1"] = listOf(line("e1", "p1", "Widget", "4"))
+        val vm = viewModel(repository = repository)
+        dispatcher.scheduler.advanceUntilIdle()
+        vm.onEvent(TransactionComposerEvent.AddOrIncrementProduct("p1", "Widget", "Nos", "SKU-1", TransactionDraftPriceState.ActualPrice("100", "INR")))
+        vm.onEvent(TransactionComposerEvent.SetQuantity("p1", "0"))
+
+        assertTrue(vm.uiState.value.draft!!.isEmpty)
+        assertEquals(1, vm.uiState.value.buyAgainEntries.size)
+        assertEquals("4", vm.uiState.value.buyAgainEntries.single().mostRecentQuantity)
+        assertEquals(1, repository.completedHistory["co-1|buyer-1"]!!.size)
+    }
+
+    @Test
+    fun `two selected products keep independent quantities`() = runTest(dispatcher) {
+        val vm = viewModel()
+        dispatcher.scheduler.advanceUntilIdle()
+        val price = TransactionDraftPriceState.ActualPrice("100", "INR")
+        vm.onEvent(TransactionComposerEvent.AddOrIncrementProduct("p1", "One", "Nos", null, price))
+        vm.onEvent(TransactionComposerEvent.AddOrIncrementProduct("p2", "Two", "Nos", null, price))
+        vm.onEvent(TransactionComposerEvent.SetQuantity("p1", "3"))
+        vm.onEvent(TransactionComposerEvent.SetQuantity("p2", "7"))
+
+        assertEquals(listOf("3", "7"), vm.uiState.value.draft!!.lines.map { it.quantity })
+        assertEquals(listOf("p1", "p2"), vm.uiState.value.draft!!.lines.map { it.linkedProductId })
+    }
+
     // ============================== submission / WhatsApp ==============================
 
     @Test
