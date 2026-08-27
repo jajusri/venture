@@ -1,4 +1,5 @@
 import { describe, expect, it, afterEach } from 'vitest';
+import type { RelaySubmissionVerifier } from '../services/relay/src/application/accept-submission.js';
 import { FetchRecipientMailbox, normalizeMailboxPageSize, type RelayMailboxVerifier } from '../services/relay/src/application/fetch-mailbox.js';
 import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/acceptance-evidence.js';
 import type { RelayAcknowledgementSubmission } from '../services/relay/src/application/record-acknowledgement.js';

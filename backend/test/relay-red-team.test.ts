@@ -5,13 +5,13 @@ import type { RelayAcknowledgementVerifier } from '../services/relay/src/applica
 import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/acceptance-evidence.js';
 import { buildRelayService } from '../services/relay/src/http/app.js';
 import type { RelayAcknowledgementSubmission } from '../services/relay/src/application/record-acknowledgement.js';
-import { relayIdentifier, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
+import { relayIdentifier, type RecipientRoutingKey, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../services/relay/src/persistence/relay-repository.js';
 
 class MemoryRepository implements RelayRepository {
   value: StoredRelayEnvelope | null = null; writes = 0; mailbox: RelayMailboxEntry[] = [];
   findByIdempotency() { return Promise.resolve(this.value); }
-  listMailboxEntries(_recipient, _after, limit) { return Promise.resolve(this.mailbox.slice(0, limit)); }
+  listMailboxEntries(_recipient: RecipientRoutingKey, _after: number | null, limit: number) { return Promise.resolve(this.mailbox.slice(0, limit)); }
   recordAcknowledgement(request: RelayAcknowledgementSubmission, _recordedAt: Date): Promise<RelayAcknowledgement> {
     return Promise.resolve({
       envelopeId: request.envelopeId, recipientBusinessId: request.recipientBusinessId,
@@ -36,7 +36,7 @@ const strictMailboxVerifier: RelayMailboxVerifier = { verify: () => Promise.reso
   credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
 const strictSubmissionVerifier: RelaySubmissionVerifier = { verify: () => Promise.resolve({
   protocolVersion: 1, envelopeId: 'env-1', senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
-  recipientBusinessId: 'business-b', mailboxId: 'orders', envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']) }) };
+  recipientBusinessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId'), envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']) }) };
 const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipientBusinessId, recipientActorId: value.recipientActorId,
   recipientDeviceId: value.recipientDeviceId, credentialValid: true, authorityScope: new Set(['receive_orders']) }) };

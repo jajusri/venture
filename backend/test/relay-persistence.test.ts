@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { Database, DatabaseSession, QueryResult } from '../packages/persistence/src/database.js';
 import { migrations } from '../packages/persistence/src/migrations.js';
 import { hydrateStoredRelayEnvelope, PostgresRelayRepository } from '../services/relay/src/persistence/relay-repository.js';
-import { relayIdentifier, type RelayAcceptance, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
+import { relayIdentifier, type RelayAcceptance, type RelaySubmission } from '../services/relay/src/domain/relay.js';
+
+interface StoredRow extends Record<string, unknown> {
+  envelope_id: string; idempotency_key: string; protocol_version: number; object_type: string; object_id: string;
+  object_version: string | number; sender_business_id: string; sender_actor_id: string; sender_device_id: string;
+  recipient_business_id: string; mailbox_id: string; authenticated_envelope: Buffer; acceptance_id: string;
+  accepted_at: Date; relay_id: string; acceptance_evidence_profile: string; acceptance_evidence: Buffer;
+  mailbox_sequence: string | number; status: string; created_at: Date; acknowledged_at: null;
+}
 
 class RecordingDatabase implements Database {
   calls: { sql: string; parameters: readonly unknown[] }[] = [];

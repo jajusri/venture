@@ -4,9 +4,9 @@ import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/a
 import { FetchRecipientMailbox } from '../services/relay/src/application/fetch-mailbox.js';
 import { RecordRelayAcknowledgement, type RelayAcknowledgementVerifier } from '../services/relay/src/application/record-acknowledgement.js';
 import { PartitionedRelayIngressLimiter } from '../services/relay/src/application/relay-protections.js';
-import { RelayServiceError } from '../services/relay/src/errors.js';
 import { buildRelayService } from '../services/relay/src/http/app.js';
-import { relayIdentifier, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
+import type { RelayMailboxVerifier } from '../services/relay/src/application/fetch-mailbox.js';
+import { relayIdentifier, type RecipientRoutingKey, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 import type { RelayAcknowledgementSubmission } from '../services/relay/src/application/record-acknowledgement.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../services/relay/src/persistence/relay-repository.js';
 
@@ -21,7 +21,7 @@ const verified = (): Awaited<ReturnType<RelaySubmissionVerifier['verify']>> => (
   recipientBusinessId: 'business-b', mailboxId: 'orders', envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
 });
 const mailboxVerified = () => ({
-  recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b',
+  recipientBusinessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId'), recipientActorId: 'actor-b', recipientDeviceId: 'device-b',
   credentialValid: true, authorityScope: new Set(['receive_orders']),
 });
 const ackVerified = () => ({
@@ -38,13 +38,13 @@ class StatefulRepository implements RelayRepository {
   findByIdempotency(senderBusinessId: string, idempotencyKey: string) {
     return Promise.resolve(this.byIdempotency.get(`${senderBusinessId}:${idempotencyKey}`) ?? null);
   }
-  listMailboxEntries(recipient, afterSequence, limit) {
+  listMailboxEntries(_recipient: RecipientRoutingKey, afterSequence: number | null, limit: number) {
     const items = this.mailbox
       .filter((entry) => entry.mailboxSequence > (afterSequence ?? 0))
       .sort((left, right) => left.mailboxSequence - right.mailboxSequence);
     return Promise.resolve(items.slice(0, limit));
   }
-  async persist(value: RelaySubmission, acceptance: RelayAcceptance) {
+  persist(value: RelaySubmission, acceptance: RelayAcceptance) {
     if (this.transientFailures > 0) { this.transientFailures -= 1; throw new Error('transient database unavailable'); }
     this.writes += 1;
     const delivery = { envelopeId: value.envelopeId, recipient: value.recipient, status: 'relay_accepted' as const, mailboxSequence: this.mailbox.length + 1, createdAt: acceptance.acceptedAt };
@@ -55,14 +55,17 @@ class StatefulRepository implements RelayRepository {
       senderBusinessId: value.senderBusinessId, senderActorId: value.senderActorId, senderDeviceId: value.senderDeviceId,
       status: 'relay_accepted', acceptedAt: acceptance.acceptedAt, acceptanceId: acceptance.acceptanceId, authenticatedEnvelope: value.authenticatedEnvelope,
     });
-    return stored;
+    return Promise.resolve(stored);
   }
   recordAcknowledgement(request: RelayAcknowledgementSubmission, _recordedAt: Date): Promise<RelayAcknowledgement> {
     const existing = this.acksByEnvelope.get(request.envelopeId);
     if (existing) return Promise.resolve(existing);
     this.acks += 1;
-    const entry = this.mailbox.find((item) => item.envelopeId === request.envelopeId);
-    if (entry) entry.status = 'delivered';
+    const entryIndex = this.mailbox.findIndex((item) => item.envelopeId === request.envelopeId);
+    if (entryIndex >= 0) {
+      const entry = this.mailbox[entryIndex]!;
+      this.mailbox[entryIndex] = { ...entry, status: 'delivered' };
+    }
     const stored = {
       envelopeId: request.envelopeId, recipientBusinessId: request.recipientBusinessId,
       recipientDeviceId: request.recipientDeviceId, receivedAt: request.receivedAt,
@@ -80,11 +83,11 @@ const verifier: RelaySubmissionVerifier = { verify: (value) => Promise.resolve({
   senderDeviceId: value.senderDeviceId, recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
   envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
 }) };
-const mailboxVerifier = { verify: async (value: { recipient: { businessId: string; mailboxId: string }; recipientActorId: string; recipientDeviceId: string }) => ({
+const mailboxVerifier: RelayMailboxVerifier = { verify: (value) => Promise.resolve({
   ...mailboxVerified(), recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
   recipientActorId: value.recipientActorId, recipientDeviceId: value.recipientDeviceId,
 }) };
-const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: async (value) => ({ ...ackVerified(), ...value }) };
+const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: (value) => Promise.resolve({ ...ackVerified(), ...value }) };
 const apps: ReturnType<typeof buildRelayService>[] = [];
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
 
@@ -136,7 +139,7 @@ describe('relay failure and recovery attacks', () => {
     const stale: RelaySubmissionVerifier = { verify: async () => ({ ...verified(), credentialValid: false }) };
     await expect(new AcceptRelaySubmission(repository, stale, issuer()).execute(submission())).rejects.toThrow('rejected');
     expect(repository.writes).toBe(0);
-    const revokedMailbox = { verify: async () => ({ ...mailboxVerified(), credentialValid: false }) };
+    const revokedMailbox: RelayMailboxVerifier = { verify: () => Promise.resolve({ ...mailboxVerified(), credentialValid: false }) };
     await expect(new FetchRecipientMailbox(repository, revokedMailbox).execute({
       recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
       recipientActorId: 'actor-b', recipientDeviceId: 'device-b', cursor: null, limit: 25,

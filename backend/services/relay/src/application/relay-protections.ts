@@ -19,18 +19,18 @@ export class PartitionedRelayIngressLimiter implements RelayIngressLimiter {
     if (windowMs < 1) throw new Error('Relay ingress window must be positive');
   }
 
-  async consume(request: RelayIngressLimitRequest): Promise<{ readonly allowed: boolean; readonly retryAfterMs?: number }> {
+  consume(request: RelayIngressLimitRequest): Promise<{ readonly allowed: boolean; readonly retryAfterMs?: number }> {
     const partition = `${request.senderBusinessId}:${request.mailboxId}`;
     const now = request.now.getTime();
     const current = this.windows.get(partition);
     if (!current || now >= current.resetAt) {
       this.windows.set(partition, { count: 1, resetAt: now + this.windowMs });
-      return { allowed: true };
+      return Promise.resolve({ allowed: true });
     }
     if (current.count >= this.maxRequestsPerWindow) {
-      return { allowed: false, retryAfterMs: Math.max(1, current.resetAt - now) };
+      return Promise.resolve({ allowed: false, retryAfterMs: Math.max(1, current.resetAt - now) });
     }
     current.count += 1;
-    return { allowed: true };
+    return Promise.resolve({ allowed: true });
   }
 }

@@ -5,7 +5,7 @@ import type { RelayAcknowledgementVerifier } from '../services/relay/src/applica
 import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/acceptance-evidence.js';
 import { buildRelayService } from '../services/relay/src/http/app.js';
 import type { RelayAcknowledgementSubmission } from '../services/relay/src/application/record-acknowledgement.js';
-import { relayIdentifier, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
+import { relayIdentifier, type RecipientRoutingKey, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../services/relay/src/persistence/relay-repository.js';
 
 class E2ERepository implements RelayRepository {
@@ -19,13 +19,13 @@ class E2ERepository implements RelayRepository {
     }
     return Promise.resolve(null);
   }
-  listMailboxEntries(recipient, afterSequence, limit) {
+  listMailboxEntries(_recipient: RecipientRoutingKey, afterSequence: number | null, limit: number) {
     const items = this.mailbox
       .filter((entry) => entry.mailboxSequence > (afterSequence ?? 0))
       .sort((left, right) => left.mailboxSequence - right.mailboxSequence);
     return Promise.resolve(items.slice(0, limit));
   }
-  async persist(value: RelaySubmission, acceptance: RelayAcceptance) {
+  persist(value: RelaySubmission, acceptance: RelayAcceptance) {
     this.writes += 1;
     const delivery = { envelopeId: value.envelopeId, recipient: value.recipient, status: 'relay_accepted' as const, mailboxSequence: 1, createdAt: acceptance.acceptedAt };
     this.value = { submission: value, acceptance, delivery };
@@ -34,14 +34,17 @@ class E2ERepository implements RelayRepository {
       senderBusinessId: value.senderBusinessId, senderActorId: value.senderActorId, senderDeviceId: value.senderDeviceId,
       status: 'relay_accepted', acceptedAt: acceptance.acceptedAt, acceptanceId: acceptance.acceptanceId, authenticatedEnvelope: value.authenticatedEnvelope,
     }];
-    return this.value;
+    return Promise.resolve(this.value);
   }
   recordAcknowledgement(request: RelayAcknowledgementSubmission, _recordedAt: Date): Promise<RelayAcknowledgement> {
     const existing = this.acksByEnvelope.get(request.envelopeId);
     if (existing) return Promise.resolve(existing);
     this.acks += 1;
-    const entry = this.mailbox.find((item) => item.envelopeId === request.envelopeId);
-    if (entry) entry.status = 'delivered';
+    const entryIndex = this.mailbox.findIndex((item) => item.envelopeId === request.envelopeId);
+    if (entryIndex >= 0) {
+      const entry = this.mailbox[entryIndex]!;
+      this.mailbox[entryIndex] = { ...entry, status: 'delivered' };
+    }
     const stored = {
       envelopeId: request.envelopeId, recipientBusinessId: request.recipientBusinessId,
       recipientDeviceId: request.recipientDeviceId, receivedAt: request.receivedAt,

@@ -23,7 +23,7 @@ describe('relay SCALE-1M structural review', () => {
     expect(source).toContain('mailbox_sequence > $3');
     expect(source).toContain('LIMIT $4');
     expect(source).not.toMatch(/ORDER BY mailbox_sequence ASC(?![\s\S]*recipient_business_id)/);
-    expect(new PostgresRelayRepository({} as never).persist).toBeDefined();
+    expect(typeof PostgresRelayRepository.prototype.persist).toBe('function');
   });
 
   it('avoids a single global retry worker in Android sender policy', () => {

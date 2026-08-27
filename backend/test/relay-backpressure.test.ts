@@ -4,6 +4,8 @@ import { PartitionedRelayIngressLimiter } from '../services/relay/src/applicatio
 import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/acceptance-evidence.js';
 import { RelayServiceError } from '../services/relay/src/errors.js';
 import { buildRelayService } from '../services/relay/src/http/app.js';
+import type { RelayMailboxVerifier } from '../services/relay/src/application/fetch-mailbox.js';
+import type { RelayAcknowledgementVerifier } from '../services/relay/src/application/record-acknowledgement.js';
 import { relayIdentifier, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 import type { RelayAcknowledgementSubmission } from '../services/relay/src/application/record-acknowledgement.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../services/relay/src/persistence/relay-repository.js';
@@ -13,10 +15,6 @@ const submission = (): RelaySubmission => ({
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
   recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
   authenticatedEnvelope: new Uint8Array([1]), idempotencyKey: 'intent-1', submittedAt: new Date(1),
-});
-const verified = (): Awaited<ReturnType<RelaySubmissionVerifier['verify']>> => ({
-  protocolVersion: 1, envelopeId: 'env-1', senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
-  recipientBusinessId: 'business-b', mailboxId: 'orders', envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
 });
 
 class MemoryRepository implements RelayRepository {
@@ -47,12 +45,12 @@ const verifier: RelaySubmissionVerifier = { verify: (value) => Promise.resolve({
   senderDeviceId: value.senderDeviceId, recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
   envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
 }) };
-const mailboxVerifier = { verify: async (value: { recipient: { businessId: string; mailboxId: string }; recipientActorId: string; recipientDeviceId: string }) => ({
+const mailboxVerifier: RelayMailboxVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
   recipientActorId: value.recipientActorId, recipientDeviceId: value.recipientDeviceId,
   credentialValid: true, authorityScope: new Set(['receive_orders']),
 }) };
-const acknowledgementVerifier = { verify: async (value: RelayAcknowledgementSubmission) => ({
+const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipientBusinessId, recipientActorId: value.recipientActorId,
   recipientDeviceId: value.recipientDeviceId, credentialValid: true, authorityScope: new Set(['receive_orders']),
 }) };
