@@ -27,7 +27,8 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
         val identity = keyStore.getCurrentIdentity() ?: return@withContext
         val credential = credentials.credentialFor(companyId, identity.deviceId) ?: return@withContext
         var cursor = inbox.loadMailboxCursor(companyId, DEFAULT_MAILBOX)
-        while (true) {
+        var pages = 0
+        while (pages < MAX_MAILBOX_PAGES_PER_INGEST) {
             val page = client.fetchMailbox(
                 recipientBusinessId = companyId,
                 recipientActorId = credential.actorId,
@@ -51,11 +52,13 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
             }
             cursor = page.nextCursor
             inbox.saveMailboxCursor(companyId, DEFAULT_MAILBOX, cursor)
+            pages += 1
             if (cursor == null) break
         }
     }
 
     private companion object {
         const val DEFAULT_MAILBOX = "orders"
+        const val MAX_MAILBOX_PAGES_PER_INGEST = 5
     }
 }

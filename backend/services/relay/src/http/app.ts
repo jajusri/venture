@@ -6,6 +6,7 @@ import { FetchRecipientMailbox } from '../application/fetch-mailbox.js';
 import type { RelayMailboxVerifier } from '../application/fetch-mailbox.js';
 import { RecordRelayAcknowledgement } from '../application/record-acknowledgement.js';
 import type { RelayAcknowledgementVerifier } from '../application/record-acknowledgement.js';
+import type { RelayIngressLimiter } from '../application/relay-protections.js';
 import { RelayServiceError, type RelayErrorBody } from '../errors.js';
 import type { RelayRepository } from '../persistence/relay-repository.js';
 import { mapRelayAcknowledgementBody, type RelayAcknowledgementBody } from './map-acknowledgement.js';
@@ -19,11 +20,12 @@ export function buildRelayService(options: {
   verifier: RelaySubmissionVerifier;
   mailboxVerifier: RelayMailboxVerifier;
   acknowledgementVerifier: RelayAcknowledgementVerifier;
+  ingressLimiter?: RelayIngressLimiter;
   issuer: RelayAcceptanceIssuer;
   now?: () => Date;
 }): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: MAX_BODY_BYTES });
-  const accept = new AcceptRelaySubmission(options.repository, options.verifier, options.issuer, options.now);
+  const accept = new AcceptRelaySubmission(options.repository, options.verifier, options.issuer, options.ingressLimiter, options.now);
   const fetchMailbox = new FetchRecipientMailbox(options.repository, options.mailboxVerifier);
   const recordAck = new RecordRelayAcknowledgement(options.repository, options.acknowledgementVerifier, options.now);
   app.get('/health', () => ({ status: 'ok', service: 'budcom-relay' }));

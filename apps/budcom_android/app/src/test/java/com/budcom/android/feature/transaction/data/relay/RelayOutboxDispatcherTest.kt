@@ -111,6 +111,37 @@ class RelayOutboxDispatcherTest {
         assertEquals("offline", dao.envelopes.single().lastError)
     }
 
+    @Test
+    fun `retrying envelope stays durable until backoff elapses`() = runTest {
+        val dao = FakeOrderOutboxDao()
+        dao.insert(
+            queued().copy(
+                state = OrderTransportState.Retrying.columnValue,
+                attemptCount = 1,
+                lastAttemptAt = 40,
+                lastAttemptAtSource = TransactionTimestampSource.DeviceLocalProvisional.name,
+                lastError = "offline",
+            ),
+        )
+        val clock = TransactionClock { TransactionTimestamp(50, TransactionTimestampSource.DeviceLocalProvisional) }
+        var submits = 0
+        DefaultRelayOutboxDispatcher(
+            dao,
+            RelayAwareTransportRouter(
+                { "http://relay.test/" },
+                StructuredBusinessTransport {
+                    submits += 1
+                    TransportResult.RetryableFailure("offline")
+                },
+            ),
+            clock,
+            dispatchers,
+            orderSent,
+        ).submitPending("co-1")
+        assertEquals(0, submits)
+        assertEquals(1, dao.envelopes.single().attemptCount)
+    }
+
     private fun queued() = OrderDeliveryEnvelopeEntity(
         companyId = "co-1", envelopeId = "envelope-1", idempotencyKey = "order:order-1:v1",
         objectType = "CANONICAL_ORDER", orderId = "order-1", orderVersion = 1,

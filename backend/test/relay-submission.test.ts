@@ -29,7 +29,7 @@ const issuer = () => new SignedRelayAcceptanceIssuer({ sign: () => Promise.resol
 describe('authenticated relay submission', () => {
   it('accepts matching verified authority once and returns the same result for retry', async () => {
     const repository = new MemoryRepository(); const verifier: RelaySubmissionVerifier = { verify: () => Promise.resolve(verified()) };
-    const service = new AcceptRelaySubmission(repository, verifier, issuer(), () => new Date(10));
+    const service = new AcceptRelaySubmission(repository, verifier, issuer(), undefined, () => new Date(10));
     const first = await service.execute(submission()); const retry = await service.execute(submission());
     expect(first.acceptance.status).toBe('relay_accepted'); expect(retry).toBe(first); expect(repository.writes).toBe(1);
   });

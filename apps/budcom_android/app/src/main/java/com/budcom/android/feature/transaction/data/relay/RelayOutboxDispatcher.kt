@@ -2,6 +2,7 @@ package com.budcom.android.feature.transaction.data.relay
 
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.transaction.data.local.OrderOutboxDao
+import com.budcom.android.feature.transaction.domain.model.RelayOutboxRetryPolicy
 import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
 import com.budcom.android.feature.transaction.domain.model.OrderTransportState
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
@@ -23,15 +24,21 @@ class DefaultRelayOutboxDispatcher @Inject constructor(
     private val orderSent: OrderSentFromRelayEvidence,
 ) : RelayOutboxDispatcher {
     override suspend fun submitPending(companyId: String) = withContext(dispatchers.io) {
+        val now = clock.now()
         val pending = orderOutboxDao.findPending(companyId)
+            .filter { entity ->
+                !RelayOutboxRetryPolicy.attemptsExhausted(entity.attemptCount) &&
+                    RelayOutboxRetryPolicy.readyForRetry(entity.attemptCount, entity.lastAttemptAt, now.epochMillis)
+            }
+            .take(RelayOutboxRetryPolicy.MAX_DISPATCH_BATCH)
         pending.forEach { entity ->
             val envelope = entity.toDispatcherEnvelope()
             val result = router.submit(envelope)
-            val now = clock.now()
+            val attemptNow = clock.now()
             when (result) {
                 TransportRouterResult.NoAvailableTransport -> Unit
                 is TransportRouterResult.Submitted -> {
-                    persistAttempt(entity.companyId, entity.envelopeId, entity.attemptCount, now, result.result)
+                    persistAttempt(entity.companyId, entity.envelopeId, entity.attemptCount, attemptNow, result.result)
                     val accepted = result.result as? TransportResult.Accepted
                     val evidence = accepted?.relayAcceptance
                     if (evidence != null) {
@@ -50,10 +57,11 @@ class DefaultRelayOutboxDispatcher @Inject constructor(
         result: TransportResult,
     ) {
         val attempts = previousAttempts + 1
+        val exhausted = RelayOutboxRetryPolicy.attemptsExhausted(attempts)
         val (state, error) = when (result) {
             is TransportResult.Accepted -> OrderTransportState.RelayAccepted to null
-            is TransportResult.RetryableFailure -> OrderTransportState.Retrying to result.reason
-            is TransportResult.TemporarilyUnavailable -> OrderTransportState.Retrying to result.reason
+            is TransportResult.RetryableFailure -> if (exhausted) OrderTransportState.Failed to result.reason else OrderTransportState.Retrying to result.reason
+            is TransportResult.TemporarilyUnavailable -> if (exhausted) OrderTransportState.Failed to result.reason else OrderTransportState.Retrying to result.reason
             is TransportResult.PermanentRejection -> OrderTransportState.Failed to result.reason
             is TransportResult.Delivered -> OrderTransportState.Failed to "relay must not claim delivery"
         }

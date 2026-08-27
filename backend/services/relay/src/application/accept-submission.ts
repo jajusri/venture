@@ -1,6 +1,8 @@
 import { validateRelaySubmission, type RelaySubmission } from '../domain/relay.js';
+import { RelayServiceError } from '../errors.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../persistence/relay-repository.js';
 import type { RelayAcceptanceIssuer } from './acceptance-evidence.js';
+import type { RelayIngressLimiter } from './relay-protections.js';
 
 export interface VerifiedRelayAuthority {
   readonly protocolVersion: number;
@@ -26,7 +28,8 @@ function sameSubmission(left: RelaySubmission, right: RelaySubmission): boolean 
 
 export class AcceptRelaySubmission {
   constructor(private readonly repository: RelayRepository, private readonly verifier: RelaySubmissionVerifier,
-    private readonly acceptanceIssuer: RelayAcceptanceIssuer, private readonly now: () => Date = () => new Date()) {}
+    private readonly acceptanceIssuer: RelayAcceptanceIssuer, private readonly ingressLimiter?: RelayIngressLimiter,
+    private readonly now: () => Date = () => new Date()) {}
 
   async execute(submission: RelaySubmission): Promise<StoredRelayEnvelope> {
     validateRelaySubmission(submission);
@@ -34,6 +37,16 @@ export class AcceptRelaySubmission {
     if (existing) {
       if (!sameSubmission(existing.submission, submission)) throw new Error('Conflicting relay submission idempotency key');
       return existing;
+    }
+    if (this.ingressLimiter) {
+      const decision = await this.ingressLimiter.consume({
+        senderBusinessId: submission.senderBusinessId,
+        mailboxId: submission.recipient.mailboxId,
+        now: submission.submittedAt,
+      });
+      if (!decision.allowed) {
+        throw new RelayServiceError('relay_overloaded', 'Relay ingress is temporarily overloaded', 503, decision.retryAfterMs);
+      }
     }
     const authority = await this.verifier.verify(submission);
     if (!authority.credentialValid || !authority.envelopeIntegrityValid || !authority.authorityScope.has('send_orders')) throw new Error('Authenticated relay authority rejected');
