@@ -80,8 +80,9 @@ fun StructuredRecipientInboxScreen(
                             .testTag("structured_inbox_item_${item.envelopeId}"),
                     ) {
                         Text(item.label)
-                        Text("Order ${item.orderId} Â· v${item.orderVersion}")
+                        Text("Order ${item.orderId} · v${item.orderVersion}")
                         Text("From ${item.senderBusinessId}")
+                        Text(item.transportLabel, modifier = Modifier.testTag("structured_inbox_transport_${item.envelopeId}"))
                     }
                 }
             }
