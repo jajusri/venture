@@ -7,6 +7,10 @@ import com.budcom.android.feature.transaction.data.port.LocalTransactionSubmissi
 import com.budcom.android.feature.transaction.data.relay.HttpRelayClient
 import com.budcom.android.feature.transaction.data.relay.HttpRelayStructuredTransport
 import com.budcom.android.feature.transaction.data.relay.DefaultRelayOutboxDispatcher
+import com.budcom.android.feature.transaction.data.relay.DefaultRelayRecipientInboxIngester
+import com.budcom.android.feature.transaction.data.repository.StructuredRecipientInboxRepositoryImpl
+import com.budcom.android.feature.transaction.domain.port.RelayRecipientInboxIngester
+import com.budcom.android.feature.transaction.domain.repository.StructuredRecipientInboxRepository
 import com.budcom.android.feature.transaction.data.relay.KeystoreRelayEnvelopeAuthenticator
 import com.budcom.android.feature.transaction.domain.port.OrderSentFromRelayEvidence
 import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
@@ -78,6 +82,14 @@ abstract class TransactionBindModule {
     @Binds
     @Singleton
     abstract fun bindOrderSentFromRelayEvidence(impl: TransactionRepositoryImpl): OrderSentFromRelayEvidence
+
+    @Binds
+    @Singleton
+    abstract fun bindStructuredRecipientInboxRepository(impl: StructuredRecipientInboxRepositoryImpl): StructuredRecipientInboxRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindRelayRecipientInboxIngester(impl: DefaultRelayRecipientInboxIngester): RelayRecipientInboxIngester
 
     @Binds
     @Singleton

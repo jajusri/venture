@@ -56,8 +56,12 @@ import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantDao
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderDao
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderEntity
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderLineEntity
-import com.budcom.android.feature.transaction.data.local.OrderOutboxDao
 import com.budcom.android.feature.transaction.data.local.OrderDeliveryEnvelopeEntity
+import com.budcom.android.feature.transaction.data.local.OrderOutboxDao
+import com.budcom.android.feature.transaction.data.local.RecipientInboxCursorDao
+import com.budcom.android.feature.transaction.data.local.RecipientInboxCursorEntity
+import com.budcom.android.feature.transaction.data.local.StructuredRecipientInboxDao
+import com.budcom.android.feature.transaction.data.local.StructuredRecipientInboxEntity
 import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantEntity
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionDao
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionEntity
@@ -117,6 +121,8 @@ import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEnti
         CanonicalOrderEntity::class,
         CanonicalOrderLineEntity::class,
         OrderDeliveryEnvelopeEntity::class,
+        StructuredRecipientInboxEntity::class,
+        RecipientInboxCursorEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -157,4 +163,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun catalogueAccessGrantDao(): CatalogueAccessGrantDao
     abstract fun canonicalOrderDao(): CanonicalOrderDao
     abstract fun orderOutboxDao(): OrderOutboxDao
+    abstract fun structuredRecipientInboxDao(): StructuredRecipientInboxDao
+    abstract fun recipientInboxCursorDao(): RecipientInboxCursorDao
 }

@@ -117,6 +117,25 @@ class HttpRelayClientTest {
         }
     }
 
+    @Test
+    fun `mailbox fetch returns bounded relay accepted items`() = runTest(dispatcher) {
+        val server = MockWebServer()
+        server.enqueue(
+            MockResponse().setBody(
+                """{"recipientBusinessId":"co-1","mailboxId":"orders","nextCursor":null,"items":[{"envelopeId":"envelope-1","mailboxSequence":1,"objectType":"CANONICAL_ORDER","objectId":"order-1","objectVersion":1,"senderBusinessId":"co-sender","senderActorId":"actor-s","senderDeviceId":"device-s","status":"relay_accepted","acceptedAt":"1970-01-01T00:00:00.010Z","acceptanceId":"accept-1","authenticatedEnvelope":"AQI="}]}""",
+            ).setResponseCode(200),
+        )
+        server.start()
+        try {
+            val page = testClient(server).fetchMailbox("co-1", "actor-b", "device-b", "orders", null)
+            assertEquals(1, page?.items?.size)
+            assertEquals("relay_accepted", page?.items?.single()?.status)
+            assertEquals("/v1/relay/mailboxes/fetch", server.takeRequest().path)
+        } finally {
+            server.shutdown()
+        }
+    }
+
     private fun testClient(server: MockWebServer, policy: RetryPolicy = RetryPolicy(maxAttempts = 2, initialDelayMillis = 1, jitterRatio = 0.0)) =
         HttpRelayClient(
             endpoint = ConfiguredRelayEndpointProvider(server.url("/").toString()),

@@ -77,7 +77,7 @@ object DatabaseModule {
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
             MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
-            MIGRATION_15_16,
+            MIGRATION_15_16, MIGRATION_16_17,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -189,6 +189,14 @@ object DatabaseModule {
 
     @Provides
     fun provideOrderOutboxDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.OrderOutboxDao = db.orderOutboxDao()
+
+    @Provides
+    fun provideStructuredRecipientInboxDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.StructuredRecipientInboxDao =
+        db.structuredRecipientInboxDao()
+
+    @Provides
+    fun provideRecipientInboxCursorDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.RecipientInboxCursorDao =
+        db.recipientInboxCursorDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -750,6 +758,34 @@ object DatabaseModule {
             )
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_order_outbox_companyId_idempotencyKey` ON `txn_order_outbox` (`companyId`, `idempotencyKey`)")
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_txn_order_outbox_companyId_orderId` ON `txn_order_outbox` (`companyId`, `orderId`)")
+        }
+    }
+
+    val MIGRATION_16_17 = object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_recipient_inbox` (" +
+                    "`companyId` TEXT NOT NULL, `envelopeId` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, " +
+                    "`objectType` TEXT NOT NULL, `objectId` TEXT NOT NULL, `objectVersion` INTEGER NOT NULL, " +
+                    "`senderBusinessId` TEXT NOT NULL, `senderActorId` TEXT NOT NULL, `senderDeviceId` TEXT NOT NULL, " +
+                    "`mailboxId` TEXT NOT NULL, `mailboxSequence` INTEGER NOT NULL, `acceptanceId` TEXT NOT NULL, " +
+                    "`acceptedAt` INTEGER NOT NULL, `acceptedAtSource` TEXT NOT NULL, `ingestedAt` INTEGER NOT NULL, " +
+                    "`ingestedAtSource` TEXT NOT NULL, `transportState` TEXT NOT NULL, " +
+                    "PRIMARY KEY(`companyId`, `envelopeId`))",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_recipient_inbox_companyId_mailboxId_mailboxSequence` " +
+                    "ON `txn_recipient_inbox` (`companyId`, `mailboxId`, `mailboxSequence`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_txn_recipient_inbox_companyId_objectType_objectId` " +
+                    "ON `txn_recipient_inbox` (`companyId`, `objectType`, `objectId`)",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_recipient_inbox_cursor` (" +
+                    "`companyId` TEXT NOT NULL, `mailboxId` TEXT NOT NULL, `cursor` TEXT, " +
+                    "PRIMARY KEY(`companyId`, `mailboxId`))",
+            )
         }
     }
 }

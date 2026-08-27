@@ -54,6 +54,27 @@ interface OrderOutboxDao {
 }
 
 @Dao
+interface StructuredRecipientInboxDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entity: StructuredRecipientInboxEntity)
+
+    @Query("SELECT * FROM txn_recipient_inbox WHERE companyId = :companyId AND envelopeId = :envelopeId")
+    suspend fun findByEnvelopeId(companyId: String, envelopeId: String): StructuredRecipientInboxEntity?
+
+    @Query("SELECT * FROM txn_recipient_inbox WHERE companyId = :companyId ORDER BY mailboxSequence ASC")
+    suspend fun findAll(companyId: String): List<StructuredRecipientInboxEntity>
+}
+
+@Dao
+interface RecipientInboxCursorDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: RecipientInboxCursorEntity)
+
+    @Query("SELECT * FROM txn_recipient_inbox_cursor WHERE companyId = :companyId AND mailboxId = :mailboxId")
+    suspend fun find(companyId: String, mailboxId: String): RecipientInboxCursorEntity?
+}
+
+@Dao
 interface EstimatePoDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: EstimatePoEntity)

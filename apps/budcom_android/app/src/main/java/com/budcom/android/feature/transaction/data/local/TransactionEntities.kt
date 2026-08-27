@@ -69,6 +69,44 @@ data class OrderDeliveryEnvelopeEntity(
     val lastError: String?,
 )
 
+@Entity(
+    tableName = "txn_recipient_inbox",
+    primaryKeys = ["companyId", "envelopeId"],
+    indices = [
+        Index(value = ["companyId", "mailboxId", "mailboxSequence"]),
+        Index(value = ["companyId", "objectType", "objectId"]),
+    ],
+)
+data class StructuredRecipientInboxEntity(
+    val companyId: String,
+    val envelopeId: String,
+    val idempotencyKey: String,
+    val objectType: String,
+    val objectId: String,
+    val objectVersion: Int,
+    val senderBusinessId: String,
+    val senderActorId: String,
+    val senderDeviceId: String,
+    val mailboxId: String,
+    val mailboxSequence: Long,
+    val acceptanceId: String,
+    val acceptedAt: Long,
+    val acceptedAtSource: String,
+    val ingestedAt: Long,
+    val ingestedAtSource: String,
+    val transportState: String,
+)
+
+@Entity(
+    tableName = "txn_recipient_inbox_cursor",
+    primaryKeys = ["companyId", "mailboxId"],
+)
+data class RecipientInboxCursorEntity(
+    val companyId: String,
+    val mailboxId: String,
+    val cursor: String?,
+)
+
 /**
  * Transaction Mode Room entities
  * (docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md §4-§10, §12, §14). Every table

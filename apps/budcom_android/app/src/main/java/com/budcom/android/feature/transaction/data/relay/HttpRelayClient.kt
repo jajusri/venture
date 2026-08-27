@@ -12,6 +12,8 @@ import com.budcom.android.feature.transaction.domain.port.StructuredBusinessTran
 import com.budcom.android.feature.transaction.domain.port.TransportEvidence
 import com.budcom.android.feature.transaction.domain.port.TransportResult
 import com.budcom.android.feature.transaction.domain.port.TransportRouterResult
+import com.budcom.android.feature.transaction.domain.port.RelayMailboxDeliveryItem
+import com.budcom.android.feature.transaction.domain.port.RelayMailboxPage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -56,6 +58,40 @@ internal data class RelayAcceptanceJson(
     val senderBusinessId: String? = null,
     val recipientBusinessId: String? = null,
     val acceptedAt: String? = null,
+)
+
+@Serializable
+internal data class RelayMailboxFetchJson(
+    val recipientBusinessId: String,
+    val mailboxId: String,
+    val recipientActorId: String,
+    val recipientDeviceId: String,
+    val cursor: String? = null,
+    val limit: Int = 25,
+)
+
+@Serializable
+internal data class RelayMailboxItemJson(
+    val envelopeId: String,
+    val mailboxSequence: Long,
+    val objectType: String,
+    val objectId: String,
+    val objectVersion: Int,
+    val senderBusinessId: String,
+    val senderActorId: String,
+    val senderDeviceId: String,
+    val status: String,
+    val acceptedAt: String,
+    val acceptanceId: String,
+    val authenticatedEnvelope: String,
+)
+
+@Serializable
+internal data class RelayMailboxPageJson(
+    val recipientBusinessId: String,
+    val mailboxId: String,
+    val nextCursor: String? = null,
+    val items: List<RelayMailboxItemJson> = emptyList(),
 )
 
 class HttpRelayClient(
@@ -108,6 +144,56 @@ class HttpRelayClient(
             if (waitMs == null) return last
             delay(waitMs)
             attempt += 1
+        }
+    }
+
+    suspend fun fetchMailbox(
+        recipientBusinessId: String,
+        recipientActorId: String,
+        recipientDeviceId: String,
+        mailboxId: String,
+        cursor: String?,
+        limit: Int = 25,
+    ): RelayMailboxPage? {
+        val baseUrl = endpoint.snapshot() ?: return null
+        val payload = json.encodeToString(
+            RelayMailboxFetchJson.serializer(),
+            RelayMailboxFetchJson(recipientBusinessId, mailboxId, recipientActorId, recipientDeviceId, cursor, limit),
+        )
+        val request = Request.Builder()
+            .url(baseUrl.trimEnd('/') + MAILBOX_FETCH_PATH)
+            .post(payload.toRequestBody(JSON))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val parsed = json.decodeFromString(RelayMailboxPageJson.serializer(), response.body?.string().orEmpty())
+                RelayMailboxPage(
+                    items = parsed.items.map { item ->
+                        RelayMailboxDeliveryItem(
+                            envelopeId = item.envelopeId,
+                            mailboxSequence = item.mailboxSequence,
+                            objectType = item.objectType,
+                            objectId = item.objectId,
+                            objectVersion = item.objectVersion,
+                            senderBusinessId = item.senderBusinessId,
+                            senderActorId = item.senderActorId,
+                            senderDeviceId = item.senderDeviceId,
+                            recipientBusinessId = parsed.recipientBusinessId,
+                            mailboxId = parsed.mailboxId,
+                            status = item.status,
+                            acceptedAtEpochMillis = runCatching { java.time.Instant.parse(item.acceptedAt).toEpochMilli() }.getOrDefault(nowMillis()),
+                            acceptanceId = item.acceptanceId,
+                            authenticatedEnvelope = Base64.getDecoder().decode(item.authenticatedEnvelope),
+                        )
+                    },
+                    nextCursor = parsed.nextCursor,
+                )
+            }
+        } catch (_: IOException) {
+            null
+        } catch (_: SocketTimeoutException) {
+            null
         }
     }
 
@@ -170,6 +256,7 @@ class HttpRelayClient(
 
     companion object {
         const val SUBMIT_PATH = "/v1/relay/envelopes"
+        const val MAILBOX_FETCH_PATH = "/v1/relay/mailboxes/fetch"
         const val CONNECT_TIMEOUT_SECONDS = 10L
         const val READ_TIMEOUT_SECONDS = 15L
         const val WRITE_TIMEOUT_SECONDS = 15L
