@@ -66,6 +66,38 @@ export interface RelayAcknowledgement {
 export type RelayFailureKind = 'temporary' | 'permanent' | 'overloaded';
 export interface RelayFailure { readonly kind: RelayFailureKind; readonly code: string; readonly retryAfterMs?: number }
 
+export interface RelayMailboxEntry {
+  readonly envelopeId: RelayEnvelopeId;
+  readonly mailboxSequence: number;
+  readonly objectType: string;
+  readonly objectId: string;
+  readonly objectVersion: number;
+  readonly senderBusinessId: string;
+  readonly senderActorId: string;
+  readonly senderDeviceId: string;
+  readonly status: RelayDeliveryStatus;
+  readonly acceptedAt: Date;
+  readonly acceptanceId: RelayAcceptanceId;
+  readonly authenticatedEnvelope: Uint8Array;
+}
+
+export interface RelayMailboxPage {
+  readonly recipient: RecipientRoutingKey;
+  readonly items: readonly RelayMailboxEntry[];
+  readonly nextCursor: RelayCursor | null;
+}
+
+export function encodeRelayCursor(sequence: number): RelayCursor {
+  if (!Number.isInteger(sequence) || sequence < 0) throw new Error('Relay cursor sequence must be a non-negative integer');
+  return relayIdentifier(String(sequence), 'RelayCursor');
+}
+
+export function decodeRelayCursor(cursor: RelayCursor): number {
+  const value = Number(cursor);
+  if (!Number.isInteger(value) || value < 0) throw new Error('Relay cursor must decode to a non-negative integer');
+  return value;
+}
+
 export function validateRelaySubmission(value: RelaySubmission): void {
   if (value.protocolVersion !== 1) throw new Error('Unsupported relay protocol version');
   if (!value.objectType.trim() || !value.objectId.trim() || value.objectVersion < 1) throw new Error('Valid canonical object reference is required');

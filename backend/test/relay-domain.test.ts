@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { relayIdentifier, validateRelaySubmission, type RelaySubmission } from '../services/relay/src/domain/relay.js';
+import { relayIdentifier, validateRelaySubmission, encodeRelayCursor, decodeRelayCursor, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 
 const submission = (): RelaySubmission => ({
   envelopeId: relayIdentifier('envelope-1', 'RelayEnvelopeId'), protocolVersion: 1,
@@ -21,5 +21,11 @@ describe('relay domain contract', () => {
     expect(() => validateRelaySubmission({ ...submission(), protocolVersion: 2 })).toThrow('protocol');
     expect(() => validateRelaySubmission({ ...submission(), authenticatedEnvelope: new Uint8Array(256 * 1024 + 1) })).toThrow('bounds');
     expect(() => validateRelaySubmission({ ...submission(), recipient: { ...submission().recipient, businessId: '' } })).toThrow('Recipient');
+  });
+
+  it('encodes mailbox cursors as bounded sequence checkpoints', () => {
+    expect(encodeRelayCursor(7)).toBe('7');
+    expect(decodeRelayCursor(encodeRelayCursor(7))).toBe(7);
+    expect(() => decodeRelayCursor(relayIdentifier('bad', 'RelayCursor'))).toThrow('cursor');
   });
 });

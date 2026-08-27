@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AcceptRelaySubmission, type RelaySubmissionVerifier, type VerifiedRelayAuthority } from '../services/relay/src/application/accept-submission.js';
-import { relayIdentifier, type RelayAcceptance, type RelaySubmission } from '../services/relay/src/domain/relay.js';
+import { relayIdentifier, type RelayAcceptance, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../services/relay/src/persistence/relay-repository.js';
 import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/acceptance-evidence.js';
 
@@ -13,6 +13,7 @@ const verified = (value = submission()): VerifiedRelayAuthority => ({ protocolVe
 class MemoryRepository implements RelayRepository {
   value: StoredRelayEnvelope | null = null; writes = 0;
   findByIdempotency() { return Promise.resolve(this.value); }
+  listMailboxEntries(): Promise<RelayMailboxEntry[]> { return Promise.resolve([]); }
   persist(value: RelaySubmission, acceptance: RelayAcceptance) { this.writes++; this.value = { submission: value, acceptance,
     delivery: { envelopeId: value.envelopeId, recipient: value.recipient, status: 'relay_accepted', mailboxSequence: 1, createdAt: acceptance.acceptedAt } }; return Promise.resolve(this.value); }
 }

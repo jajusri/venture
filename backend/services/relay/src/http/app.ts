@@ -2,8 +2,11 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { AcceptRelaySubmission } from '../application/accept-submission.js';
 import type { RelayAcceptanceIssuer } from '../application/acceptance-evidence.js';
 import type { RelaySubmissionVerifier } from '../application/accept-submission.js';
+import { FetchRecipientMailbox } from '../application/fetch-mailbox.js';
+import type { RelayMailboxVerifier } from '../application/fetch-mailbox.js';
 import { RelayServiceError, type RelayErrorBody } from '../errors.js';
 import type { RelayRepository } from '../persistence/relay-repository.js';
+import { mapRelayMailboxFetchBody, type RelayMailboxFetchBody } from './map-mailbox-fetch.js';
 import { mapRelaySubmissionBody, type RelaySubmissionBody } from './map-submission.js';
 
 const MAX_BODY_BYTES = 384 * 1024;
@@ -11,11 +14,13 @@ const MAX_BODY_BYTES = 384 * 1024;
 export function buildRelayService(options: {
   repository: RelayRepository;
   verifier: RelaySubmissionVerifier;
+  mailboxVerifier: RelayMailboxVerifier;
   issuer: RelayAcceptanceIssuer;
   now?: () => Date;
 }): FastifyInstance {
   const app = Fastify({ logger: true, bodyLimit: MAX_BODY_BYTES });
   const accept = new AcceptRelaySubmission(options.repository, options.verifier, options.issuer, options.now);
+  const fetchMailbox = new FetchRecipientMailbox(options.repository, options.mailboxVerifier);
   app.get('/health', () => ({ status: 'ok', service: 'budcom-relay' }));
   app.post<{ Body: RelaySubmissionBody }>('/v1/relay/envelopes', async (request) => {
     const stored = await accept.execute(mapRelaySubmissionBody(request.body ?? {}, options.now?.() ?? new Date()));
@@ -33,6 +38,28 @@ export function buildRelayService(options: {
       relayId: acceptance.relayId,
       evidenceProfile: acceptance.evidenceProfile,
       evidence: Buffer.from(acceptance.evidence).toString('base64'),
+    };
+  });
+  app.post<{ Body: RelayMailboxFetchBody }>('/v1/relay/mailboxes/fetch', async (request) => {
+    const page = await fetchMailbox.execute(mapRelayMailboxFetchBody(request.body ?? {}));
+    return {
+      recipientBusinessId: page.recipient.businessId,
+      mailboxId: page.recipient.mailboxId,
+      nextCursor: page.nextCursor,
+      items: page.items.map((item) => ({
+        envelopeId: item.envelopeId,
+        mailboxSequence: item.mailboxSequence,
+        objectType: item.objectType,
+        objectId: item.objectId,
+        objectVersion: item.objectVersion,
+        senderBusinessId: item.senderBusinessId,
+        senderActorId: item.senderActorId,
+        senderDeviceId: item.senderDeviceId,
+        status: item.status,
+        acceptedAt: item.acceptedAt.toISOString(),
+        acceptanceId: item.acceptanceId,
+        authenticatedEnvelope: Buffer.from(item.authenticatedEnvelope).toString('base64'),
+      })),
     };
   });
   app.setErrorHandler((error, request, reply) => {
@@ -56,7 +83,7 @@ function mapUnknown(error: Error): number {
   const message = error.message;
   if (message.includes('Conflicting')) return 409;
   if (message.includes('authority rejected') || message.includes('binding mismatch')) return 403;
-  if (message.includes('required') || message.includes('bounds') || message.includes('protocol') || message.includes('must contain')) return 400;
+  if (message.includes('required') || message.includes('bounds') || message.includes('protocol') || message.includes('must contain') || message.includes('cursor')) return 400;
   return 500;
 }
 

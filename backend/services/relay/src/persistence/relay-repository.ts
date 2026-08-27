@@ -1,10 +1,11 @@
 import type { Database } from '../../../../packages/persistence/src/database.js';
-import { relayIdentifier, type MailboxId, type RelayAcceptance, type RelayDeliveryRecord, type RelayEnvelopeId, type RelaySubmission } from '../domain/relay.js';
+import { relayIdentifier, type MailboxId, type RecipientRoutingKey, type RelayAcceptance, type RelayDeliveryRecord, type RelayEnvelopeId, type RelayMailboxEntry, type RelaySubmission } from '../domain/relay.js';
 
 export interface StoredRelayEnvelope { readonly submission: RelaySubmission; readonly acceptance: RelayAcceptance; readonly delivery: RelayDeliveryRecord }
 export interface RelayRepository {
   findByIdempotency(senderBusinessId: string, idempotencyKey: string): Promise<StoredRelayEnvelope | null>;
   persist(submission: RelaySubmission, acceptance: RelayAcceptance): Promise<StoredRelayEnvelope>;
+  listMailboxEntries(recipient: RecipientRoutingKey, afterSequence: number | null, limit: number): Promise<RelayMailboxEntry[]>;
 }
 
 interface StoredRow extends Record<string, unknown> {
@@ -43,6 +44,23 @@ export function hydrateStoredRelayEnvelope(row: StoredRow): StoredRelayEnvelope 
   return { submission, acceptance, delivery };
 }
 
+function hydrateMailboxEntry(row: StoredRow): RelayMailboxEntry {
+  return {
+    envelopeId: relayIdentifier(row.envelope_id, 'RelayEnvelopeId') as RelayEnvelopeId,
+    mailboxSequence: Number(row.mailbox_sequence),
+    objectType: row.object_type,
+    objectId: row.object_id,
+    objectVersion: Number(row.object_version),
+    senderBusinessId: row.sender_business_id,
+    senderActorId: row.sender_actor_id,
+    senderDeviceId: row.sender_device_id,
+    status: row.status === 'delivered' ? 'delivered' : row.status === 'rejected' ? 'rejected' : 'relay_accepted',
+    acceptedAt: asDate(row.accepted_at),
+    acceptanceId: relayIdentifier(row.acceptance_id, 'RelayAcceptanceId'),
+    authenticatedEnvelope: asBytes(row.authenticated_envelope),
+  };
+}
+
 export class PostgresRelayRepository implements RelayRepository {
   constructor(private readonly database: Database) {}
   async findByIdempotency(senderBusinessId: string, idempotencyKey: string): Promise<StoredRelayEnvelope | null> {
@@ -54,6 +72,18 @@ export class PostgresRelayRepository implements RelayRepository {
       WHERE e.sender_business_id = $1 AND e.idempotency_key = $2 LIMIT 1`, [senderBusinessId, idempotencyKey]);
     if (result.rowCount === 0) return null;
     return hydrateStoredRelayEnvelope(result.rows[0]!);
+  }
+  async listMailboxEntries(recipient: RecipientRoutingKey, afterSequence: number | null, limit: number): Promise<RelayMailboxEntry[]> {
+    const result = await this.database.query<StoredRow>(`SELECT e.envelope_id, e.idempotency_key, e.protocol_version, e.object_type, e.object_id,
+      e.object_version, e.sender_business_id, e.sender_actor_id, e.sender_device_id, e.recipient_business_id, e.mailbox_id,
+      e.authenticated_envelope, e.acceptance_id, e.accepted_at, e.relay_id, e.acceptance_evidence_profile, e.acceptance_evidence,
+      m.mailbox_sequence, m.status, m.created_at, m.acknowledged_at
+      FROM relay_mailbox_entry m JOIN relay_envelope e ON e.envelope_id = m.envelope_id
+      WHERE m.recipient_business_id = $1 AND m.mailbox_id = $2 AND m.status = 'relay_accepted'
+      AND ($3::bigint IS NULL OR m.mailbox_sequence > $3)
+      ORDER BY m.mailbox_sequence ASC LIMIT $4`,
+    [recipient.businessId, recipient.mailboxId, afterSequence, limit]);
+    return result.rows.map((row) => hydrateMailboxEntry(row));
   }
   persist(submission: RelaySubmission, acceptance: RelayAcceptance): Promise<StoredRelayEnvelope> {
     return this.database.transaction(async (tx) => {
