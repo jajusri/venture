@@ -7,6 +7,8 @@ import com.budcom.android.feature.transaction.domain.model.TransactionClock
 import com.budcom.android.feature.transaction.domain.port.NoOpTransactionReminderScheduler
 import com.budcom.android.feature.transaction.domain.port.TransactionReminderScheduler
 import com.budcom.android.feature.transaction.domain.port.TransactionSubmissionPort
+import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
+import com.budcom.android.core.security.AndroidVartalapDeviceKeyStore
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
 import com.budcom.android.feature.transaction.sharing.AndroidTransactionShareCoordinator
 import com.budcom.android.feature.transaction.sharing.TransactionShareCoordinator
@@ -46,4 +48,8 @@ abstract class TransactionBindModule {
     @Binds
     @Singleton
     abstract fun bindTransactionShareCoordinator(impl: AndroidTransactionShareCoordinator): TransactionShareCoordinator
+
+    @Binds
+    @Singleton
+    abstract fun bindVartalapDeviceKeyStore(impl: AndroidVartalapDeviceKeyStore): VartalapDeviceKeyStore
 }
