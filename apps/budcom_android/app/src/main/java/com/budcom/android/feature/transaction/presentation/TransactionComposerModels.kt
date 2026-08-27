@@ -30,6 +30,8 @@ data class TransactionComposerUiState(
     val newSkus: List<TransactionNewSkuRow> = emptyList(),
     val canonicalDraftOrder: CanonicalOrder? = null,
     val canonicalOrderStatusLabel: String? = null,
+    val transportStatusLabel: String? = null,
+    val transportDetail: String? = null,
     val deliveryQueued: Boolean = false,
     /** Cart-photo fix: the same Catalogue primary-photo file already resolved for the Catalogue
      * product-list row (`CatalogueViewModel`'s own `primaryAssetFile`, same

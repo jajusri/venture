@@ -23,6 +23,7 @@ data class StructuredInboxItemUi(
     val orderId: String,
     val orderVersion: Int,
     val label: String,
+    val transportLabel: String,
     val entry: StructuredRecipientInboxEntry,
 )
 
@@ -98,6 +99,7 @@ class StructuredRecipientInboxViewModel @Inject constructor(
             orderId = objectId,
             orderVersion = objectVersion,
             label = label,
+            transportLabel = "Transport: Relay accepted",
             entry = this,
         )
     }

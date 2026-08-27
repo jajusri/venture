@@ -88,6 +88,9 @@ interface TransactionRepository {
     suspend fun enqueueOrderDelivery(order: CanonicalOrder, timestamp: TransactionTimestamp): OrderDeliveryEnvelope =
         throw UnsupportedOperationException("Order delivery outbox is not implemented by this repository")
 
+    suspend fun findOrderDeliveryEnvelope(companyId: String, orderId: String, orderVersion: Int): OrderDeliveryEnvelope? =
+        throw UnsupportedOperationException("Order delivery lookup is not implemented by this repository")
+
     suspend fun markOrderSentFromRelayEvidence(
         companyId: String,
         envelope: OrderDeliveryEnvelope,

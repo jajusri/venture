@@ -413,6 +413,12 @@ private fun ReviewOrderSection(state: TransactionComposerUiState, onEvent: (Tran
                 state.canonicalOrderStatusLabel?.let { label ->
                     Text("Order status: $label", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("composer_order_status"))
                 }
+                state.transportStatusLabel?.let { label ->
+                    Text("Transport: $label", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("composer_transport_status"))
+                }
+                state.transportDetail?.let { detail ->
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("composer_transport_detail"))
+                }
                 TextButton(
                     onClick = { onEvent(TransactionComposerEvent.SendOrder) },
                     enabled = !state.deliveryQueued,

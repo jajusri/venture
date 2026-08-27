@@ -252,9 +252,22 @@ class TransactionComposerViewModel @Inject constructor(
                 .onSuccess { envelope ->
                     runCatching { relayOutboxDispatcher.submitPending(order.companyId) }
                     refreshCanonicalOrderStatus(order.companyId, order.orderId)
+                    refreshTransportStatus(order.companyId, order.orderId, order.version)
                     _uiState.update { it.copy(deliveryQueued = true, message = "Waiting to send.") }
                 }
                 .onFailure { _uiState.update { it.copy(message = "Order is still saved locally and can be sent later.") } }
+        }
+    }
+
+    private fun refreshTransportStatus(companyId: String, orderId: String, orderVersion: Int) {
+        viewModelScope.launch {
+            val envelope = repository.findOrderDeliveryEnvelope(companyId, orderId, orderVersion) ?: return@launch
+            _uiState.update {
+                it.copy(
+                    transportStatusLabel = OrderTransportStatusLabels.testerFacing(envelope.state),
+                    transportDetail = OrderTransportStatusLabels.detail(envelope.state, envelope.lastError),
+                )
+            }
         }
     }
 

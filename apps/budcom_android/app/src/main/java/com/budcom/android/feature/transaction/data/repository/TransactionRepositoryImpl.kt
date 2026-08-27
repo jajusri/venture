@@ -220,6 +220,12 @@ class TransactionRepositoryImpl @Inject constructor(
         entity.toDomain()
     }
 
+    override suspend fun findOrderDeliveryEnvelope(companyId: String, orderId: String, orderVersion: Int): OrderDeliveryEnvelope? =
+        withContext(dispatchers.io) {
+            val key = "order:$orderId:v$orderVersion"
+            orderOutboxDao.findByIdempotencyKey(companyId, key)?.toDomain()
+        }
+
     override suspend fun markOrderSentFromRelayEvidence(
         companyId: String,
         envelope: OrderDeliveryEnvelope,

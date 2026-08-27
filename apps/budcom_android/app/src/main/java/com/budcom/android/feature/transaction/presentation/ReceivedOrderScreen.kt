@@ -46,6 +46,7 @@ fun ReceivedOrderScreen(
                 CircularProgressIndicator(modifier = Modifier.testTag("received_order_loading"))
             } else {
                 Text("Order ${state.orderId.orEmpty()}", modifier = Modifier.testTag("received_order_id"))
+                Text("Envelope ${state.envelopeId}", modifier = Modifier.testTag("received_order_envelope"))
                 Text("Version ${state.orderVersion ?: 1}", modifier = Modifier.testTag("received_order_version"))
                 Text(
                     "Status: ${state.statusLabel.orEmpty()}",

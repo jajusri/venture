@@ -39,6 +39,7 @@ fun ReceivedRevisionScreen(state: ReceivedRevisionUiState, onEvent: (ReceivedRev
                 CircularProgressIndicator(modifier = Modifier.testTag("received_revision_loading"))
             } else {
                 Text("Order ${state.orderId.orEmpty()}", modifier = Modifier.testTag("received_revision_id"))
+                Text("Envelope ${state.envelopeId}", modifier = Modifier.testTag("received_revision_envelope"))
                 Text("Version ${state.orderVersion ?: 1}", modifier = Modifier.testTag("received_revision_version"))
                 Text(
                     "Status: ${state.statusLabel.orEmpty()}",
