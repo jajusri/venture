@@ -37,7 +37,16 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
             ) ?: break
             page.items.forEach { item ->
                 if (StructuredRecipientInboxValidation.validate(item, companyId)) {
-                    inbox.persistIfNew(companyId, item, clock.now())
+                    val stored = inbox.persistIfNew(companyId, item, clock.now())
+                    if (stored != null) {
+                        client.acknowledgeDelivery(
+                            envelopeId = item.envelopeId,
+                            recipientBusinessId = companyId,
+                            recipientActorId = credential.actorId,
+                            recipientDeviceId = identity.deviceId,
+                            receivedAtEpochMillis = stored.ingestedAt.epochMillis,
+                        )
+                    }
                 }
             }
             cursor = page.nextCursor

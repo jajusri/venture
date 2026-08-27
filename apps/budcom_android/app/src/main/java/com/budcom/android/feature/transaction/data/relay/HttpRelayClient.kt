@@ -94,6 +94,15 @@ internal data class RelayMailboxPageJson(
     val items: List<RelayMailboxItemJson> = emptyList(),
 )
 
+@Serializable
+internal data class RelayAcknowledgementJson(
+    val envelopeId: String,
+    val recipientBusinessId: String,
+    val recipientActorId: String,
+    val recipientDeviceId: String,
+    val receivedAt: String,
+)
+
 class HttpRelayClient(
     private val endpoint: RelayEndpointProvider,
     private val retryPolicy: RetryPolicy = RelayRetryPolicy,
@@ -197,6 +206,37 @@ class HttpRelayClient(
         }
     }
 
+    suspend fun acknowledgeDelivery(
+        envelopeId: String,
+        recipientBusinessId: String,
+        recipientActorId: String,
+        recipientDeviceId: String,
+        receivedAtEpochMillis: Long,
+    ): Boolean {
+        val baseUrl = endpoint.snapshot() ?: return false
+        val payload = json.encodeToString(
+            RelayAcknowledgementJson.serializer(),
+            RelayAcknowledgementJson(
+                envelopeId = envelopeId,
+                recipientBusinessId = recipientBusinessId,
+                recipientActorId = recipientActorId,
+                recipientDeviceId = recipientDeviceId,
+                receivedAt = java.time.Instant.ofEpochMilli(receivedAtEpochMillis).toString(),
+            ),
+        )
+        val request = Request.Builder()
+            .url(baseUrl.trimEnd('/') + ACKNOWLEDGEMENT_PATH)
+            .post(payload.toRequestBody(JSON))
+            .build()
+        return try {
+            client.newCall(request).execute().use { response -> response.isSuccessful }
+        } catch (_: IOException) {
+            false
+        } catch (_: SocketTimeoutException) {
+            false
+        }
+    }
+
     private fun postOnce(baseUrl: String, envelopeId: String, idempotencyKey: String, payload: String): Attempt {
         val request = Request.Builder()
             .url(baseUrl.trimEnd('/') + SUBMIT_PATH)
@@ -257,6 +297,7 @@ class HttpRelayClient(
     companion object {
         const val SUBMIT_PATH = "/v1/relay/envelopes"
         const val MAILBOX_FETCH_PATH = "/v1/relay/mailboxes/fetch"
+        const val ACKNOWLEDGEMENT_PATH = "/v1/relay/acknowledgements"
         const val CONNECT_TIMEOUT_SECONDS = 10L
         const val READ_TIMEOUT_SECONDS = 15L
         const val WRITE_TIMEOUT_SECONDS = 15L

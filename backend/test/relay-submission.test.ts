@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AcceptRelaySubmission, type RelaySubmissionVerifier, type VerifiedRelayAuthority } from '../services/relay/src/application/accept-submission.js';
-import { relayIdentifier, type RelayAcceptance, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
+import type { RelayAcknowledgementSubmission } from '../services/relay/src/application/record-acknowledgement.js';
+import { relayIdentifier, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../services/relay/src/persistence/relay-repository.js';
 import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/acceptance-evidence.js';
 
@@ -14,6 +15,12 @@ class MemoryRepository implements RelayRepository {
   value: StoredRelayEnvelope | null = null; writes = 0;
   findByIdempotency() { return Promise.resolve(this.value); }
   listMailboxEntries(): Promise<RelayMailboxEntry[]> { return Promise.resolve([]); }
+  recordAcknowledgement(request: RelayAcknowledgementSubmission, _recordedAt: Date): Promise<RelayAcknowledgement> {
+    return Promise.resolve({
+      envelopeId: request.envelopeId, recipientBusinessId: request.recipientBusinessId,
+      recipientDeviceId: request.recipientDeviceId, receivedAt: request.receivedAt,
+    });
+  }
   persist(value: RelaySubmission, acceptance: RelayAcceptance) { this.writes++; this.value = { submission: value, acceptance,
     delivery: { envelopeId: value.envelopeId, recipient: value.recipient, status: 'relay_accepted', mailboxSequence: 1, createdAt: acceptance.acceptedAt } }; return Promise.resolve(this.value); }
 }

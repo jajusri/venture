@@ -1,11 +1,13 @@
 import type { Database } from '../../../../packages/persistence/src/database.js';
-import { relayIdentifier, type MailboxId, type RecipientRoutingKey, type RelayAcceptance, type RelayDeliveryRecord, type RelayEnvelopeId, type RelayMailboxEntry, type RelaySubmission } from '../domain/relay.js';
+import type { RelayAcknowledgementSubmission } from '../application/record-acknowledgement.js';
+import { relayIdentifier, type MailboxId, type RecipientRoutingKey, type RelayAcceptance, type RelayAcknowledgement, type RelayDeliveryRecord, type RelayEnvelopeId, type RelayMailboxEntry, type RelaySubmission } from '../domain/relay.js';
 
 export interface StoredRelayEnvelope { readonly submission: RelaySubmission; readonly acceptance: RelayAcceptance; readonly delivery: RelayDeliveryRecord }
 export interface RelayRepository {
   findByIdempotency(senderBusinessId: string, idempotencyKey: string): Promise<StoredRelayEnvelope | null>;
   persist(submission: RelaySubmission, acceptance: RelayAcceptance): Promise<StoredRelayEnvelope>;
   listMailboxEntries(recipient: RecipientRoutingKey, afterSequence: number | null, limit: number): Promise<RelayMailboxEntry[]>;
+  recordAcknowledgement(submission: RelayAcknowledgementSubmission, recordedAt: Date): Promise<RelayAcknowledgement>;
 }
 
 interface StoredRow extends Record<string, unknown> {
@@ -84,6 +86,43 @@ export class PostgresRelayRepository implements RelayRepository {
       ORDER BY m.mailbox_sequence ASC LIMIT $4`,
     [recipient.businessId, recipient.mailboxId, afterSequence, limit]);
     return result.rows.map((row) => hydrateMailboxEntry(row));
+  }
+  recordAcknowledgement(submission: RelayAcknowledgementSubmission, recordedAt: Date): Promise<RelayAcknowledgement> {
+    return this.database.transaction(async (tx) => {
+      const mailbox = await tx.query<{ recipient_business_id: string; mailbox_id: string }>(
+        `SELECT recipient_business_id, mailbox_id FROM relay_mailbox_entry WHERE envelope_id = $1 AND recipient_business_id = $2 LIMIT 1`,
+        [submission.envelopeId, submission.recipientBusinessId],
+      );
+      if (mailbox.rowCount === 0) throw new Error('Relay mailbox entry not found');
+      const existing = await tx.query<{ envelope_id: string }>(
+        `SELECT envelope_id FROM relay_delivery_acknowledgement WHERE envelope_id = $1 LIMIT 1`,
+        [submission.envelopeId],
+      );
+      if (existing.rowCount > 0) {
+        return {
+          envelopeId: submission.envelopeId,
+          recipientBusinessId: submission.recipientBusinessId,
+          recipientDeviceId: submission.recipientDeviceId,
+          receivedAt: submission.receivedAt,
+        };
+      }
+      await tx.query(
+        `INSERT INTO relay_delivery_acknowledgement(envelope_id, recipient_business_id, recipient_device_id, received_at, recorded_at)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [submission.envelopeId, submission.recipientBusinessId, submission.recipientDeviceId, submission.receivedAt, recordedAt],
+      );
+      await tx.query(
+        `UPDATE relay_mailbox_entry SET status = 'delivered', acknowledged_at = $2
+         WHERE envelope_id = $1 AND recipient_business_id = $3`,
+        [submission.envelopeId, submission.receivedAt, submission.recipientBusinessId],
+      );
+      return {
+        envelopeId: submission.envelopeId,
+        recipientBusinessId: submission.recipientBusinessId,
+        recipientDeviceId: submission.recipientDeviceId,
+        receivedAt: submission.receivedAt,
+      };
+    });
   }
   persist(submission: RelaySubmission, acceptance: RelayAcceptance): Promise<StoredRelayEnvelope> {
     return this.database.transaction(async (tx) => {
