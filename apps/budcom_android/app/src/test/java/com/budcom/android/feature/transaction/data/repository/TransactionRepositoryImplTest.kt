@@ -42,8 +42,12 @@ import com.budcom.android.feature.transaction.data.local.SellerInboxEntryDao
 import com.budcom.android.feature.transaction.data.local.SellerInboxEntryEntity
 import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentDao
 import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEntity
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderLine
 import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
+import com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence
+import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
 import com.budcom.android.feature.transaction.domain.model.OrderTransportState
 import com.budcom.android.feature.transaction.data.local.OrderCommercialEventDao
 import com.budcom.android.feature.transaction.data.local.OrderCommercialEventEntity
@@ -83,6 +87,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -367,6 +372,122 @@ class TransactionRepositoryImplTest {
         orderId = "order-1", orderVersion = 1, objectType = "CANONICAL_ORDER",
         viewerBusinessId = "seller-co", viewerActorId = "actor-s", viewerDeviceId = "device-s",
         senderBusinessId = "buyer-co", openedAt = ts(300),
+    )
+
+    @Test
+    fun `complete revision acceptance flow preserves archive and rejects stale or unauthorized acceptance`() = runTest(dispatcher) {
+        val repo = repository()
+        seedBuyerOrderWithLines(CanonicalOrderState.Sent)
+        recipientInboxDao.entries += inboxFixture()
+        repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", seenOpenEvent())
+        val sellerAuthority = OrderConfirmAuthority("seller-co", "actor-s", "device-s", setOf("confirm_orders"), 1)
+        val sellerRevision = repo.proposeOrderRevision(
+            "seller-co", "env-1", sellerBaselineOrder(), revisionLines("12"), "Need 12 units",
+            sellerAuthority, ts(500), "revision:order-1:v2",
+        )!!
+        assertEquals(CanonicalOrderState.RevisionPending, sellerRevision.state)
+        assertEquals(2, sellerRevision.version)
+        val revisionEnvelope = repo.enqueueOrderDelivery(sellerRevision, ts(510))
+        repo.markRevisionSent("seller-co", "order-1", revisionEnvelope)!!
+        recipientInboxDao.entries += buyerRevisionInboxFixture("env-2", 2)
+        val buyerRevision = sellerRevision.copy(
+            companyId = "buyer-co",
+            sellerCompanyId = "seller-co",
+            buyerPartyId = "buyer-co",
+            state = CanonicalOrderState.RevisionSent,
+        )
+        val received = repo.receiveOrderRevisionOnBuyer("buyer-co", "env-2", buyerRevision, ts(520))!!
+        assertEquals(CanonicalOrderState.RevisionSent, received.state)
+        assertEquals("10", repo.findArchivedOrderVersion("buyer-co", "order-1", 1)!!.lines.single().quantity)
+        assertEquals(RecipientInboxTransportState.Received.columnValue, recipientInboxDao.entries.single { it.envelopeId == "env-2" }.transportState)
+        val buyerOpen = OrderStructuredOpenEvent(
+            eventId = "seen-rev-1", idempotencyKey = "seen:order-1:v2:buyer-co",
+            orderId = "order-1", orderVersion = 2, objectType = "CANONICAL_ORDER",
+            viewerBusinessId = "buyer-co", viewerActorId = "actor-b", viewerDeviceId = "device-b",
+            senderBusinessId = "seller-co", openedAt = ts(530),
+        )
+        repo.recordOrderSeenFromOpenEvent("buyer-co", "env-2", buyerOpen)
+        val seenEvidence = repo.findOrderSeenEvidence("buyer-co", "order-1", 2)!!
+        val revisionSeen = repo.applyOrderSeenEvidence("buyer-co", seenEvidence)!!
+        assertEquals(CanonicalOrderState.RevisionSeen, revisionSeen.state)
+        assertNotEquals(CanonicalOrderState.Seen, received.state)
+        val buyerAuthority = OrderConfirmAuthority("buyer-co", "actor-b", "device-b", setOf("confirm_orders"), 1)
+        val acceptedEvent = repo.recordOrderRevisionAcceptFromBuyerAction(
+            "buyer-co", "env-2", buyerAuthority, "accept-2", "accept:order-1:v2:buyer-co", ts(600),
+        )!!
+        val retryAccept = repo.recordOrderRevisionAcceptFromBuyerAction(
+            "buyer-co", "env-2", buyerAuthority, "accept-2-retry", "accept:order-1:v2:buyer-co", ts(601),
+        )!!
+        assertEquals(acceptedEvent.eventId, retryAccept.eventId)
+        val acceptEvidence = OrderRevisionAcceptEvidence(
+            eventId = acceptedEvent.eventId, orderId = "order-1", orderVersion = 2,
+            acceptingBusinessId = "buyer-co", acceptingActorId = "actor-b", acceptingDeviceId = "device-b",
+            counterpartyBusinessId = "seller-co", authorityEpoch = 1, acceptedAt = ts(600),
+        )
+        val confirmed = repo.applyOrderRevisionAcceptEvidence("buyer-co", acceptEvidence)!!
+        assertEquals(CanonicalOrderState.Confirmed, confirmed.state)
+        assertEquals("12", confirmed.lines.single().quantity)
+        assertEquals("10", repo.findArchivedOrderVersion("buyer-co", "order-1", 1)!!.lines.single().quantity)
+        assertNull(repo.applyOrderRevisionAcceptEvidence("buyer-co", acceptEvidence.copy(orderVersion = 1)))
+        assertNull(
+            repo.recordOrderRevisionAcceptFromBuyerAction(
+                "buyer-co", "env-2",
+                OrderConfirmAuthority("buyer-co", "actor-b", "device-b", setOf("send_orders"), 1),
+                "denied", "accept:denied", ts(602),
+            ),
+        )
+        assertTrue(transactionDao.store.isEmpty())
+        assertEquals(1, canonicalOrderDao.orders.count { it.companyId == "buyer-co" && it.orderId == "order-1" })
+    }
+
+    private suspend fun seedBuyerOrderWithLines(state: CanonicalOrderState) {
+        canonicalOrderDao.orders += CanonicalOrderEntity(
+            companyId = "buyer-co", orderId = "order-1", creationKey = "k", sellerCompanyId = "buyer-co",
+            buyerPartyId = "seller-co", state = state.columnValue,
+            source = TransactionEntryPointType.Catalogue.columnValue,
+            submissionType = TransactionSubmissionType.Estimate.columnValue,
+            note = null, createdAt = 100, createdAtSource = TransactionTimestampSource.DeviceLocalProvisional.name, version = 1,
+        )
+        canonicalOrderDao.upsertLines(
+            listOf(
+                CanonicalOrderLineEntity(
+                    companyId = "buyer-co", orderId = "order-1", lineId = "line-1", linkedProductId = "p1",
+                    snapshotProductName = "Widget", snapshotUnit = "Nos", snapshotSku = "SKU-1", quantity = "10",
+                    unitPriceAmount = "100", unitPriceCurrencyCode = "INR", priceState = "ACTUAL", lineTotalAmount = "1000",
+                ),
+            ),
+        )
+    }
+
+    private fun sellerBaselineOrder() = CanonicalOrder(
+        companyId = "seller-co", orderId = "order-1", creationKey = "k", sellerCompanyId = "buyer-co", buyerPartyId = "seller-co",
+        state = CanonicalOrderState.Seen, source = TransactionEntryPointType.Catalogue, submissionType = TransactionSubmissionType.Estimate,
+        note = null, createdAt = ts(100), version = 1,
+        lines = listOf(
+            CanonicalOrderLine(
+                orderId = "order-1", lineId = "line-1", linkedProductId = "p1", snapshotProductName = "Widget",
+                snapshotUnit = "Nos", snapshotSku = "SKU-1", quantity = "10", unitPriceAmount = "100",
+                unitPriceCurrencyCode = "INR", priceState = TransactionDraftPriceState.ActualPrice("100", "INR"), lineTotalAmount = "1000",
+            ),
+        ),
+    )
+
+    private fun revisionLines(quantity: String) = listOf(
+        OrderRevisionLineChange(
+            lineId = "line-1", linkedProductId = "p1", snapshotProductName = "Widget", snapshotUnit = "Nos", snapshotSku = "SKU-1",
+            quantity = quantity, unitPriceAmount = "100", unitPriceCurrencyCode = "INR",
+            priceState = TransactionDraftPriceState.ActualPrice("100", "INR"), lineTotalAmount = "1200",
+        ),
+    )
+
+    private fun buyerRevisionInboxFixture(envelopeId: String, version: Int) = StructuredRecipientInboxEntity(
+        companyId = "buyer-co", envelopeId = envelopeId, idempotencyKey = "inbox-$envelopeId",
+        objectType = "CANONICAL_ORDER", objectId = "order-1", objectVersion = version,
+        senderBusinessId = "seller-co", senderActorId = "actor-s", senderDeviceId = "device-s",
+        mailboxId = "orders", mailboxSequence = 2, acceptanceId = "accept-2",
+        acceptedAt = 520, acceptedAtSource = TransactionTimestampSource.DeviceLocalProvisional.name,
+        ingestedAt = 525, ingestedAtSource = TransactionTimestampSource.DeviceLocalProvisional.name,
+        transportState = RecipientInboxTransportState.Received.columnValue,
     )
 
     // ============================== company isolation ==============================
