@@ -102,6 +102,10 @@ abstract class TransactionBindModule {
     @Binds
     @Singleton
     abstract fun bindStructuredBusinessTransport(impl: HttpRelayStructuredTransport): StructuredBusinessTransport
+
+    @Binds
+    @Singleton
+    abstract fun bindCommercialDbTransaction(impl: com.budcom.android.feature.transaction.data.local.RoomCommercialDbTransaction): com.budcom.android.feature.transaction.data.local.CommercialDbTransaction
 }
 
 @Module
