@@ -42,6 +42,7 @@ import com.budcom.android.feature.transaction.presentation.ReceivedOrderRoute
 import com.budcom.android.feature.transaction.presentation.ReceivedOrderViewModel
 import com.budcom.android.feature.transaction.presentation.ReceivedRevisionRoute
 import com.budcom.android.feature.transaction.presentation.ReceivedRevisionViewModel
+import com.budcom.android.feature.transaction.presentation.StructuredRecipientInboxRoute
 import com.budcom.android.feature.transaction.presentation.TransactionComposerRoute
 import com.budcom.android.feature.voucher.presentation.VoucherBrowserRoute
 import com.budcom.android.feature.voucher.presentation.VoucherDetailsRoute
@@ -146,6 +147,7 @@ fun BudcomNavHost(
             SyncRoute(
                 onOpenCompanySelection = { navController.navigate(Routes.COMPANY) },
                 onOpenServerConfig = { navController.navigate(Routes.SERVER_CONFIG) },
+                onOpenStructuredInbox = { navController.navigate(Routes.STRUCTURED_INBOX) },
             )
         }
         composable(route = Routes.DIAGNOSTICS) {
@@ -273,7 +275,14 @@ fun BudcomNavHost(
             )
         }
         composable(route = Routes.TRANSACTION_COMPOSER) {
-            TransactionComposerRoute()
+            TransactionComposerRoute(
+                onOpenStructuredInbox = { navController.navigate(Routes.STRUCTURED_INBOX) },
+            )
+        }
+        composable(route = Routes.STRUCTURED_INBOX) {
+            StructuredRecipientInboxRoute(
+                onOpenRoute = { route -> navController.navigate(route) },
+            )
         }
         composable(
             route = Routes.RECEIVED_ORDER,

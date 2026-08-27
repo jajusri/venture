@@ -146,6 +146,22 @@ class CanonicalOrderSeenTransitionsTest {
         assertNull(CanonicalOrderSeenTransitions.apply(order(CanonicalOrderState.Draft), evidence()))
         assertNull(CanonicalOrderSeenTransitions.apply(order(), evidence().copy(orderVersion = 2)))
         assertNull(CanonicalOrderSeenTransitions.apply(order(), evidence().copy(viewerBusinessId = "buyer-co")))
+        assertEquals(
+            CanonicalOrderState.RevisionSeen,
+            CanonicalOrderSeenTransitions.apply(
+                order(CanonicalOrderState.RevisionSent).copy(
+                    companyId = "buyer-co",
+                    sellerCompanyId = "seller-co",
+                    buyerPartyId = "buyer-co",
+                    version = 2,
+                ),
+                evidence().copy(
+                    viewerBusinessId = "buyer-co",
+                    senderBusinessId = "seller-co",
+                    orderVersion = 2,
+                ),
+            ),
+        )
     }
 }
 

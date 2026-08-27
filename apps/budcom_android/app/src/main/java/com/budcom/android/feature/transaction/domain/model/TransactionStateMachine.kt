@@ -211,8 +211,8 @@ object RecipientOrderSeenOpenTransitions {
 object CanonicalOrderSeenTransitions {
     fun apply(order: CanonicalOrder, evidence: OrderSeenEvidence): CanonicalOrderState? {
         if (evidence.orderId != order.orderId || evidence.orderVersion != order.version) return null
-        if (evidence.senderBusinessId != order.companyId) return null
-        if (evidence.viewerBusinessId == order.companyId) return null
+        if (evidence.viewerBusinessId == evidence.senderBusinessId) return null
+        if (evidence.viewerBusinessId != order.companyId && evidence.senderBusinessId != order.companyId) return null
         return when (order.state) {
             CanonicalOrderState.Seen -> CanonicalOrderState.Seen
             CanonicalOrderState.Sent -> CanonicalOrderState.Seen

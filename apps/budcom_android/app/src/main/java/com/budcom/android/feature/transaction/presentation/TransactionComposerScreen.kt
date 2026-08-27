@@ -69,6 +69,7 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun TransactionComposerRoute(
+    onOpenStructuredInbox: () -> Unit = {},
     viewModel: TransactionComposerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -82,7 +83,11 @@ fun TransactionComposerRoute(
         }
     }
 
-    TransactionComposerScreen(state = state, onEvent = viewModel::onEvent)
+    TransactionComposerScreen(
+        state = state,
+        onEvent = viewModel::onEvent,
+        onOpenStructuredInbox = onOpenStructuredInbox,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,11 +95,22 @@ fun TransactionComposerRoute(
 fun TransactionComposerScreen(
     state: TransactionComposerUiState,
     onEvent: (TransactionComposerEvent) -> Unit,
+    onOpenStructuredInbox: () -> Unit = {},
 ) {
     var previouslyBoughtExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("New Order") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("New Order") },
+                actions = {
+                    TextButton(
+                        onClick = onOpenStructuredInbox,
+                        modifier = Modifier.testTag("composer_open_structured_inbox"),
+                    ) { Text("Received") }
+                },
+            )
+        },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {

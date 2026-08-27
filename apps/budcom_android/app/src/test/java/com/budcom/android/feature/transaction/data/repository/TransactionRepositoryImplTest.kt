@@ -378,6 +378,7 @@ class TransactionRepositoryImplTest {
     fun `complete revision acceptance flow preserves archive and rejects stale or unauthorized acceptance`() = runTest(dispatcher) {
         val repo = repository()
         seedBuyerOrderWithLines(CanonicalOrderState.Sent)
+        seedSellerReceivedOrder()
         recipientInboxDao.entries += inboxFixture()
         repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", seenOpenEvent())
         val sellerAuthority = OrderConfirmAuthority("seller-co", "actor-s", "device-s", setOf("confirm_orders"), 1)
@@ -452,6 +453,25 @@ class TransactionRepositoryImplTest {
             listOf(
                 CanonicalOrderLineEntity(
                     companyId = "buyer-co", orderId = "order-1", lineId = "line-1", linkedProductId = "p1",
+                    snapshotProductName = "Widget", snapshotUnit = "Nos", snapshotSku = "SKU-1", quantity = "10",
+                    unitPriceAmount = "100", unitPriceCurrencyCode = "INR", priceState = "ACTUAL", lineTotalAmount = "1000",
+                ),
+            ),
+        )
+    }
+
+    private suspend fun seedSellerReceivedOrder() {
+        canonicalOrderDao.orders += CanonicalOrderEntity(
+            companyId = "seller-co", orderId = "order-1", creationKey = "seller-k", sellerCompanyId = "buyer-co",
+            buyerPartyId = "seller-co", state = CanonicalOrderState.Seen.columnValue,
+            source = TransactionEntryPointType.Catalogue.columnValue,
+            submissionType = TransactionSubmissionType.Estimate.columnValue,
+            note = null, createdAt = 100, createdAtSource = TransactionTimestampSource.DeviceLocalProvisional.name, version = 1,
+        )
+        canonicalOrderDao.upsertLines(
+            listOf(
+                CanonicalOrderLineEntity(
+                    companyId = "seller-co", orderId = "order-1", lineId = "line-1", linkedProductId = "p1",
                     snapshotProductName = "Widget", snapshotUnit = "Nos", snapshotSku = "SKU-1", quantity = "10",
                     unitPriceAmount = "100", unitPriceCurrencyCode = "INR", priceState = "ACTUAL", lineTotalAmount = "1000",
                 ),

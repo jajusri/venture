@@ -26,6 +26,11 @@ class StructuredRecipientInboxRepositoryImpl @Inject constructor(
             inboxDao.findByEnvelopeId(companyId, envelopeId)?.toDomain()
         }
 
+    override suspend fun findAll(companyId: String): List<StructuredRecipientInboxEntry> =
+        withContext(dispatchers.io) {
+            inboxDao.findAll(companyId).map { it.toDomain() }
+        }
+
     override suspend fun loadMailboxCursor(companyId: String, mailboxId: String): String? =
         withContext(dispatchers.io) { cursorDao.find(companyId, mailboxId)?.cursor }
 

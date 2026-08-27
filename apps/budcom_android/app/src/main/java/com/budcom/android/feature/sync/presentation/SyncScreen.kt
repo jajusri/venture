@@ -42,6 +42,7 @@ import com.budcom.android.feature.sync.domain.model.SyncTarget
 fun SyncRoute(
     onOpenCompanySelection: () -> Unit,
     onOpenServerConfig: () -> Unit,
+    onOpenStructuredInbox: () -> Unit = {},
     viewModel: SyncViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -53,7 +54,11 @@ fun SyncRoute(
             }
         }
     }
-    SyncScreen(state = state, onEvent = viewModel::onEvent)
+    SyncScreen(
+        state = state,
+        onEvent = viewModel::onEvent,
+        onOpenStructuredInbox = onOpenStructuredInbox,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,6 +66,7 @@ fun SyncRoute(
 fun SyncScreen(
     state: SyncUiState,
     onEvent: (SyncEvent) -> Unit,
+    onOpenStructuredInbox: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Scaffold(
@@ -84,6 +90,13 @@ fun SyncScreen(
             }
 
             SummaryCard(state = state, onEvent = onEvent)
+
+            OutlinedButton(
+                onClick = onOpenStructuredInbox,
+                modifier = Modifier.fillMaxWidth().testTag("sync_open_structured_inbox"),
+            ) {
+                Text("Received orders")
+            }
 
             if (state.bannerError != null) {
                 Text(

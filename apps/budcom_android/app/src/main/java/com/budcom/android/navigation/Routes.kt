@@ -1,6 +1,8 @@
 package com.budcom.android.navigation
 
 import android.net.Uri
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 /**
  * Type-safe navigation route identifiers.
@@ -28,14 +30,15 @@ object Routes {
     const val CATALOGUE_DETAIL = "catalogue/{productId}"
     const val CATALOGUE_STOCK_ITEM_PICKER = "catalogue/link-stock-item"
     const val TRANSACTION_COMPOSER = "transaction/compose"
+    const val STRUCTURED_INBOX = "transaction/inbox"
     const val RECEIVED_ORDER = "transaction/received/{envelopeId}/{senderBusinessId}/{orderId}/{orderVersion}"
     const val RECEIVED_REVISION = "transaction/revision/{envelopeId}/{senderBusinessId}/{orderId}/{orderVersion}"
 
     fun receivedOrder(envelopeId: String, senderBusinessId: String, orderId: String, orderVersion: Int): String =
-        "transaction/received/${Uri.encode(envelopeId)}/${Uri.encode(senderBusinessId)}/${Uri.encode(orderId)}/$orderVersion"
+        "transaction/received/${encodeRouteSegment(envelopeId)}/${encodeRouteSegment(senderBusinessId)}/${encodeRouteSegment(orderId)}/$orderVersion"
 
     fun receivedRevision(envelopeId: String, senderBusinessId: String, orderId: String, orderVersion: Int): String =
-        "transaction/revision/${Uri.encode(envelopeId)}/${Uri.encode(senderBusinessId)}/${Uri.encode(orderId)}/$orderVersion"
+        "transaction/revision/${encodeRouteSegment(envelopeId)}/${encodeRouteSegment(senderBusinessId)}/${encodeRouteSegment(orderId)}/$orderVersion"
     const val PARTY_DETAIL = "connect/party/{partyId}"
     const val PROSPECT_CREATE = "connect/prospect/new"
     const val PARTY_XML_EXPORT = "connect/party/{partyId}/xml-export"
@@ -68,4 +71,7 @@ object Routes {
 
     fun catalogueDetail(productId: String): String =
         "catalogue/${Uri.encode(productId)}"
+
+    private fun encodeRouteSegment(value: String): String =
+        URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
 }
