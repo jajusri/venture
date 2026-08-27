@@ -1,6 +1,7 @@
 package com.budcom.android.feature.transaction.domain.port
 
 import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
+import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
 
 /** Future Vartalap adapter boundary. No network, relay, authentication, or cryptography is
  * selected here; the durable outbox remains usable while this adapter is unavailable. */
@@ -9,7 +10,7 @@ fun interface StructuredBusinessTransport {
 }
 
 sealed interface TransportResult {
-    data class Accepted(val evidence: TransportEvidence) : TransportResult
+    data class Accepted(val evidence: TransportEvidence, val relayAcceptance: RelayAcceptanceEvidence? = null) : TransportResult
     data class Delivered(val evidence: TransportEvidence) : TransportResult
     data class TemporarilyUnavailable(val reason: String) : TransportResult
     data class RetryableFailure(val reason: String) : TransportResult

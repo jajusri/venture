@@ -163,6 +163,7 @@ data class TransactionLineItem(
 
 enum class CanonicalOrderState(val columnValue: String) {
     Draft("DRAFT"),
+    Sent("SENT"),
     ;
 
     companion object {

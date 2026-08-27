@@ -25,3 +25,11 @@ fun interface RelayCredentialSource {
 fun interface RelayOutboxDispatcher {
     suspend fun submitPending(companyId: String)
 }
+
+fun interface OrderSentFromRelayEvidence {
+    suspend fun markOrderSentFromRelayEvidence(
+        companyId: String,
+        envelope: com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope,
+        evidence: com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence,
+    ): com.budcom.android.feature.transaction.domain.model.CanonicalOrder?
+}

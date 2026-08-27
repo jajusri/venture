@@ -6,6 +6,7 @@ import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
 import com.budcom.android.feature.transaction.domain.model.OrderTransportState
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
+import com.budcom.android.feature.transaction.domain.port.OrderSentFromRelayEvidence
 import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
 import com.budcom.android.feature.transaction.domain.port.TransportResult
 import com.budcom.android.feature.transaction.domain.port.TransportRouterResult
@@ -19,6 +20,7 @@ class DefaultRelayOutboxDispatcher @Inject constructor(
     private val router: RelayAwareTransportRouter,
     private val clock: TransactionClock,
     private val dispatchers: DispatcherProvider,
+    private val orderSent: OrderSentFromRelayEvidence,
 ) : RelayOutboxDispatcher {
     override suspend fun submitPending(companyId: String) = withContext(dispatchers.io) {
         val pending = orderOutboxDao.findPending(companyId)
@@ -28,7 +30,14 @@ class DefaultRelayOutboxDispatcher @Inject constructor(
             val now = clock.now()
             when (result) {
                 TransportRouterResult.NoAvailableTransport -> Unit
-                is TransportRouterResult.Submitted -> persistAttempt(entity.companyId, entity.envelopeId, entity.attemptCount, now, result.result)
+                is TransportRouterResult.Submitted -> {
+                    persistAttempt(entity.companyId, entity.envelopeId, entity.attemptCount, now, result.result)
+                    val accepted = result.result as? TransportResult.Accepted
+                    val evidence = accepted?.relayAcceptance
+                    if (evidence != null) {
+                        orderSent.markOrderSentFromRelayEvidence(entity.companyId, envelope, evidence)
+                    }
+                }
             }
         }
     }

@@ -45,6 +45,7 @@ import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEnti
 import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
 import com.budcom.android.feature.transaction.domain.model.OrderTransportState
+import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftOperations
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState
 import com.budcom.android.feature.transaction.domain.model.LedgerGroupChoice
@@ -166,6 +167,29 @@ class TransactionRepositoryImplTest {
         assertEquals(CanonicalOrderState.Draft, order.state)
         assertTrue(estimatePoDao.store.isEmpty())
         assertTrue(transactionDao.store.isEmpty())
+    }
+
+    @Test
+    fun `matching relay acceptance marks draft order sent without claiming seen or delivered`() = runTest(dispatcher) {
+        val repo = repository()
+        var draft = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
+        draft = TransactionDraftOperations.addOrIncrementLine(draft, "product-1", "Widget", "Nos", "SKU-1", TransactionDraftPriceState.ContactForPrice)
+        val order = repo.createDraftOrder(draft, "sent-evidence-1", timestamp = ts(100))
+        val envelope = repo.enqueueOrderDelivery(order, ts(200))
+        val evidence = RelayAcceptanceEvidence(
+            acceptanceId = "accept-1", envelopeId = envelope.envelopeId, objectType = envelope.objectType,
+            objectId = order.orderId, objectVersion = order.version, senderBusinessId = order.sellerCompanyId,
+            recipientBusinessId = "buyer-1", acceptedAtEpochMillis = 250, status = "relay_accepted",
+        )
+        val sent = repo.markOrderSentFromRelayEvidence("co-1", envelope, evidence)!!
+        val retry = repo.markOrderSentFromRelayEvidence("co-1", envelope, evidence)!!
+        assertEquals(CanonicalOrderState.Sent, sent.state)
+        assertEquals(CanonicalOrderState.Sent, retry.state)
+        assertEquals("SENT", canonicalOrderDao.orders.single().state)
+        assertNull(repo.markOrderSentFromRelayEvidence("co-1", envelope, evidence.copy(objectVersion = 99)))
+        assertNull(repo.markOrderSentFromRelayEvidence("co-1", envelope, evidence.copy(status = "delivered")))
+        assertEquals("SENT", canonicalOrderDao.orders.single().state)
+        assertEquals(OrderTransportState.Queued, envelope.state)
     }
 
     // ============================== company isolation ==============================
@@ -476,6 +500,14 @@ class FakeCanonicalOrderDao : CanonicalOrderDao {
 
     override suspend fun findByCreationKey(companyId: String, creationKey: String) =
         orders.firstOrNull { it.companyId == companyId && it.creationKey == creationKey }
+
+    override suspend fun findById(companyId: String, orderId: String) =
+        orders.firstOrNull { it.companyId == companyId && it.orderId == orderId }
+
+    override suspend fun updateState(companyId: String, orderId: String, state: String) {
+        val index = orders.indexOfFirst { it.companyId == companyId && it.orderId == orderId }
+        if (index >= 0) orders[index] = orders[index].copy(state = state)
+    }
 
     override suspend fun findLines(companyId: String, orderId: String) =
         lines.filter { it.companyId == companyId && it.orderId == orderId }.sortedBy { it.lineId }

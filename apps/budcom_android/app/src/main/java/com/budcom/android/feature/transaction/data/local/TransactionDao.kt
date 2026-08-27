@@ -16,6 +16,12 @@ interface CanonicalOrderDao {
     @Query("SELECT * FROM txn_order WHERE companyId = :companyId AND creationKey = :creationKey")
     suspend fun findByCreationKey(companyId: String, creationKey: String): CanonicalOrderEntity?
 
+    @Query("SELECT * FROM txn_order WHERE companyId = :companyId AND orderId = :orderId")
+    suspend fun findById(companyId: String, orderId: String): CanonicalOrderEntity?
+
+    @Query("UPDATE txn_order SET state = :state WHERE companyId = :companyId AND orderId = :orderId")
+    suspend fun updateState(companyId: String, orderId: String, state: String)
+
     @Query("SELECT * FROM txn_order_line WHERE companyId = :companyId AND orderId = :orderId ORDER BY lineId ASC")
     suspend fun findLines(companyId: String, orderId: String): List<CanonicalOrderLineEntity>
 }

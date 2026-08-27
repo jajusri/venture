@@ -29,7 +29,9 @@ import com.budcom.android.feature.transaction.domain.model.CatalogueAccessGrant
 import com.budcom.android.feature.transaction.domain.model.CataloguePriceVisibilityGrant
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderLine
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderSentTransitions
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
+import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
 import com.budcom.android.feature.transaction.domain.model.OrderTransportState
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
@@ -59,6 +61,7 @@ import com.budcom.android.feature.transaction.domain.model.TransactionSubmission
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestampSource
 import com.budcom.android.feature.transaction.domain.model.toBigDecimalOrNullSafe
+import com.budcom.android.feature.transaction.domain.port.OrderSentFromRelayEvidence
 import com.budcom.android.feature.transaction.domain.port.TransactionReminderScheduler
 import com.budcom.android.feature.transaction.domain.port.TransactionSubmissionPort
 import com.budcom.android.feature.transaction.domain.repository.AcceptSellerInboxEntryResult
@@ -101,7 +104,7 @@ class TransactionRepositoryImpl @Inject constructor(
     private val dispatchers: DispatcherProvider,
     private val canonicalOrderDao: CanonicalOrderDao,
     private val orderOutboxDao: OrderOutboxDao,
-) : TransactionRepository {
+) : TransactionRepository, OrderSentFromRelayEvidence {
 
     override suspend fun createDraftOrder(
         draft: TransactionDraft,
@@ -184,6 +187,18 @@ class TransactionRepositoryImpl @Inject constructor(
                 ?: throw IllegalStateException("Order delivery could not be queued")
         }
         entity.toDomain()
+    }
+
+    override suspend fun markOrderSentFromRelayEvidence(
+        companyId: String,
+        envelope: OrderDeliveryEnvelope,
+        evidence: RelayAcceptanceEvidence,
+    ): CanonicalOrder? = withContext(dispatchers.io) {
+        val stored = canonicalOrderDao.findById(companyId, envelope.orderId) ?: return@withContext null
+        val order = stored.toDomain(canonicalOrderDao.findLines(companyId, envelope.orderId))
+        val next = CanonicalOrderSentTransitions.apply(order, envelope, evidence) ?: return@withContext null
+        if (order.state != next) canonicalOrderDao.updateState(companyId, order.orderId, next.columnValue)
+        order.copy(state = next)
     }
 
     // ============================== §4: Estimate/PO ==============================

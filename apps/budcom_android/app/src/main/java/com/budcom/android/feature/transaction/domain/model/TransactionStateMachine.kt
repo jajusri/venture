@@ -145,3 +145,32 @@ object TransactionStateDerivation {
 
     private fun String.toBigDecimalOrNull(): java.math.BigDecimal? = runCatching { java.math.BigDecimal(this) }.getOrNull()
 }
+
+data class RelayAcceptanceEvidence(
+    val acceptanceId: String,
+    val envelopeId: String,
+    val objectType: String,
+    val objectId: String,
+    val objectVersion: Int,
+    val senderBusinessId: String,
+    val recipientBusinessId: String,
+    val acceptedAtEpochMillis: Long,
+    val status: String,
+)
+
+object CanonicalOrderSentTransitions {
+    fun apply(order: CanonicalOrder, envelope: OrderDeliveryEnvelope, evidence: RelayAcceptanceEvidence): CanonicalOrderState? {
+        if (evidence.status != "relay_accepted") return null
+        if (evidence.envelopeId != envelope.envelopeId) return null
+        if (evidence.objectType != envelope.objectType) return null
+        if (evidence.objectId != order.orderId || envelope.orderId != order.orderId) return null
+        if (evidence.objectVersion != order.version || envelope.orderVersion != order.version) return null
+        if (evidence.senderBusinessId != order.sellerCompanyId || envelope.senderCompanyId != order.sellerCompanyId) return null
+        val recipient = order.buyerPartyId ?: envelope.recipientPartyId
+        if (recipient == null || evidence.recipientBusinessId != recipient || envelope.recipientPartyId != recipient) return null
+        return when (order.state) {
+            CanonicalOrderState.Sent -> CanonicalOrderState.Sent
+            CanonicalOrderState.Draft -> CanonicalOrderState.Sent
+        }
+    }
+}

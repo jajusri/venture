@@ -8,6 +8,7 @@ import com.budcom.android.feature.transaction.data.relay.HttpRelayClient
 import com.budcom.android.feature.transaction.data.relay.HttpRelayStructuredTransport
 import com.budcom.android.feature.transaction.data.relay.DefaultRelayOutboxDispatcher
 import com.budcom.android.feature.transaction.data.relay.KeystoreRelayEnvelopeAuthenticator
+import com.budcom.android.feature.transaction.domain.port.OrderSentFromRelayEvidence
 import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
 import com.budcom.android.feature.transaction.data.repository.TransactionRepositoryImpl
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
@@ -73,6 +74,10 @@ abstract class TransactionBindModule {
     @Binds
     @Singleton
     abstract fun bindRelayOutboxDispatcher(impl: DefaultRelayOutboxDispatcher): RelayOutboxDispatcher
+
+    @Binds
+    @Singleton
+    abstract fun bindOrderSentFromRelayEvidence(impl: TransactionRepositoryImpl): OrderSentFromRelayEvidence
 
     @Binds
     @Singleton

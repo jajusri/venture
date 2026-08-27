@@ -53,6 +53,36 @@ class SellerInboxTransitionsTest {
     }
 }
 
+class CanonicalOrderSentTransitionsTest {
+    private fun order(state: CanonicalOrderState = CanonicalOrderState.Draft, version: Int = 1) = CanonicalOrder(
+        companyId = "co-1", orderId = "order-1", creationKey = "k", sellerCompanyId = "co-1", buyerPartyId = "buyer-1",
+        state = state, source = TransactionEntryPointType.Catalogue, submissionType = TransactionSubmissionType.Estimate,
+        note = null, createdAt = TransactionTimestamp(1, TransactionTimestampSource.DeviceLocalProvisional), version = version, lines = emptyList(),
+    )
+    private fun envelope() = OrderDeliveryEnvelope(
+        companyId = "co-1", envelopeId = "env-1", idempotencyKey = "order:order-1:v1", objectType = "CANONICAL_ORDER",
+        orderId = "order-1", orderVersion = 1, senderCompanyId = "co-1", recipientPartyId = "buyer-1",
+        createdAt = TransactionTimestamp(1, TransactionTimestampSource.DeviceLocalProvisional),
+        state = OrderTransportState.RelayAccepted, attemptCount = 1, lastAttemptAt = null, lastError = null,
+    )
+    private fun evidence() = RelayAcceptanceEvidence(
+        "accept-1", "env-1", "CANONICAL_ORDER", "order-1", 1, "co-1", "buyer-1", 10, "relay_accepted",
+    )
+
+    @Test
+    fun `draft plus matching relay acceptance becomes sent and never seen or delivered`() {
+        assertEquals(CanonicalOrderState.Sent, CanonicalOrderSentTransitions.apply(order(), envelope(), evidence()))
+        assertEquals(CanonicalOrderState.Sent, CanonicalOrderSentTransitions.apply(order(CanonicalOrderState.Sent), envelope(), evidence()))
+        assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(objectVersion = 2)))
+        assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(status = "delivered")))
+        assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(envelopeId = "other")))
+        assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(objectType = "CHAT")))
+        assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(senderBusinessId = "other")))
+        assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(recipientBusinessId = "other")))
+        assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(status = "seen")))
+    }
+}
+
 class TransactionStateDerivationTest {
 
     private fun ts(millis: Long = 1_000L) = TransactionTimestamp(millis, TransactionTimestampSource.DeviceLocalProvisional)

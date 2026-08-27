@@ -3,6 +3,7 @@ package com.budcom.android.feature.transaction.domain.repository
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
+import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
 import com.budcom.android.feature.transaction.domain.model.EstimatePo
 import com.budcom.android.feature.transaction.domain.model.LedgerGroupChoice
 import com.budcom.android.feature.transaction.domain.model.PaymentEvent
@@ -78,6 +79,12 @@ interface TransactionRepository {
 
     suspend fun enqueueOrderDelivery(order: CanonicalOrder, timestamp: TransactionTimestamp): OrderDeliveryEnvelope =
         throw UnsupportedOperationException("Order delivery outbox is not implemented by this repository")
+
+    suspend fun markOrderSentFromRelayEvidence(
+        companyId: String,
+        envelope: OrderDeliveryEnvelope,
+        evidence: RelayAcceptanceEvidence,
+    ): CanonicalOrder? = throw UnsupportedOperationException("Order sent-from-relay is not implemented by this repository")
 
     // ---- §4: generic Estimate/PO ----
 

@@ -53,7 +53,10 @@ class HttpRelayClientTest {
             val first = client.submit(authenticated())
             val retry = client.submit(authenticated())
             assertEquals("accept-1", (first as TransportResult.Accepted).evidence.acceptanceId)
+            assertEquals("order-1", first.relayAcceptance?.objectId)
+            assertEquals("buyer-1", first.relayAcceptance?.recipientBusinessId)
             assertEquals("accept-1", (retry as TransportResult.Accepted).evidence.acceptanceId)
+            assertEquals("relay_accepted", retry.relayAcceptance?.status)
             assertEquals(2, server.requestCount)
             assertEquals(server.takeRequest().getHeader("Idempotency-Key"), "order:order-1:v1")
             assertEquals(server.takeRequest().getHeader("Idempotency-Key"), "order:order-1:v1")
@@ -145,5 +148,5 @@ class HttpRelayClientTest {
     )
 
     private fun acceptedJson() =
-        """{"status":"relay_accepted","acceptanceId":"accept-1","envelopeId":"envelope-1","acceptedAt":"1970-01-01T00:00:00.010Z"}"""
+        """{"status":"relay_accepted","acceptanceId":"accept-1","envelopeId":"envelope-1","objectType":"CANONICAL_ORDER","objectId":"order-1","objectVersion":1,"senderBusinessId":"co-1","recipientBusinessId":"buyer-1","acceptedAt":"1970-01-01T00:00:00.010Z"}"""
 }

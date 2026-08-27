@@ -3,6 +3,7 @@ package com.budcom.android.feature.transaction.data.relay
 import com.budcom.android.core.network.RetryPolicy
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
+import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
 import com.budcom.android.feature.transaction.domain.port.AuthenticatedTransportEnvelope
 import com.budcom.android.feature.transaction.domain.port.RelayEndpointProvider
 import com.budcom.android.feature.transaction.domain.port.RelayEnvelopeAuthenticator
@@ -49,6 +50,11 @@ internal data class RelayAcceptanceJson(
     val status: String,
     val acceptanceId: String,
     val envelopeId: String,
+    val objectType: String? = null,
+    val objectId: String? = null,
+    val objectVersion: Int? = null,
+    val senderBusinessId: String? = null,
+    val recipientBusinessId: String? = null,
     val acceptedAt: String? = null,
 )
 
@@ -135,7 +141,29 @@ class HttpRelayClient(
         }
         val acceptedAt = parsed.acceptedAt?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
             ?: nowMillis()
-        return Attempt(TransportResult.Accepted(TransportEvidence(parsed.envelopeId, acceptedAt, parsed.acceptanceId)))
+        return Attempt(
+            TransportResult.Accepted(
+                TransportEvidence(parsed.envelopeId, acceptedAt, parsed.acceptanceId),
+                relayAcceptance = if (
+                    parsed.objectType != null && parsed.objectId != null && parsed.objectVersion != null &&
+                    parsed.senderBusinessId != null && parsed.recipientBusinessId != null
+                ) {
+                    RelayAcceptanceEvidence(
+                        acceptanceId = parsed.acceptanceId,
+                        envelopeId = parsed.envelopeId,
+                        objectType = parsed.objectType,
+                        objectId = parsed.objectId,
+                        objectVersion = parsed.objectVersion,
+                        senderBusinessId = parsed.senderBusinessId,
+                        recipientBusinessId = parsed.recipientBusinessId,
+                        acceptedAtEpochMillis = acceptedAt,
+                        status = parsed.status,
+                    )
+                } else {
+                    null
+                },
+            ),
+        )
     }
 
     private data class Attempt(val result: TransportResult, val retryAfterMs: Long? = null)
