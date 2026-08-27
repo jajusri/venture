@@ -12,6 +12,7 @@ data class AuthenticatedTransportEnvelope(
     val recipient: RecipientBinding,
     val signatureAlgorithm: String,
     val signature: ByteArray,
+    val commercialSnapshotCanonical: String = "",
 ) {
     fun signingBytes(): ByteArray = buildString {
         append(envelope.deterministicEncoding())
@@ -23,6 +24,7 @@ data class AuthenticatedTransportEnvelope(
         append("|recipientBusiness=").append(recipient.businessId.orEmpty())
         append("|recipientParty=").append(recipient.partyId.orEmpty())
         append("|recipientMailbox=").append(recipient.mailboxReference.orEmpty())
+        append("|snapshot=").append(commercialSnapshotCanonical)
     }.toByteArray(Charsets.UTF_8)
 }
 
