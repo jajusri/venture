@@ -13,8 +13,8 @@ export interface IssueCredentialInput { readonly business: BusinessAuthorityRefe
 export function credentialSigningPayload(claims: BusinessDeviceCredentialClaims): Uint8Array {
   const fields = [claims.credentialVersion, claims.credentialId, claims.businessId, claims.actorId, claims.membershipId,
     claims.deviceId, claims.deviceKeyId, claims.deviceKeyVersion, claims.devicePublicKeyFingerprint,
-    [...claims.authorityScope.capabilities].sort().join(','), claims.authorityEpoch, claims.issuedAt.toISOString(),
-    claims.notBefore.toISOString(), claims.expiresAt.toISOString(), claims.issuerId, claims.issuerKeyId];
+    [...claims.authorityScope.capabilities].sort().join(','), claims.authorityEpoch, claims.issuedAt.getTime(),
+    claims.notBefore.getTime(), claims.expiresAt.getTime(), claims.issuerId, claims.issuerKeyId];
   return Buffer.from(fields.map((value) => String(value).replaceAll('\\', '\\\\').replaceAll('|', '\\|')).join('|'), 'utf8');
 }
 
