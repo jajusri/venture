@@ -198,7 +198,7 @@ fun TransactionComposerScreen(
                         }
                     }
 
-                    item { ReviewOrderSection(state) }
+                    item { ReviewOrderSection(state, onEvent) }
                     item { ReviewAndShareSection(state, onEvent) }
                 }
             }
@@ -365,7 +365,7 @@ private fun calculateSampleSize(width: Int, height: Int, targetSize: Int): Int {
 }
 
 @Composable
-private fun ReviewOrderSection(state: TransactionComposerUiState) {
+private fun ReviewOrderSection(state: TransactionComposerUiState, onEvent: (TransactionComposerEvent) -> Unit) {
     val lines = state.draft?.lines.orEmpty()
     Column(
         modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("composer_review_order"),
@@ -394,6 +394,11 @@ private fun ReviewOrderSection(state: TransactionComposerUiState) {
             Text(totalLabel(state.draft?.totalAmount), style = MaterialTheme.typography.titleSmall, modifier = Modifier.testTag("composer_review_total"))
             if (state.canonicalDraftOrder != null) {
                 Text("Draft order saved locally", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("composer_review_saved"))
+                TextButton(
+                    onClick = { onEvent(TransactionComposerEvent.SendOrder) },
+                    enabled = !state.deliveryQueued,
+                    modifier = Modifier.testTag("composer_send_order"),
+                ) { Text(if (state.deliveryQueued) "Waiting to send" else "Send order") }
             }
         }
     }

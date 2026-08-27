@@ -2,6 +2,7 @@ package com.budcom.android.feature.transaction.domain.repository
 
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
+import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
 import com.budcom.android.feature.transaction.domain.model.EstimatePo
 import com.budcom.android.feature.transaction.domain.model.LedgerGroupChoice
 import com.budcom.android.feature.transaction.domain.model.PaymentEvent
@@ -74,6 +75,9 @@ interface TransactionRepository {
         note: String? = null,
         timestamp: TransactionTimestamp,
     ): CanonicalOrder = throw UnsupportedOperationException("Draft Order creation is not implemented by this repository")
+
+    suspend fun enqueueOrderDelivery(order: CanonicalOrder, timestamp: TransactionTimestamp): OrderDeliveryEnvelope =
+        throw UnsupportedOperationException("Order delivery outbox is not implemented by this repository")
 
     // ---- §4: generic Estimate/PO ----
 

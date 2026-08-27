@@ -46,6 +46,29 @@ data class CanonicalOrderLineEntity(
     val lineTotalAmount: String?,
 )
 
+@Entity(
+    tableName = "txn_order_outbox",
+    primaryKeys = ["companyId", "envelopeId"],
+    indices = [Index(value = ["companyId", "idempotencyKey"], unique = true), Index(value = ["companyId", "orderId"])],
+)
+data class OrderDeliveryEnvelopeEntity(
+    val companyId: String,
+    val envelopeId: String,
+    val idempotencyKey: String,
+    val objectType: String,
+    val orderId: String,
+    val orderVersion: Int,
+    val senderCompanyId: String,
+    val recipientPartyId: String?,
+    val createdAt: Long,
+    val createdAtSource: String,
+    val state: String,
+    val attemptCount: Int,
+    val lastAttemptAt: Long?,
+    val lastAttemptAtSource: String?,
+    val lastError: String?,
+)
+
 /**
  * Transaction Mode Room entities
  * (docs/architecture/BUDCOM-TRANSACTION-MODE-ARCHITECTURE.md §4-§10, §12, §14). Every table

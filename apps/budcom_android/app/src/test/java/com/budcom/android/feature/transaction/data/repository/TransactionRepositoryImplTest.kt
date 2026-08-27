@@ -26,6 +26,8 @@ import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantEnt
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderDao
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderEntity
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderLineEntity
+import com.budcom.android.feature.transaction.data.local.OrderDeliveryEnvelopeEntity
+import com.budcom.android.feature.transaction.data.local.OrderOutboxDao
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionDao
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionEntity
 import com.budcom.android.feature.transaction.data.local.EstimatePoDao
@@ -41,6 +43,8 @@ import com.budcom.android.feature.transaction.data.local.SellerInboxEntryEntity
 import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentDao
 import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEntity
 import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
+import com.budcom.android.feature.transaction.domain.model.OrderTransportState
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftOperations
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState
 import com.budcom.android.feature.transaction.domain.model.LedgerGroupChoice
@@ -88,13 +92,14 @@ class TransactionRepositoryImplTest {
     private val ledgerIntentDao = FakeLedgerIntentDao()
     private val accessGrantDao = FakeCatalogueAccessGrantDao()
     private val canonicalOrderDao = FakeCanonicalOrderDao()
+    private val orderOutboxDao = FakeOrderOutboxDao()
     private val submissionPort = FakeTransactionSubmissionPort(sellerInboxEntryDao)
     private val reminderScheduler = FakeTransactionReminderScheduler()
     private val partyRepository = FakePartyRepository()
 
     private fun repository() = TransactionRepositoryImpl(
         estimatePoDao, lineItemDao, sellerInboxEntryDao, transactionDao, termsDao, paymentEventDao,
-        ledgerIntentDao, accessGrantDao, submissionPort, reminderScheduler, partyRepository, dispatchers, canonicalOrderDao,
+        ledgerIntentDao, accessGrantDao, submissionPort, reminderScheduler, partyRepository, dispatchers, canonicalOrderDao, orderOutboxDao,
     )
 
     private fun ts(millis: Long) = TransactionTimestamp(millis, TransactionTimestampSource.DeviceLocalProvisional)
@@ -139,6 +144,28 @@ class TransactionRepositoryImplTest {
 
         assertTrue(runCatching { repo.createDraftOrder(draft, "hidden-1", timestamp = ts(100)) }.isFailure)
         assertTrue(canonicalOrderDao.orders.isEmpty())
+    }
+
+    @Test
+    fun `order delivery enqueue is durable idempotent and does not change order state`() = runTest(dispatcher) {
+        val repo = repository()
+        var draft = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
+        draft = TransactionDraftOperations.addOrIncrementLine(draft, "product-1", "Widget", "Nos", "SKU-1", TransactionDraftPriceState.ContactForPrice)
+        val order = repo.createDraftOrder(draft, "review-queue-1", timestamp = ts(100))
+
+        val first = repo.enqueueOrderDelivery(order, ts(200))
+        val retry = repo.enqueueOrderDelivery(order, ts(300))
+
+        assertEquals(first.envelopeId, retry.envelopeId)
+        assertEquals(OrderTransportState.Queued, first.state)
+        assertEquals(order.orderId, first.orderId)
+        assertEquals(order.version, first.orderVersion)
+        assertEquals("co-1", first.senderCompanyId)
+        assertEquals("buyer-1", first.recipientPartyId)
+        assertEquals(1, orderOutboxDao.envelopes.size)
+        assertEquals(CanonicalOrderState.Draft, order.state)
+        assertTrue(estimatePoDao.store.isEmpty())
+        assertTrue(transactionDao.store.isEmpty())
     }
 
     // ============================== company isolation ==============================
@@ -452,6 +479,20 @@ class FakeCanonicalOrderDao : CanonicalOrderDao {
 
     override suspend fun findLines(companyId: String, orderId: String) =
         lines.filter { it.companyId == companyId && it.orderId == orderId }.sortedBy { it.lineId }
+}
+
+class FakeOrderOutboxDao : OrderOutboxDao {
+    val envelopes = mutableListOf<OrderDeliveryEnvelopeEntity>()
+
+    override suspend fun insert(entity: OrderDeliveryEnvelopeEntity) {
+        if (envelopes.any { it.companyId == entity.companyId && it.idempotencyKey == entity.idempotencyKey }) {
+            throw android.database.SQLException("duplicate idempotency key")
+        }
+        envelopes += entity
+    }
+
+    override suspend fun findByIdempotencyKey(companyId: String, idempotencyKey: String) =
+        envelopes.firstOrNull { it.companyId == companyId && it.idempotencyKey == idempotencyKey }
 }
 
 class FakeTransactionSubmissionPort(private val sellerInboxEntryDao: FakeSellerInboxEntryDao) : TransactionSubmissionPort {

@@ -199,6 +199,35 @@ data class CanonicalOrderLine(
     val lineTotalAmount: String?,
 )
 
+enum class OrderTransportState(val columnValue: String) {
+    Queued("QUEUED"),
+    RelayAccepted("RELAY_ACCEPTED"),
+    Delivered("DELIVERED"),
+    Failed("FAILED"),
+    Retrying("RETRYING"),
+    ;
+
+    companion object {
+        fun fromColumn(value: String): OrderTransportState = entries.first { it.columnValue == value }
+    }
+}
+
+data class OrderDeliveryEnvelope(
+    val companyId: String,
+    val envelopeId: String,
+    val idempotencyKey: String,
+    val objectType: String,
+    val orderId: String,
+    val orderVersion: Int,
+    val senderCompanyId: String,
+    val recipientPartyId: String?,
+    val createdAt: TransactionTimestamp,
+    val state: OrderTransportState,
+    val attemptCount: Int,
+    val lastAttemptAt: TransactionTimestamp?,
+    val lastError: String?,
+)
+
 data class EstimatePo(
     val companyId: String,
     val estimatePoId: String,

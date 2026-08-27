@@ -8,6 +8,8 @@ import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantEnt
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderDao
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderEntity
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderLineEntity
+import com.budcom.android.feature.transaction.data.local.OrderDeliveryEnvelopeEntity
+import com.budcom.android.feature.transaction.data.local.OrderOutboxDao
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionDao
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionEntity
 import com.budcom.android.feature.transaction.data.local.EstimatePoDao
@@ -28,6 +30,8 @@ import com.budcom.android.feature.transaction.domain.model.CataloguePriceVisibil
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderLine
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
+import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
+import com.budcom.android.feature.transaction.domain.model.OrderTransportState
 import com.budcom.android.feature.transaction.domain.model.CommercialTransaction
 import com.budcom.android.feature.transaction.domain.model.CommercialTransactionState
 import com.budcom.android.feature.transaction.domain.model.EstimatePo
@@ -96,6 +100,7 @@ class TransactionRepositoryImpl @Inject constructor(
     private val partyRepository: PartyRepository,
     private val dispatchers: DispatcherProvider,
     private val canonicalOrderDao: CanonicalOrderDao,
+    private val orderOutboxDao: OrderOutboxDao,
 ) : TransactionRepository {
 
     override suspend fun createDraftOrder(
@@ -148,6 +153,37 @@ class TransactionRepositoryImpl @Inject constructor(
             )
         })
         entity.toDomain(canonicalOrderDao.findLines(draft.companyId, orderId))
+    }
+
+    override suspend fun enqueueOrderDelivery(order: CanonicalOrder, timestamp: TransactionTimestamp): OrderDeliveryEnvelope = withContext(dispatchers.io) {
+        require(order.state == CanonicalOrderState.Draft)
+        val key = "order:${order.orderId}:v${order.version}"
+        val existing = orderOutboxDao.findByIdempotencyKey(order.companyId, key)
+        if (existing != null) return@withContext existing.toDomain()
+        val entity = OrderDeliveryEnvelopeEntity(
+            companyId = order.companyId,
+            envelopeId = UUID.randomUUID().toString(),
+            idempotencyKey = key,
+            objectType = "CANONICAL_ORDER",
+            orderId = order.orderId,
+            orderVersion = order.version,
+            senderCompanyId = order.sellerCompanyId,
+            recipientPartyId = order.buyerPartyId,
+            createdAt = timestamp.epochMillis,
+            createdAtSource = timestamp.source.name,
+            state = OrderTransportState.Queued.columnValue,
+            attemptCount = 0,
+            lastAttemptAt = null,
+            lastAttemptAtSource = null,
+            lastError = null,
+        )
+        try {
+            orderOutboxDao.insert(entity)
+        } catch (_: android.database.SQLException) {
+            return@withContext orderOutboxDao.findByIdempotencyKey(order.companyId, key)?.toDomain()
+                ?: throw IllegalStateException("Order delivery could not be queued")
+        }
+        entity.toDomain()
     }
 
     // ============================== §4: Estimate/PO ==============================
@@ -619,6 +655,22 @@ private fun CanonicalOrderLineEntity.toDomain(): CanonicalOrderLine = CanonicalO
         else -> TransactionDraftPriceState.Hidden
     },
     lineTotalAmount = lineTotalAmount,
+)
+
+private fun OrderDeliveryEnvelopeEntity.toDomain(): OrderDeliveryEnvelope = OrderDeliveryEnvelope(
+    companyId = companyId,
+    envelopeId = envelopeId,
+    idempotencyKey = idempotencyKey,
+    objectType = objectType,
+    orderId = orderId,
+    orderVersion = orderVersion,
+    senderCompanyId = senderCompanyId,
+    recipientPartyId = recipientPartyId,
+    createdAt = TransactionTimestamp(createdAt, TransactionTimestampSource.valueOf(createdAtSource)),
+    state = OrderTransportState.fromColumn(state),
+    attemptCount = attemptCount,
+    lastAttemptAt = toTimestampOrNull(lastAttemptAt, lastAttemptAtSource),
+    lastError = lastError,
 )
 
 private fun EstimatePoLineItemEntity.toDomain(): TransactionLineItem = TransactionLineItem(

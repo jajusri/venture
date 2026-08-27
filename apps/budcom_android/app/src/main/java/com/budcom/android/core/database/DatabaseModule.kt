@@ -77,6 +77,7 @@ object DatabaseModule {
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
             MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
+            MIGRATION_15_16,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -185,6 +186,9 @@ object DatabaseModule {
 
     @Provides
     fun provideCanonicalOrderDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.CanonicalOrderDao = db.canonicalOrderDao()
+
+    @Provides
+    fun provideOrderOutboxDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.OrderOutboxDao = db.orderOutboxDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -730,6 +734,22 @@ object DatabaseModule {
                     "PRIMARY KEY(`companyId`, `orderId`, `lineId`))",
             )
             db.execSQL("CREATE INDEX IF NOT EXISTS `index_txn_order_line_companyId_orderId` ON `txn_order_line` (`companyId`, `orderId`)")
+        }
+    }
+
+    val MIGRATION_15_16 = object : Migration(15, 16) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `txn_order_outbox` (" +
+                    "`companyId` TEXT NOT NULL, `envelopeId` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, " +
+                    "`objectType` TEXT NOT NULL, `orderId` TEXT NOT NULL, `orderVersion` INTEGER NOT NULL, " +
+                    "`senderCompanyId` TEXT NOT NULL, `recipientPartyId` TEXT, `createdAt` INTEGER NOT NULL, " +
+                    "`createdAtSource` TEXT NOT NULL, `state` TEXT NOT NULL, `attemptCount` INTEGER NOT NULL, " +
+                    "`lastAttemptAt` INTEGER, `lastAttemptAtSource` TEXT, `lastError` TEXT, " +
+                    "PRIMARY KEY(`companyId`, `envelopeId`))",
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_order_outbox_companyId_idempotencyKey` ON `txn_order_outbox` (`companyId`, `idempotencyKey`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_txn_order_outbox_companyId_orderId` ON `txn_order_outbox` (`companyId`, `orderId`)")
         }
     }
 }

@@ -56,6 +56,8 @@ import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantDao
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderDao
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderEntity
 import com.budcom.android.feature.transaction.data.local.CanonicalOrderLineEntity
+import com.budcom.android.feature.transaction.data.local.OrderOutboxDao
+import com.budcom.android.feature.transaction.data.local.OrderDeliveryEnvelopeEntity
 import com.budcom.android.feature.transaction.data.local.CatalogueAccessGrantEntity
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionDao
 import com.budcom.android.feature.transaction.data.local.CommercialTransactionEntity
@@ -114,6 +116,7 @@ import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEnti
         CatalogueAccessGrantEntity::class,
         CanonicalOrderEntity::class,
         CanonicalOrderLineEntity::class,
+        OrderDeliveryEnvelopeEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -153,4 +156,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun ledgerIntentDao(): LedgerIntentDao
     abstract fun catalogueAccessGrantDao(): CatalogueAccessGrantDao
     abstract fun canonicalOrderDao(): CanonicalOrderDao
+    abstract fun orderOutboxDao(): OrderOutboxDao
 }

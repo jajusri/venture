@@ -1378,4 +1378,28 @@ class AppDatabaseMigrationTest {
         }
         db.close()
     }
+
+    @Test
+    fun migrate15To16_addsEmptyOrderOutboxWithoutChangingDraftOrders() {
+        val dbName = "migration-test-db-15-16"
+        var db = helper.createDatabase(dbName, 15)
+        db.execSQL(
+            "INSERT INTO txn_order (companyId, orderId, creationKey, sellerCompanyId, buyerPartyId, state, source, " +
+                "submissionType, note, createdAt, createdAtSource, version) VALUES " +
+                "('acme-001', 'order-1', 'draft-1', 'acme-001', 'buyer-1', 'DRAFT', 'CATALOGUE', 'ESTIMATE', " +
+                "NULL, 1736899200000, 'DEVICE_LOCAL_PROVISIONAL', 1)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(dbName, 16, false, DatabaseModule.MIGRATION_15_16)
+        db.query("SELECT orderId FROM txn_order WHERE companyId = 'acme-001' AND orderId = 'order-1'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("order-1", cursor.getString(0))
+        }
+        db.query("SELECT COUNT(*) FROM txn_order_outbox").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        db.close()
+    }
 }

@@ -29,6 +29,7 @@ data class TransactionComposerUiState(
      * duplicate product table, no second pricing engine. */
     val newSkus: List<TransactionNewSkuRow> = emptyList(),
     val canonicalDraftOrder: CanonicalOrder? = null,
+    val deliveryQueued: Boolean = false,
     /** Cart-photo fix: the same Catalogue primary-photo file already resolved for the Catalogue
      * product-list row (`CatalogueViewModel`'s own `primaryAssetFile`, same
      * `CatalogueRepository.listAssets`/`resolveAssetFile` calls, no new resolution logic) --
@@ -91,6 +92,7 @@ sealed interface TransactionComposerEvent {
      * with a user-facing message if no completed transaction exists yet. */
     data object ReorderLastOrder : TransactionComposerEvent
     data object CreateDraftOrder : TransactionComposerEvent
+    data object SendOrder : TransactionComposerEvent
 
     data object ShareViaWhatsApp : TransactionComposerEvent
 

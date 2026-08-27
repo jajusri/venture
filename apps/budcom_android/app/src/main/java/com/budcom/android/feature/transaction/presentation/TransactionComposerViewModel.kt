@@ -111,6 +111,7 @@ class TransactionComposerViewModel @Inject constructor(
             is TransactionComposerEvent.SubmissionTypeChanged -> updateDraft { it.copy(submissionType = event.type) }
             TransactionComposerEvent.ReorderLastOrder -> reorderLastOrder()
             TransactionComposerEvent.CreateDraftOrder -> createDraftOrder()
+            TransactionComposerEvent.SendOrder -> sendOrder()
             TransactionComposerEvent.ShareViaWhatsApp -> submit(TransactionDeliveryChannel.WhatsAppShared)
             TransactionComposerEvent.SubmitInApp -> submit(TransactionDeliveryChannel.InAppSubmitted)
             TransactionComposerEvent.DismissMessage -> _uiState.update { it.copy(message = null) }
@@ -234,6 +235,19 @@ class TransactionComposerViewModel @Inject constructor(
                 }
                 _uiState.update { it.copy(message = message) }
             }
+        }
+    }
+
+    private fun sendOrder() {
+        val order = _uiState.value.canonicalDraftOrder
+        if (order == null) {
+            _uiState.update { it.copy(message = "Save the draft order before sending.") }
+            return
+        }
+        viewModelScope.launch {
+            runCatching { repository.enqueueOrderDelivery(order, clock.now()) }
+                .onSuccess { _uiState.update { it.copy(deliveryQueued = true, message = "Waiting to send.") } }
+                .onFailure { _uiState.update { it.copy(message = "Order is still saved locally and can be sent later.") } }
         }
     }
 

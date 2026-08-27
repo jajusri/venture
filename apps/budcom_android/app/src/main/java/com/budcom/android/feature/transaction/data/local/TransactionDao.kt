@@ -21,6 +21,15 @@ interface CanonicalOrderDao {
 }
 
 @Dao
+interface OrderOutboxDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entity: OrderDeliveryEnvelopeEntity)
+
+    @Query("SELECT * FROM txn_order_outbox WHERE companyId = :companyId AND idempotencyKey = :idempotencyKey")
+    suspend fun findByIdempotencyKey(companyId: String, idempotencyKey: String): OrderDeliveryEnvelopeEntity?
+}
+
+@Dao
 interface EstimatePoDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: EstimatePoEntity)
