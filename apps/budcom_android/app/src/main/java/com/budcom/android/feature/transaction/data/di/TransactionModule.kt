@@ -1,19 +1,32 @@
 package com.budcom.android.feature.transaction.data.di
 
+import com.budcom.android.BuildConfig
+import com.budcom.android.core.security.AndroidVartalapDeviceKeyStore
 import com.budcom.android.feature.transaction.data.TransactionClockImpl
 import com.budcom.android.feature.transaction.data.port.LocalTransactionSubmissionPort
+import com.budcom.android.feature.transaction.data.relay.HttpRelayClient
+import com.budcom.android.feature.transaction.data.relay.HttpRelayStructuredTransport
+import com.budcom.android.feature.transaction.data.relay.DefaultRelayOutboxDispatcher
+import com.budcom.android.feature.transaction.data.relay.KeystoreRelayEnvelopeAuthenticator
+import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
 import com.budcom.android.feature.transaction.data.repository.TransactionRepositoryImpl
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
+import com.budcom.android.feature.transaction.domain.port.ConfiguredRelayEndpointProvider
+import com.budcom.android.feature.transaction.domain.port.EmptyRelayEndpointProvider
+import com.budcom.android.feature.transaction.domain.port.RelayCredentialSource
+import com.budcom.android.feature.transaction.domain.port.RelayEndpointProvider
+import com.budcom.android.feature.transaction.domain.port.RelayEnvelopeAuthenticator
+import com.budcom.android.feature.transaction.domain.port.StructuredBusinessTransport
 import com.budcom.android.feature.transaction.domain.port.NoOpTransactionReminderScheduler
 import com.budcom.android.feature.transaction.domain.port.TransactionReminderScheduler
 import com.budcom.android.feature.transaction.domain.port.TransactionSubmissionPort
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
-import com.budcom.android.core.security.AndroidVartalapDeviceKeyStore
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
 import com.budcom.android.feature.transaction.sharing.AndroidTransactionShareCoordinator
 import com.budcom.android.feature.transaction.sharing.TransactionShareCoordinator
 import dagger.Binds
 import dagger.Module
+import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
@@ -52,4 +65,35 @@ abstract class TransactionBindModule {
     @Binds
     @Singleton
     abstract fun bindVartalapDeviceKeyStore(impl: AndroidVartalapDeviceKeyStore): VartalapDeviceKeyStore
+
+    @Binds
+    @Singleton
+    abstract fun bindRelayEnvelopeAuthenticator(impl: KeystoreRelayEnvelopeAuthenticator): RelayEnvelopeAuthenticator
+
+    @Binds
+    @Singleton
+    abstract fun bindRelayOutboxDispatcher(impl: DefaultRelayOutboxDispatcher): RelayOutboxDispatcher
+
+    @Binds
+    @Singleton
+    abstract fun bindStructuredBusinessTransport(impl: HttpRelayStructuredTransport): StructuredBusinessTransport
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+object RelayTransportModule {
+    @Provides
+    @Singleton
+    fun provideRelayEndpointProvider(): RelayEndpointProvider {
+        val configured = BuildConfig.RELAY_DEFAULT_BASE_URL
+        return if (configured.isBlank()) EmptyRelayEndpointProvider else ConfiguredRelayEndpointProvider(configured)
+    }
+
+    @Provides
+    @Singleton
+    fun provideRelayCredentialSource(): RelayCredentialSource = RelayCredentialSource { _, _ -> null }
+
+    @Provides
+    @Singleton
+    fun provideHttpRelayClient(endpoint: RelayEndpointProvider): HttpRelayClient = HttpRelayClient(endpoint)
 }

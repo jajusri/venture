@@ -1,14 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import type { Database, DatabaseSession, QueryResult } from '../packages/persistence/src/database.js';
 import { migrations } from '../packages/persistence/src/migrations.js';
-import { PostgresRelayRepository } from '../services/relay/src/persistence/relay-repository.js';
+import { hydrateStoredRelayEnvelope, PostgresRelayRepository } from '../services/relay/src/persistence/relay-repository.js';
 import { relayIdentifier, type RelayAcceptance, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 
 class RecordingDatabase implements Database {
   calls: { sql: string; parameters: readonly unknown[] }[] = [];
+  hydrate = false;
+  get row() {
+    return { envelope_id: 'env-1', idempotency_key: 'intent-1', protocol_version: 1, object_type: 'ORDER', object_id: 'order-1',
+      object_version: '1', sender_business_id: 'sender', sender_actor_id: 'actor', sender_device_id: 'device',
+      recipient_business_id: 'recipient', mailbox_id: 'orders', authenticated_envelope: Buffer.from([1]),
+      acceptance_id: 'accept-1', accepted_at: new Date(2), relay_id: 'relay-1', acceptance_evidence_profile: 'test-v1',
+      acceptance_evidence: Buffer.from([9]), mailbox_sequence: '7', status: 'relay_accepted', created_at: new Date(2), acknowledged_at: null };
+  }
   query<Row extends Record<string, unknown>>(sql: string, parameters: readonly unknown[] = []): Promise<QueryResult<Row>> {
     this.calls.push({ sql, parameters });
-    const rows = sql.includes('RETURNING next_sequence') ? [{ mailbox_sequence: '7' }] : [];
+    const rows = sql.includes('RETURNING next_sequence') ? [{ mailbox_sequence: '7' }]
+      : this.hydrate && sql.includes('FROM relay_envelope') ? [this.row] : [];
     return Promise.resolve({ rows: rows as unknown as Row[], rowCount: rows.length });
   }
   transaction<T>(work: (session: DatabaseSession) => Promise<T>) { return work(this); }
@@ -36,5 +45,14 @@ describe('relay PostgreSQL persistence', () => {
     expect(database.calls.some((call) => call.sql.includes('ON CONFLICT (recipient_business_id, mailbox_id)'))).toBe(true);
     expect(database.calls.some((call) => call.parameters.includes(submission.authenticatedEnvelope))).toBe(true);
     expect(database.calls.some((call) => call.sql.includes('acceptance_evidence') && call.parameters.includes(acceptance.evidence))).toBe(true);
+  });
+  it('hydrates stored acceptance evidence for idempotent retries', async () => {
+    const database = new RecordingDatabase();
+    database.hydrate = true;
+    const stored = await new PostgresRelayRepository(database).findByIdempotency('sender', 'intent-1');
+    expect(stored?.acceptance.acceptanceId).toBe(acceptance.acceptanceId);
+    expect(stored?.acceptance.status).toBe('relay_accepted');
+    expect(stored?.submission.authenticatedEnvelope).toEqual(submission.authenticatedEnvelope);
+    expect(hydrateStoredRelayEnvelope(database.row).delivery.mailboxSequence).toBe(7);
   });
 });

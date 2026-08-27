@@ -493,6 +493,30 @@ class FakeOrderOutboxDao : OrderOutboxDao {
 
     override suspend fun findByIdempotencyKey(companyId: String, idempotencyKey: String) =
         envelopes.firstOrNull { it.companyId == companyId && it.idempotencyKey == idempotencyKey }
+
+    override suspend fun findPending(companyId: String) =
+        envelopes.filter { it.companyId == companyId && it.state in setOf("QUEUED", "RETRYING") }.sortedBy { it.createdAt }
+
+    override suspend fun updateTransportAttempt(
+        companyId: String,
+        envelopeId: String,
+        state: String,
+        attemptCount: Int,
+        lastAttemptAt: Long,
+        lastAttemptAtSource: String,
+        lastError: String?,
+    ) {
+        val index = envelopes.indexOfFirst { it.companyId == companyId && it.envelopeId == envelopeId }
+        if (index >= 0) {
+            envelopes[index] = envelopes[index].copy(
+                state = state,
+                attemptCount = attemptCount,
+                lastAttemptAt = lastAttemptAt,
+                lastAttemptAtSource = lastAttemptAtSource,
+                lastError = lastError,
+            )
+        }
+    }
 }
 
 class FakeTransactionSubmissionPort(private val sellerInboxEntryDao: FakeSellerInboxEntryDao) : TransactionSubmissionPort {

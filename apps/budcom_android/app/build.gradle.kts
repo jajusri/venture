@@ -27,6 +27,7 @@ android {
         // Customer releases start explicitly unconfigured. Debug overrides this with the Android
         // emulator host alias so the local developer loop remains convenient.
         buildConfigField("String", "CONNECTOR_DEFAULT_BASE_URL", "\"\"")
+        buildConfigField("String", "RELAY_DEFAULT_BASE_URL", "\"\"")
         buildConfigField("String", "APP_NAME", "\"BudCom\"")
     }
 

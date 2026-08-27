@@ -21,6 +21,7 @@ import com.budcom.android.feature.transaction.domain.model.TransactionDraftOpera
 import com.budcom.android.feature.transaction.domain.model.TransactionDraftPriceState
 import com.budcom.android.feature.transaction.domain.model.TransactionEntryPointType
 import com.budcom.android.feature.transaction.domain.model.TransactionSubmissionType
+import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
 import com.budcom.android.feature.transaction.domain.model.TransactionDeliveryChannel
 import com.budcom.android.feature.transaction.sharing.TransactionShareCoordinator
@@ -58,6 +59,7 @@ class TransactionComposerViewModel @Inject constructor(
     private val shareCoordinator: TransactionShareCoordinator,
     private val companySession: CompanySessionPort,
     private val clock: TransactionClock,
+    private val relayOutboxDispatcher: RelayOutboxDispatcher = RelayOutboxDispatcher { },
 ) : ViewModel() {
 
     private val buyerPartyId: String? = savedStateHandle.get<String>(BUYER_PARTY_ID_ARG)
@@ -246,7 +248,10 @@ class TransactionComposerViewModel @Inject constructor(
         }
         viewModelScope.launch {
             runCatching { repository.enqueueOrderDelivery(order, clock.now()) }
-                .onSuccess { _uiState.update { it.copy(deliveryQueued = true, message = "Waiting to send.") } }
+                .onSuccess {
+                    runCatching { relayOutboxDispatcher.submitPending(order.companyId) }
+                    _uiState.update { it.copy(deliveryQueued = true, message = "Waiting to send.") }
+                }
                 .onFailure { _uiState.update { it.copy(message = "Order is still saved locally and can be sent later.") } }
         }
     }

@@ -27,6 +27,24 @@ interface OrderOutboxDao {
 
     @Query("SELECT * FROM txn_order_outbox WHERE companyId = :companyId AND idempotencyKey = :idempotencyKey")
     suspend fun findByIdempotencyKey(companyId: String, idempotencyKey: String): OrderDeliveryEnvelopeEntity?
+
+    @Query("SELECT * FROM txn_order_outbox WHERE companyId = :companyId AND state IN ('QUEUED', 'RETRYING') ORDER BY createdAt ASC")
+    suspend fun findPending(companyId: String): List<OrderDeliveryEnvelopeEntity>
+
+    @Query(
+        "UPDATE txn_order_outbox SET state = :state, attemptCount = :attemptCount, lastAttemptAt = :lastAttemptAt, " +
+            "lastAttemptAtSource = :lastAttemptAtSource, lastError = :lastError " +
+            "WHERE companyId = :companyId AND envelopeId = :envelopeId",
+    )
+    suspend fun updateTransportAttempt(
+        companyId: String,
+        envelopeId: String,
+        state: String,
+        attemptCount: Int,
+        lastAttemptAt: Long,
+        lastAttemptAtSource: String,
+        lastError: String?,
+    )
 }
 
 @Dao

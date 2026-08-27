@@ -16,7 +16,11 @@ sealed interface TransportResult {
     data class PermanentRejection(val reason: String) : TransportResult
 }
 
-data class TransportEvidence(val envelopeId: String, val observedAtEpochMillis: Long)
+data class TransportEvidence(
+    val envelopeId: String,
+    val observedAtEpochMillis: Long,
+    val acceptanceId: String? = null,
+)
 
 sealed interface TransportRouterResult {
     data class Submitted(val result: TransportResult) : TransportRouterResult

@@ -45,6 +45,7 @@ import com.budcom.android.feature.transaction.domain.repository.AcceptSellerInbo
 import com.budcom.android.feature.transaction.domain.repository.NewLineItem
 import com.budcom.android.feature.transaction.domain.repository.ProposedTerms
 import com.budcom.android.feature.transaction.domain.repository.SellerInboxActionResult
+import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
 import com.budcom.android.feature.transaction.domain.repository.TransactionSnapshot
 import com.budcom.android.feature.transaction.sharing.PreparedTransactionShare
@@ -84,6 +85,7 @@ class TransactionComposerViewModelTest {
     ) = TransactionComposerViewModel(
         SavedStateHandle(buildMap { buyerPartyId?.let { put(TransactionComposerViewModel.BUYER_PARTY_ID_ARG, it) } }),
         repository, catalogueRepository, shareCoordinator, FakeCompanySessionPort(companyId), FakeTransactionClock(),
+        RelayOutboxDispatcher { },
     )
 
     private fun line(estimatePoId: String, productId: String, name: String, quantity: String) = TransactionLineItem(
