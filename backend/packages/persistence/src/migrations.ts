@@ -35,6 +35,38 @@ export const migrations: readonly Migration[] = [{
   CREATE INDEX trust_device_business_status_idx ON trust_registered_device(business_id, status, device_id);
   CREATE INDEX trust_device_membership_idx ON trust_registered_device(membership_id, status);
   CREATE INDEX trust_device_epoch_idx ON trust_registered_device(business_id, authority_epoch);`,
+}, {
+  version: 3,
+  name: 'relay_durable_mailbox',
+  sql: `CREATE TABLE relay_mailbox_checkpoint (
+    recipient_business_id TEXT NOT NULL, mailbox_id TEXT NOT NULL, next_sequence BIGINT NOT NULL,
+    PRIMARY KEY (recipient_business_id, mailbox_id)
+  );
+  CREATE TABLE relay_envelope (
+    envelope_id TEXT PRIMARY KEY, idempotency_key TEXT NOT NULL, protocol_version INTEGER NOT NULL,
+    object_type TEXT NOT NULL, object_id TEXT NOT NULL, object_version BIGINT NOT NULL,
+    sender_business_id TEXT NOT NULL, sender_actor_id TEXT NOT NULL, sender_device_id TEXT NOT NULL,
+    recipient_business_id TEXT NOT NULL, mailbox_id TEXT NOT NULL, authenticated_envelope BYTEA NOT NULL,
+    acceptance_id TEXT NOT NULL UNIQUE, accepted_at TIMESTAMPTZ NOT NULL,
+    UNIQUE (sender_business_id, idempotency_key)
+  );
+  CREATE INDEX relay_envelope_sender_created_idx ON relay_envelope(sender_business_id, accepted_at DESC);
+  CREATE TABLE relay_mailbox_entry (
+    recipient_business_id TEXT NOT NULL, mailbox_id TEXT NOT NULL, mailbox_sequence BIGINT NOT NULL,
+    envelope_id TEXT NOT NULL UNIQUE REFERENCES relay_envelope(envelope_id), status TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL, acknowledged_at TIMESTAMPTZ,
+    PRIMARY KEY (recipient_business_id, mailbox_id, mailbox_sequence)
+  );
+  CREATE INDEX relay_mailbox_status_cursor_idx ON relay_mailbox_entry(recipient_business_id, mailbox_id, status, mailbox_sequence);
+  CREATE TABLE relay_delivery_attempt (
+    recipient_business_id TEXT NOT NULL, mailbox_id TEXT NOT NULL, envelope_id TEXT NOT NULL REFERENCES relay_envelope(envelope_id),
+    attempt_number INTEGER NOT NULL, attempted_at TIMESTAMPTZ NOT NULL, outcome TEXT NOT NULL,
+    PRIMARY KEY (recipient_business_id, mailbox_id, envelope_id, attempt_number)
+  );
+  CREATE TABLE relay_delivery_acknowledgement (
+    envelope_id TEXT PRIMARY KEY REFERENCES relay_envelope(envelope_id), recipient_business_id TEXT NOT NULL,
+    recipient_device_id TEXT NOT NULL, received_at TIMESTAMPTZ NOT NULL, recorded_at TIMESTAMPTZ NOT NULL
+  );`,
 }];
 
 export async function runMigrations(database: Database): Promise<void> {
