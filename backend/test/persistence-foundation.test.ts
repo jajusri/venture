@@ -22,6 +22,7 @@ describe('PostgreSQL persistence foundation', () => {
     const database = new RecordingDatabase();
     await runMigrations(database);
     expect(database.calls.some((call) => call.sql.includes('CREATE TABLE IF NOT EXISTS'))).toBe(true);
-    expect(database.calls.at(-1)?.parameters).toEqual([1, 'migration_registry']);
+    const registryWrites = database.calls.filter((call) => call.sql.startsWith('INSERT INTO trust_schema_migration'));
+    expect(registryWrites.map((call) => call.parameters)).toEqual([[1, 'migration_registry'], [2, 'trust_authority_state']]);
   });
 });
