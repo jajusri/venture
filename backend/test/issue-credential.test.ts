@@ -4,7 +4,7 @@ import { BusinessDeviceCredentialIssuer, credentialSigningPayload, type Credenti
 import { AuthorityScope, identifier, type BusinessMembership, type RegisteredBusinessDevice } from '../services/trust/src/domain/authority.js';
 class Store implements CredentialIssuanceStore { value: IssuedBusinessDeviceCredential | null = null; findByIntent() { return Promise.resolve(this.value); } record(_intent: string, value: IssuedBusinessDeviceCredential) { this.value = value; return Promise.resolve(value); } }
 const keys = generateKeyPairSync('ed25519');
-const signer: TrustCredentialSigner = { issuerId: 'issuer-1', issuerKeyId: 'issuer-key-1', profile: 'Ed25519-v1', sign: (payload) => Promise.resolve(sign(null, payload, keys.privateKey)) };
+const signer: TrustCredentialSigner = { sign: (build) => { const identity = { issuerId: 'issuer-1', issuerKeyId: 'issuer-key-1', profile: 'Ed25519-v1' }; return Promise.resolve({ ...identity, signature: sign(null, build(identity), keys.privateKey) }); } };
 const actorId = identifier('actor-1', 'ActorId'); const businessId = identifier('business-1', 'BusinessId'); const membershipId = identifier('membership-1', 'MembershipId');
 const scope = new AuthorityScope(['issue_credentials', 'send_orders']);
 const membership: BusinessMembership = { membershipId, businessId, actorId, status: 'active', authorityScope: scope, authorityEpoch: { value: 2 }, createdAt: new Date(1), modifiedAt: new Date(1) };

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { identifier, validateDeviceAuthority, type AuthorityScope, type BusinessAuthorityReference, type BusinessDeviceCredentialClaims, type BusinessMembership, type RegisteredBusinessDevice } from '../domain/authority.js';
 
 export interface TrustCredentialSignature { readonly issuerId: string; readonly issuerKeyId: string; readonly profile: string; readonly signature: Uint8Array }
-export interface TrustCredentialSigner { readonly issuerId: string; readonly issuerKeyId: string; readonly profile: string; sign(payload: Uint8Array): Promise<Uint8Array> }
+export interface TrustSignerIdentity { readonly issuerId: string; readonly issuerKeyId: string; readonly profile: string }
+export interface TrustCredentialSigner { sign(buildPayload: (identity: TrustSignerIdentity) => Uint8Array): Promise<TrustCredentialSignature> }
 export interface IssuedBusinessDeviceCredential { readonly claims: BusinessDeviceCredentialClaims; readonly signature: TrustCredentialSignature }
 export interface CredentialIssuanceStore {
   findByIntent(businessId: string, deviceId: string, intentId: string): Promise<IssuedBusinessDeviceCredential | null>;
@@ -34,8 +35,12 @@ export class BusinessDeviceCredentialIssuer {
       deviceKeyId: input.device.deviceKeyId, deviceKeyVersion: input.device.deviceKeyVersion, devicePublicKeyFingerprint: input.device.publicKeyFingerprint,
       authorityScope: input.requestedScope, authorityEpoch: input.membership.authorityEpoch.value, issuedAt: timestamp, notBefore: timestamp,
       expiresAt: new Date(timestamp.getTime() + this.lifetimeMs) };
-    const claims: BusinessDeviceCredentialClaims = { ...unsigned, issuerId: identifier(this.signer.issuerId, 'IssuerId'), issuerKeyId: identifier(this.signer.issuerKeyId, 'IssuerKeyId') };
-    const signature = await this.signer.sign(credentialSigningPayload(claims));
-    return this.store.record(input.intentId, { claims, signature: { issuerId: this.signer.issuerId, issuerKeyId: this.signer.issuerKeyId, profile: this.signer.profile, signature } });
+    let claims: BusinessDeviceCredentialClaims | undefined;
+    const signature = await this.signer.sign((identity) => {
+      claims = { ...unsigned, issuerId: identifier(identity.issuerId, 'IssuerId'), issuerKeyId: identifier(identity.issuerKeyId, 'IssuerKeyId') };
+      return credentialSigningPayload(claims);
+    });
+    if (!claims || claims.issuerId !== signature.issuerId || claims.issuerKeyId !== signature.issuerKeyId) throw new Error('Signer returned inconsistent identity');
+    return this.store.record(input.intentId, { claims, signature });
   }
 }
