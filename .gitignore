@@ -73,6 +73,7 @@ connector/budcom_connector/live-validation-output.json
 # Local Voucher discovery approvals and evidence (sensitive, never commit)
 /docs/testing/voucher-discovery-manifest.local.json
 /evidence/voucher-discovery/
+/evidence/physical-buying-cycle-*/
 
 # TypeScript emit artifacts (tests run via vitest on .ts source)
 connector/budcom_connector/test/**/*.js

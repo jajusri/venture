@@ -4,10 +4,14 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
-import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderStatusLabels
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
-import com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority
+import com.budcom.android.feature.transaction.domain.model.CommercialAction
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityContext
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityResolver
+import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
@@ -44,6 +48,7 @@ class ReceivedOrderViewModel @Inject constructor(
     private val companySession: CompanySessionPort,
     private val keyStore: VartalapDeviceKeyStore,
     private val clock: TransactionClock,
+    private val authorityResolver: CommercialActionAuthorityResolver,
 ) : ViewModel() {
     private val envelopeId: String = requireNotNull(savedStateHandle.get<String>(ENVELOPE_ID_ARG))
     private val senderBusinessId: String = requireNotNull(savedStateHandle.get<String>(SENDER_BUSINESS_ID_ARG))
@@ -66,7 +71,10 @@ class ReceivedOrderViewModel @Inject constructor(
 
     private suspend fun openAndRefresh() {
         val companyId = companySession.observeSelectedCompanyId().first() ?: return
-        val device = keyStore.getCurrentIdentity() ?: keyStore.getOrCreateIdentity("local-device")
+        val authority = verifiedAuthority(companyId, CommercialAction.OpenReceived) ?: run {
+            _uiState.update { it.copy(isLoading = false, canConfirm = false, message = "Trusted authority is required.") }
+            return
+        }
         val now = clock.now()
         val open = OrderStructuredOpenEvent(
             eventId = UUID.randomUUID().toString(),
@@ -74,9 +82,9 @@ class ReceivedOrderViewModel @Inject constructor(
             orderId = orderId,
             orderVersion = orderVersion,
             objectType = "CANONICAL_ORDER",
-            viewerBusinessId = companyId,
-            viewerActorId = "actor-local",
-            viewerDeviceId = device.deviceId,
+            viewerBusinessId = authority.businessId,
+            viewerActorId = authority.actorId,
+            viewerDeviceId = authority.deviceId,
             senderBusinessId = senderBusinessId,
             openedAt = now,
         )
@@ -102,23 +110,37 @@ class ReceivedOrderViewModel @Inject constructor(
     private fun confirmOrder() {
         viewModelScope.launch {
             val companyId = companySession.observeSelectedCompanyId().first() ?: return@launch
-            val device = keyStore.getCurrentIdentity() ?: keyStore.getOrCreateIdentity("local-device")
-            val authority = OrderConfirmAuthority(
-                businessId = companyId,
-                actorId = "actor-local",
-                deviceId = device.deviceId,
-                authorityScope = setOf(OrderConfirmAuthority.CONFIRM_ORDERS_CAPABILITY),
-                authorityEpoch = 1,
-            )
+            val authority = verifiedAuthority(companyId, CommercialAction.SellerConfirm)
+            if (authority == null) {
+                _uiState.update { it.copy(message = "Order could not be confirmed.") }
+                return@launch
+            }
             val eventId = UUID.randomUUID().toString()
             val recorded = repository.recordOrderConfirmFromSellerAction(
                 companyId,
                 envelopeId,
-                authority,
+                authority.toConfirmAuthority(),
                 eventId,
                 "confirm:$orderId:v$orderVersion:$companyId",
                 clock.now(),
             )
+            if (recorded != null) {
+                repository.applyOrderConfirmEvidence(
+                    senderBusinessId,
+                    OrderConfirmEvidence(
+                        eventId = recorded.eventId,
+                        orderId = recorded.orderId,
+                        orderVersion = recorded.orderVersion,
+                        confirmingBusinessId = authority.businessId,
+                        confirmingActorId = authority.actorId,
+                        confirmingDeviceId = authority.deviceId,
+                        senderBusinessId = senderBusinessId,
+                        authorityEpoch = authority.authorityEpoch,
+                        authorityScopeFingerprint = authority.toConfirmAuthority().scopeFingerprint(),
+                        confirmedAt = recorded.occurredAt,
+                    ),
+                )
+            }
             _uiState.update {
                 it.copy(
                     canConfirm = recorded == null,
@@ -126,6 +148,32 @@ class ReceivedOrderViewModel @Inject constructor(
                     message = if (recorded != null) "Order confirmed." else "Order could not be confirmed.",
                 )
             }
+        }
+    }
+
+    private suspend fun verifiedAuthority(companyId: String, action: CommercialAction): CommercialActionAuthorityContext? {
+        val device = keyStore.getCurrentIdentity() ?: return null
+        val now = clock.now()
+        return when (
+            val outcome = authorityResolver.resolve(
+                CommercialActionAuthorityRequest(
+                    action = action,
+                    viewerBusinessId = companyId,
+                    expectedActorId = null,
+                    expectedDeviceId = device.deviceId,
+                    expectedDeviceKeyVersion = device.keyVersion,
+                    orderId = orderId,
+                    orderVersion = orderVersion,
+                    inboxOrderId = orderId,
+                    inboxOrderVersion = orderVersion,
+                    sellerBusinessId = companyId,
+                    buyerBusinessId = senderBusinessId,
+                    nowEpochMillis = now.epochMillis,
+                ),
+            )
+        ) {
+            is CommercialActionAuthorityOutcome.Verified -> outcome.context
+            else -> null
         }
     }
 

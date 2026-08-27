@@ -349,7 +349,7 @@ class TransactionRepositoryImpl @Inject constructor(
         timestamp: TransactionTimestamp,
         idempotencyKey: String,
     ): CanonicalOrder? = withContext(dispatchers.io) {
-        if (!authority.permitsOrderConfirm()) return@withContext null
+        if (!authority.permitsOrderRevision()) return@withContext null
         val inboxEntity = recipientInboxDao.findByEnvelopeId(sellerCompanyId, envelopeId) ?: return@withContext null
         val inbox = inboxEntity.toInboxDomain()
         if (inbox.objectId != baseline.orderId || inbox.objectVersion != baseline.version) return@withContext null
@@ -467,7 +467,7 @@ class TransactionRepositoryImpl @Inject constructor(
     ): OrderCommercialEvent? = withContext(dispatchers.io) {
         val existing = orderCommercialEventDao.findByIdempotencyKey(buyerCompanyId, idempotencyKey)
         if (existing != null) return@withContext existing.toDomain()
-        if (!authority.permitsOrderConfirm()) return@withContext null
+        if (!authority.permitsRevisionAccept()) return@withContext null
         val inboxEntity = recipientInboxDao.findByEnvelopeId(buyerCompanyId, envelopeId) ?: return@withContext null
         val inbox = inboxEntity.toInboxDomain()
         val order = canonicalOrderDao.findById(buyerCompanyId, inbox.objectId) ?: return@withContext null

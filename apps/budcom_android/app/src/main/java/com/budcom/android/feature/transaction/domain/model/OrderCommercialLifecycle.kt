@@ -29,10 +29,16 @@ data class OrderConfirmAuthority(
 
     fun permitsOrderConfirm(): Boolean = authorityScope.contains(CONFIRM_ORDERS_CAPABILITY)
 
+    fun permitsOrderRevision(): Boolean = authorityScope.contains(REVISE_ORDERS_CAPABILITY)
+
+    fun permitsRevisionAccept(): Boolean = authorityScope.contains(ACCEPT_ORDER_REVISIONS_CAPABILITY)
+
     fun scopeFingerprint(): String = authorityScope.sorted().joinToString(",")
 
     companion object {
         const val CONFIRM_ORDERS_CAPABILITY = "confirm_orders"
+        const val REVISE_ORDERS_CAPABILITY = "revise_orders"
+        const val ACCEPT_ORDER_REVISIONS_CAPABILITY = "accept_order_revisions"
     }
 }
 

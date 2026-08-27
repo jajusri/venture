@@ -7,6 +7,11 @@ import com.budcom.android.feature.company.domain.port.SelectedCompanyStatus
 import com.budcom.android.feature.company.domain.port.SessionValidationStatus
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
+import com.budcom.android.feature.transaction.domain.model.CommercialAction
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityContext
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityResolver
 import com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent
 import com.budcom.android.feature.transaction.domain.model.OrderCommercialEventType
 import com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority
@@ -63,7 +68,21 @@ class ReceivedRevisionViewModelTest {
     @Test
     fun `opening revision records seen and enables explicit accept`() = runTest(dispatcher) {
         val repository = RevisionAcceptFakeRepository()
-        val vm = viewModel(repository)
+        val vm = ReceivedRevisionViewModel(
+            SavedStateHandle(
+                mapOf(
+                    ReceivedRevisionViewModel.ENVELOPE_ID_ARG to "env-2",
+                    ReceivedRevisionViewModel.SENDER_BUSINESS_ID_ARG to "seller-co",
+                    ReceivedRevisionViewModel.ORDER_ID_ARG to "order-1",
+                    ReceivedRevisionViewModel.ORDER_VERSION_ARG to 2,
+                ),
+            ),
+            repository,
+            FakeRevisionCompanySessionPort("buyer-co"),
+            FakeRevisionKeyStore(),
+            FakeRevisionClock(),
+            FakeVerifiedAuthorityResolver(),
+        )
         dispatcher.scheduler.advanceUntilIdle()
         assertFalse(vm.uiState.value.isLoading)
         assertTrue(vm.uiState.value.canAcceptChanges)
@@ -73,21 +92,6 @@ class ReceivedRevisionViewModelTest {
         assertEquals("Changes accepted.", vm.uiState.value.message)
         assertEquals(1, repository.acceptCalls)
     }
-
-    private fun viewModel(repository: RevisionAcceptFakeRepository) = ReceivedRevisionViewModel(
-        SavedStateHandle(
-            mapOf(
-                ReceivedRevisionViewModel.ENVELOPE_ID_ARG to "env-2",
-                ReceivedRevisionViewModel.SENDER_BUSINESS_ID_ARG to "seller-co",
-                ReceivedRevisionViewModel.ORDER_ID_ARG to "order-1",
-                ReceivedRevisionViewModel.ORDER_VERSION_ARG to 2,
-            ),
-        ),
-        repository,
-        FakeRevisionCompanySessionPort("buyer-co"),
-        FakeRevisionKeyStore(),
-        FakeRevisionClock(),
-    )
 }
 
 private class RevisionAcceptFakeRepository : TransactionRepository {
@@ -202,4 +206,28 @@ private class FakeRevisionKeyStore : VartalapDeviceKeyStore {
 
 private class FakeRevisionClock : TransactionClock {
     override suspend fun now() = TransactionTimestamp(100, TransactionTimestampSource.DeviceLocalProvisional)
+}
+
+private class FakeVerifiedAuthorityResolver : CommercialActionAuthorityResolver {
+    override suspend fun resolve(request: CommercialActionAuthorityRequest): CommercialActionAuthorityOutcome {
+        val actor = if (request.action == CommercialAction.BuyerAcceptRevision || request.viewerBusinessId == "buyer-co") "actor-b" else "actor-s"
+        return CommercialActionAuthorityOutcome.Verified(
+            CommercialActionAuthorityContext(
+                businessId = request.viewerBusinessId,
+                actorId = actor,
+                deviceId = request.expectedDeviceId,
+                credentialId = "cred-test",
+                credentialVersion = 1,
+                authorityEpoch = 1,
+                authorityScope = setOf(
+                    com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority.CONFIRM_ORDERS_CAPABILITY,
+                    com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority.REVISE_ORDERS_CAPABILITY,
+                    com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority.ACCEPT_ORDER_REVISIONS_CAPABILITY,
+                ),
+                orderId = request.orderId,
+                orderVersion = request.orderVersion,
+                intendedAction = request.action,
+            ),
+        )
+    }
 }

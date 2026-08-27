@@ -381,7 +381,7 @@ class TransactionRepositoryImplTest {
         seedSellerReceivedOrder()
         recipientInboxDao.entries += inboxFixture()
         repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", seenOpenEvent())
-        val sellerAuthority = OrderConfirmAuthority("seller-co", "actor-s", "device-s", setOf("confirm_orders"), 1)
+        val sellerAuthority = OrderConfirmAuthority("seller-co", "actor-s", "device-s", setOf("revise_orders"), 1)
         val sellerRevision = repo.proposeOrderRevision(
             "seller-co", "env-1", sellerBaselineOrder(), revisionLines("12"), "Need 12 units",
             sellerAuthority, ts(500), "revision:order-1:v2",
@@ -412,7 +412,7 @@ class TransactionRepositoryImplTest {
         val revisionSeen = repo.applyOrderSeenEvidence("buyer-co", seenEvidence)!!
         assertEquals(CanonicalOrderState.RevisionSeen, revisionSeen.state)
         assertNotEquals(CanonicalOrderState.Seen, received.state)
-        val buyerAuthority = OrderConfirmAuthority("buyer-co", "actor-b", "device-b", setOf("confirm_orders"), 1)
+        val buyerAuthority = OrderConfirmAuthority("buyer-co", "actor-b", "device-b", setOf("accept_order_revisions"), 1)
         val acceptedEvent = repo.recordOrderRevisionAcceptFromBuyerAction(
             "buyer-co", "env-2", buyerAuthority, "accept-2", "accept:order-1:v2:buyer-co", ts(600),
         )!!
