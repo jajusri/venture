@@ -75,7 +75,7 @@ class StructuredRecipientInboxViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = false, items = emptyList()) }
             return
         }
-        val entries = inboxRepository.findAll(companyId)
+        val entries = inboxRepository.findPage(companyId, INBOX_PAGE_LIMIT, 0)
             .filter { ReceivedStructuredNavigation.kindFor(it) != ReceivedStructuredNavigation.Kind.Unsupported }
         entriesByEnvelope = entries.associateBy { it.envelopeId }
         _uiState.update {
@@ -100,5 +100,9 @@ class StructuredRecipientInboxViewModel @Inject constructor(
             label = label,
             entry = this,
         )
+    }
+
+    private companion object {
+        const val INBOX_PAGE_LIMIT = 50
     }
 }

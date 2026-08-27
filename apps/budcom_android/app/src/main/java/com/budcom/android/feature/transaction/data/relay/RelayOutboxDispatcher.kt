@@ -25,12 +25,11 @@ class DefaultRelayOutboxDispatcher @Inject constructor(
 ) : RelayOutboxDispatcher {
     override suspend fun submitPending(companyId: String) = withContext(dispatchers.io) {
         val now = clock.now()
-        val pending = orderOutboxDao.findPending(companyId)
+        val pending = orderOutboxDao.findPendingBatch(companyId, RelayOutboxRetryPolicy.MAX_DISPATCH_BATCH)
             .filter { entity ->
                 !RelayOutboxRetryPolicy.attemptsExhausted(entity.attemptCount) &&
                     RelayOutboxRetryPolicy.readyForRetry(entity.attemptCount, entity.lastAttemptAt, now.epochMillis)
             }
-            .take(RelayOutboxRetryPolicy.MAX_DISPATCH_BATCH)
         pending.forEach { entity ->
             val envelope = entity.toDispatcherEnvelope()
             val result = router.submit(envelope)

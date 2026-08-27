@@ -26,10 +26,15 @@ class StructuredRecipientInboxRepositoryImpl @Inject constructor(
             inboxDao.findByEnvelopeId(companyId, envelopeId)?.toDomain()
         }
 
-    override suspend fun findAll(companyId: String): List<StructuredRecipientInboxEntry> =
+    override suspend fun findPage(companyId: String, limit: Int, offset: Int): List<StructuredRecipientInboxEntry> =
         withContext(dispatchers.io) {
-            inboxDao.findAll(companyId).map { it.toDomain() }
+            require(limit in 1..MAX_INBOX_PAGE)
+            require(offset >= 0)
+            inboxDao.findPage(companyId, limit, offset).map { it.toDomain() }
         }
+
+    override suspend fun findAll(companyId: String): List<StructuredRecipientInboxEntry> =
+        findPage(companyId, MAX_INBOX_PAGE, 0)
 
     override suspend fun loadMailboxCursor(companyId: String, mailboxId: String): String? =
         withContext(dispatchers.io) { cursorDao.find(companyId, mailboxId)?.cursor }
@@ -66,6 +71,10 @@ class StructuredRecipientInboxRepositoryImpl @Inject constructor(
         )
         inboxDao.insert(entity)
         entity.toDomain()
+    }
+
+    private companion object {
+        const val MAX_INBOX_PAGE = 50
     }
 }
 

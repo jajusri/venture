@@ -43,6 +43,9 @@ interface OrderOutboxDao {
     @Query("SELECT * FROM txn_order_outbox WHERE companyId = :companyId AND idempotencyKey = :idempotencyKey")
     suspend fun findByIdempotencyKey(companyId: String, idempotencyKey: String): OrderDeliveryEnvelopeEntity?
 
+    @Query("SELECT * FROM txn_order_outbox WHERE companyId = :companyId AND state IN ('QUEUED', 'RETRYING') ORDER BY createdAt ASC LIMIT :limit")
+    suspend fun findPendingBatch(companyId: String, limit: Int): List<OrderDeliveryEnvelopeEntity>
+
     @Query("SELECT * FROM txn_order_outbox WHERE companyId = :companyId AND state IN ('QUEUED', 'RETRYING') ORDER BY createdAt ASC")
     suspend fun findPending(companyId: String): List<OrderDeliveryEnvelopeEntity>
 
@@ -69,6 +72,9 @@ interface StructuredRecipientInboxDao {
 
     @Query("SELECT * FROM txn_recipient_inbox WHERE companyId = :companyId AND envelopeId = :envelopeId")
     suspend fun findByEnvelopeId(companyId: String, envelopeId: String): StructuredRecipientInboxEntity?
+
+    @Query("SELECT * FROM txn_recipient_inbox WHERE companyId = :companyId ORDER BY mailboxSequence ASC LIMIT :limit OFFSET :offset")
+    suspend fun findPage(companyId: String, limit: Int, offset: Int): List<StructuredRecipientInboxEntity>
 
     @Query("SELECT * FROM txn_recipient_inbox WHERE companyId = :companyId ORDER BY mailboxSequence ASC")
     suspend fun findAll(companyId: String): List<StructuredRecipientInboxEntity>

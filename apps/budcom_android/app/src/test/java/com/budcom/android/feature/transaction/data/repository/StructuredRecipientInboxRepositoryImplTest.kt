@@ -45,6 +45,27 @@ class StructuredRecipientInboxRepositoryImplTest {
         assertEquals(false, StructuredRecipientInboxValidation.validate(item.copy(status = "delivered"), "co-1"))
     }
 
+    @Test
+    fun `inbox page is bounded and outbox batch does not load beyond limit`() = runTest {
+        repeat(8) { index ->
+            inboxDao.insert(
+                mailboxItem().let { item ->
+                    com.budcom.android.feature.transaction.data.local.StructuredRecipientInboxEntity(
+                        companyId = "co-1", envelopeId = "env-$index", idempotencyKey = "k-$index",
+                        objectType = "CANONICAL_ORDER", objectId = "order-1", objectVersion = 1,
+                        senderBusinessId = "co-sender", senderActorId = "a", senderDeviceId = "d",
+                        mailboxId = "orders", mailboxSequence = index.toLong(), acceptanceId = "acc",
+                        acceptedAt = 1, acceptedAtSource = "DeviceLocalProvisional", ingestedAt = 1,
+                        ingestedAtSource = "DeviceLocalProvisional", transportState = "RECEIVED",
+                    )
+                },
+            )
+        }
+        assertEquals(3, repo.findPage("co-1", 3, 0).size)
+        assertEquals(3, repo.findPage("co-1", 3, 3).size)
+        assertEquals(2, repo.findPage("co-1", 3, 6).size)
+    }
+
     private fun mailboxItem() = RelayMailboxDeliveryItem(
         envelopeId = "env-1", mailboxSequence = 1, objectType = "CANONICAL_ORDER", objectId = "order-1", objectVersion = 1,
         senderBusinessId = "co-sender", senderActorId = "actor-s", senderDeviceId = "device-s",
@@ -58,7 +79,9 @@ class FakeStructuredRecipientInboxDao : StructuredRecipientInboxDao {
     override suspend fun insert(entity: StructuredRecipientInboxEntity) { entries += entity }
     override suspend fun findByEnvelopeId(companyId: String, envelopeId: String) =
         entries.firstOrNull { it.companyId == companyId && it.envelopeId == envelopeId }
-    override suspend fun findAll(companyId: String) = entries.filter { it.companyId == companyId }
+    override suspend fun findAll(companyId: String) = findPage(companyId, 50, 0)
+    override suspend fun findPage(companyId: String, limit: Int, offset: Int) =
+        entries.filter { it.companyId == companyId }.sortedBy { it.mailboxSequence }.drop(offset).take(limit)
 }
 
 class FakeRecipientInboxCursorDao : RecipientInboxCursorDao {

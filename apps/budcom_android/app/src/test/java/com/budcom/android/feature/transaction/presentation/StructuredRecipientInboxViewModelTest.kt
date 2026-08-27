@@ -99,7 +99,9 @@ private class FakeStructuredInboxRepository(
     override suspend fun findByEnvelopeId(companyId: String, envelopeId: String) =
         entries.firstOrNull { it.companyId == companyId && it.envelopeId == envelopeId }
 
-    override suspend fun findAll(companyId: String) = entries.filter { it.companyId == companyId }
+    override suspend fun findAll(companyId: String) = findPage(companyId, 50, 0)
+    override suspend fun findPage(companyId: String, limit: Int, offset: Int) =
+        entries.filter { it.companyId == companyId }.drop(offset).take(limit)
 
     override suspend fun loadMailboxCursor(companyId: String, mailboxId: String): String? = null
 
