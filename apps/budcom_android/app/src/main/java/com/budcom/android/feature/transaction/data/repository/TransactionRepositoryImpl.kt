@@ -51,6 +51,9 @@ import com.budcom.android.feature.transaction.domain.model.OrderVersionSnapshot
 import com.budcom.android.feature.transaction.domain.model.toCanonicalOrder
 import com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent
 import com.budcom.android.feature.transaction.domain.model.OrderCommercialEventType
+import com.budcom.android.feature.transaction.domain.model.CommercialReturnEvent
+import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_TYPE
+import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_VERSION
 import com.budcom.android.feature.transaction.domain.model.OrderSeenEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
 import com.budcom.android.feature.transaction.domain.model.RecipientInboxTransportState
@@ -135,6 +138,54 @@ class TransactionRepositoryImpl @Inject constructor(
     private val orderVersionArchiveDao: OrderVersionArchiveDao,
     private val dbTransaction: CommercialDbTransaction,
 ) : TransactionRepository, OrderSentFromRelayEvidence {
+
+    override suspend fun ingestReceivedCommercialEvent(
+        recipientCompanyId: String,
+        item: RelayMailboxDeliveryItem,
+        event: CommercialReturnEvent,
+        timestamp: TransactionTimestamp,
+    ): Boolean = withContext(dispatchers.io) {
+        if (event.originBusinessId != recipientCompanyId || event.respondingBusinessId != item.senderBusinessId ||
+            event.orderId != item.objectId || event.orderVersion != item.objectVersion ||
+            item.objectType != "COMMERCIAL_EVENT" || item.recipientBusinessId != recipientCompanyId ||
+            item.senderActorId.isBlank() || item.senderDeviceId.isBlank()
+        ) return@withContext false
+        dbTransaction.run {
+            val existingInbox = recipientInboxDao.findByEnvelopeId(recipientCompanyId, item.envelopeId)
+            if (existingInbox != null && !existingInbox.matches(item, recipientCompanyId)) return@run false
+
+            val received = OrderCommercialEventEntity(
+                companyId = recipientCompanyId, eventId = event.eventId, idempotencyKey = event.idempotencyKey,
+                orderId = event.orderId, orderVersion = event.orderVersion,
+                eventType = OrderCommercialEventType.Confirmed.columnValue,
+                actorBusinessId = event.respondingBusinessId, actorId = item.senderActorId,
+                actorDeviceId = item.senderDeviceId, counterpartyBusinessId = recipientCompanyId,
+                occurredAt = event.occurredAtEpochMillis, occurredAtSource = event.occurredAtSource,
+            )
+            val priorByKey = orderCommercialEventDao.findByIdempotencyKey(recipientCompanyId, event.idempotencyKey)
+            val priorById = orderCommercialEventDao.findByEventId(recipientCompanyId, event.eventId)
+            if (priorByKey != null && priorByKey != received || priorById != null && priorById != received) return@run false
+
+            val stored = canonicalOrderDao.findById(recipientCompanyId, event.orderId) ?: return@run false
+            val order = stored.toDomain(canonicalOrderDao.findLines(recipientCompanyId, event.orderId))
+            val next = CanonicalOrderConfirmedTransitions.apply(
+                order,
+                OrderConfirmEvidence(
+                    eventId = event.eventId, orderId = event.orderId, orderVersion = event.orderVersion,
+                    confirmingBusinessId = event.respondingBusinessId, confirmingActorId = item.senderActorId,
+                    confirmingDeviceId = item.senderDeviceId, senderBusinessId = recipientCompanyId,
+                    authorityEpoch = 0L, authorityScopeFingerprint = "relay-authenticated",
+                    confirmedAt = TransactionTimestamp(event.occurredAtEpochMillis, TransactionTimestampSource.valueOf(event.occurredAtSource)),
+                ),
+            )
+            if (next == null) return@run false
+
+            if (existingInbox == null) recipientInboxDao.insert(item.toInboxEntity(recipientCompanyId, timestamp))
+            if (priorByKey == null && priorById == null) orderCommercialEventDao.insert(received)
+            if (order.state != next) canonicalOrderDao.updateState(recipientCompanyId, event.orderId, next.columnValue)
+            true
+        }
+    }
 
     override suspend fun ingestReceivedOrderVersion(
         recipientCompanyId: String,
@@ -333,8 +384,6 @@ class TransactionRepositoryImpl @Inject constructor(
         idempotencyKey: String,
         timestamp: TransactionTimestamp,
     ): OrderCommercialEvent? = withContext(dispatchers.io) {
-        val existing = orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)
-        if (existing != null) return@withContext existing.toDomain()
         val inboxEntity = recipientInboxDao.findByEnvelopeId(sellerCompanyId, envelopeId) ?: return@withContext null
         val inbox = inboxEntity.toInboxDomain()
         if (!authority.permitsOrderConfirm() || authority.businessId != sellerCompanyId) return@withContext null
@@ -342,6 +391,13 @@ class TransactionRepositoryImpl @Inject constructor(
         orderCommercialEventDao.findByOrderVersionAndType(
             sellerCompanyId, inbox.objectId, inbox.objectVersion, OrderCommercialEventType.Seen.columnValue,
         ) ?: return@withContext null
+        val existing = orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)
+        if (existing != null) return@withContext existing.toDomain().takeIf {
+            it.eventId == eventId && it.orderId == inbox.objectId && it.orderVersion == inbox.objectVersion &&
+                it.eventType == OrderCommercialEventType.Confirmed && it.actorBusinessId == authority.businessId &&
+                it.actorId == authority.actorId && it.actorDeviceId == authority.deviceId &&
+                it.counterpartyBusinessId == inbox.senderBusinessId
+        }
         val entity = OrderCommercialEventEntity(
             companyId = sellerCompanyId,
             eventId = eventId,
@@ -358,12 +414,33 @@ class TransactionRepositoryImpl @Inject constructor(
             authorityEpoch = authority.authorityEpoch,
             authorityScopeFingerprint = authority.scopeFingerprint(),
         )
-        try {
-            orderCommercialEventDao.insert(entity)
-        } catch (_: android.database.SQLException) {
-            return@withContext orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)?.toDomain()
+        val payload = CommercialReturnEvent(
+            COMMERCIAL_EVENT_CONTENT_VERSION, CommercialReturnEvent.TYPE_ORDER_CONFIRMED,
+            inbox.senderBusinessId, sellerCompanyId, inbox.objectId, inbox.objectVersion,
+            eventId, idempotencyKey, timestamp.epochMillis, timestamp.source.name,
+        ).deterministicEncoding()
+        dbTransaction.run {
+            try {
+                orderCommercialEventDao.insert(entity)
+                canonicalOrderDao.updateState(sellerCompanyId, inbox.objectId, CanonicalOrderState.Confirmed.columnValue)
+                orderOutboxDao.insert(
+                    OrderDeliveryEnvelopeEntity(
+                        companyId = sellerCompanyId, envelopeId = "commercial:$eventId", idempotencyKey = "return:$idempotencyKey",
+                        objectType = "COMMERCIAL_EVENT", orderId = inbox.objectId, orderVersion = inbox.objectVersion,
+                        senderCompanyId = sellerCompanyId, recipientPartyId = inbox.senderBusinessId,
+                        createdAt = timestamp.epochMillis, createdAtSource = timestamp.source.name,
+                        state = OrderTransportState.Queued.columnValue, attemptCount = 0,
+                        lastAttemptAt = null, lastAttemptAtSource = null, lastError = null,
+                        recipientBusinessId = inbox.senderBusinessId, commercialContentType = COMMERCIAL_EVENT_CONTENT_TYPE,
+                        commercialContentVersion = COMMERCIAL_EVENT_CONTENT_VERSION, commercialContentCanonical = payload,
+                    ),
+                )
+            } catch (_: android.database.SQLException) {
+                val prior = orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)
+                if (prior == null || prior != entity) return@run null
+            }
+            entity.toDomain()
         }
-        entity.toDomain()
     }
 
     override suspend fun applyOrderConfirmEvidence(companyId: String, evidence: OrderConfirmEvidence): CanonicalOrder? =

@@ -42,6 +42,8 @@ class AuthenticatedEnvelopeBinder(private val keyStore: VartalapDeviceKeyStore) 
         credential: BusinessDeviceCredential,
         recipient: RecipientBinding,
         commercialSnapshotCanonical: String = "",
+        commercialContentType: String = ORDER_SNAPSHOT_CONTENT_TYPE,
+        commercialContentVersion: Int = ORDER_SNAPSHOT_CONTENT_VERSION,
     ): AuthenticatedTransportEnvelope? {
         if (identity.lifecycleStatus != DeviceKeyLifecycleStatus.Active || envelope.senderDeviceId != identity.deviceId ||
             credential.deviceId != identity.deviceId || credential.businessId != envelope.senderBusinessId ||
@@ -50,6 +52,7 @@ class AuthenticatedEnvelopeBinder(private val keyStore: VartalapDeviceKeyStore) 
             envelope, credential.actorId, identity.keyId, identity.keyVersion,
             identity.publicKeyFingerprint, credential.verificationReference, credential.credentialVersion, credential.credentialEpoch,
             recipient, "SHA256withECDSA", byteArrayOf(), commercialSnapshotCanonical,
+            commercialContentType, commercialContentVersion,
         )
         val result = keyStore.sign(identity, unsigned.signingBytes()) as? DeviceSigningResult.Success ?: return null
         return unsigned.copy(signature = result.signature)

@@ -1,0 +1,4127 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 20,
+    "identityHash": "55ddb9dc71db2c0876179b90f080cc44",
+    "entities": [
+      {
+        "tableName": "cached_companies",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `financialYear` TEXT, `booksFrom` TEXT, `baseCurrency` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "financialYear",
+            "columnName": "financialYear",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "booksFrom",
+            "columnName": "booksFrom",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "baseCurrency",
+            "columnName": "baseCurrency",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "company_discovery_meta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `schemaVersion` TEXT NOT NULL, `dataFreshnessAt` TEXT NOT NULL, `contractVersion` TEXT NOT NULL, `status` TEXT NOT NULL, `tallyReachable` INTEGER NOT NULL, `dataQualityStatus` TEXT, `dataQualityReason` TEXT, `reason` TEXT, `cachedAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "schemaVersion",
+            "columnName": "schemaVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dataFreshnessAt",
+            "columnName": "dataFreshnessAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contractVersion",
+            "columnName": "contractVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tallyReachable",
+            "columnName": "tallyReachable",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dataQualityStatus",
+            "columnName": "dataQualityStatus",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dataQualityReason",
+            "columnName": "dataQualityReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "cachedAtEpochMs",
+            "columnName": "cachedAtEpochMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "cached_ledgers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `id` TEXT NOT NULL, `name` TEXT NOT NULL, `alias` TEXT, `parentGroup` TEXT, `status` TEXT NOT NULL, `closingAmount` TEXT, `closingCurrencyCode` TEXT, `closingSide` TEXT, `dataQuality` TEXT NOT NULL, `syncedAt` TEXT NOT NULL, `dataFreshnessAt` TEXT, PRIMARY KEY(`companyId`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alias",
+            "columnName": "alias",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "parentGroup",
+            "columnName": "parentGroup",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "closingAmount",
+            "columnName": "closingAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "closingCurrencyCode",
+            "columnName": "closingCurrencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "closingSide",
+            "columnName": "closingSide",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dataQuality",
+            "columnName": "dataQuality",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncedAt",
+            "columnName": "syncedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dataFreshnessAt",
+            "columnName": "dataFreshnessAt",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_ledgers_companyId",
+            "unique": false,
+            "columnNames": [
+              "companyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_ledgers_companyId` ON `${TABLE_NAME}` (`companyId`)"
+          },
+          {
+            "name": "index_cached_ledgers_companyId_name",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_ledgers_companyId_name` ON `${TABLE_NAME}` (`companyId`, `name`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "cached_stock_items",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `id` TEXT NOT NULL, `name` TEXT NOT NULL, `alias` TEXT, `parentGroup` TEXT, `category` TEXT, `baseUnit` TEXT, `partNumber` TEXT, `hsnCode` TEXT, `gstRate` TEXT, `status` TEXT NOT NULL, `closingAmount` TEXT, `closingCurrencyCode` TEXT, `closingSide` TEXT, `dataQuality` TEXT NOT NULL, `syncedAt` TEXT NOT NULL, `dataFreshnessAt` TEXT, PRIMARY KEY(`companyId`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "alias",
+            "columnName": "alias",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "parentGroup",
+            "columnName": "parentGroup",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "baseUnit",
+            "columnName": "baseUnit",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "partNumber",
+            "columnName": "partNumber",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "hsnCode",
+            "columnName": "hsnCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "gstRate",
+            "columnName": "gstRate",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "closingAmount",
+            "columnName": "closingAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "closingCurrencyCode",
+            "columnName": "closingCurrencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "closingSide",
+            "columnName": "closingSide",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "dataQuality",
+            "columnName": "dataQuality",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncedAt",
+            "columnName": "syncedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dataFreshnessAt",
+            "columnName": "dataFreshnessAt",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_stock_items_companyId",
+            "unique": false,
+            "columnNames": [
+              "companyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_stock_items_companyId` ON `${TABLE_NAME}` (`companyId`)"
+          },
+          {
+            "name": "index_cached_stock_items_companyId_name",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_stock_items_companyId_name` ON `${TABLE_NAME}` (`companyId`, `name`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "cached_vouchers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `voucherId` TEXT NOT NULL, `date` TEXT NOT NULL, `type` TEXT NOT NULL, `number` TEXT, `partyName` TEXT, `referenceNumber` TEXT, `amountValue` TEXT, `amountSide` TEXT, `status` TEXT NOT NULL, `dataQuality` TEXT NOT NULL, `lastSyncedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `voucherId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voucherId",
+            "columnName": "voucherId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "number",
+            "columnName": "number",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "partyName",
+            "columnName": "partyName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "referenceNumber",
+            "columnName": "referenceNumber",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "amountValue",
+            "columnName": "amountValue",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "amountSide",
+            "columnName": "amountSide",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dataQuality",
+            "columnName": "dataQuality",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncedAt",
+            "columnName": "lastSyncedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "voucherId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_vouchers_companyId_date",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "date"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_vouchers_companyId_date` ON `${TABLE_NAME}` (`companyId`, `date`)"
+          },
+          {
+            "name": "index_cached_vouchers_companyId_status",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_vouchers_companyId_status` ON `${TABLE_NAME}` (`companyId`, `status`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "cached_voucher_details",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `voucherId` TEXT NOT NULL, `effectiveDate` TEXT, `narration` TEXT, `lastSyncedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `voucherId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voucherId",
+            "columnName": "voucherId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "effectiveDate",
+            "columnName": "effectiveDate",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "narration",
+            "columnName": "narration",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastSyncedAt",
+            "columnName": "lastSyncedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "voucherId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "cached_voucher_ledger_lines",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `voucherId` TEXT NOT NULL, `lineNumber` INTEGER NOT NULL, `ledgerName` TEXT NOT NULL, `amountValue` TEXT NOT NULL, `amountSide` TEXT, `isDeemedPositive` INTEGER, PRIMARY KEY(`companyId`, `voucherId`, `lineNumber`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voucherId",
+            "columnName": "voucherId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineNumber",
+            "columnName": "lineNumber",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ledgerName",
+            "columnName": "ledgerName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountValue",
+            "columnName": "amountValue",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountSide",
+            "columnName": "amountSide",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isDeemedPositive",
+            "columnName": "isDeemedPositive",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "voucherId",
+            "lineNumber"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_voucher_ledger_lines_companyId_ledgerName",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "ledgerName"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_voucher_ledger_lines_companyId_ledgerName` ON `${TABLE_NAME}` (`companyId`, `ledgerName`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "cached_voucher_inventory_lines",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `voucherId` TEXT NOT NULL, `lineNumber` INTEGER NOT NULL, `itemName` TEXT NOT NULL, `quantity` TEXT, `rate` TEXT, `amountValue` TEXT, `amountSide` TEXT, PRIMARY KEY(`companyId`, `voucherId`, `lineNumber`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voucherId",
+            "columnName": "voucherId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineNumber",
+            "columnName": "lineNumber",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "itemName",
+            "columnName": "itemName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "rate",
+            "columnName": "rate",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "amountValue",
+            "columnName": "amountValue",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "amountSide",
+            "columnName": "amountSide",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "voucherId",
+            "lineNumber"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "voucher_cache_meta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `lastSyncedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSyncedAt",
+            "columnName": "lastSyncedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "paired_connectors",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`connectorId` TEXT NOT NULL, `friendlyName` TEXT NOT NULL, `lastKnownHost` TEXT NOT NULL, `lastKnownPort` INTEGER NOT NULL, `lastConnectedAtEpochMillis` INTEGER NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`connectorId`))",
+        "fields": [
+          {
+            "fieldPath": "connectorId",
+            "columnName": "connectorId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "friendlyName",
+            "columnName": "friendlyName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastKnownHost",
+            "columnName": "lastKnownHost",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastKnownPort",
+            "columnName": "lastKnownPort",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastConnectedAtEpochMillis",
+            "columnName": "lastConnectedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "connectorId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "cached_ledger_statements",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `ledgerId` TEXT NOT NULL, `periodFrom` TEXT NOT NULL, `periodTo` TEXT NOT NULL, `ledgerName` TEXT NOT NULL, `parentGroup` TEXT, `openingAmount` TEXT, `openingSide` TEXT, `closingAmount` TEXT, `closingSide` TEXT, `transactionsComplete` INTEGER NOT NULL, `balanceAvailable` INTEGER NOT NULL, `syncedFrom` TEXT, `syncedTo` TEXT, `coverageMessage` TEXT, `lastSyncedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `ledgerId`, `periodFrom`, `periodTo`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ledgerId",
+            "columnName": "ledgerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodFrom",
+            "columnName": "periodFrom",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodTo",
+            "columnName": "periodTo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ledgerName",
+            "columnName": "ledgerName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentGroup",
+            "columnName": "parentGroup",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "openingAmount",
+            "columnName": "openingAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "openingSide",
+            "columnName": "openingSide",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "closingAmount",
+            "columnName": "closingAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "closingSide",
+            "columnName": "closingSide",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "transactionsComplete",
+            "columnName": "transactionsComplete",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "balanceAvailable",
+            "columnName": "balanceAvailable",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncedFrom",
+            "columnName": "syncedFrom",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "syncedTo",
+            "columnName": "syncedTo",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "coverageMessage",
+            "columnName": "coverageMessage",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastSyncedAt",
+            "columnName": "lastSyncedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "ledgerId",
+            "periodFrom",
+            "periodTo"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "cached_ledger_statement_transactions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `ledgerId` TEXT NOT NULL, `periodFrom` TEXT NOT NULL, `periodTo` TEXT NOT NULL, `lineIndex` INTEGER NOT NULL, `voucherId` TEXT NOT NULL, `date` TEXT NOT NULL, `voucherType` TEXT NOT NULL, `voucherNumber` TEXT, `referenceNumber` TEXT, `narration` TEXT, `debit` TEXT, `credit` TEXT, `runningAmount` TEXT, `runningSide` TEXT, PRIMARY KEY(`companyId`, `ledgerId`, `periodFrom`, `periodTo`, `lineIndex`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ledgerId",
+            "columnName": "ledgerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodFrom",
+            "columnName": "periodFrom",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "periodTo",
+            "columnName": "periodTo",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineIndex",
+            "columnName": "lineIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voucherId",
+            "columnName": "voucherId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "date",
+            "columnName": "date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voucherType",
+            "columnName": "voucherType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "voucherNumber",
+            "columnName": "voucherNumber",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "referenceNumber",
+            "columnName": "referenceNumber",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "narration",
+            "columnName": "narration",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "debit",
+            "columnName": "debit",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "credit",
+            "columnName": "credit",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "runningAmount",
+            "columnName": "runningAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "runningSide",
+            "columnName": "runningSide",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "ledgerId",
+            "periodFrom",
+            "periodTo",
+            "lineIndex"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "cached_parties",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `classification` TEXT NOT NULL, `primaryPhone` TEXT, `primaryPhoneNormalized` TEXT, `primaryEmail` TEXT, `addressLine1` TEXT, `addressCity` TEXT, `addressState` TEXT, `addressPincode` TEXT, `gstin` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `partyId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "classification",
+            "columnName": "classification",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "primaryPhone",
+            "columnName": "primaryPhone",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "primaryPhoneNormalized",
+            "columnName": "primaryPhoneNormalized",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "primaryEmail",
+            "columnName": "primaryEmail",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "addressLine1",
+            "columnName": "addressLine1",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "addressCity",
+            "columnName": "addressCity",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "addressState",
+            "columnName": "addressState",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "addressPincode",
+            "columnName": "addressPincode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "gstin",
+            "columnName": "gstin",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "partyId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cached_parties_companyId",
+            "unique": false,
+            "columnNames": [
+              "companyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_parties_companyId` ON `${TABLE_NAME}` (`companyId`)"
+          },
+          {
+            "name": "index_cached_parties_companyId_displayName",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "displayName"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_parties_companyId_displayName` ON `${TABLE_NAME}` (`companyId`, `displayName`)"
+          },
+          {
+            "name": "index_cached_parties_companyId_classification",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "classification"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_parties_companyId_classification` ON `${TABLE_NAME}` (`companyId`, `classification`)"
+          },
+          {
+            "name": "index_cached_parties_companyId_primaryPhoneNormalized",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "primaryPhoneNormalized"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_cached_parties_companyId_primaryPhoneNormalized` ON `${TABLE_NAME}` (`companyId`, `primaryPhoneNormalized`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "party_source_links",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `sourceType` TEXT NOT NULL, `externalEntityId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `sourceInstanceId` TEXT NOT NULL, `externalDisplayName` TEXT NOT NULL, `identitySource` TEXT NOT NULL, `lastConfirmedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `sourceType`, `externalEntityId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceType",
+            "columnName": "sourceType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "externalEntityId",
+            "columnName": "externalEntityId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceInstanceId",
+            "columnName": "sourceInstanceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "externalDisplayName",
+            "columnName": "externalDisplayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identitySource",
+            "columnName": "identitySource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastConfirmedAt",
+            "columnName": "lastConfirmedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "sourceType",
+            "externalEntityId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_party_source_links_companyId_partyId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "partyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_source_links_companyId_partyId` ON `${TABLE_NAME}` (`companyId`, `partyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "party_field_provenance",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `fieldName` TEXT NOT NULL, `state` TEXT NOT NULL, `tallyValue` TEXT, `budcomValue` TEXT, `lastConfirmedAt` INTEGER, `lastExportedAt` INTEGER, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `partyId`, `fieldName`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldName",
+            "columnName": "fieldName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tallyValue",
+            "columnName": "tallyValue",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "budcomValue",
+            "columnName": "budcomValue",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastConfirmedAt",
+            "columnName": "lastConfirmedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastExportedAt",
+            "columnName": "lastExportedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "partyId",
+            "fieldName"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_party_field_provenance_companyId_partyId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "partyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_field_provenance_companyId_partyId` ON `${TABLE_NAME}` (`companyId`, `partyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "party_contact_persons",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `contactPersonId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `name` TEXT NOT NULL, `designation` TEXT, `mobile` TEXT, `mobileNormalized` TEXT, `whatsappNumber` TEXT, `email` TEXT, `isPrimary` INTEGER NOT NULL, `provenance` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `contactPersonId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contactPersonId",
+            "columnName": "contactPersonId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "designation",
+            "columnName": "designation",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "mobile",
+            "columnName": "mobile",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "mobileNormalized",
+            "columnName": "mobileNormalized",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "whatsappNumber",
+            "columnName": "whatsappNumber",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "email",
+            "columnName": "email",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isPrimary",
+            "columnName": "isPrimary",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "provenance",
+            "columnName": "provenance",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "contactPersonId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_party_contact_persons_companyId_partyId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "partyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_contact_persons_companyId_partyId` ON `${TABLE_NAME}` (`companyId`, `partyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "party_tags",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`tagId` TEXT NOT NULL, `parentTagId` TEXT, `name` TEXT NOT NULL, `path` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`tagId`))",
+        "fields": [
+          {
+            "fieldPath": "tagId",
+            "columnName": "tagId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentTagId",
+            "columnName": "parentTagId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "path",
+            "columnName": "path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "tagId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_party_tags_parentTagId",
+            "unique": false,
+            "columnNames": [
+              "parentTagId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_tags_parentTagId` ON `${TABLE_NAME}` (`parentTagId`)"
+          },
+          {
+            "name": "index_party_tags_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_tags_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "party_tag_assignments",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `tagId` TEXT NOT NULL, `assignedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `partyId`, `tagId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tagId",
+            "columnName": "tagId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignedAt",
+            "columnName": "assignedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "partyId",
+            "tagId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_party_tag_assignments_companyId_tagId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "tagId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_tag_assignments_companyId_tagId` ON `${TABLE_NAME}` (`companyId`, `tagId`)"
+          },
+          {
+            "name": "index_party_tag_assignments_tagId",
+            "unique": false,
+            "columnNames": [
+              "tagId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_tag_assignments_tagId` ON `${TABLE_NAME}` (`tagId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "party_notes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `noteId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `body` TEXT NOT NULL, `linkedVoucherId` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `type` TEXT NOT NULL DEFAULT 'general', `dueAt` INTEGER, `completedAt` INTEGER, `issueId` TEXT, PRIMARY KEY(`companyId`, `noteId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "noteId",
+            "columnName": "noteId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "body",
+            "columnName": "body",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "linkedVoucherId",
+            "columnName": "linkedVoucherId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'general'"
+          },
+          {
+            "fieldPath": "dueAt",
+            "columnName": "dueAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "issueId",
+            "columnName": "issueId",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "noteId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_party_notes_companyId_partyId_createdAt",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "partyId",
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_notes_companyId_partyId_createdAt` ON `${TABLE_NAME}` (`companyId`, `partyId`, `createdAt`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "party_export_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `exportId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `outputFileName` TEXT NOT NULL, `fieldNamesCsv` TEXT NOT NULL, PRIMARY KEY(`companyId`, `exportId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "exportId",
+            "columnName": "exportId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outputFileName",
+            "columnName": "outputFileName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fieldNamesCsv",
+            "columnName": "fieldNamesCsv",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "exportId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_party_export_events_companyId_partyId_createdAt",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "partyId",
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_export_events_companyId_partyId_createdAt` ON `${TABLE_NAME}` (`companyId`, `partyId`, `createdAt`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "party_issues",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `issueId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `title` TEXT NOT NULL, `status` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `resolvedAt` INTEGER, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `issueId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "issueId",
+            "columnName": "issueId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "partyId",
+            "columnName": "partyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resolvedAt",
+            "columnName": "resolvedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "issueId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_party_issues_companyId_partyId_status_createdAt",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "partyId",
+              "status",
+              "createdAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_party_issues_companyId_partyId_status_createdAt` ON `${TABLE_NAME}` (`companyId`, `partyId`, `status`, `createdAt`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "business_profile",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `tradingName` TEXT NOT NULL, `legalName` TEXT, `addressLine1` TEXT, `addressCity` TEXT, `addressState` TEXT, `addressPincode` TEXT, `phone` TEXT, `phoneNormalized` TEXT, `email` TEXT, `gstin` TEXT, `website` TEXT, `description` TEXT, `logoAssetPath` TEXT, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`companyId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tradingName",
+            "columnName": "tradingName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "legalName",
+            "columnName": "legalName",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "addressLine1",
+            "columnName": "addressLine1",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "addressCity",
+            "columnName": "addressCity",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "addressState",
+            "columnName": "addressState",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "addressPincode",
+            "columnName": "addressPincode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "phone",
+            "columnName": "phone",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "phoneNormalized",
+            "columnName": "phoneNormalized",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "email",
+            "columnName": "email",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "gstin",
+            "columnName": "gstin",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "website",
+            "columnName": "website",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "logoAssetPath",
+            "columnName": "logoAssetPath",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "catalogue_product",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `source` TEXT NOT NULL, `linkedStockItemId` TEXT, `sku` TEXT, `displayNameOverride` TEXT, `manualUnit` TEXT, `description` TEXT, `specifications` TEXT, `customerFacingCategory` TEXT, `priceDisplayMode` TEXT NOT NULL, `manualPriceAmount` TEXT, `manualPriceCurrencyCode` TEXT, `lifecycleState` TEXT NOT NULL, `sourceAvailable` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, `updatedAtSource` TEXT NOT NULL, `archivedAt` INTEGER, `archivedAtSource` TEXT, PRIMARY KEY(`companyId`, `productId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "linkedStockItemId",
+            "columnName": "linkedStockItemId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sku",
+            "columnName": "sku",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "displayNameOverride",
+            "columnName": "displayNameOverride",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "manualUnit",
+            "columnName": "manualUnit",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "specifications",
+            "columnName": "specifications",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "customerFacingCategory",
+            "columnName": "customerFacingCategory",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "priceDisplayMode",
+            "columnName": "priceDisplayMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manualPriceAmount",
+            "columnName": "manualPriceAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "manualPriceCurrencyCode",
+            "columnName": "manualPriceCurrencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lifecycleState",
+            "columnName": "lifecycleState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceAvailable",
+            "columnName": "sourceAvailable",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtSource",
+            "columnName": "createdAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtSource",
+            "columnName": "updatedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "archivedAt",
+            "columnName": "archivedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "archivedAtSource",
+            "columnName": "archivedAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "productId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_catalogue_product_companyId",
+            "unique": false,
+            "columnNames": [
+              "companyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalogue_product_companyId` ON `${TABLE_NAME}` (`companyId`)"
+          },
+          {
+            "name": "index_catalogue_product_companyId_lifecycleState",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "lifecycleState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalogue_product_companyId_lifecycleState` ON `${TABLE_NAME}` (`companyId`, `lifecycleState`)"
+          },
+          {
+            "name": "index_catalogue_product_companyId_linkedStockItemId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "linkedStockItemId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalogue_product_companyId_linkedStockItemId` ON `${TABLE_NAME}` (`companyId`, `linkedStockItemId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "catalogue_product_source_link",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `sourceType` TEXT NOT NULL, `externalStockItemId` TEXT NOT NULL, `productId` TEXT NOT NULL, `lastConfirmedAt` INTEGER NOT NULL, `lastConfirmedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`, `sourceType`, `externalStockItemId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceType",
+            "columnName": "sourceType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "externalStockItemId",
+            "columnName": "externalStockItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastConfirmedAt",
+            "columnName": "lastConfirmedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastConfirmedAtSource",
+            "columnName": "lastConfirmedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "sourceType",
+            "externalStockItemId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_catalogue_product_source_link_companyId_productId",
+            "unique": true,
+            "columnNames": [
+              "companyId",
+              "productId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_catalogue_product_source_link_companyId_productId` ON `${TABLE_NAME}` (`companyId`, `productId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "catalogue_branch",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `branchId` TEXT NOT NULL, `name` TEXT NOT NULL, `isActive` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, `updatedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`, `branchId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "branchId",
+            "columnName": "branchId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isActive",
+            "columnName": "isActive",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtSource",
+            "columnName": "createdAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtSource",
+            "columnName": "updatedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "branchId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_catalogue_branch_companyId",
+            "unique": false,
+            "columnNames": [
+              "companyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalogue_branch_companyId` ON `${TABLE_NAME}` (`companyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "catalogue_override",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `scopeType` TEXT NOT NULL, `scopeKey` TEXT NOT NULL, `attributeName` TEXT NOT NULL, `value` TEXT NOT NULL, `updatedAt` INTEGER NOT NULL, `updatedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`, `scopeType`, `scopeKey`, `attributeName`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scopeType",
+            "columnName": "scopeType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scopeKey",
+            "columnName": "scopeKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attributeName",
+            "columnName": "attributeName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtSource",
+            "columnName": "updatedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "scopeType",
+            "scopeKey",
+            "attributeName"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_catalogue_override_companyId_attributeName",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "attributeName"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalogue_override_companyId_attributeName` ON `${TABLE_NAME}` (`companyId`, `attributeName`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "catalogue_published_snapshot",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `description` TEXT, `specifications` TEXT, `customerFacingCategory` TEXT, `priceDisplayMode` TEXT NOT NULL, `resolvedPriceAmount` TEXT, `resolvedPriceCurrencyCode` TEXT, `primaryAssetId` TEXT, `publishedAt` INTEGER NOT NULL, `publishedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`, `productId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "specifications",
+            "columnName": "specifications",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "customerFacingCategory",
+            "columnName": "customerFacingCategory",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "priceDisplayMode",
+            "columnName": "priceDisplayMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resolvedPriceAmount",
+            "columnName": "resolvedPriceAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "resolvedPriceCurrencyCode",
+            "columnName": "resolvedPriceCurrencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "primaryAssetId",
+            "columnName": "primaryAssetId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "publishedAt",
+            "columnName": "publishedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publishedAtSource",
+            "columnName": "publishedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "productId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_catalogue_published_snapshot_companyId",
+            "unique": false,
+            "columnNames": [
+              "companyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalogue_published_snapshot_companyId` ON `${TABLE_NAME}` (`companyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "catalogue_asset",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `assetId` TEXT NOT NULL, `isPrimary` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, `filePath` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`, `productId`, `assetId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assetId",
+            "columnName": "assetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPrimary",
+            "columnName": "isPrimary",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filePath",
+            "columnName": "filePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtSource",
+            "columnName": "createdAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "productId",
+            "assetId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_catalogue_asset_companyId_productId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "productId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalogue_asset_companyId_productId` ON `${TABLE_NAME}` (`companyId`, `productId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "catalogue_settings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `isPublic` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `updatedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isPublic",
+            "columnName": "isPublic",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtSource",
+            "columnName": "updatedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "catalogue_custom_field",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `columnName` TEXT NOT NULL, `value` TEXT, `updatedAt` INTEGER NOT NULL, `updatedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`, `productId`, `columnName`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "productId",
+            "columnName": "productId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "columnName",
+            "columnName": "columnName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtSource",
+            "columnName": "updatedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "productId",
+            "columnName"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_catalogue_custom_field_companyId_productId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "productId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalogue_custom_field_companyId_productId` ON `${TABLE_NAME}` (`companyId`, `productId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_estimate_po",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `estimatePoId` TEXT NOT NULL, `entryPointType` TEXT NOT NULL, `submissionType` TEXT NOT NULL, `deliveryChannel` TEXT NOT NULL, `buyerPartyId` TEXT, `totalAmount` TEXT NOT NULL, `currencyCode` TEXT, `status` TEXT NOT NULL, `submittedAt` INTEGER NOT NULL, `submittedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`, `estimatePoId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimatePoId",
+            "columnName": "estimatePoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entryPointType",
+            "columnName": "entryPointType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "submissionType",
+            "columnName": "submissionType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deliveryChannel",
+            "columnName": "deliveryChannel",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerPartyId",
+            "columnName": "buyerPartyId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "totalAmount",
+            "columnName": "totalAmount",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currencyCode",
+            "columnName": "currencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "submittedAt",
+            "columnName": "submittedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "submittedAtSource",
+            "columnName": "submittedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "estimatePoId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_estimate_po_companyId",
+            "unique": false,
+            "columnNames": [
+              "companyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_estimate_po_companyId` ON `${TABLE_NAME}` (`companyId`)"
+          },
+          {
+            "name": "index_txn_estimate_po_companyId_buyerPartyId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "buyerPartyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_estimate_po_companyId_buyerPartyId` ON `${TABLE_NAME}` (`companyId`, `buyerPartyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_estimate_po_line_item",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `estimatePoId` TEXT NOT NULL, `lineItemId` TEXT NOT NULL, `linkedProductId` TEXT, `snapshotProductName` TEXT NOT NULL, `snapshotUnit` TEXT, `snapshotSku` TEXT, `quantity` TEXT NOT NULL, `unitPriceAmount` TEXT, `unitPriceCurrencyCode` TEXT, `lineTotalAmount` TEXT, `isContactForPrice` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `estimatePoId`, `lineItemId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimatePoId",
+            "columnName": "estimatePoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineItemId",
+            "columnName": "lineItemId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "linkedProductId",
+            "columnName": "linkedProductId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "snapshotProductName",
+            "columnName": "snapshotProductName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotUnit",
+            "columnName": "snapshotUnit",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "snapshotSku",
+            "columnName": "snapshotSku",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPriceAmount",
+            "columnName": "unitPriceAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "unitPriceCurrencyCode",
+            "columnName": "unitPriceCurrencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lineTotalAmount",
+            "columnName": "lineTotalAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "isContactForPrice",
+            "columnName": "isContactForPrice",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "estimatePoId",
+            "lineItemId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_estimate_po_line_item_companyId_estimatePoId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "estimatePoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_estimate_po_line_item_companyId_estimatePoId` ON `${TABLE_NAME}` (`companyId`, `estimatePoId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_seller_inbox_entry",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `inboxEntryId` TEXT NOT NULL, `estimatePoId` TEXT NOT NULL, `state` TEXT NOT NULL, `acknowledgedAt` INTEGER, `acknowledgedAtSource` TEXT, `changeRequestNote` TEXT, `respondedAt` INTEGER, `respondedAtSource` TEXT, `convertedTransactionId` TEXT, PRIMARY KEY(`companyId`, `inboxEntryId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inboxEntryId",
+            "columnName": "inboxEntryId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimatePoId",
+            "columnName": "estimatePoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acknowledgedAt",
+            "columnName": "acknowledgedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "acknowledgedAtSource",
+            "columnName": "acknowledgedAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "changeRequestNote",
+            "columnName": "changeRequestNote",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "respondedAt",
+            "columnName": "respondedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "respondedAtSource",
+            "columnName": "respondedAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "convertedTransactionId",
+            "columnName": "convertedTransactionId",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "inboxEntryId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_seller_inbox_entry_companyId_estimatePoId",
+            "unique": true,
+            "columnNames": [
+              "companyId",
+              "estimatePoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_seller_inbox_entry_companyId_estimatePoId` ON `${TABLE_NAME}` (`companyId`, `estimatePoId`)"
+          },
+          {
+            "name": "index_txn_seller_inbox_entry_companyId_state",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_seller_inbox_entry_companyId_state` ON `${TABLE_NAME}` (`companyId`, `state`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "commercial_transaction",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `estimatePoId` TEXT NOT NULL, `buyerPartyId` TEXT NOT NULL, `state` TEXT NOT NULL, `totalAmount` TEXT NOT NULL, `currencyCode` TEXT, `acceptedAt` INTEGER NOT NULL, `acceptedAtSource` TEXT NOT NULL, `completedAt` INTEGER, `completedAtSource` TEXT, PRIMARY KEY(`companyId`, `transactionId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionId",
+            "columnName": "transactionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimatePoId",
+            "columnName": "estimatePoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerPartyId",
+            "columnName": "buyerPartyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalAmount",
+            "columnName": "totalAmount",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currencyCode",
+            "columnName": "currencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "acceptedAt",
+            "columnName": "acceptedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acceptedAtSource",
+            "columnName": "acceptedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAt",
+            "columnName": "completedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "completedAtSource",
+            "columnName": "completedAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "transactionId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_commercial_transaction_companyId",
+            "unique": false,
+            "columnNames": [
+              "companyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_commercial_transaction_companyId` ON `${TABLE_NAME}` (`companyId`)"
+          },
+          {
+            "name": "index_commercial_transaction_companyId_buyerPartyId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "buyerPartyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_commercial_transaction_companyId_buyerPartyId` ON `${TABLE_NAME}` (`companyId`, `buyerPartyId`)"
+          },
+          {
+            "name": "index_commercial_transaction_companyId_state",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_commercial_transaction_companyId_state` ON `${TABLE_NAME}` (`companyId`, `state`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_terms_acknowledgment",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `paymentTiming` TEXT NOT NULL, `creditDays` INTEGER, `partialAdvancePercent` TEXT, `partialBalanceTiming` TEXT, `amount` TEXT NOT NULL, `currencyCode` TEXT, `note` TEXT, `proposedAt` INTEGER NOT NULL, `proposedAtSource` TEXT NOT NULL, `buyerConfirmedAt` INTEGER, `buyerConfirmedAtSource` TEXT, `sellerConfirmedAt` INTEGER, `sellerConfirmedAtSource` TEXT, PRIMARY KEY(`companyId`, `transactionId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionId",
+            "columnName": "transactionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paymentTiming",
+            "columnName": "paymentTiming",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creditDays",
+            "columnName": "creditDays",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "partialAdvancePercent",
+            "columnName": "partialAdvancePercent",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "partialBalanceTiming",
+            "columnName": "partialBalanceTiming",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "amount",
+            "columnName": "amount",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currencyCode",
+            "columnName": "currencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "proposedAt",
+            "columnName": "proposedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proposedAtSource",
+            "columnName": "proposedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerConfirmedAt",
+            "columnName": "buyerConfirmedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "buyerConfirmedAtSource",
+            "columnName": "buyerConfirmedAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sellerConfirmedAt",
+            "columnName": "sellerConfirmedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sellerConfirmedAtSource",
+            "columnName": "sellerConfirmedAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "transactionId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_payment_event",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `paymentEventId` TEXT NOT NULL, `installmentSequence` INTEGER NOT NULL, `buyerClaimStatus` TEXT NOT NULL, `buyerClaimedAmount` TEXT NOT NULL, `currencyCode` TEXT, `buyerClaimedAt` INTEGER NOT NULL, `buyerClaimedAtSource` TEXT NOT NULL, `sellerConfirmed` INTEGER NOT NULL, `sellerConfirmedAt` INTEGER, `sellerConfirmedAtSource` TEXT, `sellerDiscrepancyNote` TEXT, PRIMARY KEY(`companyId`, `transactionId`, `paymentEventId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionId",
+            "columnName": "transactionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "paymentEventId",
+            "columnName": "paymentEventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "installmentSequence",
+            "columnName": "installmentSequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerClaimStatus",
+            "columnName": "buyerClaimStatus",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerClaimedAmount",
+            "columnName": "buyerClaimedAmount",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currencyCode",
+            "columnName": "currencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "buyerClaimedAt",
+            "columnName": "buyerClaimedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerClaimedAtSource",
+            "columnName": "buyerClaimedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sellerConfirmed",
+            "columnName": "sellerConfirmed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sellerConfirmedAt",
+            "columnName": "sellerConfirmedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sellerConfirmedAtSource",
+            "columnName": "sellerConfirmedAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "sellerDiscrepancyNote",
+            "columnName": "sellerDiscrepancyNote",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "transactionId",
+            "paymentEventId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_payment_event_companyId_transactionId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "transactionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_payment_event_companyId_transactionId` ON `${TABLE_NAME}` (`companyId`, `transactionId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_ledger_intent",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `transactionId` TEXT NOT NULL, `buyerPartyId` TEXT NOT NULL, `chosenLedgerGroup` TEXT NOT NULL, `promotedProspectAt` INTEGER, `promotedProspectAtSource` TEXT, `recordedAt` INTEGER NOT NULL, `recordedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`, `transactionId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transactionId",
+            "columnName": "transactionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerPartyId",
+            "columnName": "buyerPartyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "chosenLedgerGroup",
+            "columnName": "chosenLedgerGroup",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "promotedProspectAt",
+            "columnName": "promotedProspectAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "promotedProspectAtSource",
+            "columnName": "promotedProspectAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "recordedAt",
+            "columnName": "recordedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordedAtSource",
+            "columnName": "recordedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "transactionId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_ledger_intent_companyId_buyerPartyId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "buyerPartyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_ledger_intent_companyId_buyerPartyId` ON `${TABLE_NAME}` (`companyId`, `buyerPartyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "catalogue_access_grant",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `grantId` TEXT NOT NULL, `buyerPartyId` TEXT NOT NULL, `priceVisibility` TEXT NOT NULL, `grantedAt` INTEGER NOT NULL, `grantedAtSource` TEXT NOT NULL, `expiresAt` INTEGER, `revokedAt` INTEGER, `revokedAtSource` TEXT, PRIMARY KEY(`companyId`, `grantId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grantId",
+            "columnName": "grantId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerPartyId",
+            "columnName": "buyerPartyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priceVisibility",
+            "columnName": "priceVisibility",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grantedAt",
+            "columnName": "grantedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "grantedAtSource",
+            "columnName": "grantedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expiresAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "revokedAt",
+            "columnName": "revokedAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "revokedAtSource",
+            "columnName": "revokedAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "grantId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_catalogue_access_grant_companyId_buyerPartyId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "buyerPartyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_catalogue_access_grant_companyId_buyerPartyId` ON `${TABLE_NAME}` (`companyId`, `buyerPartyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_order",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `orderId` TEXT NOT NULL, `creationKey` TEXT NOT NULL, `sellerCompanyId` TEXT NOT NULL, `buyerPartyId` TEXT, `state` TEXT NOT NULL, `source` TEXT NOT NULL, `submissionType` TEXT NOT NULL, `note` TEXT, `createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, `version` INTEGER NOT NULL, PRIMARY KEY(`companyId`, `orderId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderId",
+            "columnName": "orderId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creationKey",
+            "columnName": "creationKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sellerCompanyId",
+            "columnName": "sellerCompanyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerPartyId",
+            "columnName": "buyerPartyId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "submissionType",
+            "columnName": "submissionType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtSource",
+            "columnName": "createdAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "orderId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_order_companyId_creationKey",
+            "unique": true,
+            "columnNames": [
+              "companyId",
+              "creationKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_order_companyId_creationKey` ON `${TABLE_NAME}` (`companyId`, `creationKey`)"
+          },
+          {
+            "name": "index_txn_order_companyId_buyerPartyId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "buyerPartyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_order_companyId_buyerPartyId` ON `${TABLE_NAME}` (`companyId`, `buyerPartyId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_order_line",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `orderId` TEXT NOT NULL, `lineId` TEXT NOT NULL, `linkedProductId` TEXT, `snapshotProductName` TEXT NOT NULL, `snapshotUnit` TEXT, `snapshotSku` TEXT, `quantity` TEXT NOT NULL, `unitPriceAmount` TEXT, `unitPriceCurrencyCode` TEXT, `priceState` TEXT NOT NULL, `lineTotalAmount` TEXT, PRIMARY KEY(`companyId`, `orderId`, `lineId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderId",
+            "columnName": "orderId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineId",
+            "columnName": "lineId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "linkedProductId",
+            "columnName": "linkedProductId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "snapshotProductName",
+            "columnName": "snapshotProductName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotUnit",
+            "columnName": "snapshotUnit",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "snapshotSku",
+            "columnName": "snapshotSku",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPriceAmount",
+            "columnName": "unitPriceAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "unitPriceCurrencyCode",
+            "columnName": "unitPriceCurrencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "priceState",
+            "columnName": "priceState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineTotalAmount",
+            "columnName": "lineTotalAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "orderId",
+            "lineId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_order_line_companyId_orderId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "orderId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_order_line_companyId_orderId` ON `${TABLE_NAME}` (`companyId`, `orderId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_order_outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `envelopeId` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, `objectType` TEXT NOT NULL, `orderId` TEXT NOT NULL, `orderVersion` INTEGER NOT NULL, `senderCompanyId` TEXT NOT NULL, `recipientPartyId` TEXT, `createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, `state` TEXT NOT NULL, `attemptCount` INTEGER NOT NULL, `lastAttemptAt` INTEGER, `lastAttemptAtSource` TEXT, `lastError` TEXT, `recipientBusinessId` TEXT, `commercialContentType` TEXT, `commercialContentVersion` INTEGER, `commercialContentCanonical` TEXT, PRIMARY KEY(`companyId`, `envelopeId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "envelopeId",
+            "columnName": "envelopeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idempotencyKey",
+            "columnName": "idempotencyKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectType",
+            "columnName": "objectType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderId",
+            "columnName": "orderId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderVersion",
+            "columnName": "orderVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "senderCompanyId",
+            "columnName": "senderCompanyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recipientPartyId",
+            "columnName": "recipientPartyId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtSource",
+            "columnName": "createdAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attemptCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastAttemptAt",
+            "columnName": "lastAttemptAt",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastAttemptAtSource",
+            "columnName": "lastAttemptAtSource",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "recipientBusinessId",
+            "columnName": "recipientBusinessId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "commercialContentType",
+            "columnName": "commercialContentType",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "commercialContentVersion",
+            "columnName": "commercialContentVersion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "commercialContentCanonical",
+            "columnName": "commercialContentCanonical",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "envelopeId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_order_outbox_companyId_idempotencyKey",
+            "unique": true,
+            "columnNames": [
+              "companyId",
+              "idempotencyKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_order_outbox_companyId_idempotencyKey` ON `${TABLE_NAME}` (`companyId`, `idempotencyKey`)"
+          },
+          {
+            "name": "index_txn_order_outbox_companyId_orderId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "orderId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_order_outbox_companyId_orderId` ON `${TABLE_NAME}` (`companyId`, `orderId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_recipient_inbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `envelopeId` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, `objectType` TEXT NOT NULL, `objectId` TEXT NOT NULL, `objectVersion` INTEGER NOT NULL, `senderBusinessId` TEXT NOT NULL, `senderActorId` TEXT NOT NULL, `senderDeviceId` TEXT NOT NULL, `mailboxId` TEXT NOT NULL, `mailboxSequence` INTEGER NOT NULL, `acceptanceId` TEXT NOT NULL, `acceptedAt` INTEGER NOT NULL, `acceptedAtSource` TEXT NOT NULL, `ingestedAt` INTEGER NOT NULL, `ingestedAtSource` TEXT NOT NULL, `transportState` TEXT NOT NULL, PRIMARY KEY(`companyId`, `envelopeId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "envelopeId",
+            "columnName": "envelopeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idempotencyKey",
+            "columnName": "idempotencyKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectType",
+            "columnName": "objectType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectId",
+            "columnName": "objectId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "objectVersion",
+            "columnName": "objectVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "senderBusinessId",
+            "columnName": "senderBusinessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "senderActorId",
+            "columnName": "senderActorId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "senderDeviceId",
+            "columnName": "senderDeviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mailboxId",
+            "columnName": "mailboxId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mailboxSequence",
+            "columnName": "mailboxSequence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acceptanceId",
+            "columnName": "acceptanceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acceptedAt",
+            "columnName": "acceptedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acceptedAtSource",
+            "columnName": "acceptedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ingestedAt",
+            "columnName": "ingestedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ingestedAtSource",
+            "columnName": "ingestedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "transportState",
+            "columnName": "transportState",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "envelopeId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_recipient_inbox_companyId_mailboxId_mailboxSequence",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "mailboxId",
+              "mailboxSequence"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_recipient_inbox_companyId_mailboxId_mailboxSequence` ON `${TABLE_NAME}` (`companyId`, `mailboxId`, `mailboxSequence`)"
+          },
+          {
+            "name": "index_txn_recipient_inbox_companyId_objectType_objectId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "objectType",
+              "objectId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_recipient_inbox_companyId_objectType_objectId` ON `${TABLE_NAME}` (`companyId`, `objectType`, `objectId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_recipient_inbox_cursor",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `mailboxId` TEXT NOT NULL, `cursor` TEXT, PRIMARY KEY(`companyId`, `mailboxId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mailboxId",
+            "columnName": "mailboxId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cursor",
+            "columnName": "cursor",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "mailboxId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_order_commercial_event",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `eventId` TEXT NOT NULL, `idempotencyKey` TEXT NOT NULL, `orderId` TEXT NOT NULL, `orderVersion` INTEGER NOT NULL, `eventType` TEXT NOT NULL, `actorBusinessId` TEXT NOT NULL, `actorId` TEXT NOT NULL, `actorDeviceId` TEXT, `counterpartyBusinessId` TEXT NOT NULL, `occurredAt` INTEGER NOT NULL, `occurredAtSource` TEXT NOT NULL, `authorityEpoch` INTEGER, `authorityScopeFingerprint` TEXT, PRIMARY KEY(`companyId`, `eventId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idempotencyKey",
+            "columnName": "idempotencyKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderId",
+            "columnName": "orderId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderVersion",
+            "columnName": "orderVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventType",
+            "columnName": "eventType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actorBusinessId",
+            "columnName": "actorBusinessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actorId",
+            "columnName": "actorId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actorDeviceId",
+            "columnName": "actorDeviceId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "counterpartyBusinessId",
+            "columnName": "counterpartyBusinessId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAt",
+            "columnName": "occurredAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAtSource",
+            "columnName": "occurredAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authorityEpoch",
+            "columnName": "authorityEpoch",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "authorityScopeFingerprint",
+            "columnName": "authorityScopeFingerprint",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "eventId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_order_commercial_event_companyId_idempotencyKey",
+            "unique": true,
+            "columnNames": [
+              "companyId",
+              "idempotencyKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_txn_order_commercial_event_companyId_idempotencyKey` ON `${TABLE_NAME}` (`companyId`, `idempotencyKey`)"
+          },
+          {
+            "name": "index_txn_order_commercial_event_companyId_orderId_orderVersion_eventType",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "orderId",
+              "orderVersion",
+              "eventType"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_order_commercial_event_companyId_orderId_orderVersion_eventType` ON `${TABLE_NAME}` (`companyId`, `orderId`, `orderVersion`, `eventType`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_order_version_archive",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `orderId` TEXT NOT NULL, `version` INTEGER NOT NULL, `creationKey` TEXT NOT NULL, `sellerCompanyId` TEXT NOT NULL, `buyerPartyId` TEXT, `state` TEXT NOT NULL, `source` TEXT NOT NULL, `submissionType` TEXT NOT NULL, `note` TEXT, `createdAt` INTEGER NOT NULL, `createdAtSource` TEXT NOT NULL, `supersedesVersion` INTEGER, `revisionReason` TEXT, `archivedAt` INTEGER NOT NULL, `archivedAtSource` TEXT NOT NULL, PRIMARY KEY(`companyId`, `orderId`, `version`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderId",
+            "columnName": "orderId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creationKey",
+            "columnName": "creationKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sellerCompanyId",
+            "columnName": "sellerCompanyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "buyerPartyId",
+            "columnName": "buyerPartyId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "submissionType",
+            "columnName": "submissionType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtSource",
+            "columnName": "createdAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "supersedesVersion",
+            "columnName": "supersedesVersion",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "revisionReason",
+            "columnName": "revisionReason",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "archivedAt",
+            "columnName": "archivedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "archivedAtSource",
+            "columnName": "archivedAtSource",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "orderId",
+            "version"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_order_version_archive_companyId_orderId",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "orderId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_order_version_archive_companyId_orderId` ON `${TABLE_NAME}` (`companyId`, `orderId`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "txn_order_line_version_archive",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`companyId` TEXT NOT NULL, `orderId` TEXT NOT NULL, `version` INTEGER NOT NULL, `lineId` TEXT NOT NULL, `linkedProductId` TEXT, `snapshotProductName` TEXT NOT NULL, `snapshotUnit` TEXT, `snapshotSku` TEXT, `quantity` TEXT NOT NULL, `unitPriceAmount` TEXT, `unitPriceCurrencyCode` TEXT, `priceState` TEXT NOT NULL, `lineTotalAmount` TEXT, PRIMARY KEY(`companyId`, `orderId`, `version`, `lineId`))",
+        "fields": [
+          {
+            "fieldPath": "companyId",
+            "columnName": "companyId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "orderId",
+            "columnName": "orderId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "version",
+            "columnName": "version",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineId",
+            "columnName": "lineId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "linkedProductId",
+            "columnName": "linkedProductId",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "snapshotProductName",
+            "columnName": "snapshotProductName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snapshotUnit",
+            "columnName": "snapshotUnit",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "snapshotSku",
+            "columnName": "snapshotSku",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "quantity",
+            "columnName": "quantity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitPriceAmount",
+            "columnName": "unitPriceAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "unitPriceCurrencyCode",
+            "columnName": "unitPriceCurrencyCode",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "priceState",
+            "columnName": "priceState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lineTotalAmount",
+            "columnName": "lineTotalAmount",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "companyId",
+            "orderId",
+            "version",
+            "lineId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_txn_order_line_version_archive_companyId_orderId_version",
+            "unique": false,
+            "columnNames": [
+              "companyId",
+              "orderId",
+              "version"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_txn_order_line_version_archive_companyId_orderId_version` ON `${TABLE_NAME}` (`companyId`, `orderId`, `version`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '55ddb9dc71db2c0876179b90f080cc44')"
+    ]
+  }
+}

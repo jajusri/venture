@@ -284,6 +284,10 @@ data class OrderDeliveryEnvelope(
     val attemptCount: Int,
     val lastAttemptAt: TransactionTimestamp?,
     val lastError: String?,
+    val recipientBusinessId: String? = null,
+    val commercialContentType: String? = null,
+    val commercialContentVersion: Int? = null,
+    val commercialContentCanonical: String? = null,
 )
 
 data class EstimatePo(

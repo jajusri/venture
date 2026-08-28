@@ -1402,4 +1402,30 @@ class AppDatabaseMigrationTest {
         }
         db.close()
     }
+
+    @Test
+    fun migrate19To20_addsGenericCommercialContentToExistingOutbox() {
+        val dbName = "migration-test-db-19-20"
+        var db = helper.createDatabase(dbName, 19)
+        db.execSQL(
+            "INSERT INTO txn_order_outbox (companyId, envelopeId, idempotencyKey, objectType, orderId, orderVersion, " +
+                "senderCompanyId, recipientPartyId, createdAt, createdAtSource, state, attemptCount, lastAttemptAt, " +
+                "lastAttemptAtSource, lastError) VALUES ('buyer-co', 'env-1', 'key-1', 'CANONICAL_ORDER', 'order-1', 1, " +
+                "'buyer-co', 'seller-co', 1, 'DEVICE_LOCAL_PROVISIONAL', 'QUEUED', 0, NULL, NULL, NULL)",
+        )
+        db.close()
+
+        db = helper.runMigrationsAndValidate(dbName, 20, false, DatabaseModule.MIGRATION_19_20)
+        db.query(
+            "SELECT recipientBusinessId, commercialContentType, commercialContentVersion, commercialContentCanonical " +
+                "FROM txn_order_outbox WHERE companyId = 'buyer-co' AND envelopeId = 'env-1'",
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertTrue(cursor.isNull(0))
+            assertTrue(cursor.isNull(1))
+            assertTrue(cursor.isNull(2))
+            assertTrue(cursor.isNull(3))
+        }
+        db.close()
+    }
 }

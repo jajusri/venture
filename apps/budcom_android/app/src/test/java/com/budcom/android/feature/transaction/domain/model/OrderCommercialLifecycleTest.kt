@@ -53,7 +53,7 @@ class CanonicalOrderLifecycleIntegrityTest {
     @Test
     fun `illegal transitions are rejected`() {
         assertTrue(CanonicalOrderLifecycleIntegrity.rejectsIllegalDirectTransition(CanonicalOrderState.Draft, CanonicalOrderState.Seen))
-        assertTrue(CanonicalOrderLifecycleIntegrity.rejectsIllegalDirectTransition(CanonicalOrderState.Sent, CanonicalOrderState.Confirmed))
+        assertFalse(CanonicalOrderLifecycleIntegrity.rejectsIllegalDirectTransition(CanonicalOrderState.Sent, CanonicalOrderState.Confirmed))
         assertFalse(CanonicalOrderLifecycleIntegrity.isLegalTransition(CanonicalOrderState.Draft, CanonicalOrderState.Confirmed))
     }
 }
@@ -81,7 +81,7 @@ class CanonicalOrderConfirmedTransitionsTest {
             confirmingActorId = "actor-s", confirmingDeviceId = "device-s", senderBusinessId = "buyer-co",
             authorityEpoch = 1, authorityScopeFingerprint = "confirm_orders", confirmedAt = TransactionTimestamp(2, TransactionTimestampSource.DeviceLocalProvisional),
         )
-        assertNull(CanonicalOrderConfirmedTransitions.apply(order.copy(state = CanonicalOrderState.Sent), evidence))
+        assertEquals(CanonicalOrderState.Confirmed, CanonicalOrderConfirmedTransitions.apply(order.copy(state = CanonicalOrderState.Sent), evidence))
         assertEquals(CanonicalOrderState.Confirmed, CanonicalOrderConfirmedTransitions.apply(order, evidence))
         assertEquals(CanonicalOrderState.Confirmed, CanonicalOrderConfirmedTransitions.apply(order.copy(state = CanonicalOrderState.Confirmed), evidence))
     }

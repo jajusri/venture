@@ -22,15 +22,17 @@ class KeystoreRelayEnvelopeAuthenticator @Inject constructor(
     override suspend fun authenticate(envelope: OrderDeliveryEnvelope): AuthenticatedTransportEnvelope? {
         val identity = keyStore.getCurrentIdentity() ?: return null
         val credential = credentials.credentialFor(envelope.senderCompanyId, identity.deviceId) ?: return null
-        val recipientBusinessId = envelope.recipientPartyId ?: return null
-        val snapshot = snapshots.forEnvelope(envelope) ?: return null
+        val recipientBusinessId = envelope.recipientBusinessId ?: envelope.recipientPartyId ?: return null
+        val canonical = envelope.commercialContentCanonical ?: snapshots.forEnvelope(envelope)?.deterministicEncoding() ?: return null
+        val contentType = envelope.commercialContentType ?: com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_TYPE
+        val contentVersion = envelope.commercialContentVersion ?: com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_VERSION
         val recipient = RecipientBinding(
             businessId = recipientBusinessId,
             partyId = envelope.recipientPartyId,
             mailboxReference = DEFAULT_MAILBOX,
         )
         val submission = EnvelopeSubmission.fromEnvelope(envelope, identity.deviceId, recipientBusinessId)
-        return binder.bind(submission, identity, credential, recipient, snapshot.deterministicEncoding())
+        return binder.bind(submission, identity, credential, recipient, canonical, contentType, contentVersion)
     }
 
     private companion object {

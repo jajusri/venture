@@ -145,7 +145,7 @@ object CanonicalOrderConfirmedTransitions {
         if (evidence.senderBusinessId != order.companyId) return null
         return when (order.state) {
             CanonicalOrderState.Confirmed -> CanonicalOrderState.Confirmed
-            CanonicalOrderState.Seen -> CanonicalOrderState.Confirmed
+            CanonicalOrderState.Sent, CanonicalOrderState.Seen -> CanonicalOrderState.Confirmed
             CanonicalOrderState.RevisionSeen -> CanonicalOrderState.Confirmed
             else -> null
         }
@@ -168,7 +168,7 @@ object CanonicalOrderRevisionAcceptTransitions {
 object CanonicalOrderLifecycleIntegrity {
     fun isLegalTransition(from: CanonicalOrderState, to: CanonicalOrderState): Boolean = when (from) {
         CanonicalOrderState.Draft -> to == CanonicalOrderState.Sent
-        CanonicalOrderState.Sent -> to == CanonicalOrderState.Seen
+        CanonicalOrderState.Sent -> to == CanonicalOrderState.Seen || to == CanonicalOrderState.Confirmed
         CanonicalOrderState.Seen -> to == CanonicalOrderState.Confirmed || to == CanonicalOrderState.RevisionPending
         CanonicalOrderState.RevisionPending -> to == CanonicalOrderState.RevisionSent
         CanonicalOrderState.RevisionSent -> to == CanonicalOrderState.RevisionSeen

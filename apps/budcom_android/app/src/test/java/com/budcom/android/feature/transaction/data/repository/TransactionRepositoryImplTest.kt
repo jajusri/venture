@@ -62,6 +62,7 @@ import com.budcom.android.feature.transaction.data.local.CommercialDbTransaction
 import com.budcom.android.feature.transaction.domain.model.OrderCommercialEventType
 import com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority
 import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
+import com.budcom.android.feature.transaction.domain.model.CommercialReturnEvent
 import com.budcom.android.feature.transaction.domain.model.OrderSeenEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
 import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
@@ -297,6 +298,11 @@ class TransactionRepositoryImplTest {
         val confirm1 = repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", authority, "confirm-1", "confirm:key", ts(400))!!
         val confirm2 = repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", authority, "confirm-1", "confirm:key", ts(401))!!
         assertEquals(confirm1.eventId, confirm2.eventId)
+        assertEquals(1, orderOutboxDao.envelopes.size)
+        assertEquals("buyer-co", orderOutboxDao.envelopes.single().recipientBusinessId)
+        assertEquals("application/vnd.budcom.commercial-event+json", orderOutboxDao.envelopes.single().commercialContentType)
+        assertEquals(CanonicalOrderState.Confirmed.columnValue, canonicalOrderDao.findById("seller-co", "order-1")?.state)
+        assertNull(repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", authority, "changed", "confirm:key", ts(402)))
         val seenEvidence = OrderSeenEvidence(
             eventId = seen1.eventId, orderId = "order-1", orderVersion = 1, viewerBusinessId = "seller-co",
             viewerActorId = "actor-s", viewerDeviceId = "device-s", senderBusinessId = "buyer-co", seenAt = ts(300),
@@ -358,6 +364,10 @@ class TransactionRepositoryImplTest {
             source = TransactionEntryPointType.Catalogue.columnValue,
             submissionType = TransactionSubmissionType.Estimate.columnValue,
             note = null, createdAt = 100, createdAtSource = TransactionTimestampSource.DeviceLocalProvisional.name, version = 1,
+        )
+        canonicalOrderDao.orders += canonicalOrderDao.orders.last().copy(
+            companyId = "seller-co", creationKey = "received:k", sellerCompanyId = "seller-co",
+            buyerPartyId = "buyer-co", state = CanonicalOrderState.Seen.columnValue,
         )
         recipientInboxDao.entries += inboxFixture()
     }
@@ -517,6 +527,125 @@ class TransactionRepositoryImplTest {
             }.isFailure,
         )
         assertEquals("10", canonicalOrderDao.findLines("buyer-co", snapshot.orderId).single().quantity)
+    }
+
+    @Test
+    fun `authenticated confirm return applies only to origin and duplicate replay is harmless`() = runTest(dispatcher) {
+        seedBuyerOrderWithLines(CanonicalOrderState.Sent)
+        val event = CommercialReturnEvent(
+            1, CommercialReturnEvent.TYPE_ORDER_CONFIRMED, "buyer-co", "seller-co", "order-1", 1,
+            "confirm-1", "confirm:key", 400, TransactionTimestampSource.DeviceLocalProvisional.name,
+        )
+        val item = RelayMailboxDeliveryItem(
+            "commercial:confirm-1", 9, "COMMERCIAL_EVENT", "order-1", 1, "seller-co", "actor-s", "device-s",
+            "buyer-co", "orders", "relay_accepted", 500, "accept-confirm", byteArrayOf(1),
+            event.deterministicEncoding(), "application/vnd.budcom.commercial-event+json", 1,
+        )
+        val repo = repository()
+        assertTrue(repo.ingestReceivedCommercialEvent("buyer-co", item, event, ts(600)))
+        assertTrue(repo.ingestReceivedCommercialEvent("buyer-co", item, event, ts(601)))
+        assertEquals(CanonicalOrderState.Confirmed.columnValue, canonicalOrderDao.findById("buyer-co", "order-1")?.state)
+        assertNull(canonicalOrderDao.findById("seller-co", "order-1"))
+        assertEquals(1, orderCommercialEventDao.events.count { it.companyId == "buyer-co" && it.eventId == "confirm-1" })
+        assertEquals(1, recipientInboxDao.entries.count { it.companyId == "buyer-co" && it.envelopeId == item.envelopeId })
+        assertTrue(transactionDao.store.isEmpty())
+        assertTrue(!repo.ingestReceivedCommercialEvent("buyer-co", item.copy(senderBusinessId = "attacker"), event, ts(602)))
+        assertTrue(!repo.ingestReceivedCommercialEvent("buyer-co", item.copy(objectVersion = 2), event, ts(602)))
+        assertTrue(!repo.ingestReceivedCommercialEvent("wrong-origin", item.copy(recipientBusinessId = "wrong-origin"), event, ts(602)))
+    }
+
+    @Test
+    fun `rejected confirm return leaves no received persistence or canonical mutation`() = runTest(dispatcher) {
+        val event = CommercialReturnEvent(
+            1, CommercialReturnEvent.TYPE_ORDER_CONFIRMED, "buyer-co", "seller-co", "order-1", 1,
+            "confirm-1", "confirm:key", 400, TransactionTimestampSource.DeviceLocalProvisional.name,
+        )
+        val item = RelayMailboxDeliveryItem(
+            "commercial:confirm-1", 9, "COMMERCIAL_EVENT", "order-1", 1, "seller-co", "actor-s", "device-s",
+            "buyer-co", "orders", "relay_accepted", 500, "accept-confirm", byteArrayOf(1),
+            event.deterministicEncoding(), "application/vnd.budcom.commercial-event+json", 1,
+        )
+        val repo = repository()
+
+        assertFalse(repo.ingestReceivedCommercialEvent("buyer-co", item, event, ts(600)))
+        assertTrue(recipientInboxDao.entries.isEmpty())
+        assertTrue(orderCommercialEventDao.events.isEmpty())
+
+        seedBuyerOrderWithLines(CanonicalOrderState.Draft)
+        assertFalse(repo.ingestReceivedCommercialEvent("buyer-co", item, event, ts(601)))
+        assertEquals(CanonicalOrderState.Draft.columnValue, canonicalOrderDao.findById("buyer-co", "order-1")?.state)
+        assertTrue(recipientInboxDao.entries.isEmpty())
+        assertTrue(orderCommercialEventDao.events.isEmpty())
+
+        assertFalse(repo.ingestReceivedCommercialEvent("buyer-co", item.copy(senderBusinessId = "attacker"), event, ts(602)))
+        assertFalse(repo.ingestReceivedCommercialEvent("other-co", item.copy(recipientBusinessId = "other-co"), event, ts(603)))
+        assertTrue(recipientInboxDao.entries.isEmpty())
+        assertTrue(orderCommercialEventDao.events.isEmpty())
+    }
+
+    @Test
+    fun `same confirm event identity with changed immutable content is rejected without mutation`() = runTest(dispatcher) {
+        seedBuyerOrderWithLines(CanonicalOrderState.Sent)
+        val event = CommercialReturnEvent(
+            1, CommercialReturnEvent.TYPE_ORDER_CONFIRMED, "buyer-co", "seller-co", "order-1", 1,
+            "confirm-1", "confirm:key", 400, TransactionTimestampSource.DeviceLocalProvisional.name,
+        )
+        val item = RelayMailboxDeliveryItem(
+            "commercial:confirm-1", 9, "COMMERCIAL_EVENT", "order-1", 1, "seller-co", "actor-s", "device-s",
+            "buyer-co", "orders", "relay_accepted", 500, "accept-confirm", byteArrayOf(1),
+            event.deterministicEncoding(), "application/vnd.budcom.commercial-event+json", 1,
+        )
+        val repo = repository()
+        assertTrue(repo.ingestReceivedCommercialEvent("buyer-co", item, event, ts(600)))
+        val changed = event.copy(idempotencyKey = "confirm:changed")
+
+        assertFalse(repo.ingestReceivedCommercialEvent("buyer-co", item.copy(envelopeId = "commercial:changed"), changed, ts(601)))
+        assertEquals(1, recipientInboxDao.entries.size)
+        assertEquals(1, orderCommercialEventDao.events.size)
+        assertEquals(CanonicalOrderState.Confirmed.columnValue, canonicalOrderDao.findById("buyer-co", "order-1")?.state)
+    }
+
+    @Test
+    fun `database failure during confirm apply is not swallowed as rejection`() = runTest(dispatcher) {
+        seedBuyerOrderWithLines(CanonicalOrderState.Sent)
+        canonicalOrderDao.failUpdateState = true
+        val rollbackTransaction = object : CommercialDbTransaction {
+            override suspend fun <T> run(block: suspend () -> T): T {
+                val orders = canonicalOrderDao.orders.toList()
+                val lines = canonicalOrderDao.snapshotLines()
+                val inbox = recipientInboxDao.entries.toList()
+                val events = orderCommercialEventDao.events.toList()
+                return try {
+                    block()
+                } catch (failure: Throwable) {
+                    canonicalOrderDao.orders.clear()
+                    canonicalOrderDao.orders += orders
+                    canonicalOrderDao.restoreLines(lines)
+                    recipientInboxDao.entries.clear()
+                    recipientInboxDao.entries += inbox
+                    orderCommercialEventDao.events.clear()
+                    orderCommercialEventDao.events += events
+                    throw failure
+                }
+            }
+        }
+        val event = CommercialReturnEvent(
+            1, CommercialReturnEvent.TYPE_ORDER_CONFIRMED, "buyer-co", "seller-co", "order-1", 1,
+            "confirm-1", "confirm:key", 400, TransactionTimestampSource.DeviceLocalProvisional.name,
+        )
+        val item = RelayMailboxDeliveryItem(
+            "commercial:confirm-1", 9, "COMMERCIAL_EVENT", "order-1", 1, "seller-co", "actor-s", "device-s",
+            "buyer-co", "orders", "relay_accepted", 500, "accept-confirm", byteArrayOf(1),
+            event.deterministicEncoding(), "application/vnd.budcom.commercial-event+json", 1,
+        )
+
+        val failure = runCatching {
+            repository(rollbackTransaction).ingestReceivedCommercialEvent("buyer-co", item, event, ts(600))
+        }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertTrue(recipientInboxDao.entries.isEmpty())
+        assertTrue(orderCommercialEventDao.events.isEmpty())
+        assertEquals(CanonicalOrderState.Sent.columnValue, canonicalOrderDao.findById("buyer-co", "order-1")?.state)
     }
 
     @Test
@@ -949,6 +1078,7 @@ class FakeCanonicalOrderDao : CanonicalOrderDao {
     val orders = mutableListOf<CanonicalOrderEntity>()
     private val lines = mutableListOf<CanonicalOrderLineEntity>()
     var failUpsertLines = false
+    var failUpdateState = false
 
     override suspend fun insert(entity: CanonicalOrderEntity) {
         if (orders.any { it.companyId == entity.companyId && it.creationKey == entity.creationKey }) {
@@ -970,6 +1100,7 @@ class FakeCanonicalOrderDao : CanonicalOrderDao {
         orders.firstOrNull { it.companyId == companyId && it.orderId == orderId }
 
     override suspend fun updateState(companyId: String, orderId: String, state: String) {
+        if (failUpdateState) throw IllegalStateException("state write failed")
         val index = orders.indexOfFirst { it.companyId == companyId && it.orderId == orderId }
         if (index >= 0) orders[index] = orders[index].copy(state = state)
     }
@@ -989,6 +1120,7 @@ class FakeCanonicalOrderDao : CanonicalOrderDao {
     fun clearLines() {
         lines.clear()
         failUpsertLines = false
+        failUpdateState = false
     }
 
     fun snapshotLines(): List<CanonicalOrderLineEntity> = lines.toList()
@@ -1055,6 +1187,8 @@ class FakeOrderCommercialEventDao : OrderCommercialEventDao {
     }
     override suspend fun findByIdempotencyKey(companyId: String, idempotencyKey: String) =
         events.firstOrNull { it.companyId == companyId && it.idempotencyKey == idempotencyKey }
+    override suspend fun findByEventId(companyId: String, eventId: String) =
+        events.firstOrNull { it.companyId == companyId && it.eventId == eventId }
     override suspend fun findByOrderVersionAndType(companyId: String, orderId: String, orderVersion: Int, eventType: String) =
         events.firstOrNull { it.companyId == companyId && it.orderId == orderId && it.orderVersion == orderVersion && it.eventType == eventType }
     override suspend fun findAllForOrderVersion(companyId: String, orderId: String, orderVersion: Int) =

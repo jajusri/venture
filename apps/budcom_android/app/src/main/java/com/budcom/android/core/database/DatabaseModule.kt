@@ -77,7 +77,7 @@ object DatabaseModule {
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
             MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
-            MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19,
+            MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -846,6 +846,15 @@ object DatabaseModule {
                 "CREATE INDEX IF NOT EXISTS `index_txn_order_line_version_archive_companyId_orderId_version` " +
                     "ON `txn_order_line_version_archive` (`companyId`, `orderId`, `version`)",
             )
+        }
+    }
+
+    val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `txn_order_outbox` ADD COLUMN `recipientBusinessId` TEXT")
+            db.execSQL("ALTER TABLE `txn_order_outbox` ADD COLUMN `commercialContentType` TEXT")
+            db.execSQL("ALTER TABLE `txn_order_outbox` ADD COLUMN `commercialContentVersion` INTEGER")
+            db.execSQL("ALTER TABLE `txn_order_outbox` ADD COLUMN `commercialContentCanonical` TEXT")
         }
     }
 }

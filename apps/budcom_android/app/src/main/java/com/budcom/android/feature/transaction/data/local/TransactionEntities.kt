@@ -67,6 +67,10 @@ data class OrderDeliveryEnvelopeEntity(
     val lastAttemptAt: Long?,
     val lastAttemptAtSource: String?,
     val lastError: String?,
+    val recipientBusinessId: String? = null,
+    val commercialContentType: String? = null,
+    val commercialContentVersion: Int? = null,
+    val commercialContentCanonical: String? = null,
 )
 
 @Entity(

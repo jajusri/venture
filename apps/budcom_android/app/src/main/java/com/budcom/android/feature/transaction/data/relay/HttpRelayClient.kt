@@ -16,6 +16,8 @@ import com.budcom.android.feature.transaction.domain.port.RelayMailboxDeliveryIt
 import com.budcom.android.feature.transaction.domain.port.RelayMailboxPage
 import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_TYPE
 import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_VERSION
+import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_TYPE
+import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_VERSION
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -127,10 +129,14 @@ class HttpRelayClient(
         .build()
 
     suspend fun submit(authenticated: AuthenticatedTransportEnvelope): TransportResult {
+        val supportedContent =
+            authenticated.commercialContentType == ORDER_SNAPSHOT_CONTENT_TYPE &&
+                authenticated.commercialContentVersion == ORDER_SNAPSHOT_CONTENT_VERSION ||
+                authenticated.commercialContentType == COMMERCIAL_EVENT_CONTENT_TYPE &&
+                authenticated.commercialContentVersion == COMMERCIAL_EVENT_CONTENT_VERSION
         if (authenticated.commercialSnapshotCanonical.isBlank() ||
             authenticated.commercialSnapshotCanonical.toByteArray(Charsets.UTF_8).size > MAX_COMMERCIAL_CONTENT_BYTES ||
-            authenticated.commercialContentType != ORDER_SNAPSHOT_CONTENT_TYPE ||
-            authenticated.commercialContentVersion != ORDER_SNAPSHOT_CONTENT_VERSION
+            !supportedContent
         ) return TransportResult.PermanentRejection("authenticated commercial content is invalid")
         val baseUrl = endpoint.snapshot() ?: return TransportResult.TemporarilyUnavailable("relay endpoint unconfigured")
         val mailbox = authenticated.recipient.mailboxReference

@@ -6,6 +6,8 @@ import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
 import com.budcom.android.feature.transaction.domain.model.OrderTransportState
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestampSource
+import com.budcom.android.feature.transaction.domain.model.CommercialReturnEvent
+import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_TYPE
 import com.budcom.android.feature.transaction.domain.port.AuthenticatedTransportEnvelope
 import com.budcom.android.feature.transaction.domain.port.ConfiguredRelayEndpointProvider
 import com.budcom.android.feature.transaction.domain.port.EmptyRelayEndpointProvider
@@ -196,6 +198,32 @@ class HttpRelayClientTest {
             assertTrue(client.submit(authenticated().copy(commercialSnapshotCanonical = "")) is TransportResult.PermanentRejection)
             assertTrue(client.submit(authenticated().copy(commercialContentVersion = 3)) is TransportResult.PermanentRejection)
             assertEquals(0, server.requestCount)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `commercial return event uses the same opaque exact content relay submission`() = runTest(dispatcher) {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody(acceptedJson()).setResponseCode(200))
+        server.start()
+        try {
+            val event = CommercialReturnEvent(
+                1, CommercialReturnEvent.TYPE_ORDER_CONFIRMED, "buyer-1", "co-1", "order-1", 1,
+                "event-1", "confirm:key", 10, TransactionTimestampSource.DeviceLocalProvisional.name,
+            ).deterministicEncoding()
+            val result = testClient(server).submit(
+                authenticated().copy(
+                    commercialSnapshotCanonical = event,
+                    commercialContentType = COMMERCIAL_EVENT_CONTENT_TYPE,
+                    commercialContentVersion = 1,
+                ),
+            )
+            assertTrue(result is TransportResult.Accepted)
+            val submitted = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+            assertEquals(event, submitted.getValue("commercialContent").jsonPrimitive.content)
+            assertEquals(COMMERCIAL_EVENT_CONTENT_TYPE, submitted.getValue("commercialContentType").jsonPrimitive.content)
         } finally {
             server.shutdown()
         }

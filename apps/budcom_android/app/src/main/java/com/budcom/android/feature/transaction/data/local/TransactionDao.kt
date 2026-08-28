@@ -97,6 +97,9 @@ interface OrderCommercialEventDao {
     @Query("SELECT * FROM txn_order_commercial_event WHERE companyId = :companyId AND idempotencyKey = :idempotencyKey")
     suspend fun findByIdempotencyKey(companyId: String, idempotencyKey: String): OrderCommercialEventEntity?
 
+    @Query("SELECT * FROM txn_order_commercial_event WHERE companyId = :companyId AND eventId = :eventId")
+    suspend fun findByEventId(companyId: String, eventId: String): OrderCommercialEventEntity?
+
     @Query(
         "SELECT * FROM txn_order_commercial_event WHERE companyId = :companyId AND orderId = :orderId " +
             "AND orderVersion = :orderVersion AND eventType = :eventType LIMIT 1",

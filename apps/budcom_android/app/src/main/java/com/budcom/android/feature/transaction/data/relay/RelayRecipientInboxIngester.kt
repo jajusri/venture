@@ -11,6 +11,9 @@ import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT
 import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_VERSION
 import com.budcom.android.feature.transaction.domain.repository.StructuredRecipientInboxRepository
 import com.budcom.android.feature.transaction.domain.model.OrderVersionSnapshot
+import com.budcom.android.feature.transaction.domain.model.CommercialReturnEvent
+import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_TYPE
+import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_VERSION
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -42,14 +45,21 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
                 cursor = cursor,
             ) ?: break
             for (item in page.items) {
-                if (!StructuredRecipientInboxValidation.validate(item, companyId) ||
-                    item.commercialContentType != ORDER_SNAPSHOT_CONTENT_TYPE ||
-                    item.commercialContentVersion != ORDER_SNAPSHOT_CONTENT_VERSION
-                ) return@withContext
-                val snapshot = item.commercialSnapshotCanonical?.let { OrderVersionSnapshot.parse(it) }
-                    ?: return@withContext
+                if (!StructuredRecipientInboxValidation.validate(item, companyId)) return@withContext
                 val ingestedAt = clock.now()
-                val committed = orders.ingestReceivedOrderVersion(companyId, item, snapshot, ingestedAt)
+                val committed = when (item.commercialContentType) {
+                    ORDER_SNAPSHOT_CONTENT_TYPE -> {
+                        if (item.commercialContentVersion != ORDER_SNAPSHOT_CONTENT_VERSION) return@withContext
+                        val snapshot = item.commercialSnapshotCanonical?.let { OrderVersionSnapshot.parse(it) } ?: return@withContext
+                        orders.ingestReceivedOrderVersion(companyId, item, snapshot, ingestedAt)
+                    }
+                    COMMERCIAL_EVENT_CONTENT_TYPE -> {
+                        if (item.commercialContentVersion != COMMERCIAL_EVENT_CONTENT_VERSION) return@withContext
+                        val event = item.commercialSnapshotCanonical?.let { CommercialReturnEvent.parse(it) } ?: return@withContext
+                        orders.ingestReceivedCommercialEvent(companyId, item, event, ingestedAt)
+                    }
+                    else -> return@withContext
+                }
                 if (!committed) return@withContext
                 val acknowledged = client.acknowledgeDelivery(
                     envelopeId = item.envelopeId,

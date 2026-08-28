@@ -33,26 +33,15 @@ class CanonicalBuyingCycleCoordinator @Inject constructor(
         applyOnCompanyId: String,
     ): CanonicalOrder? {
         val authority = verified(request, CommercialAction.SellerConfirm) ?: return null
-        return dbTransaction.run {
+        if (applyOnCompanyId != request.buyerBusinessId) return null
+        val recorded = dbTransaction.run {
             val recorded = repository.recordOrderConfirmFromSellerAction(
                 request.viewerBusinessId, envelopeId, authority.toConfirmAuthority(), eventId, idempotencyKey, timestamp,
             ) ?: return@run null
-            repository.applyOrderConfirmEvidence(
-                applyOnCompanyId,
-                OrderConfirmEvidence(
-                    eventId = recorded.eventId,
-                    orderId = recorded.orderId,
-                    orderVersion = recorded.orderVersion,
-                    confirmingBusinessId = authority.businessId,
-                    confirmingActorId = authority.actorId,
-                    confirmingDeviceId = authority.deviceId,
-                    senderBusinessId = applyOnCompanyId,
-                    authorityEpoch = authority.authorityEpoch,
-                    authorityScopeFingerprint = authority.toConfirmAuthority().scopeFingerprint(),
-                    confirmedAt = recorded.occurredAt,
-                ),
-            )
+            recorded
         }
+        if (recorded != null) outbox.submitPending(request.viewerBusinessId)
+        return recorded?.let { repository.findCanonicalOrderById(request.viewerBusinessId, it.orderId) }
     }
 
     suspend fun proposeAndSendRevision(

@@ -40,7 +40,7 @@ class DefaultRelayOutboxDispatcher @Inject constructor(
                     persistAttempt(entity.companyId, entity.envelopeId, entity.attemptCount, attemptNow, result.result)
                     val accepted = result.result as? TransportResult.Accepted
                     val evidence = accepted?.relayAcceptance
-                    if (evidence != null) {
+                    if (evidence != null && entity.commercialContentType == null) {
                         orderSent.markOrderSentFromRelayEvidence(entity.companyId, envelope, evidence)
                     }
                 }
@@ -101,4 +101,8 @@ private fun com.budcom.android.feature.transaction.data.local.OrderDeliveryEnvel
             null
         },
         lastError = lastError,
+        recipientBusinessId = recipientBusinessId,
+        commercialContentType = commercialContentType,
+        commercialContentVersion = commercialContentVersion,
+        commercialContentCanonical = commercialContentCanonical,
     )
