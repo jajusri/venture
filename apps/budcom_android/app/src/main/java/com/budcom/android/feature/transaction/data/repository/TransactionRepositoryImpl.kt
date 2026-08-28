@@ -54,6 +54,7 @@ import com.budcom.android.feature.transaction.domain.model.OrderCommercialEventT
 import com.budcom.android.feature.transaction.domain.model.CommercialReturnEvent
 import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_TYPE
 import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_VERSION
+import com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBindingRepository
 import com.budcom.android.feature.transaction.domain.model.OrderSeenEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
 import com.budcom.android.feature.transaction.domain.model.RecipientInboxTransportState
@@ -137,6 +138,7 @@ class TransactionRepositoryImpl @Inject constructor(
     private val orderCommercialEventDao: OrderCommercialEventDao,
     private val orderVersionArchiveDao: OrderVersionArchiveDao,
     private val dbTransaction: CommercialDbTransaction,
+    private val counterpartyBindings: AuthenticatedCounterpartyBindingRepository,
 ) : TransactionRepository, OrderSentFromRelayEvidence {
 
     override suspend fun ingestReceivedCommercialEvent(
@@ -173,6 +175,14 @@ class TransactionRepositoryImpl @Inject constructor(
 
             val stored = canonicalOrderDao.findById(recipientCompanyId, event.orderId) ?: return@run false
             val order = stored.toDomain(canonicalOrderDao.findLines(recipientCompanyId, event.orderId))
+            val rolesMatch = when (receivedType) {
+                OrderCommercialEventType.Confirmed -> event.originBusinessId == order.buyerBusinessId &&
+                    event.respondingBusinessId == order.sellerBusinessId
+                OrderCommercialEventType.RevisionAccepted -> event.originBusinessId == order.sellerBusinessId &&
+                    event.respondingBusinessId == order.buyerBusinessId
+                else -> false
+            }
+            if (!rolesMatch) return@run false
             val next = when (receivedType) {
                 OrderCommercialEventType.Confirmed -> CanonicalOrderConfirmedTransitions.apply(order, OrderConfirmEvidence(
                     eventId = event.eventId, orderId = event.orderId, orderVersion = event.orderVersion,
@@ -205,7 +215,11 @@ class TransactionRepositoryImpl @Inject constructor(
         snapshot: OrderVersionSnapshot,
         timestamp: TransactionTimestamp,
     ): Boolean = withContext(dispatchers.io) {
-        if (snapshot.recipientBusinessId != recipientCompanyId || snapshot.senderBusinessId == recipientCompanyId ||
+        if (snapshot.contractVersion != OrderVersionSnapshot.CURRENT_CONTRACT_VERSION ||
+            snapshot.buyerBusinessId == null || snapshot.sellerBusinessId == null ||
+            snapshot.recipientBusinessId != recipientCompanyId || snapshot.senderBusinessId == recipientCompanyId ||
+            recipientCompanyId !in setOf(snapshot.buyerBusinessId, snapshot.sellerBusinessId) ||
+            snapshot.senderBusinessId !in setOf(snapshot.buyerBusinessId, snapshot.sellerBusinessId) ||
             snapshot.envelopeId != item.envelopeId || snapshot.orderId != item.objectId ||
             snapshot.orderVersion != item.objectVersion || snapshot.senderBusinessId != item.senderBusinessId
         ) return@withContext false
@@ -231,6 +245,7 @@ class TransactionRepositoryImpl @Inject constructor(
         require(creationKey.isNotBlank())
         require(draft.lines.isNotEmpty())
         require(draft.lines.none { it.priceState == TransactionDraftPriceState.Hidden })
+        val sellerBinding = draft.buyerPartyId?.let { counterpartyBindings.resolveActive(draft.companyId, it) }
         val existing = canonicalOrderDao.findByCreationKey(draft.companyId, creationKey)
         if (existing != null) return@withContext existing.toDomain(canonicalOrderDao.findLines(draft.companyId, existing.orderId))
         dbTransaction.run {
@@ -248,6 +263,8 @@ class TransactionRepositoryImpl @Inject constructor(
             createdAt = timestamp.epochMillis,
             createdAtSource = timestamp.source.name,
             version = 1,
+            buyerBusinessId = draft.companyId,
+            sellerBusinessId = sellerBinding?.counterpartyBusinessId,
         )
         try {
             canonicalOrderDao.insert(entity)
@@ -278,6 +295,15 @@ class TransactionRepositoryImpl @Inject constructor(
 
     override suspend fun enqueueOrderDelivery(order: CanonicalOrder, timestamp: TransactionTimestamp): OrderDeliveryEnvelope = withContext(dispatchers.io) {
         require(order.state == CanonicalOrderState.Draft || order.state == CanonicalOrderState.RevisionPending)
+        val buyerBusinessId = requireNotNull(order.buyerBusinessId) { "Order has no authenticated buyer binding" }
+        val sellerBusinessId = requireNotNull(order.sellerBusinessId) { "Order has no authenticated seller binding" }
+        val senderBusinessId = when (order.state) {
+            CanonicalOrderState.Draft -> buyerBusinessId
+            CanonicalOrderState.RevisionPending -> sellerBusinessId
+            else -> error("Order state is not transportable")
+        }
+        require(order.companyId == senderBusinessId) { "Local company is not authorized for this transport direction" }
+        val recipientBusinessId = if (senderBusinessId == buyerBusinessId) sellerBusinessId else buyerBusinessId
         val key = "order:${order.orderId}:v${order.version}"
         val existing = orderOutboxDao.findByIdempotencyKey(order.companyId, key)
         if (existing != null) return@withContext existing.toDomain()
@@ -288,7 +314,7 @@ class TransactionRepositoryImpl @Inject constructor(
             objectType = "CANONICAL_ORDER",
             orderId = order.orderId,
             orderVersion = order.version,
-            senderCompanyId = order.sellerCompanyId,
+            senderCompanyId = senderBusinessId,
             recipientPartyId = order.buyerPartyId,
             createdAt = timestamp.epochMillis,
             createdAtSource = timestamp.source.name,
@@ -297,6 +323,7 @@ class TransactionRepositoryImpl @Inject constructor(
             lastAttemptAt = null,
             lastAttemptAtSource = null,
             lastError = null,
+            recipientBusinessId = recipientBusinessId,
         )
         try {
             orderOutboxDao.insert(entity)
@@ -400,6 +427,8 @@ class TransactionRepositoryImpl @Inject constructor(
         val inbox = inboxEntity.toInboxDomain()
         if (!authority.permitsOrderConfirm() || authority.businessId != sellerCompanyId) return@withContext null
         if (inbox.companyId != sellerCompanyId || inbox.senderBusinessId == sellerCompanyId) return@withContext null
+        val canonical = canonicalOrderDao.findById(sellerCompanyId, inbox.objectId) ?: return@withContext null
+        if (canonical.sellerBusinessId != sellerCompanyId || canonical.buyerBusinessId != inbox.senderBusinessId) return@withContext null
         orderCommercialEventDao.findByOrderVersionAndType(
             sellerCompanyId, inbox.objectId, inbox.objectVersion, OrderCommercialEventType.Seen.columnValue,
         ) ?: return@withContext null
@@ -478,6 +507,9 @@ class TransactionRepositoryImpl @Inject constructor(
         val inboxEntity = recipientInboxDao.findByEnvelopeId(sellerCompanyId, envelopeId) ?: return@withContext null
         val inbox = inboxEntity.toInboxDomain()
         if (inbox.objectId != baseline.orderId || inbox.objectVersion != baseline.version) return@withContext null
+        if (baseline.sellerBusinessId != sellerCompanyId || baseline.buyerBusinessId != inbox.senderBusinessId ||
+            authority.businessId != sellerCompanyId
+        ) return@withContext null
         val material = OrderMaterialChangeClassifier.classify(baseline, proposedLines, revisionReason)
         if (!material.isMaterial) return@withContext null
         val existingRevision = orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)
@@ -501,6 +533,8 @@ class TransactionRepositoryImpl @Inject constructor(
                     createdAt = baseline.createdAt.epochMillis,
                     createdAtSource = baseline.createdAt.source.name,
                     version = baseline.version,
+                    buyerBusinessId = baseline.buyerBusinessId,
+                    sellerBusinessId = baseline.sellerBusinessId,
                 ),
             )
             canonicalOrderDao.upsertLines(
@@ -597,6 +631,9 @@ class TransactionRepositoryImpl @Inject constructor(
         val inbox = inboxEntity.toInboxDomain()
         val order = canonicalOrderDao.findById(buyerCompanyId, inbox.objectId) ?: return@withContext null
         if (order.version != inbox.objectVersion) return@withContext null
+        if (order.buyerBusinessId != buyerCompanyId || order.sellerBusinessId != inbox.senderBusinessId ||
+            authority.businessId != buyerCompanyId
+        ) return@withContext null
         val seen = orderCommercialEventDao.findByOrderVersionAndType(
             buyerCompanyId, inbox.objectId, inbox.objectVersion, OrderCommercialEventType.Seen.columnValue,
         ) ?: return@withContext null
@@ -699,6 +736,8 @@ class TransactionRepositoryImpl @Inject constructor(
                     createdAt = canonical.createdAt.epochMillis,
                     createdAtSource = canonical.createdAt.source.name,
                     version = canonical.version,
+                    buyerBusinessId = canonical.buyerBusinessId,
+                    sellerBusinessId = canonical.sellerBusinessId,
                 ),
             )
             canonicalOrderDao.upsertLines(canonical.lines.map { line ->
@@ -754,6 +793,8 @@ class TransactionRepositoryImpl @Inject constructor(
             createdAt = revision.createdAt.epochMillis,
             createdAtSource = revision.createdAt.source.name,
             version = revision.version,
+            buyerBusinessId = revision.buyerBusinessId,
+            sellerBusinessId = revision.sellerBusinessId,
         )
         if (stored == null) {
             try {
@@ -815,6 +856,8 @@ class TransactionRepositoryImpl @Inject constructor(
                 revisionReason = revisionReason,
                 archivedAt = timestamp.epochMillis,
                 archivedAtSource = timestamp.source.name,
+                buyerBusinessId = stored.buyerBusinessId,
+                sellerBusinessId = stored.sellerBusinessId,
             ),
         )
         orderVersionArchiveDao.insertLines(
@@ -1288,6 +1331,8 @@ internal fun CanonicalOrderEntity.toDomain(lines: List<CanonicalOrderLineEntity>
     createdAt = TransactionTimestamp(createdAt, TransactionTimestampSource.valueOf(createdAtSource)),
     version = version,
     lines = lines.map { it.toDomain() },
+    buyerBusinessId = buyerBusinessId,
+    sellerBusinessId = sellerBusinessId,
 )
 
 private fun CanonicalOrderLineEntity.toDomain(): CanonicalOrderLine = CanonicalOrderLine(
@@ -1460,8 +1505,8 @@ private fun StructuredRecipientInboxEntity.matches(item: RelayMailboxDeliveryIte
         mailboxSequence == item.mailboxSequence && acceptanceId == item.acceptanceId
 
 private fun CanonicalOrder.matches(snapshot: OrderVersionSnapshot): Boolean {
-    if (orderId != snapshot.orderId || version != snapshot.orderVersion || sellerCompanyId != snapshot.senderBusinessId ||
-        buyerPartyId != snapshot.recipientBusinessId || note != snapshot.note || source.columnValue != snapshot.source ||
+    if (orderId != snapshot.orderId || version != snapshot.orderVersion || buyerBusinessId != snapshot.buyerBusinessId ||
+        sellerBusinessId != snapshot.sellerBusinessId || note != snapshot.note || source.columnValue != snapshot.source ||
         submissionType.columnValue != snapshot.submissionType || createdAt.epochMillis != snapshot.createdAtEpochMillis ||
         lines.size != snapshot.lines.size
     ) return false
@@ -1531,4 +1576,6 @@ private fun OrderVersionArchiveEntity.toDomain(lines: List<OrderVersionLineArchi
             lineTotalAmount = line.lineTotalAmount,
         )
     },
+    buyerBusinessId = buyerBusinessId,
+    sellerBusinessId = sellerBusinessId,
 )

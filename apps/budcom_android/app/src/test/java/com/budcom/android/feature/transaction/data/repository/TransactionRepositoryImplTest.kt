@@ -149,6 +149,15 @@ class TransactionRepositoryImplTest {
         ledgerIntentDao, accessGrantDao, submissionPort, reminderScheduler, partyRepository, dispatchers,
         canonicalOrderDao, orderOutboxDao, recipientInboxDao, orderCommercialEventDao, orderVersionArchiveDao,
         dbTransaction,
+        object : com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBindingRepository {
+            override suspend fun recordVerified(localBusinessId: String, partyId: String, verifiedAuthority: com.budcom.android.feature.transaction.domain.port.TransportAuthorityContext, verificationReference: String, verifiedAtEpochMillis: Long) = null
+            override suspend fun resolveActive(localBusinessId: String, partyId: String) =
+                com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBinding(
+                    localBusinessId, partyId, partyId, "test-actor", "test-device", 1, "test-verified",
+                    com.budcom.android.feature.transaction.domain.model.CounterpartyBindingStatus.Active, 0,
+                )
+            override suspend fun revoke(localBusinessId: String, partyId: String) = Unit
+        },
     )
 
     private fun ts(millis: Long) = TransactionTimestamp(millis, TransactionTimestampSource.DeviceLocalProvisional)
@@ -249,6 +258,7 @@ class TransactionRepositoryImplTest {
             source = TransactionEntryPointType.Catalogue.columnValue,
             submissionType = TransactionSubmissionType.Estimate.columnValue,
             note = null, createdAt = 100, createdAtSource = TransactionTimestampSource.DeviceLocalProvisional.name, version = 1,
+            buyerBusinessId = "buyer-co", sellerBusinessId = "seller-co",
         )
         recipientInboxDao.entries += StructuredRecipientInboxEntity(
             companyId = "seller-co", envelopeId = "env-1", idempotencyKey = "inbox-1",
@@ -364,6 +374,7 @@ class TransactionRepositoryImplTest {
             source = TransactionEntryPointType.Catalogue.columnValue,
             submissionType = TransactionSubmissionType.Estimate.columnValue,
             note = null, createdAt = 100, createdAtSource = TransactionTimestampSource.DeviceLocalProvisional.name, version = 1,
+            buyerBusinessId = "buyer-co", sellerBusinessId = "seller-co",
         )
         canonicalOrderDao.orders += canonicalOrderDao.orders.last().copy(
             companyId = "seller-co", creationKey = "received:k", sellerCompanyId = "seller-co",
@@ -494,6 +505,7 @@ class TransactionRepositoryImplTest {
         val v1 = OrderVersionSnapshot(
             OrderVersionSnapshot.CURRENT_CONTRACT_VERSION, "order-1", 1, "buyer-co", "seller-co", 100, null, "CATALOGUE", "ESTIMATE", "env-1",
             listOf(OrderVersionLineSnapshot("line-1", "p1", "Widget", "Nos", "SKU-1", "10", "100", "INR", "ACTUAL", "1000")),
+            "buyer-co", "seller-co",
         )
         val first = repo.materializeReceivedOrderVersion("seller-co", "env-1", v1, ts(200))!!
         val duplicate = repo.materializeReceivedOrderVersion("seller-co", "env-1", v1, ts(201))!!
@@ -730,13 +742,14 @@ class TransactionRepositoryImplTest {
     private fun receivedSnapshot() = OrderVersionSnapshot(
         OrderVersionSnapshot.CURRENT_CONTRACT_VERSION, "remote-order-1", 1, "seller-co", "buyer-co", 100, "Deliver", "CATALOGUE", "ESTIMATE", "env-1",
         listOf(OrderVersionLineSnapshot("line-1", "p1", "Widget", "Nos", "SKU-1", "10", null, null, OrderVersionLineSnapshot.HIDDEN, null)),
+        "buyer-co", "seller-co",
     )
 
     private fun receivedItem(snapshot: OrderVersionSnapshot) = RelayMailboxDeliveryItem(
         snapshot.envelopeId, snapshot.orderVersion.toLong(), "ORDER", snapshot.orderId, snapshot.orderVersion,
         snapshot.senderBusinessId, "actor-seller", "device-seller", snapshot.recipientBusinessId, "orders", "relay_accepted",
         100, "accept-${snapshot.envelopeId}", byteArrayOf(1), snapshot.deterministicEncoding(),
-        "application/vnd.budcom.order-snapshot+json", 2,
+        "application/vnd.budcom.order-snapshot+json", 3,
     )
 
     private fun RelayMailboxDeliveryItem.toTestInbox(companyId: String, ingestedAt: Long) = StructuredRecipientInboxEntity(
@@ -753,6 +766,7 @@ class TransactionRepositoryImplTest {
             source = TransactionEntryPointType.Catalogue.columnValue,
             submissionType = TransactionSubmissionType.Estimate.columnValue,
             note = null, createdAt = 100, createdAtSource = TransactionTimestampSource.DeviceLocalProvisional.name, version = 1,
+            buyerBusinessId = "buyer-co", sellerBusinessId = "seller-co",
         )
         canonicalOrderDao.upsertLines(
             listOf(
@@ -772,6 +786,7 @@ class TransactionRepositoryImplTest {
             source = TransactionEntryPointType.Catalogue.columnValue,
             submissionType = TransactionSubmissionType.Estimate.columnValue,
             note = null, createdAt = 100, createdAtSource = TransactionTimestampSource.DeviceLocalProvisional.name, version = 1,
+            buyerBusinessId = "buyer-co", sellerBusinessId = "seller-co",
         )
         canonicalOrderDao.upsertLines(
             listOf(
@@ -795,6 +810,7 @@ class TransactionRepositoryImplTest {
                 unitPriceCurrencyCode = "INR", priceState = TransactionDraftPriceState.ActualPrice("100", "INR"), lineTotalAmount = "1000",
             ),
         ),
+        buyerBusinessId = "buyer-co", sellerBusinessId = "seller-co",
     )
 
     private fun revisionLines(quantity: String) = listOf(

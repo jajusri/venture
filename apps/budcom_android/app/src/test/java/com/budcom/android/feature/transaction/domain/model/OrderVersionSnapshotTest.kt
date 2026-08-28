@@ -9,6 +9,21 @@ import org.junit.Test
 
 class OrderVersionSnapshotTest {
     @Test
+    fun `canonical json v3 binds stable buyer and seller roles into immutable bytes`() {
+        val snapshot = snapshot().copy(
+            contractVersion = OrderVersionSnapshot.CURRENT_CONTRACT_VERSION,
+            buyerBusinessId = "buyer-co",
+            sellerBusinessId = "seller-co",
+        )
+        val encoded = snapshot.deterministicEncoding()
+        val parsed = requireNotNull(OrderVersionSnapshot.parse(encoded))
+        assertEquals("buyer-co", parsed.buyerBusinessId)
+        assertEquals("seller-co", parsed.sellerBusinessId)
+        assertNotEquals(encoded, snapshot.copy(sellerBusinessId = "other-seller").deterministicEncoding())
+        assertNull(OrderVersionSnapshot.parse(encoded.replace("\"buyerBusinessId\":\"buyer-co\",", "")))
+    }
+
+    @Test
     fun `canonical json v2 round trips authorized commercial content`() {
         val original = snapshot()
         val encoded = original.deterministicEncoding()
@@ -218,7 +233,7 @@ class OrderVersionSnapshotTest {
         line: OrderVersionLineSnapshot = actualLine(),
         lines: List<OrderVersionLineSnapshot> = listOf(line),
     ) = OrderVersionSnapshot(
-        contractVersion = OrderVersionSnapshot.CURRENT_CONTRACT_VERSION,
+        contractVersion = OrderVersionSnapshot.LEGACY_CONTRACT_VERSION,
         orderId = "order-1",
         orderVersion = 1,
         senderBusinessId = "seller-co",

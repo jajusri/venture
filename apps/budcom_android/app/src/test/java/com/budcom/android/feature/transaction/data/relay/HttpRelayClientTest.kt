@@ -74,7 +74,7 @@ class HttpRelayClientTest {
             val submitted = Json.parseToJsonElement(firstRequest.body.readUtf8()).jsonObject
             assertEquals(canonicalContent, submitted.getValue("commercialContent").jsonPrimitive.content)
             assertEquals("application/vnd.budcom.order-snapshot+json", submitted.getValue("commercialContentType").jsonPrimitive.content)
-            assertEquals("2", submitted.getValue("commercialContentVersion").jsonPrimitive.content)
+            assertEquals("3", submitted.getValue("commercialContentVersion").jsonPrimitive.content)
             assertEquals(server.takeRequest().getHeader("Idempotency-Key"), "order:order-1:v1")
         } finally {
             server.shutdown()
@@ -196,7 +196,7 @@ class HttpRelayClientTest {
         try {
             val client = testClient(server)
             assertTrue(client.submit(authenticated().copy(commercialSnapshotCanonical = "")) is TransportResult.PermanentRejection)
-            assertTrue(client.submit(authenticated().copy(commercialContentVersion = 3)) is TransportResult.PermanentRejection)
+            assertTrue(client.submit(authenticated().copy(commercialContentVersion = 4)) is TransportResult.PermanentRejection)
             assertEquals(0, server.requestCount)
         } finally {
             server.shutdown()

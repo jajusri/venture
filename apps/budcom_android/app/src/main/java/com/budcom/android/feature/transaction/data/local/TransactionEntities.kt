@@ -24,6 +24,8 @@ data class CanonicalOrderEntity(
     val createdAt: Long,
     val createdAtSource: String,
     val version: Int,
+    val buyerBusinessId: String? = null,
+    val sellerBusinessId: String? = null,
 )
 
 @Entity(
@@ -158,6 +160,8 @@ data class OrderVersionArchiveEntity(
     val revisionReason: String?,
     val archivedAt: Long,
     val archivedAtSource: String,
+    val buyerBusinessId: String? = null,
+    val sellerBusinessId: String? = null,
 )
 
 @Entity(

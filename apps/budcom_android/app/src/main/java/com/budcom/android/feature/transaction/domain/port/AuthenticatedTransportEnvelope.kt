@@ -33,7 +33,7 @@ data class AuthenticatedTransportEnvelope(
 }
 
 const val ORDER_SNAPSHOT_CONTENT_TYPE = "application/vnd.budcom.order-snapshot+json"
-const val ORDER_SNAPSHOT_CONTENT_VERSION = 2
+const val ORDER_SNAPSHOT_CONTENT_VERSION = 3
 
 class AuthenticatedEnvelopeBinder(private val keyStore: VartalapDeviceKeyStore) {
     suspend fun bind(

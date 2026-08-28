@@ -5,5 +5,5 @@ package com.budcom.android.core.database
  */
 object DatabaseConstants {
     const val NAME = "budcom.db"
-    const val VERSION = 21
+    const val VERSION = 22
 }

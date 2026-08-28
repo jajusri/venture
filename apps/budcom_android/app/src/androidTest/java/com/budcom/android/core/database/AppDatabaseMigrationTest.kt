@@ -1441,4 +1441,22 @@ class AppDatabaseMigrationTest {
         }
         db.close()
     }
+
+    @Test
+    fun migrate21To22_preservesLegacyOrdersAsRoleUnbound() {
+        val dbName = "migration-test-db-21-22"
+        var db = helper.createDatabase(dbName, 21)
+        db.execSQL(
+            "INSERT INTO txn_order (companyId, orderId, creationKey, sellerCompanyId, buyerPartyId, state, source, submissionType, note, createdAt, createdAtSource, version) " +
+                "VALUES ('legacy-co', 'order-1', 'key-1', 'ambiguous', 'party-1', 'DRAFT', 'CATALOGUE', 'ESTIMATE', NULL, 1, 'DEVICE_LOCAL_PROVISIONAL', 1)",
+        )
+        db.close()
+        db = helper.runMigrationsAndValidate(dbName, 22, true, DatabaseModule.MIGRATION_21_22)
+        db.query("SELECT buyerBusinessId, sellerBusinessId FROM txn_order WHERE companyId = 'legacy-co'").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertTrue(cursor.isNull(0))
+            assertTrue(cursor.isNull(1))
+        }
+        db.close()
+    }
 }

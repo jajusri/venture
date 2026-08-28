@@ -189,6 +189,8 @@ data class CanonicalOrder(
     val createdAt: TransactionTimestamp,
     val version: Int,
     val lines: List<CanonicalOrderLine>,
+    val buyerBusinessId: String? = null,
+    val sellerBusinessId: String? = null,
 )
 
 enum class OrderCommercialEventType(val columnValue: String) {

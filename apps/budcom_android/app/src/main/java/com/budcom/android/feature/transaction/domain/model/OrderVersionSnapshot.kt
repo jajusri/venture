@@ -64,9 +64,11 @@ data class OrderVersionSnapshot(
     val submissionType: String,
     val envelopeId: String,
     val lines: List<OrderVersionLineSnapshot>,
+    val buyerBusinessId: String? = null,
+    val sellerBusinessId: String? = null,
 ) {
     init {
-        require(contractVersion == CURRENT_CONTRACT_VERSION)
+        require(contractVersion == LEGACY_CONTRACT_VERSION || contractVersion == CURRENT_CONTRACT_VERSION)
         require(orderId.isNotBlank() && orderId.length <= MAX_FIELD)
         require(orderVersion >= 1)
         require(senderBusinessId.isNotBlank() && senderBusinessId.length <= MAX_FIELD && senderBusinessId != recipientBusinessId)
@@ -78,6 +80,9 @@ data class OrderVersionSnapshot(
         require(envelopeId.isNotBlank() && envelopeId.length <= MAX_FIELD)
         require(lines.isNotEmpty() && lines.size <= MAX_LINES)
         require(lines.map { it.lineId }.toSet().size == lines.size)
+        if (contractVersion == CURRENT_CONTRACT_VERSION) {
+            require(!buyerBusinessId.isNullOrBlank() && !sellerBusinessId.isNullOrBlank() && buyerBusinessId != sellerBusinessId)
+        } else require(buyerBusinessId == null && sellerBusinessId == null)
         require(deterministicEncoding().toByteArray(Charsets.UTF_8).size <= MAX_PAYLOAD)
     }
 
@@ -88,6 +93,10 @@ data class OrderVersionSnapshot(
         append(",\"orderVersion\":").append(orderVersion)
         append(",\"senderBusinessId\":").appendJsonString(senderBusinessId)
         append(",\"recipientBusinessId\":").appendJsonString(recipientBusinessId)
+        if (contractVersion == CURRENT_CONTRACT_VERSION) {
+            append(",\"buyerBusinessId\":").appendJsonString(requireNotNull(buyerBusinessId))
+            append(",\"sellerBusinessId\":").appendJsonString(requireNotNull(sellerBusinessId))
+        }
         append(",\"createdAtEpochMillis\":").append(createdAtEpochMillis)
         append(",\"note\":").appendJsonNullableString(note)
         append(",\"source\":").appendJsonString(source)
@@ -120,7 +129,8 @@ data class OrderVersionSnapshot(
         this.orderId == orderId && this.orderVersion == orderVersion && senderBusinessId == sender && recipientBusinessId == recipient
 
     companion object {
-        const val CURRENT_CONTRACT_VERSION = 2
+        const val LEGACY_CONTRACT_VERSION = 2
+        const val CURRENT_CONTRACT_VERSION = 3
         const val MAX_FIELD = 256
         const val MAX_NOTE = 512
         const val MAX_LINES = 50
@@ -134,7 +144,7 @@ data class OrderVersionSnapshot(
             contractVersion = CURRENT_CONTRACT_VERSION,
             orderId = order.orderId,
             orderVersion = order.version,
-            senderBusinessId = order.sellerCompanyId,
+            senderBusinessId = order.companyId,
             recipientBusinessId = recipientBusinessId,
             createdAtEpochMillis = order.createdAt.epochMillis,
             note = order.note,
@@ -142,6 +152,8 @@ data class OrderVersionSnapshot(
             submissionType = order.submissionType.columnValue,
             envelopeId = envelopeId,
             lines = order.lines.map { it.toSnapshotLine() },
+            buyerBusinessId = requireNotNull(order.buyerBusinessId),
+            sellerBusinessId = requireNotNull(order.sellerBusinessId),
         )
 
         fun parse(canonical: String): OrderVersionSnapshot? = OrderVersionSnapshotCodec.parse(canonical)
@@ -152,14 +164,17 @@ object OrderVersionSnapshotCodec {
     fun parse(canonical: String): OrderVersionSnapshot? = runCatching {
         if (canonical.toByteArray(Charsets.UTF_8).size > OrderVersionSnapshot.MAX_PAYLOAD) return null
         val root = Json.parseToJsonElement(canonical) as? JsonObject ?: return null
-        if (root.keys != ROOT_KEYS) return null
+        val version = root.requiredInt("schemaVersion") ?: return null
+        if (root.keys != if (version == OrderVersionSnapshot.LEGACY_CONTRACT_VERSION) V2_ROOT_KEYS else V3_ROOT_KEYS) return null
         val lineElements = root["lines"] as? JsonArray ?: return null
         val snapshot = OrderVersionSnapshot(
-            contractVersion = root.requiredInt("schemaVersion") ?: return null,
+            contractVersion = version,
             orderId = root.requiredString("orderId") ?: return null,
             orderVersion = root.requiredInt("orderVersion") ?: return null,
             senderBusinessId = root.requiredString("senderBusinessId") ?: return null,
             recipientBusinessId = root.requiredString("recipientBusinessId") ?: return null,
+            buyerBusinessId = root.optionalRole("buyerBusinessId"),
+            sellerBusinessId = root.optionalRole("sellerBusinessId"),
             createdAtEpochMillis = root.requiredLong("createdAtEpochMillis") ?: return null,
             note = root.nullableString("note") ?: if (root["note"] === JsonNull) null else return null,
             source = root.requiredString("source") ?: return null,
@@ -193,10 +208,11 @@ object OrderVersionSnapshotCodec {
         )
     }
 
-    private val ROOT_KEYS = setOf(
+    private val V2_ROOT_KEYS = setOf(
         "schemaVersion", "orderId", "orderVersion", "senderBusinessId", "recipientBusinessId",
         "createdAtEpochMillis", "note", "source", "submissionType", "envelopeId", "lines",
     )
+    private val V3_ROOT_KEYS = V2_ROOT_KEYS + setOf("buyerBusinessId", "sellerBusinessId")
     private val LINE_KEYS = setOf(
         "lineId", "linkedProductId", "snapshotProductName", "snapshotUnit", "snapshotSku", "quantity",
         "unitPriceAmount", "unitPriceCurrencyCode", "priceState", "lineTotalAmount",
@@ -239,6 +255,8 @@ fun OrderVersionSnapshot.toCanonicalOrder(recipientCompanyId: String, state: Can
                 lineTotalAmount = line.lineTotalAmount,
             )
         },
+        buyerBusinessId = buyerBusinessId,
+        sellerBusinessId = sellerBusinessId,
     )
 
 fun OrderVersionSnapshot.detectTamper(expectedFingerprint: String): Boolean = fingerprint() != expectedFingerprint
@@ -292,5 +310,7 @@ private fun JsonObject.optionalString(key: String): OptionalString? = when (val 
     is JsonPrimitive -> value.takeIf { it.isString }?.contentOrNull?.let(::OptionalString)
     else -> null
 }
+
+private fun JsonObject.optionalRole(key: String): String? = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
 
 private data class OptionalString(val value: String?)
