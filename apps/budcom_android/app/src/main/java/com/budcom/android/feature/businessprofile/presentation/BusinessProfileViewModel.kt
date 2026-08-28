@@ -14,6 +14,8 @@ import com.budcom.android.feature.businessprofile.storage.BusinessProfileLogoFai
 import com.budcom.android.feature.businessprofile.storage.BusinessProfileLogoResult
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
+import com.budcom.android.core.common.UserVisibleErrorText
+import timber.log.Timber
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -147,8 +149,12 @@ class BusinessProfileViewModel @Inject constructor(
                     }
                 }
                 .onFailure { throwable ->
+                    Timber.w(throwable, "Business Profile load failed")
                     _uiState.update {
-                        it.copy(isLoading = false, error = MasterDataUiError.Unexpected(throwable.message ?: "Could not load the Business Profile."))
+                        it.copy(
+                            isLoading = false,
+                            error = MasterDataUiError.Unexpected(UserVisibleErrorText.fromThrowable(throwable)),
+                        )
                     }
                 }
         }
@@ -193,8 +199,12 @@ class BusinessProfileViewModel @Inject constructor(
                     }
                 }
                 .onFailure { throwable ->
+                    Timber.w(throwable, "Business Profile save failed")
                     updateIfStillOnCompany(companyId) {
-                        copy(isSaving = false, notice = throwable.message ?: "Could not save the Business Profile. Please try again.")
+                        copy(
+                            isSaving = false,
+                            notice = UserVisibleErrorText.fromThrowable(throwable),
+                        )
                     }
                 }
         }

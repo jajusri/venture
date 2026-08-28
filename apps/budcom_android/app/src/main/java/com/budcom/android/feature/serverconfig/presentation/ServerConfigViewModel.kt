@@ -3,6 +3,7 @@ package com.budcom.android.feature.serverconfig.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.common.AppError
+import com.budcom.android.core.common.UserVisibleErrorText
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.DefaultConnectorBaseUrlProvider
 import com.budcom.android.feature.serverconfig.domain.repository.ConnectorConfigRepository
@@ -141,23 +142,12 @@ class ServerConfigViewModel @Inject constructor(
     }
 }
 
-private fun AppError.toMessage(): String = when (this) {
-    is AppError.Offline -> "No network connection."
-    is AppError.Timeout -> "The request timed out."
-    is AppError.Remote -> message
-    is AppError.Message -> message
-    is AppError.Serialization -> message
-    is AppError.Unexpected -> cause.message ?: "An unexpected error occurred."
-}
+private fun AppError.toMessage(): String = UserVisibleErrorText.fromAppError(this)
 
 private fun AppError.toConnectionError(): Pair<ConnectionErrorKind, String> = when (this) {
     is AppError.Offline -> ConnectionErrorKind.Offline to toMessage()
     is AppError.Timeout -> ConnectionErrorKind.Timeout to toMessage()
-    is AppError.Remote -> ConnectionErrorKind.Http to buildString {
-        if (httpStatus != null) append("HTTP ").append(httpStatus).append(": ")
-        if (!code.isNullOrBlank()) append('[').append(code).append("] ")
-        append(message)
-    }
+    is AppError.Remote -> ConnectionErrorKind.Http to toMessage()
     is AppError.Serialization -> ConnectionErrorKind.Serialization to toMessage()
     is AppError.Message -> ConnectionErrorKind.Unknown to toMessage()
     is AppError.Unexpected -> ConnectionErrorKind.Unknown to toMessage()

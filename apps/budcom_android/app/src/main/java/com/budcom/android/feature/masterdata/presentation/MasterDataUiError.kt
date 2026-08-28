@@ -1,6 +1,7 @@
 package com.budcom.android.feature.masterdata.presentation
 
 import com.budcom.android.core.common.AppError
+import com.budcom.android.core.common.UserVisibleErrorText
 
 /**
  * Shared UI error model for Master Data list browsers (Ledgers, Stock Items, …).
@@ -14,14 +15,12 @@ sealed interface MasterDataUiError {
 }
 
 fun AppError.toMasterDataUiError(): MasterDataUiError = when (this) {
-    is AppError.Offline -> MasterDataUiError.Offline("Device is offline.")
-    is AppError.Timeout -> MasterDataUiError.Timeout("The request timed out.")
-    is AppError.Remote -> MasterDataUiError.Remote(message, httpStatus)
-    is AppError.Serialization -> MasterDataUiError.Message(message)
-    is AppError.Message -> MasterDataUiError.Message(message)
-    is AppError.Unexpected -> MasterDataUiError.Unexpected(
-        cause.message ?: "An unexpected error occurred.",
-    )
+    is AppError.Offline -> MasterDataUiError.Offline(UserVisibleErrorText.OFFLINE)
+    is AppError.Timeout -> MasterDataUiError.Timeout(UserVisibleErrorText.TIMEOUT)
+    is AppError.Remote -> MasterDataUiError.Remote(UserVisibleErrorText.fromRemote(httpStatus, message), httpStatus)
+    is AppError.Serialization -> MasterDataUiError.Message(UserVisibleErrorText.sanitizeOr(message, UserVisibleErrorText.UNREADABLE))
+    is AppError.Message -> MasterDataUiError.Message(UserVisibleErrorText.sanitizeOr(message, UserVisibleErrorText.UNEXPECTED))
+    is AppError.Unexpected -> MasterDataUiError.Unexpected(UserVisibleErrorText.fromThrowable(cause))
 }
 
 fun MasterDataUiError.displayMessage(): String = when (this) {

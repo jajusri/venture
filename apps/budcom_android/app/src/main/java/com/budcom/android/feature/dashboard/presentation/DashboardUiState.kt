@@ -1,6 +1,7 @@
 package com.budcom.android.feature.dashboard.presentation
 
 import com.budcom.android.core.common.AppError
+import com.budcom.android.core.common.UserVisibleErrorText
 import com.budcom.android.feature.dashboard.domain.model.DashboardOperationalInputs
 import com.budcom.android.feature.dashboard.domain.model.DashboardOperationalMode
 import com.budcom.android.feature.dashboard.domain.model.DashboardSessionValidity
@@ -82,14 +83,14 @@ sealed interface DashboardEvent {
 }
 
 internal fun AppError.toDashboardUiError(): DashboardUiError = when (this) {
-    is AppError.Offline -> DashboardUiError.Offline("Device is offline.")
-    is AppError.Timeout -> DashboardUiError.Timeout("The request timed out.")
-    is AppError.Remote -> DashboardUiError.Remote(message, httpStatus)
-    is AppError.Serialization -> DashboardUiError.Serialization(message)
-    is AppError.Message -> DashboardUiError.Message(message)
-    is AppError.Unexpected -> DashboardUiError.Unexpected(
-        cause.message ?: "An unexpected error occurred.",
+    is AppError.Offline -> DashboardUiError.Offline(UserVisibleErrorText.OFFLINE)
+    is AppError.Timeout -> DashboardUiError.Timeout(UserVisibleErrorText.TIMEOUT)
+    is AppError.Remote -> DashboardUiError.Remote(UserVisibleErrorText.fromRemote(httpStatus, message), httpStatus)
+    is AppError.Serialization -> DashboardUiError.Serialization(
+        UserVisibleErrorText.sanitizeOr(message, UserVisibleErrorText.UNREADABLE),
     )
+    is AppError.Message -> DashboardUiError.Message(UserVisibleErrorText.sanitizeOr(message, UserVisibleErrorText.UNEXPECTED))
+    is AppError.Unexpected -> DashboardUiError.Unexpected(UserVisibleErrorText.fromThrowable(cause))
 }
 
 internal fun readinessLabelFromStatus(status: String?): ReadinessLabel = when (status) {

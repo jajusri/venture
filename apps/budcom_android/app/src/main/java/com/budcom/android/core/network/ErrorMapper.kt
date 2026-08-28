@@ -1,6 +1,7 @@
 package com.budcom.android.core.network
 
 import com.budcom.android.core.common.AppError
+import com.budcom.android.core.common.UserVisibleErrorText
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -85,15 +86,13 @@ class DefaultErrorMapper @Inject constructor(
                 return NetworkError.NoConnectivity
             }
             return NetworkError.Unknown(
-                message = throwable.message?.takeIf { it.isNotBlank() }
-                    ?: "A network I/O error occurred.",
+                message = UserVisibleErrorText.NETWORK,
                 cause = throwable,
             )
         }
 
         return NetworkError.Unknown(
-            message = throwable.message?.takeIf { it.isNotBlank() }
-                ?: "An unexpected network error occurred.",
+            message = UserVisibleErrorText.NETWORK,
             cause = throwable,
         )
     }
@@ -110,8 +109,9 @@ class DefaultErrorMapper @Inject constructor(
             message = error.message,
             cause = error.cause,
         )
-        is NetworkError.Unknown -> AppError.Unexpected(
-            cause = error.cause ?: IllegalStateException(error.message),
+        is NetworkError.Unknown -> AppError.Message(
+            message = UserVisibleErrorText.sanitizeOr(error.message, UserVisibleErrorText.NETWORK),
+            cause = error.cause,
         )
     }
 
@@ -126,8 +126,7 @@ class DefaultErrorMapper @Inject constructor(
             httpStatus = httpStatus,
             code = parsed?.code,
             message = parsed?.message
-                ?: exception.message()?.takeIf { it.isNotBlank() }
-                ?: "HTTP $httpStatus",
+                ?: UserVisibleErrorText.fromRemote(httpStatus, exception.message().orEmpty()),
             details = parsed?.details.orEmpty(),
         )
     }

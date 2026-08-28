@@ -106,7 +106,9 @@ class DincharyaViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
-        assertTrue(state.error is MasterDataUiError.Unexpected)
+        val unexpected = state.error as MasterDataUiError.Unexpected
+        assertEquals(com.budcom.android.core.common.UserVisibleErrorText.UNEXPECTED, unexpected.message)
+        assertFalse(unexpected.message.contains("simulated"))
         assertFalse(state.isInitialLoading)
     }
 

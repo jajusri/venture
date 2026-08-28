@@ -7,6 +7,8 @@ import com.budcom.android.feature.dincharya.domain.model.DincharyaItem
 import com.budcom.android.feature.dincharya.domain.model.DincharyaSnapshot
 import com.budcom.android.feature.dincharya.domain.usecase.GetDincharyaSnapshotUseCase
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
+import com.budcom.android.core.common.UserVisibleErrorText
+import timber.log.Timber
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -79,11 +81,12 @@ class DincharyaViewModel @Inject constructor(
             runCatching { getDincharyaSnapshot(companyId) }
                 .onSuccess { snapshot -> _uiState.update { it.applySnapshot(snapshot) } }
                 .onFailure { throwable ->
+                    Timber.w(throwable, "Dincharya load failed")
                     _uiState.update {
                         it.copy(
                             isInitialLoading = false,
                             isRefreshing = false,
-                            error = MasterDataUiError.Unexpected(throwable.message ?: "Could not load Dincharya."),
+                            error = MasterDataUiError.Unexpected(UserVisibleErrorText.fromThrowable(throwable)),
                         )
                     }
                 }

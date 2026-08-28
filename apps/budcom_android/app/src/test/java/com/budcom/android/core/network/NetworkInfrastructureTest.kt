@@ -65,6 +65,20 @@ class ErrorMapperTest {
         ) as AppError.Remote
         assertEquals(503, remote.httpStatus)
         assertEquals("SERVICE_UNAVAILABLE", remote.code)
+        val unknown = mapper.toAppError(NetworkError.Unknown("Connector is not reachable.", cause = null))
+        assertTrue(unknown is AppError.Message)
+    }
+
+    @Test
+    fun `online IOException does not forward raw transport text`() {
+        val mapper = DefaultErrorMapper(json, onlineObserver)
+        val network = mapper.toNetworkError(java.io.IOException("failed to connect to /192.168.1.9 (port 9000)"))
+        val unknown = network as NetworkError.Unknown
+        assertFalse(unknown.message.contains("192.168"))
+        assertFalse(unknown.message.contains("port 9000"))
+        val visible = com.budcom.android.core.common.UserVisibleErrorText.fromAppError(mapper.toAppError(network))
+        assertFalse(visible.contains("192.168"))
+        assertFalse(visible.contains("SQLite"))
     }
 
     @Test
