@@ -445,11 +445,11 @@ class TransactionRepositoryImplTest {
     }
 
     @Test
-    fun `recipient materializes v1 and v2 snapshots without duplicates or wrong recipient`() = runTest(dispatcher) {
+    fun `recipient materializes successive snapshots without duplicates or wrong recipient`() = runTest(dispatcher) {
         val repo = repository()
         recipientInboxDao.entries += inboxFixture().copy(companyId = "seller-co", senderBusinessId = "buyer-co")
         val v1 = OrderVersionSnapshot(
-            1, "order-1", 1, "buyer-co", "seller-co", 100, null, "CATALOGUE", "ESTIMATE", "env-1",
+            OrderVersionSnapshot.CURRENT_CONTRACT_VERSION, "order-1", 1, "buyer-co", "seller-co", 100, null, "CATALOGUE", "ESTIMATE", "env-1",
             listOf(OrderVersionLineSnapshot("line-1", "p1", "Widget", "Nos", "SKU-1", "10", "100", "INR", "ACTUAL", "1000")),
         )
         val first = repo.materializeReceivedOrderVersion("seller-co", "env-1", v1, ts(200))!!
@@ -468,7 +468,12 @@ class TransactionRepositoryImplTest {
         assertEquals("12", revised.lines.single().quantity)
         assertEquals("10", repo.findArchivedOrderVersion("buyer-co", "order-1", 1)!!.lines.single().quantity)
         assertTrue(transactionDao.store.isEmpty())
-        val hidden = v1.copy(lines = listOf(v1.lines.single().copy(priceState = "HIDDEN", unitPriceAmount = null, lineTotalAmount = null)))
+        val hidden = v1.copy(lines = listOf(v1.lines.single().copy(
+            priceState = "HIDDEN",
+            unitPriceAmount = null,
+            unitPriceCurrencyCode = null,
+            lineTotalAmount = null,
+        )))
         assertFalse(hidden.deterministicEncoding().contains("unitPrice:100"))
     }
 
