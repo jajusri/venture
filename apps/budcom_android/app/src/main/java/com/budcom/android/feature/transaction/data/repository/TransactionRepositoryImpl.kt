@@ -536,8 +536,8 @@ class TransactionRepositoryImpl @Inject constructor(
             inbox.senderBusinessId, sellerCompanyId, inbox.objectId, inbox.objectVersion,
             eventId, idempotencyKey, timestamp.epochMillis, timestamp.source.name,
         ).deterministicEncoding()
-        dbTransaction.run {
-            try {
+        try {
+            dbTransaction.run {
                 orderCommercialEventDao.insert(entity)
                 canonicalOrderDao.updateState(sellerCompanyId, inbox.objectId, CanonicalOrderState.Confirmed.columnValue)
                 orderOutboxDao.insert(
@@ -552,11 +552,12 @@ class TransactionRepositoryImpl @Inject constructor(
                         commercialContentVersion = COMMERCIAL_EVENT_CONTENT_VERSION, commercialContentCanonical = payload,
                     ),
                 )
-            } catch (_: android.database.SQLException) {
-                val prior = orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)
-                if (prior == null || prior != entity) return@run null
+                entity.toDomain()
             }
-            entity.toDomain()
+        } catch (_: android.database.SQLException) {
+            val prior = orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)
+            val outbox = orderOutboxDao.findByIdempotencyKey(sellerCompanyId, "return:$idempotencyKey")
+            prior?.takeIf { it == entity && outbox != null }?.toDomain()
         }
     }
 
@@ -605,6 +606,7 @@ class TransactionRepositoryImpl @Inject constructor(
         if (existingRevision != null) {
             return@withContext findCanonicalOrderById(sellerCompanyId, canonical.orderId)
         }
+        try {
         dbTransaction.run {
         archiveCurrentOrderVersion(sellerCompanyId, canonical.orderId, timestamp, revisionReason)
         val nextVersion = canonical.version + 1
@@ -649,12 +651,15 @@ class TransactionRepositoryImpl @Inject constructor(
             authorityEpoch = authority.authorityEpoch,
             authorityScopeFingerprint = authority.authorityScope.sorted().joinToString(","),
         )
-        try {
-            orderCommercialEventDao.insert(revisionEvent)
-        } catch (_: android.database.SQLException) {
-            return@run findCanonicalOrderById(sellerCompanyId, canonical.orderId)
-        }
+        orderCommercialEventDao.insert(revisionEvent)
         findCanonicalOrderById(sellerCompanyId, canonical.orderId)
+        }
+        } catch (_: android.database.SQLException) {
+            val prior = orderCommercialEventDao.findByIdempotencyKey(sellerCompanyId, idempotencyKey)
+            prior?.takeIf {
+                it.orderId == canonical.orderId && it.orderVersion == canonical.version + 1 &&
+                    it.eventType == OrderCommercialEventType.RevisionProposed.columnValue
+            }?.let { findCanonicalOrderById(sellerCompanyId, canonical.orderId) }
         }
     }
 
