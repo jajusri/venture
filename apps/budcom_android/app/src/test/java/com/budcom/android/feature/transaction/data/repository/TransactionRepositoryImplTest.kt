@@ -150,7 +150,7 @@ class TransactionRepositoryImplTest {
         canonicalOrderDao, orderOutboxDao, recipientInboxDao, orderCommercialEventDao, orderVersionArchiveDao,
         dbTransaction,
         object : com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBindingRepository {
-            override suspend fun recordVerified(localBusinessId: String, partyId: String, verifiedAuthority: com.budcom.android.feature.transaction.domain.port.TransportAuthorityContext, verificationReference: String, verifiedAtEpochMillis: Long) = null
+            override suspend fun verifyAndRecord(localBusinessId: String, partyId: String, verificationRequest: com.budcom.android.feature.transaction.domain.port.CredentialVerificationRequest, verifiedAtEpochMillis: Long) = null
             override suspend fun resolveActive(localBusinessId: String, partyId: String) =
                 com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBinding(
                     localBusinessId, partyId, partyId, "test-actor", "test-device", 1, "test-verified",

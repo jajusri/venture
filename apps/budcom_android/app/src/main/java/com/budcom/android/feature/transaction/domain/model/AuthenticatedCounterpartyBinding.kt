@@ -1,6 +1,6 @@
 package com.budcom.android.feature.transaction.domain.model
 
-import com.budcom.android.feature.transaction.domain.port.TransportAuthorityContext
+import com.budcom.android.feature.transaction.domain.port.CredentialVerificationRequest
 
 enum class CounterpartyBindingStatus { Active, Revoked }
 
@@ -17,11 +17,10 @@ data class AuthenticatedCounterpartyBinding(
 )
 
 interface AuthenticatedCounterpartyBindingRepository {
-    suspend fun recordVerified(
+    suspend fun verifyAndRecord(
         localBusinessId: String,
         partyId: String,
-        verifiedAuthority: TransportAuthorityContext,
-        verificationReference: String,
+        verificationRequest: CredentialVerificationRequest,
         verifiedAtEpochMillis: Long,
     ): AuthenticatedCounterpartyBinding?
 

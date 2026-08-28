@@ -6,7 +6,9 @@ import com.budcom.android.feature.transaction.data.local.AuthenticatedCounterpar
 import com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBinding
 import com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBindingRepository
 import com.budcom.android.feature.transaction.domain.model.CounterpartyBindingStatus
-import com.budcom.android.feature.transaction.domain.port.TransportAuthorityContext
+import com.budcom.android.feature.transaction.domain.port.CredentialVerificationOutcome
+import com.budcom.android.feature.transaction.domain.port.CredentialVerificationRequest
+import com.budcom.android.feature.transaction.domain.port.TransportCredentialVerifier
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,21 +17,32 @@ import javax.inject.Singleton
 class AuthenticatedCounterpartyBindingRepositoryImpl @Inject constructor(
     private val dao: AuthenticatedCounterpartyBindingDao,
     private val dispatchers: DispatcherProvider,
+    private val credentialVerifier: TransportCredentialVerifier,
 ) : AuthenticatedCounterpartyBindingRepository {
-    override suspend fun recordVerified(
+    override suspend fun verifyAndRecord(
         localBusinessId: String,
         partyId: String,
-        verifiedAuthority: TransportAuthorityContext,
-        verificationReference: String,
+        verificationRequest: CredentialVerificationRequest,
         verifiedAtEpochMillis: Long,
     ): AuthenticatedCounterpartyBinding? = withContext(dispatchers.io) {
-        if (localBusinessId.isBlank() || partyId.isBlank() || verificationReference.isBlank() || verifiedAtEpochMillis < 0 ||
-            verifiedAuthority.businessId.isBlank() || verifiedAuthority.businessId == localBusinessId ||
-            verifiedAuthority.actorId.isBlank() || verifiedAuthority.deviceId.isBlank() || verifiedAuthority.authorityEpoch < 0
+        val credential = verificationRequest.credential
+        if (localBusinessId.isBlank() || partyId.isBlank() || verifiedAtEpochMillis < 0 ||
+            credential.credentialId.isBlank() || credential.businessId == localBusinessId ||
+            verificationRequest.expectedBusinessId != credential.businessId ||
+            verificationRequest.actualRecipient != verificationRequest.expectedRecipient ||
+            verificationRequest.expectedRecipient.businessId != localBusinessId ||
+            verificationRequest.expectedRecipient.partyId != partyId
+        ) return@withContext null
+        val outcome = credentialVerifier.verify(verificationRequest) as? CredentialVerificationOutcome.Valid
+            ?: return@withContext null
+        val verifiedAuthority = outcome.authorityContext
+        if (verifiedAuthority.businessId != credential.businessId ||
+            verifiedAuthority.actorId.isBlank() || verifiedAuthority.deviceId.isBlank() ||
+            verifiedAuthority.authorityEpoch < 0 || REQUIRED_BINDING_SCOPE !in verifiedAuthority.authorityScope
         ) return@withContext null
         val candidate = AuthenticatedCounterpartyBindingEntity(
             localBusinessId, partyId, verifiedAuthority.businessId, verifiedAuthority.actorId,
-            verifiedAuthority.deviceId, verifiedAuthority.authorityEpoch, verificationReference,
+            verifiedAuthority.deviceId, verifiedAuthority.authorityEpoch, credential.credentialId,
             "ACTIVE", verifiedAtEpochMillis,
         )
         val existing = dao.find(localBusinessId, partyId)
@@ -44,6 +57,10 @@ class AuthenticatedCounterpartyBindingRepositoryImpl @Inject constructor(
 
     override suspend fun revoke(localBusinessId: String, partyId: String) = withContext(dispatchers.io) {
         dao.revoke(localBusinessId, partyId)
+    }
+
+    private companion object {
+        const val REQUIRED_BINDING_SCOPE = "send_orders"
     }
 }
 
