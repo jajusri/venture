@@ -28,6 +28,19 @@ interface StockItemDao {
     @Query("SELECT * FROM cached_stock_items WHERE companyId = :companyId")
     suspend fun findAllForCompany(companyId: String): List<StockItemEntity>
 
+    /** Batched multi-id lookup -- lets a caller resolve N stock items in one query instead of N
+     * single-row [findById] round trips (Catalogue perf package: was the reconciliation sweep's
+     * own N+1). Room expands `:ids` into the right number of `?` placeholders for the `IN` clause. */
+    @Query("SELECT * FROM cached_stock_items WHERE companyId = :companyId AND id IN (:ids)")
+    suspend fun findByIds(companyId: String, ids: List<String>): List<StockItemEntity>
+
+    /** Cheap freshness fingerprint for the whole company's cache -- a single aggregate query that
+     * never fetches or deserializes row content, unlike [findAllForCompany]. Two equal fingerprints
+     * mean the cache has not changed (no insert/delete/re-sync) since the first was taken; used by
+     * Catalogue to skip a resume-triggered reconciliation sweep when nothing could have changed. */
+    @Query("SELECT COUNT(*) || ':' || COALESCE(MAX(syncedAt), '') FROM cached_stock_items WHERE companyId = :companyId")
+    suspend fun freshnessFingerprint(companyId: String): String
+
     @Transaction
     suspend fun replaceAllForCompany(companyId: String, entities: List<StockItemEntity>) {
         deleteForCompany(companyId)

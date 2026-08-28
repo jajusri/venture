@@ -22,6 +22,8 @@ interface StockItemLocalDataSource {
     suspend fun query(companyId: String, query: StockItemQuery): StockItemPage?
     suspend fun findById(companyId: String, id: String): StockItem?
     suspend fun listAllForCompany(companyId: String): List<StockItem>
+    suspend fun findByIds(companyId: String, ids: List<String>): List<StockItem>
+    suspend fun freshnessFingerprint(companyId: String): String
 }
 
 @Singleton
@@ -77,6 +79,13 @@ class RoomStockItemLocalDataSource @Inject constructor(
 
     override suspend fun listAllForCompany(companyId: String): List<StockItem> =
         stockItemDao.findAllForCompany(companyId).map { it.toDomain() }
+
+    override suspend fun findByIds(companyId: String, ids: List<String>): List<StockItem> {
+        if (ids.isEmpty()) return emptyList()
+        return stockItemDao.findByIds(companyId, ids).map { it.toDomain() }
+    }
+
+    override suspend fun freshnessFingerprint(companyId: String): String = stockItemDao.freshnessFingerprint(companyId)
 }
 
 internal fun StockItem.toEntity(companyId: String, dataFreshnessAt: String?): StockItemEntity = StockItemEntity(

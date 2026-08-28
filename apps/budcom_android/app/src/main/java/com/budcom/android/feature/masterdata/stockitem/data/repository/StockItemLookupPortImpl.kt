@@ -19,6 +19,11 @@ class StockItemLookupPortImpl @Inject constructor(
     override suspend fun listAllForCompany(companyId: String): List<StockItem> =
         local.listAllForCompany(companyId)
 
+    override suspend fun findByIds(companyId: String, stockItemIds: List<String>): List<StockItem> =
+        local.findByIds(companyId, stockItemIds)
+
+    override suspend fun freshnessFingerprint(companyId: String): String = local.freshnessFingerprint(companyId)
+
     /** [companyId] is accepted for API symmetry with every other method here, but the underlying
      * [LoadStockItemsUseCase] call targets whichever company is currently selected (it has no
      * per-call company parameter of its own) — safe because Catalogue itself is always scoped to
