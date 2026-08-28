@@ -242,7 +242,7 @@ function Invoke-Gradle {
     $logPath = Join-Path $LauncherLogDir ("gradle-{0:yyyyMMdd-HHmmss}.log" -f (Get-Date))
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = 'cmd.exe'
-    $psi.Arguments = "/c gradlew.bat --no-daemon --no-parallel --max-workers=1 $Task"
+    $psi.Arguments = "/c `"$(Join-Path $AndroidDir 'gradlew.bat')`" --no-daemon --no-parallel --max-workers=1 $Task"
     $psi.WorkingDirectory = $AndroidDir
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
