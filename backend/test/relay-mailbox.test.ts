@@ -112,6 +112,7 @@ const submissionVerifier: RelaySubmissionVerifier = { verify: async (value) => (
   senderActorId: value.senderActorId, senderDeviceId: value.senderDeviceId,
   recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
   envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
+  commercialContent: value.commercialContent, commercialContentType: value.commercialContentType, commercialContentVersion: value.commercialContentVersion,
 }) };
 const issuer = () => new SignedRelayAcceptanceIssuer({ sign: () => Promise.resolve({ relayId: 'relay-1', profile: 'test-v1', evidence: new Uint8Array([9]) }) }, () => 'accept-1');
 const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: async (value) => ({

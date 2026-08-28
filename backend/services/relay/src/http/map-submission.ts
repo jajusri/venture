@@ -14,6 +14,9 @@ export interface RelaySubmissionBody {
   readonly recipientBusinessId?: unknown;
   readonly mailboxId?: unknown;
   readonly authenticatedEnvelope?: unknown;
+  readonly commercialContent?: unknown;
+  readonly commercialContentType?: unknown;
+  readonly commercialContentVersion?: unknown;
   readonly submittedAt?: unknown;
 }
 
@@ -25,7 +28,10 @@ function requiredString(value: unknown, field: string): string {
 function decodeEnvelope(value: unknown): Uint8Array {
   if (typeof value !== 'string' || !value.trim()) throw new RelayServiceError('invalid_submission', 'authenticatedEnvelope is required', 400);
   try {
-    return Uint8Array.from(Buffer.from(value, 'base64'));
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) throw new Error('invalid base64');
+    const decoded = Buffer.from(value, 'base64');
+    if (decoded.toString('base64') !== value) throw new Error('non-canonical base64');
+    return Uint8Array.from(decoded);
   } catch {
     throw new RelayServiceError('invalid_submission', 'authenticatedEnvelope must be base64', 400);
   }
@@ -36,6 +42,8 @@ export function mapRelaySubmissionBody(body: RelaySubmissionBody, submittedAtFal
   if (Number.isNaN(submittedAt.getTime())) throw new RelayServiceError('invalid_submission', 'submittedAt is invalid', 400);
   const objectVersion = Number(body.objectVersion);
   if (!Number.isInteger(objectVersion)) throw new RelayServiceError('invalid_submission', 'objectVersion is required', 400);
+  const commercialContentVersion = Number(body.commercialContentVersion);
+  if (!Number.isInteger(commercialContentVersion)) throw new RelayServiceError('invalid_submission', 'commercialContentVersion is required', 400);
   return {
     envelopeId: relayIdentifier(requiredString(body.envelopeId, 'envelopeId'), 'RelayEnvelopeId'),
     protocolVersion: Number(body.protocolVersion),
@@ -50,6 +58,9 @@ export function mapRelaySubmissionBody(body: RelaySubmissionBody, submittedAtFal
       mailboxId: relayIdentifier(requiredString(body.mailboxId, 'mailboxId'), 'MailboxId'),
     },
     authenticatedEnvelope: decodeEnvelope(body.authenticatedEnvelope),
+    commercialContent: requiredString(body.commercialContent, 'commercialContent'),
+    commercialContentType: requiredString(body.commercialContentType, 'commercialContentType'),
+    commercialContentVersion,
     idempotencyKey: requiredString(body.idempotencyKey, 'idempotencyKey'),
     submittedAt,
   };

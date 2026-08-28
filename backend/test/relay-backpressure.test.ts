@@ -14,7 +14,8 @@ const submission = (): RelaySubmission => ({
   envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
   recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([1]), idempotencyKey: 'intent-1', submittedAt: new Date(1),
+  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+  idempotencyKey: 'intent-1', submittedAt: new Date(1),
 });
 
 class MemoryRepository implements RelayRepository {
@@ -44,6 +45,7 @@ const verifier: RelaySubmissionVerifier = { verify: (value) => Promise.resolve({
   protocolVersion: 1, envelopeId: value.envelopeId, senderBusinessId: value.senderBusinessId, senderActorId: value.senderActorId,
   senderDeviceId: value.senderDeviceId, recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
   envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
+  commercialContent: value.commercialContent, commercialContentType: value.commercialContentType, commercialContentVersion: value.commercialContentVersion,
 }) };
 const mailboxVerifier: RelayMailboxVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
@@ -74,7 +76,8 @@ describe('relay retry and backpressure', () => {
     const body = {
       protocolVersion: 1, envelopeId: 'env-1', idempotencyKey: 'intent-1', objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
       senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
-      authenticatedEnvelope: Buffer.from([1]).toString('base64'), submittedAt: new Date(1).toISOString(),
+      authenticatedEnvelope: Buffer.from([1]).toString('base64'), commercialContent: '{}',
+      commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2, submittedAt: new Date(1).toISOString(),
     };
     const first = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: body });
     const overloaded = await app.inject({

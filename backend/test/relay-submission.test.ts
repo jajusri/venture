@@ -7,10 +7,12 @@ import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/a
 
 const submission = (): RelaySubmission => ({ envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 3,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([4, 5]), idempotencyKey: 'intent-1', submittedAt: new Date(1) });
+  authenticatedEnvelope: new Uint8Array([4, 5]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+  idempotencyKey: 'intent-1', submittedAt: new Date(1) });
 const verified = (value = submission()): VerifiedRelayAuthority => ({ protocolVersion: 1, envelopeId: value.envelopeId, senderBusinessId: value.senderBusinessId,
   senderActorId: value.senderActorId, senderDeviceId: value.senderDeviceId, recipientBusinessId: value.recipient.businessId,
-  mailboxId: value.recipient.mailboxId, envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']) });
+  mailboxId: value.recipient.mailboxId, envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
+  commercialContent: value.commercialContent, commercialContentType: value.commercialContentType, commercialContentVersion: value.commercialContentVersion });
 class MemoryRepository implements RelayRepository {
   value: StoredRelayEnvelope | null = null; writes = 0;
   findByIdempotency() { return Promise.resolve(this.value); }
@@ -44,6 +46,32 @@ describe('authenticated relay submission', () => {
   it('rejects an idempotency key reused for changed canonical content', async () => {
     const repository = new MemoryRepository(); const service = new AcceptRelaySubmission(repository, { verify: () => Promise.resolve(verified()) }, issuer());
     await service.execute(submission()); await expect(service.execute({ ...submission(), objectVersion: 4 })).rejects.toThrow('Conflicting');
+  });
+  it.each([
+    ['content', { commercialContent: '{"changed":true}' }],
+    ['content type', { commercialContentType: 'application/json' }],
+    ['content version', { commercialContentVersion: 3 }],
+  ])('rejects an idempotency key reused with changed %s', async (_name, change) => {
+    const repository = new MemoryRepository();
+    const service = new AcceptRelaySubmission(repository, { verify: (value) => Promise.resolve(verified(value)) }, issuer());
+    await service.execute(submission());
+    await expect(service.execute({ ...submission(), ...change })).rejects.toThrow('Conflicting');
+    expect(repository.writes).toBe(1);
+  });
+  it('rejects missing and oversized commercial content before persistence', async () => {
+    const repository = new MemoryRepository();
+    const service = new AcceptRelaySubmission(repository, { verify: (value) => Promise.resolve(verified(value)) }, issuer());
+    await expect(service.execute({ ...submission(), commercialContent: '' })).rejects.toThrow('required');
+    await expect(service.execute({ ...submission(), commercialContent: '€'.repeat(8193) })).rejects.toThrow('bounds');
+    expect(repository.writes).toBe(0);
+  });
+  it('rejects content that differs from the cryptographically verified envelope binding', async () => {
+    const repository = new MemoryRepository();
+    const verifier: RelaySubmissionVerifier = { verify: () => Promise.resolve(verified()) };
+    await expect(new AcceptRelaySubmission(repository, verifier, issuer()).execute({
+      ...submission(), commercialContent: '{"replacement":true}',
+    })).rejects.toThrow('binding mismatch');
+    expect(repository.writes).toBe(0);
   });
   it('does not persist when acceptance evidence cannot be issued', async () => {
     const repository = new MemoryRepository();

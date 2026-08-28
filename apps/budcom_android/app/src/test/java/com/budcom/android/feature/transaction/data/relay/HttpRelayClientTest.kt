@@ -17,6 +17,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -24,11 +28,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class HttpRelayClientTest {
+    private val canonicalContent = File("../../../shared/fixtures/relay/canonical-order-snapshot-v2.json")
+        .readText(Charsets.UTF_8)
+        .removeSuffix("\n")
+        .removeSuffix("\r")
     private val dispatcher = StandardTestDispatcher()
     private val dispatchers = object : DispatcherProvider {
         override val main: CoroutineDispatcher = dispatcher
@@ -58,7 +67,12 @@ class HttpRelayClientTest {
             assertEquals("accept-1", (retry as TransportResult.Accepted).evidence.acceptanceId)
             assertEquals("relay_accepted", retry.relayAcceptance?.status)
             assertEquals(2, server.requestCount)
-            assertEquals(server.takeRequest().getHeader("Idempotency-Key"), "order:order-1:v1")
+            val firstRequest = server.takeRequest()
+            assertEquals(firstRequest.getHeader("Idempotency-Key"), "order:order-1:v1")
+            val submitted = Json.parseToJsonElement(firstRequest.body.readUtf8()).jsonObject
+            assertEquals(canonicalContent, submitted.getValue("commercialContent").jsonPrimitive.content)
+            assertEquals("application/vnd.budcom.order-snapshot+json", submitted.getValue("commercialContentType").jsonPrimitive.content)
+            assertEquals("2", submitted.getValue("commercialContentVersion").jsonPrimitive.content)
             assertEquals(server.takeRequest().getHeader("Idempotency-Key"), "order:order-1:v1")
         } finally {
             server.shutdown()
@@ -122,7 +136,7 @@ class HttpRelayClientTest {
         val server = MockWebServer()
         server.enqueue(
             MockResponse().setBody(
-                """{"recipientBusinessId":"co-1","mailboxId":"orders","nextCursor":null,"items":[{"envelopeId":"envelope-1","mailboxSequence":1,"objectType":"CANONICAL_ORDER","objectId":"order-1","objectVersion":1,"senderBusinessId":"co-sender","senderActorId":"actor-s","senderDeviceId":"device-s","status":"relay_accepted","acceptedAt":"1970-01-01T00:00:00.010Z","acceptanceId":"accept-1","authenticatedEnvelope":"AQI="}]}""",
+                """{"recipientBusinessId":"co-1","mailboxId":"orders","nextCursor":null,"items":[{"envelopeId":"envelope-1","mailboxSequence":1,"objectType":"CANONICAL_ORDER","objectId":"order-1","objectVersion":1,"senderBusinessId":"co-sender","senderActorId":"actor-s","senderDeviceId":"device-s","status":"relay_accepted","acceptedAt":"1970-01-01T00:00:00.010Z","acceptanceId":"accept-1","authenticatedEnvelope":"AQI=","commercialContent":${JsonPrimitive(canonicalContent)},"commercialContentType":"application/vnd.budcom.order-snapshot+json","commercialContentVersion":2}]}""",
             ).setResponseCode(200),
         )
         server.start()
@@ -130,6 +144,9 @@ class HttpRelayClientTest {
             val page = testClient(server).fetchMailbox("co-1", "actor-b", "device-b", "orders", null)
             assertEquals(1, page?.items?.size)
             assertEquals("relay_accepted", page?.items?.single()?.status)
+            assertEquals(canonicalContent, page?.items?.single()?.commercialSnapshotCanonical)
+            assertEquals("application/vnd.budcom.order-snapshot+json", page?.items?.single()?.commercialContentType)
+            assertEquals(2, page?.items?.single()?.commercialContentVersion)
             assertEquals("/v1/relay/mailboxes/fetch", server.takeRequest().path)
         } finally {
             server.shutdown()
@@ -164,8 +181,23 @@ class HttpRelayClientTest {
         recipient = RecipientBinding("buyer-1", "buyer-1", "orders"),
         signatureAlgorithm = "SHA256withECDSA",
         signature = byteArrayOf(7),
+        commercialSnapshotCanonical = canonicalContent,
     )
 
     private fun acceptedJson() =
         """{"status":"relay_accepted","acceptanceId":"accept-1","envelopeId":"envelope-1","objectType":"CANONICAL_ORDER","objectId":"order-1","objectVersion":1,"senderBusinessId":"co-1","recipientBusinessId":"buyer-1","acceptedAt":"1970-01-01T00:00:00.010Z"}"""
+
+    @Test
+    fun `missing or unsupported authenticated commercial content fails before HTTP`() = runTest(dispatcher) {
+        val server = MockWebServer()
+        server.start()
+        try {
+            val client = testClient(server)
+            assertTrue(client.submit(authenticated().copy(commercialSnapshotCanonical = "")) is TransportResult.PermanentRejection)
+            assertTrue(client.submit(authenticated().copy(commercialContentVersion = 3)) is TransportResult.PermanentRejection)
+            assertEquals(0, server.requestCount)
+        } finally {
+            server.shutdown()
+        }
+    }
 }

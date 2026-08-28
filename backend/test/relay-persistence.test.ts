@@ -8,6 +8,7 @@ interface StoredRow extends Record<string, unknown> {
   envelope_id: string; idempotency_key: string; protocol_version: number; object_type: string; object_id: string;
   object_version: string | number; sender_business_id: string; sender_actor_id: string; sender_device_id: string;
   recipient_business_id: string; mailbox_id: string; authenticated_envelope: Buffer; acceptance_id: string;
+  commercial_content?: string | null; commercial_content_type?: string | null; commercial_content_version?: number | null;
   accepted_at: Date; relay_id: string; acceptance_evidence_profile: string; acceptance_evidence: Buffer;
   mailbox_sequence: string | number; status: string; created_at: Date; acknowledged_at: null;
 }
@@ -20,6 +21,7 @@ class RecordingDatabase implements Database {
     return { envelope_id: 'env-1', idempotency_key: 'intent-1', protocol_version: 1, object_type: 'ORDER', object_id: 'order-1',
       object_version: '1', sender_business_id: 'sender', sender_actor_id: 'actor', sender_device_id: 'device',
       recipient_business_id: 'recipient', mailbox_id: 'orders', authenticated_envelope: Buffer.from([1]),
+      commercial_content: '{\n  "opaque" : true\n}', commercial_content_type: 'application/vnd.budcom.order-snapshot+json', commercial_content_version: 2,
       acceptance_id: 'accept-1', accepted_at: new Date(2), relay_id: 'relay-1', acceptance_evidence_profile: 'test-v1',
       acceptance_evidence: Buffer.from([9]), mailbox_sequence: '7', status: 'relay_accepted', created_at: new Date(2), acknowledged_at: null };
   }
@@ -35,7 +37,8 @@ class RecordingDatabase implements Database {
 }
 const submission: RelaySubmission = { envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
   senderBusinessId: 'sender', senderActorId: 'actor', senderDeviceId: 'device', recipient: { businessId: 'recipient', mailboxId: relayIdentifier('orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([1]), idempotencyKey: 'intent-1', submittedAt: new Date(1) };
+  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{\n  "opaque" : true\n}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+  idempotencyKey: 'intent-1', submittedAt: new Date(1) };
 const acceptance: RelayAcceptance = { acceptanceId: relayIdentifier('accept-1', 'RelayAcceptanceId'), envelopeId: submission.envelopeId,
   objectType: 'ORDER', objectId: 'order-1', objectVersion: 1, senderBusinessId: 'sender', recipientBusinessId: 'recipient',
   acceptedAt: new Date(2), status: 'relay_accepted', relayId: 'relay-1', evidenceProfile: 'test-v1', evidence: new Uint8Array([9]) };
@@ -55,6 +58,7 @@ describe('relay PostgreSQL persistence', () => {
     expect(database.calls.some((call) => call.sql.includes('ON CONFLICT (recipient_business_id, mailbox_id)'))).toBe(true);
     expect(database.calls.some((call) => call.parameters.includes(submission.authenticatedEnvelope))).toBe(true);
     expect(database.calls.some((call) => call.sql.includes('acceptance_evidence') && call.parameters.includes(acceptance.evidence))).toBe(true);
+    expect(database.calls.some((call) => call.parameters.includes(submission.commercialContent))).toBe(true);
   });
   it('hydrates stored acceptance evidence for idempotent retries', async () => {
     const database = new RecordingDatabase();
@@ -63,6 +67,7 @@ describe('relay PostgreSQL persistence', () => {
     expect(stored?.acceptance.acceptanceId).toBe(acceptance.acceptanceId);
     expect(stored?.acceptance.status).toBe('relay_accepted');
     expect(stored?.submission.authenticatedEnvelope).toEqual(submission.authenticatedEnvelope);
+    expect(stored?.submission.commercialContent).toBe(submission.commercialContent);
     expect(hydrateStoredRelayEnvelope(database.row).delivery.mailboxSequence).toBe(7);
   });
   it('lists mailbox entries with cursor bounds and relay_accepted filter', async () => {
@@ -75,9 +80,21 @@ describe('relay PostgreSQL persistence', () => {
     );
     expect(entries).toHaveLength(1);
     expect(entries[0]!.mailboxSequence).toBe(8);
+    expect(entries[0]!.commercialContent).toBe(submission.commercialContent);
     const call = database.calls.find((entry) => entry.sql.includes('FROM relay_mailbox_entry'))!;
     expect(call.sql).toContain("m.status = 'relay_accepted'");
     expect(call.sql).toContain('mailbox_sequence > $3');
     expect(call.parameters).toEqual(['recipient', 'orders', 7, 25]);
+  });
+  it('adds nullable historical-compatible commercial columns in migration 5', () => {
+    const migration = migrations.find((value) => value.name === 'relay_authenticated_commercial_content')!;
+    expect(migration.version).toBe(5);
+    expect(migration.sql).toContain('commercial_content TEXT');
+    expect(migration.sql).not.toContain('NOT NULL');
+  });
+  it('hydrates historical rows with null commercial content safely', () => {
+    const historical = { ...new RecordingDatabase().row, commercial_content: null, commercial_content_type: null, commercial_content_version: null };
+    const stored = hydrateStoredRelayEnvelope(historical);
+    expect(stored.submission.commercialContent).toBe('');
   });
 });

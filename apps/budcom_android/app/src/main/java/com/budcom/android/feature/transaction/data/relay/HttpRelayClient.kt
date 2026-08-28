@@ -14,6 +14,8 @@ import com.budcom.android.feature.transaction.domain.port.TransportResult
 import com.budcom.android.feature.transaction.domain.port.TransportRouterResult
 import com.budcom.android.feature.transaction.domain.port.RelayMailboxDeliveryItem
 import com.budcom.android.feature.transaction.domain.port.RelayMailboxPage
+import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_TYPE
+import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_VERSION
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -44,7 +46,9 @@ internal data class RelaySubmissionJson(
     val recipientBusinessId: String,
     val mailboxId: String,
     val authenticatedEnvelope: String,
-    val commercialSnapshot: String? = null,
+    val commercialContent: String,
+    val commercialContentType: String,
+    val commercialContentVersion: Int,
     val submittedAt: String,
 )
 
@@ -85,7 +89,9 @@ internal data class RelayMailboxItemJson(
     val acceptedAt: String,
     val acceptanceId: String,
     val authenticatedEnvelope: String,
-    val commercialSnapshot: String? = null,
+    val commercialContent: String? = null,
+    val commercialContentType: String? = null,
+    val commercialContentVersion: Int? = null,
 )
 
 @Serializable
@@ -121,6 +127,11 @@ class HttpRelayClient(
         .build()
 
     suspend fun submit(authenticated: AuthenticatedTransportEnvelope): TransportResult {
+        if (authenticated.commercialSnapshotCanonical.isBlank() ||
+            authenticated.commercialSnapshotCanonical.toByteArray(Charsets.UTF_8).size > MAX_COMMERCIAL_CONTENT_BYTES ||
+            authenticated.commercialContentType != ORDER_SNAPSHOT_CONTENT_TYPE ||
+            authenticated.commercialContentVersion != ORDER_SNAPSHOT_CONTENT_VERSION
+        ) return TransportResult.PermanentRejection("authenticated commercial content is invalid")
         val baseUrl = endpoint.snapshot() ?: return TransportResult.TemporarilyUnavailable("relay endpoint unconfigured")
         val mailbox = authenticated.recipient.mailboxReference
             ?: return TransportResult.PermanentRejection("recipient mailbox is required")
@@ -141,7 +152,9 @@ class HttpRelayClient(
                 recipientBusinessId = recipientBusiness,
                 mailboxId = mailbox,
                 authenticatedEnvelope = Base64.getEncoder().encodeToString(authenticated.signingBytes() + authenticated.signature),
-                commercialSnapshot = authenticated.commercialSnapshotCanonical.takeIf { it.isNotBlank() },
+                commercialContent = authenticated.commercialSnapshotCanonical,
+                commercialContentType = authenticated.commercialContentType,
+                commercialContentVersion = authenticated.commercialContentVersion,
                 submittedAt = java.time.Instant.ofEpochMilli(authenticated.envelope.createdAtEpochMillis).toString(),
             ),
         )
@@ -197,7 +210,9 @@ class HttpRelayClient(
                             acceptedAtEpochMillis = runCatching { java.time.Instant.parse(item.acceptedAt).toEpochMilli() }.getOrDefault(nowMillis()),
                             acceptanceId = item.acceptanceId,
                             authenticatedEnvelope = Base64.getDecoder().decode(item.authenticatedEnvelope),
-                            commercialSnapshotCanonical = item.commercialSnapshot,
+                            commercialSnapshotCanonical = item.commercialContent,
+                            commercialContentType = item.commercialContentType,
+                            commercialContentVersion = item.commercialContentVersion,
                         )
                     },
                     nextCursor = parsed.nextCursor,
@@ -306,6 +321,7 @@ class HttpRelayClient(
         const val READ_TIMEOUT_SECONDS = 15L
         const val WRITE_TIMEOUT_SECONDS = 15L
         const val CALL_TIMEOUT_SECONDS = 20L
+        const val MAX_COMMERCIAL_CONTENT_BYTES = 24_576
         private val JSON = "application/json; charset=utf-8".toMediaType()
         private val PERMANENT_HTTP = setOf(400, 401, 403, 404, 409, 410, 413, 422)
         val RelayRetryPolicy = RetryPolicy(maxAttempts = 4, initialDelayMillis = 400, maxDelayMillis = 8_000, jitterRatio = 0.2)

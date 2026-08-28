@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { RelaySubmissionVerifier } from '../services/relay/src/application/accept-submission.js';
 import type { RelayMailboxVerifier } from '../services/relay/src/application/fetch-mailbox.js';
 import type { RelayAcknowledgementVerifier } from '../services/relay/src/application/record-acknowledgement.js';
@@ -7,6 +8,8 @@ import { buildRelayService } from '../services/relay/src/http/app.js';
 import type { RelayAcknowledgementSubmission } from '../services/relay/src/application/record-acknowledgement.js';
 import { relayIdentifier, type RecipientRoutingKey, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../services/relay/src/persistence/relay-repository.js';
+
+const canonicalFixture = readFileSync(new URL('../../shared/fixtures/relay/canonical-order-snapshot-v2.json', import.meta.url), 'utf8').replace(/\r?\n$/, '');
 
 class E2ERepository implements RelayRepository {
   writes = 0;
@@ -33,6 +36,7 @@ class E2ERepository implements RelayRepository {
       envelopeId: value.envelopeId, mailboxSequence: 1, objectType: value.objectType, objectId: value.objectId, objectVersion: value.objectVersion,
       senderBusinessId: value.senderBusinessId, senderActorId: value.senderActorId, senderDeviceId: value.senderDeviceId,
       status: 'relay_accepted', acceptedAt: acceptance.acceptedAt, acceptanceId: acceptance.acceptanceId, authenticatedEnvelope: value.authenticatedEnvelope,
+      commercialContent: value.commercialContent, commercialContentType: value.commercialContentType, commercialContentVersion: value.commercialContentVersion,
     }];
     return Promise.resolve(this.value);
   }
@@ -60,7 +64,8 @@ const issuer = () => new SignedRelayAcceptanceIssuer({ sign: () => Promise.resol
 const verifier: RelaySubmissionVerifier = { verify: (value) => Promise.resolve({
   protocolVersion: 1, envelopeId: value.envelopeId, senderBusinessId: value.senderBusinessId, senderActorId: value.senderActorId,
   senderDeviceId: value.senderDeviceId, recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
-  envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']) }) };
+  envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
+  commercialContent: value.commercialContent, commercialContentType: value.commercialContentType, commercialContentVersion: value.commercialContentVersion }) };
 const mailboxVerifier: RelayMailboxVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
   recipientActorId: value.recipientActorId, recipientDeviceId: value.recipientDeviceId,
@@ -79,7 +84,8 @@ describe('relay end to end structured delivery', () => {
     const submitBody = {
       protocolVersion: 1, envelopeId: 'env-e2e-1', idempotencyKey: 'intent-e2e-1', objectType: 'ORDER', objectId: 'order-e2e-1', objectVersion: 2,
       senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
-      authenticatedEnvelope: Buffer.from([7, 8]).toString('base64'), submittedAt: new Date(10).toISOString(),
+      authenticatedEnvelope: Buffer.from([7, 8]).toString('base64'), commercialContent: canonicalFixture,
+      commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2, submittedAt: new Date(10).toISOString(),
     };
     const accepted = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: submitBody });
     const acceptedRetry = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: submitBody });
@@ -95,6 +101,9 @@ describe('relay end to end structured delivery', () => {
     expect(mailbox.statusCode).toBe(200);
     expect(mailbox.json().items).toHaveLength(1);
     expect(mailbox.json().items[0]).toMatchObject({ envelopeId: 'env-e2e-1', objectId: 'order-e2e-1', status: 'relay_accepted' });
+    expect(mailbox.json().items[0].commercialContent).toBe(canonicalFixture);
+    expect(mailbox.json().items[0].commercialContentType).toBe('application/vnd.budcom.order-snapshot+json');
+    expect(mailbox.json().items[0].commercialContentVersion).toBe(2);
 
     const ack = await app.inject({
       method: 'POST', url: '/v1/relay/acknowledgements',
@@ -112,7 +121,7 @@ describe('relay end to end structured delivery', () => {
     expect(lifecycle).toContain('relay_accepted');
     expect(lifecycle).toContain('delivered');
     expect(lifecycle).not.toMatch(/seen|confirmed/i);
-    expect(lifecycle).not.toMatch(/price|hidden|margin/i);
+    expect(lifecycle).not.toMatch(/9999|margin/i);
     expect(repository.acks).toBe(1);
   });
 });

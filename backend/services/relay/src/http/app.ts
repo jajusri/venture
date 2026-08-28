@@ -66,6 +66,9 @@ export function buildRelayService(options: {
         acceptedAt: item.acceptedAt.toISOString(),
         acceptanceId: item.acceptanceId,
         authenticatedEnvelope: Buffer.from(item.authenticatedEnvelope).toString('base64'),
+        commercialContent: item.commercialContent,
+        commercialContentType: item.commercialContentType,
+        commercialContentVersion: item.commercialContentVersion,
       })),
     };
   });
@@ -98,6 +101,7 @@ export function buildRelayService(options: {
 
 function mapUnknown(error: Error): number {
   const message = error.message;
+  if (message.includes('Conflicting relay submission')) return 409;
   if (message.includes('not found')) return 404;
   if (message.includes('authority rejected') || message.includes('binding mismatch')) return 403;
   if (message.includes('required') || message.includes('bounds') || message.includes('protocol') || message.includes('must contain') || message.includes('cursor')) return 400;

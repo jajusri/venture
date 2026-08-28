@@ -5,7 +5,8 @@ import { relayIdentifier, type RelaySubmission } from '../services/relay/src/dom
 
 const submission: RelaySubmission = { envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 4,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([1]), idempotencyKey: 'intent', submittedAt: new Date(1) };
+  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+  idempotencyKey: 'intent', submittedAt: new Date(1) };
 
 describe('durable relay acceptance evidence', () => {
   it('binds canonical reference, sender, recipient and acceptance time without claiming delivery', async () => {

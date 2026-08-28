@@ -13,6 +13,8 @@ data class AuthenticatedTransportEnvelope(
     val signatureAlgorithm: String,
     val signature: ByteArray,
     val commercialSnapshotCanonical: String = "",
+    val commercialContentType: String = ORDER_SNAPSHOT_CONTENT_TYPE,
+    val commercialContentVersion: Int = ORDER_SNAPSHOT_CONTENT_VERSION,
 ) {
     fun signingBytes(): ByteArray = buildString {
         append(envelope.deterministicEncoding())
@@ -24,9 +26,14 @@ data class AuthenticatedTransportEnvelope(
         append("|recipientBusiness=").append(recipient.businessId.orEmpty())
         append("|recipientParty=").append(recipient.partyId.orEmpty())
         append("|recipientMailbox=").append(recipient.mailboxReference.orEmpty())
+        append("|commercialContentType=").append(commercialContentType)
+        append("|commercialContentVersion=").append(commercialContentVersion)
         append("|snapshot=").append(commercialSnapshotCanonical)
     }.toByteArray(Charsets.UTF_8)
 }
+
+const val ORDER_SNAPSHOT_CONTENT_TYPE = "application/vnd.budcom.order-snapshot+json"
+const val ORDER_SNAPSHOT_CONTENT_VERSION = 2
 
 class AuthenticatedEnvelopeBinder(private val keyStore: VartalapDeviceKeyStore) {
     suspend fun bind(

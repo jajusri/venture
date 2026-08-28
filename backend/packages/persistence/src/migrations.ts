@@ -74,6 +74,13 @@ export const migrations: readonly Migration[] = [{
     ADD COLUMN relay_id TEXT NOT NULL,
     ADD COLUMN acceptance_evidence_profile TEXT NOT NULL,
     ADD COLUMN acceptance_evidence BYTEA NOT NULL;`,
+}, {
+  version: 5,
+  name: 'relay_authenticated_commercial_content',
+  sql: `ALTER TABLE relay_envelope
+    ADD COLUMN commercial_content TEXT,
+    ADD COLUMN commercial_content_type TEXT,
+    ADD COLUMN commercial_content_version INTEGER;`,
 }];
 
 export async function runMigrations(database: Database): Promise<void> {

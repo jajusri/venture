@@ -14,11 +14,13 @@ const submission = (): RelaySubmission => ({
   envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
   recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([1]), idempotencyKey: 'intent-1', submittedAt: new Date(1),
+  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+  idempotencyKey: 'intent-1', submittedAt: new Date(1),
 });
 const verified = (): Awaited<ReturnType<RelaySubmissionVerifier['verify']>> => ({
   protocolVersion: 1, envelopeId: 'env-1', senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
   recipientBusinessId: 'business-b', mailboxId: 'orders', envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
+  commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
 });
 const mailboxVerified = () => ({
   recipientBusinessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId'), recipientActorId: 'actor-b', recipientDeviceId: 'device-b',
@@ -54,6 +56,7 @@ class StatefulRepository implements RelayRepository {
       envelopeId: value.envelopeId, mailboxSequence: delivery.mailboxSequence, objectType: value.objectType, objectId: value.objectId, objectVersion: value.objectVersion,
       senderBusinessId: value.senderBusinessId, senderActorId: value.senderActorId, senderDeviceId: value.senderDeviceId,
       status: 'relay_accepted', acceptedAt: acceptance.acceptedAt, acceptanceId: acceptance.acceptanceId, authenticatedEnvelope: value.authenticatedEnvelope,
+      commercialContent: value.commercialContent, commercialContentType: value.commercialContentType, commercialContentVersion: value.commercialContentVersion,
     });
     return Promise.resolve(stored);
   }
@@ -82,6 +85,7 @@ const verifier: RelaySubmissionVerifier = { verify: (value) => Promise.resolve({
   protocolVersion: 1, envelopeId: value.envelopeId, senderBusinessId: value.senderBusinessId, senderActorId: value.senderActorId,
   senderDeviceId: value.senderDeviceId, recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
   envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
+  commercialContent: value.commercialContent, commercialContentType: value.commercialContentType, commercialContentVersion: value.commercialContentVersion,
 }) };
 const mailboxVerifier: RelayMailboxVerifier = { verify: (value) => Promise.resolve({
   ...mailboxVerified(), recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
@@ -154,7 +158,8 @@ describe('relay failure and recovery attacks', () => {
     const body = {
       protocolVersion: 1, envelopeId: 'env-1', idempotencyKey: 'intent-1', objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
       senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
-      authenticatedEnvelope: Buffer.from([1]).toString('base64'), submittedAt: new Date(1).toISOString(),
+      authenticatedEnvelope: Buffer.from([1]).toString('base64'), commercialContent: '{}',
+      commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2, submittedAt: new Date(1).toISOString(),
     };
     const storm = await Promise.all(Array.from({ length: 5 }, (_, index) => app.inject({
       method: 'POST', url: '/v1/relay/envelopes',

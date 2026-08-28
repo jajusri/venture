@@ -25,6 +25,7 @@ class MemoryRepository implements RelayRepository {
       envelopeId: value.envelopeId, mailboxSequence: 1, objectType: value.objectType, objectId: value.objectId, objectVersion: value.objectVersion,
       senderBusinessId: value.senderBusinessId, senderActorId: value.senderActorId, senderDeviceId: value.senderDeviceId,
       status: 'relay_accepted', acceptedAt: acceptance.acceptedAt, acceptanceId: acceptance.acceptanceId, authenticatedEnvelope: value.authenticatedEnvelope,
+      commercialContent: value.commercialContent, commercialContentType: value.commercialContentType, commercialContentVersion: value.commercialContentVersion,
     }];
     return Promise.resolve(this.value);
   }
@@ -36,14 +37,16 @@ const strictMailboxVerifier: RelayMailboxVerifier = { verify: () => Promise.reso
   credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
 const strictSubmissionVerifier: RelaySubmissionVerifier = { verify: () => Promise.resolve({
   protocolVersion: 1, envelopeId: 'env-1', senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
-  recipientBusinessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId'), envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']) }) };
+  recipientBusinessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId'), envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
+  commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2 }) };
 const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipientBusinessId, recipientActorId: value.recipientActorId,
   recipientDeviceId: value.recipientDeviceId, credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
 const body = {
   protocolVersion: 1, envelopeId: 'env-1', idempotencyKey: 'intent-1', objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
-  authenticatedEnvelope: Buffer.from([4, 5]).toString('base64'), submittedAt: new Date(1).toISOString(),
+  authenticatedEnvelope: Buffer.from([4, 5]).toString('base64'), commercialContent: '{}',
+  commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2, submittedAt: new Date(1).toISOString(),
 };
 const apps: ReturnType<typeof buildRelayService>[] = [];
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
@@ -56,12 +59,13 @@ describe('relay security red team', () => {
     expect(forged.statusCode).toBe(403);
     await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: body });
     const tampered = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: { ...body, objectVersion: 99 } });
-    expect(tampered.statusCode).toBe(500);
+    expect(tampered.statusCode).toBe(409);
     expect(repository.writes).toBe(1);
     const forgedVerifierApp = buildRelayService({
       repository: new MemoryRepository(),
       verifier: { verify: async () => ({ protocolVersion: 1, envelopeId: 'env-1', senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
-        recipientBusinessId: 'business-b', mailboxId: 'orders', envelopeIntegrityValid: true, credentialValid: false, authorityScope: new Set(['send_orders']) }) },
+        recipientBusinessId: 'business-b', mailboxId: 'orders', envelopeIntegrityValid: true, credentialValid: false, authorityScope: new Set(['send_orders']),
+        commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2 }) },
       mailboxVerifier: strictMailboxVerifier, acknowledgementVerifier, issuer: issuer(),
     }); apps.push(forgedVerifierApp);
     expect((await forgedVerifierApp.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: body })).statusCode).toBe(403);

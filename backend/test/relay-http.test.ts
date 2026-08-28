@@ -28,7 +28,8 @@ class MemoryRepository implements RelayRepository {
 }
 const verifier: RelaySubmissionVerifier = { verify: (value) => Promise.resolve({ protocolVersion: 1, envelopeId: value.envelopeId, senderBusinessId: value.senderBusinessId,
   senderActorId: value.senderActorId, senderDeviceId: value.senderDeviceId, recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
-  envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']) }) };
+  envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
+  commercialContent: value.commercialContent, commercialContentType: value.commercialContentType, commercialContentVersion: value.commercialContentVersion }) };
 const mailboxVerifier: RelayMailboxVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipient.businessId, mailboxId: value.recipient.mailboxId,
   recipientActorId: value.recipientActorId, recipientDeviceId: value.recipientDeviceId,
@@ -41,7 +42,8 @@ const issuer = () => new SignedRelayAcceptanceIssuer({ sign: () => Promise.resol
 const body = {
   protocolVersion: 1, envelopeId: 'env-1', idempotencyKey: 'intent-1', objectType: 'ORDER', objectId: 'order-1', objectVersion: 3,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
-  authenticatedEnvelope: Buffer.from([4, 5]).toString('base64'), submittedAt: new Date(1).toISOString(),
+  authenticatedEnvelope: Buffer.from([4, 5]).toString('base64'), commercialContent: '{}',
+  commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2, submittedAt: new Date(1).toISOString(),
 };
 const apps: ReturnType<typeof buildRelayService>[] = [];
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
@@ -67,6 +69,15 @@ describe('relay HTTP submission', () => {
     expect(response.statusCode).toBe(403);
     expect(repository.writes).toBe(0);
   });
+  it('rejects missing commercial content and malformed outer envelope before persistence', async () => {
+    const repository = new MemoryRepository();
+    const app = buildRelayService({ repository, verifier, mailboxVerifier, acknowledgementVerifier, issuer: issuer() }); apps.push(app);
+    const missing = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: { ...body, commercialContent: undefined } });
+    const malformed = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: { ...body, authenticatedEnvelope: '***' } });
+    expect(missing.statusCode).toBe(400);
+    expect(malformed.statusCode).toBe(400);
+    expect(repository.writes).toBe(0);
+  });
   it('returns only the authenticated recipient mailbox page', async () => {
     const repository = new MemoryRepository();
     repository.mailbox = [{
@@ -74,6 +85,7 @@ describe('relay HTTP submission', () => {
       objectVersion: 3, senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
       status: 'relay_accepted', acceptedAt: new Date(10), acceptanceId: relayIdentifier('accept-1', 'RelayAcceptanceId'),
       authenticatedEnvelope: new Uint8Array([4, 5]),
+      commercialContent: '{"opaque":true}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
     }];
     const app = buildRelayService({ repository, verifier, mailboxVerifier, acknowledgementVerifier, issuer: issuer() }); apps.push(app);
     const response = await app.inject({
@@ -83,6 +95,7 @@ describe('relay HTTP submission', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ recipientBusinessId: 'business-b', mailboxId: 'orders', nextCursor: null });
     expect(response.json().items).toHaveLength(1);
+    expect(response.json().items[0].commercialContent).toBe('{"opaque":true}');
     expect(JSON.stringify(response.json())).not.toContain('seen');
     expect(JSON.stringify(response.json())).not.toContain('delivered');
   });

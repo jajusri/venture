@@ -27,6 +27,9 @@ export interface RelaySubmission {
   readonly senderDeviceId: string;
   readonly recipient: RecipientRoutingKey;
   readonly authenticatedEnvelope: Uint8Array;
+  readonly commercialContent: string;
+  readonly commercialContentType: string;
+  readonly commercialContentVersion: number;
   readonly idempotencyKey: string;
   readonly submittedAt: Date;
 }
@@ -79,6 +82,9 @@ export interface RelayMailboxEntry {
   readonly acceptedAt: Date;
   readonly acceptanceId: RelayAcceptanceId;
   readonly authenticatedEnvelope: Uint8Array;
+  readonly commercialContent?: string | null;
+  readonly commercialContentType?: string | null;
+  readonly commercialContentVersion?: number | null;
 }
 
 export interface RelayMailboxPage {
@@ -105,4 +111,14 @@ export function validateRelaySubmission(value: RelaySubmission): void {
   if (!value.recipient.businessId.trim() || !value.recipient.mailboxId.trim()) throw new Error('Recipient routing is required');
   if (!value.idempotencyKey.trim() || value.idempotencyKey.length > 128) throw new Error('Bounded idempotency key is required');
   if (value.authenticatedEnvelope.length === 0 || value.authenticatedEnvelope.length > 256 * 1024) throw new Error('Authenticated envelope exceeds relay bounds');
+  if (value.commercialContentType !== ORDER_SNAPSHOT_CONTENT_TYPE || value.commercialContentVersion !== ORDER_SNAPSHOT_CONTENT_VERSION) {
+    throw new Error('Supported commercial content type and version are required');
+  }
+  const contentBytes = Buffer.byteLength(value.commercialContent, 'utf8');
+  if (contentBytes === 0) throw new Error('Authenticated commercial content is required');
+  if (contentBytes > MAX_COMMERCIAL_CONTENT_BYTES) throw new Error('Commercial content exceeds relay bounds');
 }
+
+export const ORDER_SNAPSHOT_CONTENT_TYPE = 'application/vnd.budcom.order-snapshot+json';
+export const ORDER_SNAPSHOT_CONTENT_VERSION = 2;
+export const MAX_COMMERCIAL_CONTENT_BYTES = 24_576;
