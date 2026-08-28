@@ -8,6 +8,7 @@ import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.domain.MasterDataBrowserDefaults
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
+import com.budcom.android.feature.voucher.domain.model.VoucherDateRangeDefaults
 import com.budcom.android.feature.voucher.domain.model.VoucherQuery
 import com.budcom.android.feature.voucher.domain.usecase.LoadVouchersUseCase
 import com.budcom.android.feature.voucher.domain.usecase.ReconcileVoucherWindowsUseCase
@@ -28,7 +29,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class VoucherBrowserViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val loadVouchers: LoadVouchersUseCase,
     private val refreshVouchers: RefreshVouchersUseCase,
     private val reconcileVoucherWindows: ReconcileVoucherWindowsUseCase,
@@ -37,8 +38,20 @@ class VoucherBrowserViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val initialQuery = savedStateHandle.get<String>(Routes.QUERY_ARG).orEmpty()
+    private val restoredDateFrom = savedStateHandle.get<String>(DATE_FROM_ARG)
+    private val restoredDateTo = savedStateHandle.get<String>(DATE_TO_ARG)
+    private val restoredTypeFilter = savedStateHandle.get<String>(TYPE_FILTER_ARG)
 
-    private val _uiState = MutableStateFlow(VoucherBrowserUiState(searchQuery = initialQuery))
+    private val fallbackRange = VoucherDateRangeDefaults.lastDaysInclusive()
+
+    private val _uiState = MutableStateFlow(
+        VoucherBrowserUiState(
+            searchQuery = initialQuery,
+            dateFrom = restoredDateFrom ?: fallbackRange.from,
+            dateTo = restoredDateTo ?: fallbackRange.to,
+            selectedTypeFilter = restoredTypeFilter,
+        ),
+    )
     val uiState: StateFlow<VoucherBrowserUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
@@ -63,6 +76,7 @@ class VoucherBrowserViewModel @Inject constructor(
                         selectedTypeFilter = null,
                     )
                 }
+                savedStateHandle[TYPE_FILTER_ARG] = null
                 onEvent(VoucherBrowserEvent.Load)
             }
         }
@@ -120,6 +134,7 @@ class VoucherBrowserViewModel @Inject constructor(
                 load(page = state.page + 1, append = true, refreshing = false)
             }
             is VoucherBrowserEvent.SearchChanged -> {
+                savedStateHandle[Routes.QUERY_ARG] = event.query
                 _uiState.update { it.copy(searchQuery = event.query) }
                 searchJob?.cancel()
                 searchJob = viewModelScope.launch {
@@ -128,15 +143,18 @@ class VoucherBrowserViewModel @Inject constructor(
                 }
             }
             is VoucherBrowserEvent.DateFromChanged -> {
+                savedStateHandle[DATE_FROM_ARG] = event.value
                 _uiState.update { it.copy(dateFrom = event.value) }
             }
             is VoucherBrowserEvent.DateToChanged -> {
+                savedStateHandle[DATE_TO_ARG] = event.value
                 _uiState.update { it.copy(dateTo = event.value) }
             }
             VoucherBrowserEvent.ApplyDateRange -> {
                 load(page = 1, append = false, refreshing = false)
             }
             is VoucherBrowserEvent.TypeFilterChanged -> {
+                savedStateHandle[TYPE_FILTER_ARG] = event.type
                 _uiState.update { it.copy(selectedTypeFilter = event.type) }
             }
         }
@@ -246,5 +264,11 @@ class VoucherBrowserViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    companion object {
+        const val DATE_FROM_ARG = "voucherDateFrom"
+        const val DATE_TO_ARG = "voucherDateTo"
+        const val TYPE_FILTER_ARG = "voucherTypeFilter"
     }
 }

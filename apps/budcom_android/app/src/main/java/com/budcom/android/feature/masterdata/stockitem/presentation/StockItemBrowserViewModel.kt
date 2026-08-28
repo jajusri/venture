@@ -22,7 +22,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class StockItemBrowserViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val loadStockItems: LoadStockItemsUseCase,
     private val refreshStockItems: RefreshStockItemsUseCase,
     private val connectivityObserver: NetworkConnectivityObserver,
@@ -56,6 +56,7 @@ class StockItemBrowserViewModel @Inject constructor(
                 load(page = state.page + 1, append = true, refreshing = false)
             }
             is StockItemBrowserEvent.SearchChanged -> {
+                savedStateHandle[Routes.QUERY_ARG] = event.query
                 _uiState.update { it.copy(searchQuery = event.query) }
                 searchJob?.cancel()
                 searchJob = viewModelScope.launch {

@@ -156,7 +156,8 @@ fun SyncScreen(
                     CircularProgressIndicator(
                         modifier = Modifier
                             .size(18.dp)
-                            .testTag("sync_refresh_spinner"),
+                            .testTag("sync_refresh_spinner")
+                            .semantics { contentDescription = "Updating overview" },
                         strokeWidth = 2.dp,
                     )
                     Spacer(modifier = Modifier.width(8.dp))
@@ -256,7 +257,9 @@ private fun ActiveRunCard(state: SyncUiState, onEvent: (SyncEvent) -> Unit) {
                     modifier = Modifier.testTag("sync_progress_indeterminate_hint"),
                 )
                 CircularProgressIndicator(
-                    modifier = Modifier.testTag("sync_progress_indeterminate"),
+                    modifier = Modifier
+                        .testTag("sync_progress_indeterminate")
+                        .semantics { contentDescription = "Sync in progress" },
                 )
             }
             if (state.activeTarget != null &&

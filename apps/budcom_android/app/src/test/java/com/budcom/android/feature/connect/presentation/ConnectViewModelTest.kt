@@ -117,8 +117,9 @@ class ConnectViewModelTest {
         company: FakeCompanySession = FakeCompanySession("co-1"),
         connectivity: FakeConnectivity = FakeConnectivity(true),
         query: String = "",
+        handle: SavedStateHandle = SavedStateHandle(mapOf(Routes.QUERY_ARG to query)),
     ) = ConnectViewModel(
-        savedStateHandle = SavedStateHandle(mapOf(Routes.QUERY_ARG to query)),
+        savedStateHandle = handle,
         listPartiesByClassification = ListPartiesByClassificationUseCase(repository),
         searchParties = SearchPartiesUseCase(repository),
         getPartySourceLinksForCompany = GetPartySourceLinksForCompanyUseCase(repository),
@@ -521,6 +522,26 @@ class ConnectViewModelTest {
         assertEquals(1, callCount)
         gate.complete(Unit)
         advanceUntilIdle()
+    }
+
+    @Test
+    fun `tab and search query are written to saved state`() = runTest(dispatcher) {
+        val handle = SavedStateHandle()
+        val vm = createViewModel(handle = handle)
+        advanceUntilIdle()
+        vm.onEvent(ConnectEvent.TabChanged(ConnectTab.Prospects))
+        vm.onEvent(ConnectEvent.SearchChanged("abc"))
+        assertEquals(ConnectTab.Prospects.name, handle.get<String>(ConnectViewModel.TAB_ARG))
+        assertEquals("abc", handle.get<String>(Routes.QUERY_ARG))
+    }
+
+    @Test
+    fun `restored tab is applied on start`() = runTest(dispatcher) {
+        val vm = createViewModel(
+            handle = SavedStateHandle(mapOf(ConnectViewModel.TAB_ARG to ConnectTab.Creditors.name)),
+        )
+        advanceUntilIdle()
+        assertEquals(ConnectTab.Creditors, vm.uiState.value.selectedTab)
     }
 }
 

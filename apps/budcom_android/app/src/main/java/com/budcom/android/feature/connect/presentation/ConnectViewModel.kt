@@ -54,7 +54,7 @@ private const val EMPTY_READ_RETRY_DELAY_MS = 500L
  */
 @HiltViewModel
 class ConnectViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val listPartiesByClassification: ListPartiesByClassificationUseCase,
     private val searchParties: SearchPartiesUseCase,
     private val getPartySourceLinksForCompany: GetPartySourceLinksForCompanyUseCase,
@@ -67,8 +67,13 @@ class ConnectViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val initialQuery = savedStateHandle.get<String>(Routes.QUERY_ARG).orEmpty()
+    private val initialTab = savedStateHandle.get<String>(TAB_ARG)
+        ?.let { runCatching { ConnectTab.valueOf(it) }.getOrNull() }
+        ?: ConnectTab.Customers
 
-    private val _uiState = MutableStateFlow(ConnectUiState(searchQuery = initialQuery))
+    private val _uiState = MutableStateFlow(
+        ConnectUiState(searchQuery = initialQuery, selectedTab = initialTab),
+    )
     val uiState: StateFlow<ConnectUiState> = _uiState.asStateFlow()
 
     private val _effects = MutableSharedFlow<ConnectEffect>(extraBufferCapacity = 4)
@@ -117,7 +122,10 @@ class ConnectViewModel @Inject constructor(
                 // stale text a moment later. Only cleared on a genuine switch, not the initial
                 // subscription -- preserves Routes.connect(query)'s deep-link-with-a-query intent.
                 loadJob?.cancel()
-                if (isRealSwitch) searchJob?.cancel()
+                if (isRealSwitch) {
+                    searchJob?.cancel()
+                    savedStateHandle[Routes.QUERY_ARG] = ""
+                }
                 _uiState.update {
                     it.copy(
                         companyId = companyId,
@@ -150,10 +158,12 @@ class ConnectViewModel @Inject constructor(
             }
             is ConnectEvent.TabChanged -> {
                 if (_uiState.value.selectedTab == event.tab) return
+                savedStateHandle[TAB_ARG] = event.tab.name
                 _uiState.update { it.copy(selectedTab = event.tab, rows = emptyList(), page = 1, error = null) }
                 load(page = 1, append = false, refreshing = false, forceEnrichmentRefresh = false, source = "TabChanged(${event.tab})")
             }
             is ConnectEvent.SearchChanged -> {
+                savedStateHandle[Routes.QUERY_ARG] = event.query
                 _uiState.update { it.copy(searchQuery = event.query) }
                 searchJob?.cancel()
                 searchJob = viewModelScope.launch {
@@ -318,6 +328,10 @@ class ConnectViewModel @Inject constructor(
         // Ledgers, not synced directly -- so the most recent underlying Ledger sync timestamp is
         // the honest freshness signal, mirroring Ledger Browser's own dataFreshnessAt display.
         dataFreshnessAt = ledgers.maxOfOrNull { it.syncedAt }
+    }
+
+    companion object {
+        const val TAB_ARG = "connectTab"
     }
 }
 

@@ -25,7 +25,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class LedgerBrowserViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val loadLedgers: LoadLedgersUseCase,
     private val refreshLedgers: RefreshLedgersUseCase,
     private val connectivityObserver: NetworkConnectivityObserver,
@@ -69,6 +69,7 @@ class LedgerBrowserViewModel @Inject constructor(
                 load(page = state.page + 1, append = true, refreshing = false)
             }
             is LedgerBrowserEvent.SearchChanged -> {
+                savedStateHandle[Routes.QUERY_ARG] = event.query
                 _uiState.update { it.copy(searchQuery = event.query) }
                 searchJob?.cancel()
                 searchJob = viewModelScope.launch {

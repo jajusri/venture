@@ -1,5 +1,6 @@
 package com.budcom.android.feature.search.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
@@ -76,7 +77,8 @@ class UniversalSearchViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun createVm() = UniversalSearchViewModel(
+    private fun createVm(handle: SavedStateHandle = SavedStateHandle()) = UniversalSearchViewModel(
+        savedStateHandle = handle,
         executeSearch = ExecuteUniversalSearchUseCase(ledgers, stock, vouchers, clock),
         companySession = companySession,
         connectivityObserver = connectivity,
@@ -209,6 +211,16 @@ class UniversalSearchViewModelTest {
         connectivity.online.value = false
         advanceUntilIdle()
         assertFalse(vm.uiState.value.isOnline)
+    }
+
+    @Test
+    fun queryIsWrittenToSavedState() = runTest(dispatcher) {
+        val handle = SavedStateHandle()
+        val vm = createVm(handle)
+        vm.onEvent(UniversalSearchEvent.QueryChanged("cash"))
+        assertEquals("cash", handle.get<String>(com.budcom.android.navigation.Routes.QUERY_ARG))
+        vm.onEvent(UniversalSearchEvent.ClearQuery)
+        assertEquals("", handle.get<String>(com.budcom.android.navigation.Routes.QUERY_ARG))
     }
 }
 

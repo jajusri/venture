@@ -217,6 +217,20 @@ class LedgerBrowserViewModelTest {
         assertEquals(2, vm.uiState.value.ledgers.size)
         assertFalse(vm.uiState.value.canLoadMore)
     }
+
+    @Test
+    fun searchQueryIsWrittenToSavedState() = runTest(dispatcher) {
+        val handle = SavedStateHandle(mapOf(Routes.QUERY_ARG to ""))
+        val vm = LedgerBrowserViewModel(
+            savedStateHandle = handle,
+            loadLedgers = LoadLedgersUseCase(repository),
+            refreshLedgers = RefreshLedgersUseCase(repository),
+            connectivityObserver = connectivity,
+        )
+        advanceUntilIdle()
+        vm.onEvent(LedgerBrowserEvent.SearchChanged("cash"))
+        assertEquals("cash", handle.get<String>(Routes.QUERY_ARG))
+    }
 }
 
 private class FakeLedgerRepository : LedgerRepository {

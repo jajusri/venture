@@ -1,5 +1,6 @@
 package com.budcom.android.feature.company.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppError
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.company.domain.model.CompanyDiscoverySnapshot
@@ -39,6 +40,7 @@ class CompanyViewModelTest {
         Dispatchers.setMain(dispatcher)
         repository = FakeCompanyRepository()
         viewModel = CompanyViewModel(
+            savedStateHandle = SavedStateHandle(),
             repository = repository,
             loadCompanies = LoadCompaniesUseCase(repository),
             restoreSelection = RestoreCompanySelectionUseCase(repository),
@@ -84,6 +86,21 @@ class CompanyViewModelTest {
         advanceUntilIdle()
         assertEquals("estimation", viewModel.uiState.value.selectedCompanyId)
         assertTrue(viewModel.uiState.value.sessionValidated)
+    }
+
+    @Test
+    fun `search query is written to saved state`() = runTest(dispatcher) {
+        val handle = SavedStateHandle()
+        val vm = CompanyViewModel(
+            savedStateHandle = handle,
+            repository = repository,
+            loadCompanies = LoadCompaniesUseCase(repository),
+            restoreSelection = RestoreCompanySelectionUseCase(repository),
+            selectCompany = SelectCompanyUseCase(repository),
+            validateSession = ValidateSessionUseCase(repository),
+        )
+        vm.onEvent(CompanyEvent.SearchChanged("estima"))
+        assertEquals("estima", handle.get<String>(com.budcom.android.navigation.Routes.QUERY_ARG))
     }
 }
 

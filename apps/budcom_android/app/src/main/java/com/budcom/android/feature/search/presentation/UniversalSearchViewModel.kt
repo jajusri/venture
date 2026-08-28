@@ -1,5 +1,6 @@
 package com.budcom.android.feature.search.presentation
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.budcom.android.core.network.NetworkConnectivityObserver
@@ -8,6 +9,7 @@ import com.budcom.android.feature.search.domain.UniversalSearchDefaults
 import com.budcom.android.feature.search.domain.model.SearchQuery
 import com.budcom.android.feature.search.domain.model.SearchSection
 import com.budcom.android.feature.search.domain.usecase.ExecuteUniversalSearchUseCase
+import com.budcom.android.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,12 +26,17 @@ import javax.inject.Inject
 
 @HiltViewModel
 class UniversalSearchViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val executeSearch: ExecuteUniversalSearchUseCase,
     private val companySession: CompanySessionPort,
     private val connectivityObserver: NetworkConnectivityObserver,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(UniversalSearchUiState())
+    private val persistedHandle = savedStateHandle
+
+    private val _uiState = MutableStateFlow(
+        UniversalSearchUiState(query = savedStateHandle.get<String>(Routes.QUERY_ARG).orEmpty()),
+    )
     val uiState: StateFlow<UniversalSearchUiState> = _uiState.asStateFlow()
 
     private val _navigation = MutableSharedFlow<UniversalSearchNavigation>(extraBufferCapacity = 8)
@@ -50,6 +57,10 @@ class UniversalSearchViewModel @Inject constructor(
                 companyId = id
             }
         }
+        val restored = _uiState.value.query
+        if (SearchQuery(restored).normalized() != null) {
+            onQueryChanged(restored)
+        }
     }
 
     fun onEvent(event: UniversalSearchEvent) {
@@ -65,6 +76,7 @@ class UniversalSearchViewModel @Inject constructor(
 
     private fun onQueryChanged(raw: String) {
         val capped = raw.take(UniversalSearchDefaults.MAX_QUERY_LENGTH)
+        persistedHandle[Routes.QUERY_ARG] = capped
         _uiState.update { it.copy(query = capped) }
         debounceJob?.cancel()
         searchJob?.cancel()
@@ -91,6 +103,7 @@ class UniversalSearchViewModel @Inject constructor(
     }
 
     private fun clearQuery() {
+        persistedHandle[Routes.QUERY_ARG] = ""
         debounceJob?.cancel()
         searchJob?.cancel()
         _uiState.update {

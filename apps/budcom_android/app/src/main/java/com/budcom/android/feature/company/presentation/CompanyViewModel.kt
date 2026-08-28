@@ -2,7 +2,10 @@ package com.budcom.android.feature.company.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.SavedStateHandle
 import com.budcom.android.core.common.AppError
+import com.budcom.android.core.common.UserVisibleErrorText
+import com.budcom.android.navigation.Routes
 import com.budcom.android.core.common.AppResult
 import com.budcom.android.feature.company.domain.model.ConnectorCompany
 import com.budcom.android.feature.company.domain.repository.CompanyRepository
@@ -20,6 +23,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class CompanyViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle,
     private val repository: CompanyRepository,
     private val loadCompanies: LoadCompaniesUseCase,
     private val restoreSelection: RestoreCompanySelectionUseCase,
@@ -27,7 +31,9 @@ class CompanyViewModel @Inject constructor(
     private val validateSession: ValidateSessionUseCase,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(CompanyUiState())
+    private val _uiState = MutableStateFlow(
+        CompanyUiState(searchQuery = savedStateHandle.get<String>(Routes.QUERY_ARG).orEmpty()),
+    )
     val uiState: StateFlow<CompanyUiState> = _uiState.asStateFlow()
 
     init {
@@ -47,6 +53,7 @@ class CompanyViewModel @Inject constructor(
             CompanyEvent.Load -> load(false)
             CompanyEvent.Refresh -> load(true)
             is CompanyEvent.SearchChanged -> {
+                savedStateHandle[Routes.QUERY_ARG] = event.query
                 _uiState.update {
                     it.copy(searchQuery = event.query).applyFilter()
                 }
@@ -177,25 +184,14 @@ internal fun CompanyUiState.applyFilter(): CompanyUiState {
 }
 
 private fun AppError.toUiError(): CompanyUiError = when (this) {
-    is AppError.Offline -> CompanyUiError.Offline("Device is offline.")
-    is AppError.Timeout -> CompanyUiError.Timeout("The request timed out.")
-    is AppError.Remote -> CompanyUiError.Http(
-        buildString {
-            if (httpStatus != null) append("HTTP ").append(httpStatus).append(": ")
-            if (!code.isNullOrBlank()) append('[').append(code).append("] ")
-            append(message)
-        },
+    is AppError.Offline -> CompanyUiError.Offline(UserVisibleErrorText.OFFLINE)
+    is AppError.Timeout -> CompanyUiError.Timeout(UserVisibleErrorText.TIMEOUT)
+    is AppError.Remote -> CompanyUiError.Http(UserVisibleErrorText.fromRemote(httpStatus, message))
+    is AppError.Serialization -> CompanyUiError.Serialization(
+        UserVisibleErrorText.sanitizeOr(message, UserVisibleErrorText.UNREADABLE),
     )
-    is AppError.Serialization -> CompanyUiError.Serialization(message)
-    is AppError.Message -> CompanyUiError.Unknown(message)
-    is AppError.Unexpected -> CompanyUiError.Unknown(cause.message ?: "An unexpected error occurred.")
+    is AppError.Message -> CompanyUiError.Unknown(UserVisibleErrorText.sanitizeOr(message, UserVisibleErrorText.UNEXPECTED))
+    is AppError.Unexpected -> CompanyUiError.Unknown(UserVisibleErrorText.fromThrowable(cause))
 }
 
-private fun AppError.toMessage(): String = when (this) {
-    is AppError.Offline -> "Device is offline."
-    is AppError.Timeout -> "The request timed out."
-    is AppError.Remote -> message
-    is AppError.Serialization -> message
-    is AppError.Message -> message
-    is AppError.Unexpected -> cause.message ?: "An unexpected error occurred."
-}
+private fun AppError.toMessage(): String = UserVisibleErrorText.fromAppError(this)
