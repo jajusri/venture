@@ -169,7 +169,8 @@ class TransactionRepositoryImplTest {
             else com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome.Verified(
                 com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityContext(
                     request.viewerBusinessId, request.expectedActorId ?: "test-actor", request.expectedDeviceId, "test-credential", 1, 1,
-                    setOf("send_orders"), request.orderId, request.orderVersion, request.action,
+                    setOfNotNull(com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityPolicy.requiredScope(request.action)),
+                    request.orderId, request.orderVersion, request.action,
                 ),
             )
         },
@@ -192,6 +193,19 @@ class TransactionRepositoryImplTest {
             if (open.viewerBusinessId == "buyer-co") open.viewerBusinessId else open.senderBusinessId,
             open.openedAt.epochMillis,
         )
+
+    private fun actionAuthority(
+        action: com.budcom.android.feature.transaction.domain.model.CommercialAction,
+        businessId: String,
+        actorId: String,
+        deviceId: String,
+        orderVersion: Int = 1,
+        sellerBusinessId: String = "seller-co",
+        buyerBusinessId: String = "buyer-co",
+    ) = com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest(
+        action, businessId, actorId, deviceId, 1, "order-1", orderVersion, "order-1", orderVersion,
+        sellerBusinessId, buyerBusinessId, 600,
+    )
 
     private fun oneLine(amount: String = "1000") = NewLineItem(
         linkedProductId = "product-1", snapshotProductName = "Widget", snapshotUnit = "Nos", snapshotSku = "SKU-1",
@@ -349,7 +363,7 @@ class TransactionRepositoryImplTest {
         val seen1 = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open, seenAuthority(open))!!
         val seen2 = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open, seenAuthority(open))!!
         assertEquals(seen1.eventId, seen2.eventId)
-        val authority = OrderConfirmAuthority("seller-co", "actor-s", "device-s", setOf("confirm_orders"), 1)
+        val authority = actionAuthority(com.budcom.android.feature.transaction.domain.model.CommercialAction.SellerConfirm, "seller-co", "actor-s", "device-s")
         val confirm1 = repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", authority, "confirm-1", "confirm:key", ts(400))!!
         val confirm2 = repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", authority, "confirm-1", "confirm:key", ts(401))!!
         assertEquals(confirm1.eventId, confirm2.eventId)
@@ -382,7 +396,7 @@ class TransactionRepositoryImplTest {
             actorBusinessId = "seller-co", actorId = "actor-s", actorDeviceId = "device-s",
             counterpartyBusinessId = "buyer-co", occurredAt = 300, occurredAtSource = TransactionTimestampSource.DeviceLocalProvisional.name,
         )
-        val denied = OrderConfirmAuthority("wrong-co", "actor-s", "device-s", setOf("confirm_orders"), 1)
+        val denied = actionAuthority(com.budcom.android.feature.transaction.domain.model.CommercialAction.SellerConfirm, "wrong-co", "actor-s", "device-s")
         assertNull(repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", denied, "c-1", "confirm:bad", ts(400)))
         val forgedSeen = OrderSeenEvidence(
             eventId = "forged", orderId = "order-1", orderVersion = 1, viewerBusinessId = "buyer-co",
@@ -401,7 +415,7 @@ class TransactionRepositoryImplTest {
             viewerActorId = "actor-s", viewerDeviceId = "device-s", senderBusinessId = "buyer-co", seenAt = ts(300),
         )
         assertEquals(CanonicalOrderState.Seen, repo.applyOrderSeenEvidence("buyer-co", seenEvidence)!!.state)
-        val authority = OrderConfirmAuthority("seller-co", "actor-s", "device-s", setOf("confirm_orders"), 1)
+        val authority = actionAuthority(com.budcom.android.feature.transaction.domain.model.CommercialAction.SellerConfirm, "seller-co", "actor-s", "device-s")
         repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", authority, "confirm-1", "confirm:key", ts(400))
         val confirmEvidence = OrderConfirmEvidence(
             eventId = "confirm-1", orderId = "order-1", orderVersion = 1, confirmingBusinessId = "seller-co",
@@ -452,7 +466,7 @@ class TransactionRepositoryImplTest {
         seedSellerReceivedOrder()
         recipientInboxDao.entries += inboxFixture()
         seenOpenEvent().let { repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", it, seenAuthority(it)) }
-        val sellerAuthority = OrderConfirmAuthority("seller-co", "actor-s", "device-s", setOf("revise_orders"), 1)
+        val sellerAuthority = actionAuthority(com.budcom.android.feature.transaction.domain.model.CommercialAction.SellerRevise, "seller-co", "actor-s", "device-s")
         val sellerRevision = repo.proposeOrderRevision(
             "seller-co", "env-1", sellerBaselineOrder(), revisionLines("12"), "Need 12 units",
             sellerAuthority, ts(500), "revision:order-1:v2",
@@ -461,14 +475,14 @@ class TransactionRepositoryImplTest {
         assertEquals(2, sellerRevision.version)
         val revisionEnvelope = repo.enqueueOrderDelivery(sellerRevision, ts(510))
         repo.markRevisionSent("seller-co", "order-1", revisionEnvelope)!!
-        recipientInboxDao.entries += buyerRevisionInboxFixture("env-2", 2)
-        val buyerRevision = sellerRevision.copy(
-            companyId = "buyer-co",
-            sellerCompanyId = "seller-co",
-            buyerPartyId = "buyer-co",
-            state = CanonicalOrderState.RevisionSent,
+        val revisionSnapshot = OrderVersionSnapshot.fromCanonicalOrder(sellerRevision, "buyer-co", "env-2")
+        val revisionItem = RelayMailboxDeliveryItem(
+            "env-2", 2, "CANONICAL_ORDER", "order-1", 2, "seller-co", "actor-s", "device-s",
+            "buyer-co", "orders", "relay_accepted", 520, "accept-2", byteArrayOf(1),
+            revisionSnapshot.deterministicEncoding(), "application/vnd.budcom.order-snapshot+json", 3,
         )
-        val received = repo.receiveOrderRevisionOnBuyer("buyer-co", "env-2", buyerRevision, ts(520))!!
+        assertTrue(repo.ingestReceivedOrderVersion("buyer-co", revisionItem, revisionSnapshot, ts(520)))
+        val received = repo.findCanonicalOrderById("buyer-co", "order-1")!!
         assertEquals(CanonicalOrderState.RevisionSent, received.state)
         assertEquals("10", repo.findArchivedOrderVersion("buyer-co", "order-1", 1)!!.lines.single().quantity)
         assertEquals(RecipientInboxTransportState.Received.columnValue, recipientInboxDao.entries.single { it.envelopeId == "env-2" }.transportState)
@@ -483,7 +497,7 @@ class TransactionRepositoryImplTest {
         val revisionSeen = repo.applyOrderSeenEvidence("buyer-co", seenEvidence)!!
         assertEquals(CanonicalOrderState.RevisionSeen, revisionSeen.state)
         assertNotEquals(CanonicalOrderState.Seen, received.state)
-        val buyerAuthority = OrderConfirmAuthority("buyer-co", "actor-b", "device-b", setOf("accept_order_revisions"), 1)
+        val buyerAuthority = actionAuthority(com.budcom.android.feature.transaction.domain.model.CommercialAction.BuyerAcceptRevision, "buyer-co", "actor-b", "device-b", 2)
         val acceptedEvent = repo.recordOrderRevisionAcceptFromBuyerAction(
             "buyer-co", "env-2", buyerAuthority, "accept-2", "accept:order-1:v2:buyer-co", ts(600),
         )!!
@@ -530,7 +544,7 @@ class TransactionRepositoryImplTest {
         assertNull(
             repo.recordOrderRevisionAcceptFromBuyerAction(
                 "buyer-co", "env-2",
-                OrderConfirmAuthority("buyer-co", "actor-b", "device-b", setOf("send_orders"), 1),
+                buyerAuthority.copy(action = com.budcom.android.feature.transaction.domain.model.CommercialAction.SellerConfirm),
                 "denied", "accept:denied", ts(602),
             ),
         )

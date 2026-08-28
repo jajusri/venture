@@ -27,7 +27,7 @@ import org.junit.Test
 
 class BuyingCycleProductionPathTest {
     @Test
-    fun `coordinator confirm and revision require trust authority and stay commercially atomic`() = runTest {
+    fun `coordinator forwards authority requests and keeps commercial actions atomic`() = runTest {
         val repository = RecordingBuyingCycleRepository()
         val coordinator = CanonicalBuyingCycleCoordinator(
             repository,
@@ -37,11 +37,8 @@ class BuyingCycleProductionPathTest {
         )
         val ts = TransactionTimestamp(10, TransactionTimestampSource.DeviceLocalProvisional)
         val confirmRequest = request(CommercialAction.SellerConfirm)
-        assertNull(
-            CanonicalBuyingCycleCoordinator(
-                repository, RejectingAuthorityResolver(), PassthroughCommercialDbTransaction, RelayOutboxDispatcher { },
-            ).confirmSellerOrder(confirmRequest, "env-1", "evt", "idem", ts, "buyer-co"),
-        )
+        // This fake repository intentionally bypasses the production repository's credential resolver.
+        // Trust rejection is proven by repository and TrustVerifiedCommercialActionAuthorityResolver tests.
         val confirmed = coordinator.confirmSellerOrder(confirmRequest, "env-1", "evt", "idem", ts, "buyer-co")
         assertEquals(CanonicalOrderState.Confirmed, confirmed?.state)
         val revised = coordinator.proposeAndSendRevision(
@@ -103,12 +100,12 @@ private class RecordingBuyingCycleRepository : TransactionRepository {
         ),
     )
 
-    override suspend fun recordOrderConfirmFromSellerAction(sellerCompanyId: String, envelopeId: String, authority: OrderConfirmAuthority, eventId: String, idempotencyKey: String, timestamp: TransactionTimestamp): com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent {
+    override suspend fun recordOrderConfirmFromSellerAction(sellerCompanyId: String, envelopeId: String, authorityRequest: CommercialActionAuthorityRequest, eventId: String, idempotencyKey: String, timestamp: TransactionTimestamp): com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent {
         order = order.copy(companyId = sellerCompanyId, state = CanonicalOrderState.Confirmed)
         return com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent(
             sellerCompanyId, eventId, idempotencyKey, "order-1", 1,
             com.budcom.android.feature.transaction.domain.model.OrderCommercialEventType.Confirmed,
-            authority.businessId, authority.actorId, authority.deviceId, "buyer-co", timestamp,
+            sellerCompanyId, authorityRequest.expectedActorId ?: "actor", authorityRequest.expectedDeviceId, "buyer-co", timestamp,
         )
     }
 
@@ -120,7 +117,7 @@ private class RecordingBuyingCycleRepository : TransactionRepository {
         return order
     }
 
-    override suspend fun proposeOrderRevision(sellerCompanyId: String, envelopeId: String, baseline: CanonicalOrder, proposedLines: List<OrderRevisionLineChange>, revisionReason: String?, authority: OrderConfirmAuthority, timestamp: TransactionTimestamp, idempotencyKey: String): CanonicalOrder {
+    override suspend fun proposeOrderRevision(sellerCompanyId: String, envelopeId: String, baseline: CanonicalOrder, proposedLines: List<OrderRevisionLineChange>, revisionReason: String?, authorityRequest: CommercialActionAuthorityRequest, timestamp: TransactionTimestamp, idempotencyKey: String): CanonicalOrder {
         order = baseline.copy(version = baseline.version + 1, state = CanonicalOrderState.RevisionPending, note = revisionReason)
         return order
     }
@@ -137,12 +134,12 @@ private class RecordingBuyingCycleRepository : TransactionRepository {
         return order
     }
 
-    override suspend fun recordOrderRevisionAcceptFromBuyerAction(buyerCompanyId: String, envelopeId: String, authority: OrderConfirmAuthority, eventId: String, idempotencyKey: String, timestamp: TransactionTimestamp): com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent {
+    override suspend fun recordOrderRevisionAcceptFromBuyerAction(buyerCompanyId: String, envelopeId: String, authorityRequest: CommercialActionAuthorityRequest, eventId: String, idempotencyKey: String, timestamp: TransactionTimestamp): com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent {
         order = order.copy(companyId = buyerCompanyId, state = CanonicalOrderState.Confirmed)
         return com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent(
             buyerCompanyId, eventId, idempotencyKey, "order-1", 2,
             com.budcom.android.feature.transaction.domain.model.OrderCommercialEventType.RevisionAccepted,
-            authority.businessId, authority.actorId, authority.deviceId, "seller-co", timestamp,
+            buyerCompanyId, authorityRequest.expectedActorId ?: "actor", authorityRequest.expectedDeviceId, "seller-co", timestamp,
         )
     }
 

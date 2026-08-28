@@ -32,11 +32,10 @@ class CanonicalBuyingCycleCoordinator @Inject constructor(
         timestamp: TransactionTimestamp,
         applyOnCompanyId: String,
     ): CanonicalOrder? {
-        val authority = verified(request, CommercialAction.SellerConfirm) ?: return null
         if (applyOnCompanyId != request.buyerBusinessId) return null
         val recorded = dbTransaction.run {
             val recorded = repository.recordOrderConfirmFromSellerAction(
-                request.viewerBusinessId, envelopeId, authority.toConfirmAuthority(), eventId, idempotencyKey, timestamp,
+                request.viewerBusinessId, envelopeId, request.copy(action = CommercialAction.SellerConfirm), eventId, idempotencyKey, timestamp,
             ) ?: return@run null
             recorded
         }
@@ -53,10 +52,10 @@ class CanonicalBuyingCycleCoordinator @Inject constructor(
         timestamp: TransactionTimestamp,
         idempotencyKey: String,
     ): CanonicalOrder? {
-        val authority = verified(request, CommercialAction.SellerRevise) ?: return null
         val result = dbTransaction.run {
             val revised = repository.proposeOrderRevision(
-                request.viewerBusinessId, envelopeId, baseline, proposedLines, reason, authority.toConfirmAuthority(), timestamp, idempotencyKey,
+                request.viewerBusinessId, envelopeId, baseline, proposedLines, reason,
+                request.copy(action = CommercialAction.SellerRevise), timestamp, idempotencyKey,
             ) ?: return@run null
             verified(
                 request.copy(action = CommercialAction.RevisionSend, orderVersion = revised.version, inboxOrderVersion = revised.version),
@@ -78,10 +77,9 @@ class CanonicalBuyingCycleCoordinator @Inject constructor(
         idempotencyKey: String,
         timestamp: TransactionTimestamp,
     ): CanonicalOrder? {
-        val authority = verified(request, CommercialAction.BuyerAcceptRevision) ?: return null
         val result = dbTransaction.run {
             val recorded = repository.recordOrderRevisionAcceptFromBuyerAction(
-                request.viewerBusinessId, envelopeId, authority.toConfirmAuthority(), eventId, idempotencyKey, timestamp,
+                request.viewerBusinessId, envelopeId, request.copy(action = CommercialAction.BuyerAcceptRevision), eventId, idempotencyKey, timestamp,
             ) ?: return@run null
             repository.findCanonicalOrderById(request.viewerBusinessId, recorded.orderId)
         }

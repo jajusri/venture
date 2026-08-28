@@ -141,7 +141,7 @@ private class RevisionAcceptFakeRepository : TransactionRepository {
     override suspend fun recordOrderRevisionAcceptFromBuyerAction(
         buyerCompanyId: String,
         envelopeId: String,
-        authority: OrderConfirmAuthority,
+        authorityRequest: CommercialActionAuthorityRequest,
         eventId: String,
         idempotencyKey: String,
         timestamp: TransactionTimestamp,
@@ -150,8 +150,9 @@ private class RevisionAcceptFakeRepository : TransactionRepository {
         return OrderCommercialEvent(
             companyId = buyerCompanyId,
             eventId = eventId, idempotencyKey = idempotencyKey, orderId = "order-1", orderVersion = 2,
-            eventType = OrderCommercialEventType.RevisionAccepted, actorBusinessId = buyerCompanyId, actorId = authority.actorId,
-            actorDeviceId = authority.deviceId, counterpartyBusinessId = "seller-co", occurredAt = timestamp,
+            eventType = OrderCommercialEventType.RevisionAccepted, actorBusinessId = buyerCompanyId,
+            actorId = authorityRequest.expectedActorId ?: "actor-b",
+            actorDeviceId = authorityRequest.expectedDeviceId, counterpartyBusinessId = "seller-co", occurredAt = timestamp,
         )
     }
 

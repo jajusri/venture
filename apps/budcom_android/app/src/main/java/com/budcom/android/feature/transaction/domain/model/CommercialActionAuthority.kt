@@ -42,13 +42,6 @@ data class CommercialActionAuthorityContext(
         }
     }
 
-    fun toConfirmAuthority(): OrderConfirmAuthority = OrderConfirmAuthority(
-        businessId = businessId,
-        actorId = actorId,
-        deviceId = deviceId,
-        authorityScope = authorityScope,
-        authorityEpoch = authorityEpoch,
-    )
 }
 
 data class CommercialActionAuthorityRequest(

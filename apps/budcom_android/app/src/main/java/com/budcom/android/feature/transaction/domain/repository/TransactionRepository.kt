@@ -6,7 +6,6 @@ import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
 import com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent
 import com.budcom.android.feature.transaction.domain.model.OrderSeenEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
-import com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority
 import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
@@ -128,7 +127,7 @@ interface TransactionRepository {
     suspend fun recordOrderConfirmFromSellerAction(
         sellerCompanyId: String,
         envelopeId: String,
-        authority: OrderConfirmAuthority,
+        authorityRequest: CommercialActionAuthorityRequest,
         eventId: String,
         idempotencyKey: String,
         timestamp: TransactionTimestamp,
@@ -143,7 +142,7 @@ interface TransactionRepository {
         baseline: CanonicalOrder,
         proposedLines: List<OrderRevisionLineChange>,
         revisionReason: String?,
-        authority: OrderConfirmAuthority,
+        authorityRequest: CommercialActionAuthorityRequest,
         timestamp: TransactionTimestamp,
         idempotencyKey: String,
     ): CanonicalOrder? = throw UnsupportedOperationException("Order revision is not implemented by this repository")
@@ -154,7 +153,7 @@ interface TransactionRepository {
     suspend fun recordOrderRevisionAcceptFromBuyerAction(
         buyerCompanyId: String,
         envelopeId: String,
-        authority: OrderConfirmAuthority,
+        authorityRequest: CommercialActionAuthorityRequest,
         eventId: String,
         idempotencyKey: String,
         timestamp: TransactionTimestamp,
