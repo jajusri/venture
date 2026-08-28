@@ -59,6 +59,7 @@ import com.budcom.android.R
 import com.budcom.android.feature.masterdata.presentation.MasterDataErrorBlock
 import com.budcom.android.feature.masterdata.presentation.MasterDataLoadingIndicator
 import com.budcom.android.feature.masterdata.presentation.MasterDataOfflineBanner
+import com.budcom.android.feature.masterdata.presentation.accountDataFreshnessLine
 import com.budcom.android.feature.masterdata.presentation.displayMessage
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -149,7 +150,11 @@ fun ConnectScreen(
                         modifier = Modifier.testTag("connect_fetch_contact_details"),
                     ) {
                         if (state.isFetchingContactDetails) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                            CircularProgressIndicator(
+                                modifier = Modifier
+                                    .size(20.dp)
+                                    .semantics { contentDescription = "Fetching contact details from Tally" },
+                            )
                         } else {
                             Icon(
                                 Icons.Filled.Refresh,
@@ -209,12 +214,19 @@ fun ConnectScreen(
                         MasterDataOfflineBanner(testTag = "connect_offline_banner")
                     }
                     if (state.hasContent) {
-                        Text(
-                            text = "Data last synced: ${state.dataFreshnessAt ?: "unknown"}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.testTag("connect_data_freshness"),
-                        )
+                        accountDataFreshnessLine(
+                            dataFreshnessAt = state.dataFreshnessAt,
+                            isRefreshing = state.isRefreshing,
+                            isOnline = state.isOnline,
+                            hasContent = true,
+                        )?.let { line ->
+                            Text(
+                                text = line,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("connect_data_freshness"),
+                            )
+                        }
                     }
 
                     OutlinedTextField(

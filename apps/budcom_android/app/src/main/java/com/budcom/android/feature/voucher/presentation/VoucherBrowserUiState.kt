@@ -95,13 +95,16 @@ fun VoucherBrowserUiState.reconciliationStatusLabel(): String? = when (historyRe
 }
 
 internal fun VoucherCacheState.statusText(lastSyncedAt: Long?): String = when (this) {
-    VoucherCacheState.Live -> "Live"
-    VoucherCacheState.Offline -> "Offline · Last synced ${lastSyncedAt?.let(::formatSyncTime) ?: "unknown"}"
+    VoucherCacheState.Live -> lastSyncedAt?.let { "Last successful refresh: ${formatSyncTime(it)}" }
+        ?: "Last refresh succeeded · time not recorded"
+    VoucherCacheState.Offline -> lastSyncedAt?.let {
+        "Offline — showing saved data · Last successful sync: ${formatSyncTime(it)}"
+    } ?: "Offline — showing saved data · Last successful sync: not recorded"
     VoucherCacheState.NoCache -> "No offline data"
 }
 
 internal fun refreshFailedMessage(lastSyncedAt: Long?): String =
-    "Could not refresh · Showing data last synced at ${lastSyncedAt?.let(::formatSyncTime) ?: "unknown"}"
+    "Could not refresh · Showing data last synced at ${lastSyncedAt?.let(::formatSyncTime) ?: "not recorded"}"
 
 private fun formatSyncTime(value: Long): String = java.text.DateFormat.getDateTimeInstance(
     java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT,

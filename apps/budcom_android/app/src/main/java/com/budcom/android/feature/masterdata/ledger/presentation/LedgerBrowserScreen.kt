@@ -42,6 +42,7 @@ import com.budcom.android.feature.masterdata.presentation.MasterDataEmptyMessage
 import com.budcom.android.feature.masterdata.presentation.MasterDataErrorBlock
 import com.budcom.android.feature.masterdata.presentation.MasterDataLoadingIndicator
 import com.budcom.android.feature.masterdata.presentation.MasterDataOfflineBanner
+import com.budcom.android.feature.masterdata.presentation.accountDataFreshnessLine
 import com.budcom.android.feature.masterdata.presentation.displayMessage
 import kotlinx.coroutines.flow.distinctUntilChanged
 
@@ -113,12 +114,19 @@ fun LedgerBrowserScreen(
                     MasterDataOfflineBanner(testTag = "ledger_offline_banner")
                 }
                 if (state.hasContent) {
-                    Text(
-                        text = "Data last synced: ${state.dataFreshnessAt ?: "unknown"}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.testTag("ledger_data_freshness"),
-                    )
+                    accountDataFreshnessLine(
+                        dataFreshnessAt = state.dataFreshnessAt,
+                        isRefreshing = state.isRefreshing,
+                        isOnline = state.isOnline,
+                        hasContent = true,
+                    )?.let { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("ledger_data_freshness"),
+                        )
+                    }
                 }
 
                 OutlinedTextField(

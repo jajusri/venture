@@ -2,9 +2,9 @@ package com.budcom.android.feature.masterdata.ledger.presentation
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.budcom.android.feature.masterdata.presentation.MasterDataUiError
 import com.budcom.android.ui.theme.BudcomTheme
@@ -94,7 +94,9 @@ class LedgerBrowserScreenTest {
             }
         }
         composeRule.onNodeWithTag("ledger_data_freshness").assertIsDisplayed()
-        composeRule.onNodeWithText("Data last synced: 2026-08-18T09:00:00Z").assertIsDisplayed()
+        composeRule.onNodeWithTag("ledger_data_freshness").assert(
+            androidx.compose.ui.test.hasText("Last successful sync", substring = true),
+        )
     }
 
     @Test

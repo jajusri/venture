@@ -104,4 +104,23 @@ class StockItemBrowserScreenTest {
         composeRule.onNodeWithTag("stock_item_offline_banner").assertIsDisplayed()
         composeRule.onNodeWithTag("stock_item_list").assertIsDisplayed()
     }
+
+    @Test
+    fun freshnessLabelShowsWhenContentIsPresent() {
+        composeRule.setContent {
+            BudcomTheme {
+                StockItemBrowserScreen(
+                    state = StockItemBrowserUiState(
+                        isInitialLoading = false,
+                        stockItems = listOf(
+                            StockItemRowUi("guid:widget", "Widget", null, "Active", null, null),
+                        ),
+                        dataFreshnessAt = "2026-08-18T09:00:00Z",
+                    ),
+                    onEvent = {},
+                )
+            }
+        }
+        composeRule.onNodeWithTag("stock_item_data_freshness").assertIsDisplayed()
+    }
 }

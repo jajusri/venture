@@ -6,6 +6,7 @@ import com.budcom.android.core.common.AppResult
 import com.budcom.android.core.network.NetworkConnectivityObserver
 import com.budcom.android.feature.company.domain.port.CompanySessionPort
 import com.budcom.android.feature.masterdata.presentation.displayMessage
+import com.budcom.android.feature.masterdata.presentation.formatAccountDataFreshness
 import com.budcom.android.feature.sync.domain.model.SyncOutcome
 import com.budcom.android.feature.sync.domain.model.SyncStatusSummary
 import com.budcom.android.feature.sync.domain.model.SyncTarget
@@ -298,8 +299,10 @@ class SyncViewModel @Inject constructor(
                 } else {
                     snap.liveProgress.statusLineOrIdle()
                 },
-                lastSyncedLine = snap.lastSuccessfulAt?.let { "Last synced at $it" }
-                    ?: snap.statistics?.lastSyncedAt?.let { "Last synced at $it" },
+                lastSyncedLine = (snap.lastSuccessfulAt ?: snap.statistics?.lastSyncedAt)?.let { raw ->
+                    val display = formatAccountDataFreshness(raw) ?: raw
+                    "Last successful sync: $display"
+                },
                 canSync = snap.available && canStart && !active,
                 canCancel = snap.available && active,
             )

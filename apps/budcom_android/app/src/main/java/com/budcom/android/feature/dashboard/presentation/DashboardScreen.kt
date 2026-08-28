@@ -186,7 +186,9 @@ fun DashboardScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(
+                            modifier = Modifier.semantics { contentDescription = "Loading dashboard" },
+                        )
                         Spacer(modifier = Modifier.height(24.dp))
                         Text(
                             text = stringResource(R.string.dashboard_refreshing),
@@ -311,16 +313,14 @@ private fun HomeSearchEntry(onEvent: (DashboardEvent) -> Unit) {
 }
 
 /**
- * Compact Fresh / last-sync / Tally-connected state with a one-tap Sync action
- * (BUDCOM-UI-DESIGN-DECISIONS §3). Purely a terser presentation of state already computed
- * elsewhere on this screen ([DashboardUiState.operationalMode], [DashboardUiState.syncStatusLabel],
- * [DashboardUiState.connectorConnected]) — no new data source. [OperationalBanner] below remains
- * the detailed/error surface for the same state; this row is the at-a-glance summary.
+ * Compact operational / last-sync / Tally-connected state with a one-tap Sync action
+ * (BUDCOM-UI-DESIGN-DECISIONS §3). Ready means Connector session is usable — not that
+ * account data is freshly synced. [DashboardUiState.syncStatusLabel] is the freshness line.
  */
 @Composable
 private fun HomeCompactStatusRow(state: DashboardUiState, onEvent: (DashboardEvent) -> Unit) {
     val (dotColor, freshnessWord) = when (state.operationalMode) {
-        DashboardOperationalMode.FullyOperational -> MaterialTheme.colorScheme.tertiary to "Fresh"
+        DashboardOperationalMode.FullyOperational -> MaterialTheme.colorScheme.tertiary to "Ready"
         DashboardOperationalMode.PartiallyAvailable -> MaterialTheme.colorScheme.tertiary to "Partial"
         DashboardOperationalMode.Offline -> MaterialTheme.colorScheme.error to "Offline"
         DashboardOperationalMode.ConnectorUnavailable -> MaterialTheme.colorScheme.error to "Unavailable"
