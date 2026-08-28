@@ -26,6 +26,7 @@ import com.budcom.android.feature.transaction.domain.model.TransactionLineItem
 import com.budcom.android.feature.transaction.domain.model.TransactionSubmissionType
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
 import com.budcom.android.feature.transaction.domain.model.TransactionDraft
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest
 
 /** One line item as submitted — no `estimatePoId`/`lineItemId` yet, the repository assigns those. */
 data class NewLineItem(
@@ -85,6 +86,7 @@ interface TransactionRepository {
         creationKey: String,
         note: String? = null,
         timestamp: TransactionTimestamp,
+        authorityRequest: CommercialActionAuthorityRequest,
     ): CanonicalOrder = throw UnsupportedOperationException("Draft Order creation is not implemented by this repository")
 
     suspend fun enqueueOrderDelivery(order: CanonicalOrder, timestamp: TransactionTimestamp): OrderDeliveryEnvelope =

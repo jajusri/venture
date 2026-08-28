@@ -46,6 +46,10 @@ import com.budcom.android.feature.transaction.domain.repository.NewLineItem
 import com.budcom.android.feature.transaction.domain.repository.ProposedTerms
 import com.budcom.android.feature.transaction.domain.repository.SellerInboxActionResult
 import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
+import com.budcom.android.feature.transaction.domain.port.DeviceKeySecurityLevel
+import com.budcom.android.feature.transaction.domain.port.DeviceSigningIdentity
+import com.budcom.android.feature.transaction.domain.port.DeviceSigningResult
+import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
 import com.budcom.android.feature.transaction.domain.repository.TransactionSnapshot
 import com.budcom.android.feature.transaction.sharing.PreparedTransactionShare
@@ -85,6 +89,7 @@ class TransactionComposerViewModelTest {
     ) = TransactionComposerViewModel(
         SavedStateHandle(buildMap { buyerPartyId?.let { put(TransactionComposerViewModel.BUYER_PARTY_ID_ARG, it) } }),
         repository, catalogueRepository, shareCoordinator, FakeCompanySessionPort(companyId), FakeTransactionClock(),
+        FakeComposerKeyStore(),
         RelayOutboxDispatcher { },
     )
 
@@ -406,6 +411,7 @@ class TransactionComposerRealCatalogueTest {
             SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
             FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
             FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+            FakeComposerKeyStore(),
         )
         dispatcher.scheduler.advanceUntilIdle()
         assertEquals(1, vm.uiState.value.newSkus.size)
@@ -420,6 +426,7 @@ class TransactionComposerRealCatalogueTest {
             SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
             FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
             FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+            FakeComposerKeyStore(),
         )
         dispatcher.scheduler.advanceUntilIdle()
         val priceState = vm.uiState.value.newSkus.single().priceState as TransactionDraftPriceState.ActualPrice
@@ -434,6 +441,7 @@ class TransactionComposerRealCatalogueTest {
             SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
             FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
             FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+            FakeComposerKeyStore(),
         )
         dispatcher.scheduler.advanceUntilIdle()
         assertEquals(TransactionDraftPriceState.NoPriceSupplied, vm.uiState.value.newSkus.single().priceState)
@@ -447,6 +455,7 @@ class TransactionComposerRealCatalogueTest {
             SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
             FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
             FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+            FakeComposerKeyStore(),
         )
         dispatcher.scheduler.advanceUntilIdle()
         assertEquals(TransactionDraftPriceState.ContactForPrice, vm.uiState.value.newSkus.single().priceState)
@@ -460,6 +469,7 @@ class TransactionComposerRealCatalogueTest {
             SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
             FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
             FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+            FakeComposerKeyStore(),
         )
         dispatcher.scheduler.advanceUntilIdle()
         val row = vm.uiState.value.newSkus.single()
@@ -476,6 +486,7 @@ class TransactionComposerRealCatalogueTest {
             SavedStateHandle(mapOf(TransactionComposerViewModel.BUYER_PARTY_ID_ARG to "buyer-1")),
             FakeTransactionRepository(), catalogueRepository, FakeTransactionShareCoordinator(),
             FakeCompanySessionPort("co-1"), FakeTransactionClock(),
+            FakeComposerKeyStore(),
         )
         dispatcher.scheduler.advanceUntilIdle()
         vm.onEvent(TransactionComposerEvent.AddOrIncrementProduct("p1", "Existing Widget", "Nos", null, TransactionDraftPriceState.ActualPrice("100", "INR")))
@@ -486,6 +497,20 @@ class TransactionComposerRealCatalogueTest {
         assertEquals("Existing Widget", vm.uiState.value.draft!!.lines.first().snapshotProductName)
         assertEquals("New Widget", vm.uiState.value.draft!!.lines.last().snapshotProductName)
     }
+}
+
+private class FakeComposerKeyStore : VartalapDeviceKeyStore {
+    private val identity = DeviceSigningIdentity(
+        "test-device", "test-key", 1, byteArrayOf(1), "test-fingerprint", 0,
+        DeviceKeySecurityLevel.SecureKeystore,
+    )
+    override suspend fun getCurrentIdentity() = identity
+    override suspend fun getOrCreateIdentity(deviceId: String) = identity
+    override suspend fun rotate(deviceId: String) = identity
+    override suspend fun inspect(deviceId: String, keyVersion: Int) = identity
+    override suspend fun sign(identity: DeviceSigningIdentity, boundedBytes: ByteArray) =
+        DeviceSigningResult.Success(boundedBytes)
+    override suspend fun remove(deviceId: String, keyVersion: Int) = true
 }
 
 // ============================== fakes ==============================

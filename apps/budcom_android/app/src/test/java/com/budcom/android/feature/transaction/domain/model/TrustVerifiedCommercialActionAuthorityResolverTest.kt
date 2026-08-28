@@ -17,6 +17,26 @@ import java.security.Signature
 
 class TrustVerifiedCommercialActionAuthorityResolverTest {
     @Test
+    fun `signed buyer credential establishes creation authority and rejects wrong business scope forgery and revocation`() = runTest {
+        val keys = KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
+        val buyerCredential = signed(keys, "buyer-co", "actor-b", "device-b", setOf("send_orders"))
+        val valid = resolver(keys, buyerCredential, 1, "device-b").resolve(buyerCreation())
+        assertTrue(valid is CommercialActionAuthorityOutcome.Verified)
+        assertEquals("buyer-co", (valid as CommercialActionAuthorityOutcome.Verified).context.businessId)
+        assertEquals(CommercialAction.BuyerCreateOrder, valid.context.intendedAction)
+
+        val thirdCredential = signed(keys, "third-co", "actor-b", "device-b", setOf("send_orders"))
+        assertEquals(CommercialActionAuthorityOutcome.WrongBusiness, resolver(keys, thirdCredential, 1, "device-b").resolve(buyerCreation()))
+        val wrongScope = signed(keys, "buyer-co", "actor-b", "device-b", setOf("confirm_orders"))
+        assertEquals(CommercialActionAuthorityOutcome.MissingScope, resolver(keys, wrongScope, 1, "device-b").resolve(buyerCreation()))
+        assertEquals(CommercialActionAuthorityOutcome.Unavailable, resolver(keys, null, 1, "device-b").resolve(buyerCreation()))
+        assertEquals(CommercialActionAuthorityOutcome.Revoked, resolver(keys, buyerCredential, 1, "device-b", keyRevoked = true).resolve(buyerCreation()))
+        val forged = buyerCredential.copy(signature = byteArrayOf(1, 2, 3))
+        assertEquals(CommercialActionAuthorityOutcome.Unavailable, resolver(keys, forged, 1, "device-b").resolve(buyerCreation()))
+        assertEquals(CommercialActionAuthorityOutcome.WrongDevice, resolver(keys, buyerCredential, 1, "other-device").resolve(buyerCreation()))
+    }
+
+    @Test
     fun `valid seller credential can confirm and rejects every unauthorized variant`() = runTest {
         val keys = KeyPairGenerator.getInstance("EC").apply { initialize(256) }.generateKeyPair()
         val sellerCred = signed(
@@ -143,6 +163,21 @@ class TrustVerifiedCommercialActionAuthorityResolverTest {
         sellerBusinessId = "seller-co",
         buyerBusinessId = "buyer-co",
         nowEpochMillis = now,
+    )
+
+    private fun buyerCreation() = CommercialActionAuthorityRequest(
+        action = CommercialAction.BuyerCreateOrder,
+        viewerBusinessId = "buyer-co",
+        expectedActorId = "actor-b",
+        expectedDeviceId = "device-b",
+        expectedDeviceKeyVersion = 1,
+        orderId = "",
+        orderVersion = 0,
+        inboxOrderId = "",
+        inboxOrderVersion = 0,
+        sellerBusinessId = "",
+        buyerBusinessId = "buyer-co",
+        nowEpochMillis = 2_000,
     )
 
     private fun signed(

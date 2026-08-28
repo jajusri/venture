@@ -25,6 +25,9 @@ import com.budcom.android.feature.transaction.domain.model.TransactionSubmission
 import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
 import com.budcom.android.feature.transaction.domain.model.TransactionDeliveryChannel
+import com.budcom.android.feature.transaction.domain.model.CommercialAction
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest
+import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
 import com.budcom.android.feature.transaction.sharing.TransactionShareCoordinator
 import com.budcom.android.feature.transaction.sharing.TransactionShareResult
 import com.budcom.android.feature.transaction.sharing.TransactionSharePriceVisibility
@@ -60,6 +63,7 @@ class TransactionComposerViewModel @Inject constructor(
     private val shareCoordinator: TransactionShareCoordinator,
     private val companySession: CompanySessionPort,
     private val clock: TransactionClock,
+    private val keyStore: VartalapDeviceKeyStore,
     private val relayOutboxDispatcher: RelayOutboxDispatcher = RelayOutboxDispatcher { },
 ) : ViewModel() {
 
@@ -227,7 +231,25 @@ class TransactionComposerViewModel @Inject constructor(
         val draft = _uiState.value.draft ?: return
         viewModelScope.launch {
             runCatching {
-                repository.createDraftOrder(draft, draftOrderCreationKey, timestamp = clock.now())
+                val device = requireNotNull(keyStore.getCurrentIdentity())
+                val now = clock.now()
+                repository.createDraftOrder(
+                    draft, draftOrderCreationKey, timestamp = now,
+                    authorityRequest = CommercialActionAuthorityRequest(
+                        action = CommercialAction.BuyerCreateOrder,
+                        viewerBusinessId = draft.companyId,
+                        expectedActorId = null,
+                        expectedDeviceId = device.deviceId,
+                        expectedDeviceKeyVersion = device.keyVersion,
+                        orderId = "",
+                        orderVersion = 0,
+                        inboxOrderId = "",
+                        inboxOrderVersion = 0,
+                        sellerBusinessId = "",
+                        buyerBusinessId = draft.companyId,
+                        nowEpochMillis = now.epochMillis,
+                    ),
+                )
             }.onSuccess { order ->
                 _uiState.update { it.copy(canonicalDraftOrder = order, message = "Draft order saved locally.") }
             }.onFailure { failure ->

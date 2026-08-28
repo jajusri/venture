@@ -144,23 +144,44 @@ class TransactionRepositoryImplTest {
         orderVersionArchiveDao.lines.clear()
     }
 
-    private fun repository(dbTransaction: CommercialDbTransaction = com.budcom.android.feature.transaction.data.local.PassthroughCommercialDbTransaction) = TransactionRepositoryImpl(
+    private fun repository(
+        dbTransaction: CommercialDbTransaction = com.budcom.android.feature.transaction.data.local.PassthroughCommercialDbTransaction,
+        bindingStatus: com.budcom.android.feature.transaction.domain.model.CounterpartyBindingStatus? =
+            com.budcom.android.feature.transaction.domain.model.CounterpartyBindingStatus.Active,
+        authorityGranted: Boolean = true,
+    ) = TransactionRepositoryImpl(
         estimatePoDao, lineItemDao, sellerInboxEntryDao, transactionDao, termsDao, paymentEventDao,
         ledgerIntentDao, accessGrantDao, submissionPort, reminderScheduler, partyRepository, dispatchers,
         canonicalOrderDao, orderOutboxDao, recipientInboxDao, orderCommercialEventDao, orderVersionArchiveDao,
         dbTransaction,
         object : com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBindingRepository {
             override suspend fun verifyAndRecord(localBusinessId: String, partyId: String, verificationRequest: com.budcom.android.feature.transaction.domain.port.CredentialVerificationRequest, verifiedAtEpochMillis: Long) = null
-            override suspend fun resolveActive(localBusinessId: String, partyId: String) =
-                com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBinding(
+            override suspend fun resolveActive(localBusinessId: String, partyId: String) = bindingStatus
+                ?.takeIf { it == com.budcom.android.feature.transaction.domain.model.CounterpartyBindingStatus.Active }
+                ?.let { com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBinding(
                     localBusinessId, partyId, partyId, "test-actor", "test-device", 1, "test-verified",
-                    com.budcom.android.feature.transaction.domain.model.CounterpartyBindingStatus.Active, 0,
-                )
+                    it, 0,
+                ) }
             override suspend fun revoke(localBusinessId: String, partyId: String) = Unit
+        },
+        com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityResolver { request ->
+            if (!authorityGranted) com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome.Unavailable
+            else com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome.Verified(
+                com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityContext(
+                    request.viewerBusinessId, "test-actor", request.expectedDeviceId, "test-credential", 1, 1,
+                    setOf("send_orders"), request.orderId, request.orderVersion, request.action,
+                ),
+            )
         },
     )
 
     private fun ts(millis: Long) = TransactionTimestamp(millis, TransactionTimestampSource.DeviceLocalProvisional)
+
+    private fun creationAuthority(companyId: String) =
+        com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest(
+            com.budcom.android.feature.transaction.domain.model.CommercialAction.BuyerCreateOrder,
+            companyId, null, "test-device", 1, "", 0, "", 0, "", companyId, 100,
+        )
 
     private fun oneLine(amount: String = "1000") = NewLineItem(
         linkedProductId = "product-1", snapshotProductName = "Widget", snapshotUnit = "Nos", snapshotSku = "SKU-1",
@@ -177,8 +198,8 @@ class TransactionRepositoryImplTest {
             TransactionDraftPriceState.ActualPrice("100", "INR"), "3",
         )
 
-        val first = repo.createDraftOrder(draft, "review-1", "Deliver Friday", ts(100))
-        val retry = repo.createDraftOrder(draft.copy(lines = draft.lines.map { it.copy(quantity = "99") }), "review-1", timestamp = ts(200))
+        val first = repo.createDraftOrder(draft, "review-1", "Deliver Friday", ts(100), creationAuthority("co-1"))
+        val retry = repo.createDraftOrder(draft.copy(lines = draft.lines.map { it.copy(quantity = "99") }), "review-1", timestamp = ts(200), authorityRequest = creationAuthority("co-1"))
 
         assertEquals(first.orderId, retry.orderId)
         assertEquals("DRAFT", first.state.columnValue)
@@ -200,7 +221,7 @@ class TransactionRepositoryImplTest {
             "product-1", "Widget", "Nos", "SKU-1", TransactionDraftPriceState.Hidden,
         )
 
-        assertTrue(runCatching { repo.createDraftOrder(draft, "hidden-1", timestamp = ts(100)) }.isFailure)
+        assertTrue(runCatching { repo.createDraftOrder(draft, "hidden-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1")) }.isFailure)
         assertTrue(canonicalOrderDao.orders.isEmpty())
     }
 
@@ -209,7 +230,7 @@ class TransactionRepositoryImplTest {
         val repo = repository()
         var draft = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
         draft = TransactionDraftOperations.addOrIncrementLine(draft, "product-1", "Widget", "Nos", "SKU-1", TransactionDraftPriceState.ContactForPrice)
-        val order = repo.createDraftOrder(draft, "review-queue-1", timestamp = ts(100))
+        val order = repo.createDraftOrder(draft, "review-queue-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1"))
 
         val first = repo.enqueueOrderDelivery(order, ts(200))
         val retry = repo.enqueueOrderDelivery(order, ts(300))
@@ -231,7 +252,7 @@ class TransactionRepositoryImplTest {
         val repo = repository()
         var draft = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
         draft = TransactionDraftOperations.addOrIncrementLine(draft, "product-1", "Widget", "Nos", "SKU-1", TransactionDraftPriceState.ContactForPrice)
-        val order = repo.createDraftOrder(draft, "sent-evidence-1", timestamp = ts(100))
+        val order = repo.createDraftOrder(draft, "sent-evidence-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1"))
         val envelope = repo.enqueueOrderDelivery(order, ts(200))
         val evidence = RelayAcceptanceEvidence(
             acceptanceId = "accept-1", envelopeId = envelope.envelopeId, objectType = envelope.objectType,
@@ -555,6 +576,30 @@ class TransactionRepositoryImplTest {
         assertTrue(repository().ingestReceivedOrderVersion("buyer-co", item, snapshot, ts(701)))
         assertEquals(1, recipientInboxDao.entries.size)
         assertEquals(1, canonicalOrderDao.orders.size)
+    }
+
+    @Test
+    fun `creation authority and active seller binding are required before any persistence`() = runTest(dispatcher) {
+        var draft = TransactionDraftOperations.empty("buyer-co", "seller-party", TransactionSubmissionType.Estimate)
+        draft = TransactionDraftOperations.addOrIncrementLine(
+            draft, "product-1", "Widget", "Nos", null,
+            TransactionDraftPriceState.ActualPrice("10", "INR"), "1",
+        )
+        assertTrue(runCatching {
+            repository(authorityGranted = false).createDraftOrder(draft, "no-authority", timestamp = ts(100), authorityRequest = creationAuthority("buyer-co"))
+        }.isFailure)
+        assertTrue(runCatching {
+            repository().createDraftOrder(draft, "wrong-business", timestamp = ts(100), authorityRequest = creationAuthority("third-co"))
+        }.isFailure)
+        assertTrue(runCatching {
+            repository(bindingStatus = null).createDraftOrder(draft, "unbound", timestamp = ts(100), authorityRequest = creationAuthority("buyer-co"))
+        }.isFailure)
+        assertTrue(runCatching {
+            repository(bindingStatus = com.budcom.android.feature.transaction.domain.model.CounterpartyBindingStatus.Revoked)
+                .createDraftOrder(draft, "revoked", timestamp = ts(100), authorityRequest = creationAuthority("buyer-co"))
+        }.isFailure)
+        assertTrue(canonicalOrderDao.orders.isEmpty())
+        assertTrue(orderOutboxDao.envelopes.isEmpty())
     }
 
     @Test

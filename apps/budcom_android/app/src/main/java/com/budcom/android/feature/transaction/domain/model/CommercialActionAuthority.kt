@@ -9,6 +9,7 @@ import com.budcom.android.feature.transaction.domain.port.TrustedBusinessDeviceC
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
 
 enum class CommercialAction {
+    BuyerCreateOrder,
     SellerConfirm,
     SellerRevise,
     RevisionSend,
@@ -33,8 +34,11 @@ data class CommercialActionAuthorityContext(
         require(credentialId.isNotBlank())
         require(credentialVersion > 0)
         require(authorityEpoch >= 0)
-        require(orderId.isNotBlank())
-        require(orderVersion >= 1)
+        if (intendedAction == CommercialAction.BuyerCreateOrder) {
+            require(orderId.isEmpty() && orderVersion == 0)
+        } else {
+            require(orderId.isNotBlank() && orderVersion >= 1)
+        }
     }
 
     fun toConfirmAuthority(): OrderConfirmAuthority = OrderConfirmAuthority(
@@ -85,6 +89,7 @@ fun interface CommercialActionAuthorityResolver {
 
 object CommercialActionAuthorityPolicy {
     fun requiredScope(action: CommercialAction): String? = when (action) {
+        CommercialAction.BuyerCreateOrder -> CREATE_ORDERS_CAPABILITY
         CommercialAction.SellerConfirm -> OrderConfirmAuthority.CONFIRM_ORDERS_CAPABILITY
         CommercialAction.SellerRevise, CommercialAction.RevisionSend -> OrderConfirmAuthority.REVISE_ORDERS_CAPABILITY
         CommercialAction.BuyerAcceptRevision -> OrderConfirmAuthority.ACCEPT_ORDER_REVISIONS_CAPABILITY
@@ -92,17 +97,26 @@ object CommercialActionAuthorityPolicy {
     }
 
     fun rolePermitted(request: CommercialActionAuthorityRequest): Boolean {
-        if (request.orderId.isBlank() || request.orderVersion < 1) return false
-        if (request.sellerBusinessId == request.buyerBusinessId) return false
         return when (request.action) {
+            CommercialAction.BuyerCreateOrder -> request.orderId.isEmpty() && request.orderVersion == 0 &&
+                request.inboxOrderId.isEmpty() && request.inboxOrderVersion == 0 &&
+                request.viewerBusinessId == request.buyerBusinessId
             CommercialAction.SellerConfirm, CommercialAction.SellerRevise, CommercialAction.RevisionSend ->
-                request.viewerBusinessId == request.sellerBusinessId && request.viewerBusinessId != request.buyerBusinessId
+                request.orderId.isNotBlank() && request.orderVersion >= 1 &&
+                    request.sellerBusinessId != request.buyerBusinessId &&
+                    request.viewerBusinessId == request.sellerBusinessId
             CommercialAction.BuyerAcceptRevision ->
-                request.viewerBusinessId == request.buyerBusinessId && request.viewerBusinessId != request.sellerBusinessId
+                request.orderId.isNotBlank() && request.orderVersion >= 1 &&
+                    request.sellerBusinessId != request.buyerBusinessId &&
+                    request.viewerBusinessId == request.buyerBusinessId
             CommercialAction.OpenReceived ->
-                request.viewerBusinessId == request.sellerBusinessId || request.viewerBusinessId == request.buyerBusinessId
+                request.orderId.isNotBlank() && request.orderVersion >= 1 &&
+                    request.sellerBusinessId != request.buyerBusinessId &&
+                    (request.viewerBusinessId == request.sellerBusinessId || request.viewerBusinessId == request.buyerBusinessId)
         }
     }
+
+    private const val CREATE_ORDERS_CAPABILITY = "send_orders"
 }
 
 object EmptyCommercialTrustCredentialSource : CommercialTrustCredentialSource {
@@ -116,7 +130,10 @@ class TrustVerifiedCommercialActionAuthorityResolver(
     private val epochs: AuthorityEpochCache,
 ) : CommercialActionAuthorityResolver {
     override suspend fun resolve(request: CommercialActionAuthorityRequest): CommercialActionAuthorityOutcome {
-        if (request.orderId.isBlank() || request.orderVersion < 1) return CommercialActionAuthorityOutcome.WrongOrderVersion
+        val creation = request.action == CommercialAction.BuyerCreateOrder
+        if ((!creation && (request.orderId.isBlank() || request.orderVersion < 1)) ||
+            (creation && (request.orderId.isNotEmpty() || request.orderVersion != 0))
+        ) return CommercialActionAuthorityOutcome.WrongOrderVersion
         if (request.orderId != request.inboxOrderId || request.orderVersion != request.inboxOrderVersion) {
             return CommercialActionAuthorityOutcome.WrongOrderVersion
         }

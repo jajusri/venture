@@ -55,6 +55,10 @@ import com.budcom.android.feature.transaction.domain.model.CommercialReturnEvent
 import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_TYPE
 import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_VERSION
 import com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBindingRepository
+import com.budcom.android.feature.transaction.domain.model.CommercialAction
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest
+import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityResolver
 import com.budcom.android.feature.transaction.domain.model.OrderSeenEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
 import com.budcom.android.feature.transaction.domain.model.RecipientInboxTransportState
@@ -139,6 +143,7 @@ class TransactionRepositoryImpl @Inject constructor(
     private val orderVersionArchiveDao: OrderVersionArchiveDao,
     private val dbTransaction: CommercialDbTransaction,
     private val counterpartyBindings: AuthenticatedCounterpartyBindingRepository,
+    private val authorityResolver: CommercialActionAuthorityResolver,
 ) : TransactionRepository, OrderSentFromRelayEvidence {
 
     override suspend fun ingestReceivedCommercialEvent(
@@ -241,11 +246,17 @@ class TransactionRepositoryImpl @Inject constructor(
         creationKey: String,
         note: String?,
         timestamp: TransactionTimestamp,
+        authorityRequest: CommercialActionAuthorityRequest,
     ): CanonicalOrder = withContext(dispatchers.io) {
         require(creationKey.isNotBlank())
         require(draft.lines.isNotEmpty())
         require(draft.lines.none { it.priceState == TransactionDraftPriceState.Hidden })
         val sellerBinding = draft.buyerPartyId?.let { counterpartyBindings.resolveActive(draft.companyId, it) }
+        requireNotNull(sellerBinding) { "Seller Party has no verified business binding" }
+        require(authorityRequest.action == CommercialAction.BuyerCreateOrder)
+        val authority = (authorityResolver.resolve(authorityRequest) as? CommercialActionAuthorityOutcome.Verified)?.context
+        requireNotNull(authority) { "Verified local creation authority is required" }
+        require(authority.businessId == draft.companyId && authorityRequest.buyerBusinessId == draft.companyId)
         val existing = canonicalOrderDao.findByCreationKey(draft.companyId, creationKey)
         if (existing != null) return@withContext existing.toDomain(canonicalOrderDao.findLines(draft.companyId, existing.orderId))
         dbTransaction.run {
@@ -263,8 +274,8 @@ class TransactionRepositoryImpl @Inject constructor(
             createdAt = timestamp.epochMillis,
             createdAtSource = timestamp.source.name,
             version = 1,
-            buyerBusinessId = draft.companyId,
-            sellerBusinessId = sellerBinding?.counterpartyBusinessId,
+            buyerBusinessId = authority.businessId,
+            sellerBusinessId = sellerBinding.counterpartyBusinessId,
         )
         try {
             canonicalOrderDao.insert(entity)
