@@ -56,7 +56,7 @@ See also: [desktop-development-launch.md](./desktop-development-launch.md)
 | `ProdRelease` | `com.budcom.android` | Release-shaped prod package |
 | `DevRelease` | `com.budcom.android.dev` | Release-shaped dev package |
 
-The Android script refuses silent downgrades, verifies APK package/version after install, and never wipes app data.
+The Android script refuses silent downgrades, verifies APK package/version after install, never wipes app data, and requires a **clean worktree** plus `last-build.json` from the current HEAD before `-Install`.
 
 ## Physical validation evidence (separate)
 

@@ -72,6 +72,61 @@ function Get-RepoGitHead {
     finally { Pop-Location }
 }
 
+function Get-RepoGitState {
+    Push-Location $RepoRoot
+    try {
+        return [ordered]@{
+            Head = (git rev-parse HEAD 2>$null)
+            Dirty = [bool](git status --short 2>$null)
+            StatusShort = @(git status --short 2>$null)
+        }
+    }
+    finally { Pop-Location }
+}
+
+function Get-LastBuildMetadata {
+    $metaPath = Join-Path $LauncherLogDir 'last-build.json'
+    if (-not (Test-Path $metaPath)) { return $null }
+    try { return Get-Content -Raw -Path $metaPath | ConvertFrom-Json }
+    catch { return $null }
+}
+
+function Test-BuildArtifactAuthoritative {
+    param($Config)
+    $apk = Get-ApkMetadata -ApkPath $Config.ApkPath
+    if (-not $apk) {
+        Write-Fail "APK missing or unreadable at $($Config.ApkPath). Run with -Build."
+    }
+    if ($apk.Package -ne $Config.Package) {
+        Write-Fail "APK package mismatch: expected $($Config.Package), got $($apk.Package)."
+    }
+    $meta = Get-LastBuildMetadata
+    if (-not $meta) {
+        Write-Fail "No build metadata for this variant. Run with -Build before -Install."
+    }
+    if ($meta.variant -ne $Config.Name) {
+        Write-Fail "Build metadata variant '$($meta.variant)' does not match requested '$($Config.Name)'."
+    }
+    if ($meta.package -ne $Config.Package) {
+        Write-Fail "Build metadata package '$($meta.package)' does not match variant package '$($Config.Package)'."
+    }
+    if ($meta.apkPath -ne $Config.ApkPath) {
+        Write-Fail "Build metadata APK path does not match expected variant APK path."
+    }
+    $git = Get-RepoGitState
+    if ($meta.head -ne $git.Head) {
+        Write-Fail "Built APK is from Git HEAD $($meta.head) but current HEAD is $($git.Head). Re-run with -Build."
+    }
+    if ($git.Dirty) {
+        Write-Fail "Worktree is dirty; refusing install of ambiguous mixed-source APK. Commit or stash product changes, then -Build -Install."
+    }
+    $builtAt = [datetime]::Parse($meta.builtAt)
+    if ($apk.Modified -lt $builtAt.AddSeconds(-2)) {
+        Write-Fail "APK on disk is older than the recorded build. Re-run with -Build."
+    }
+    return $apk
+}
+
 function Resolve-VariantConfig {
     param([string]$Name)
     $flavor = if ($Name.StartsWith('Dev')) { 'dev' } else { 'prod' }
@@ -194,6 +249,8 @@ function Invoke-Gradle {
     $psi.RedirectStandardError = $true
     $psi.CreateNoWindow = $true
     if (Test-Path $JavaHome) { $psi.Environment['JAVA_HOME'] = $JavaHome }
+    $gradleHome = if ($env:GRADLE_USER_HOME) { $env:GRADLE_USER_HOME } else { Join-Path $env:USERPROFILE '.gradle' }
+    $psi.Environment['GRADLE_USER_HOME'] = $gradleHome
     if ($Serial) { $psi.Environment['ANDROID_SERIAL'] = $Serial }
 
     $started = Get-Date
@@ -224,8 +281,13 @@ function Invoke-Gradle {
 
 function Show-AndroidStatus {
     param([string]$Serial, $Config)
+    $git = Get-RepoGitState
     Write-Step '[7/7] Result - status (read-only)'
-    Write-Step "Git HEAD: $(Get-RepoGitHead)"
+    Write-Step "Git HEAD: $($git.Head)"
+    Write-Step ("Worktree: {0}" -f $(if ($git.Dirty) { 'DIRTY' } else { 'clean' }))
+    if ($git.Dirty) {
+        foreach ($line in $git.StatusShort) { Write-Step "  dirty: $line" }
+    }
     Write-Step "Android project: $AndroidDir"
     Write-Step "Variant: $($Config.Name) -> package $($Config.Package)"
     Write-Step "ADB: $Adb"
@@ -246,8 +308,31 @@ function Show-AndroidStatus {
         Write-Step ("Built APK: $($Config.ApkPath)")
         Write-Step ("  modified: $($apk.Modified)")
         Write-Step ("  metadata: $($apk.Package) $($apk.VersionName) (code $($apk.VersionCode))")
-        if ($installed -and $apk.VersionCode -lt $installed.VersionCode) {
-            Write-Step "WARN: built APK is older than installed package (would be downgrade)"
+        $meta = Get-LastBuildMetadata
+        if ($meta) {
+            Write-Step ("  last build HEAD: $($meta.head)")
+            Write-Step ("  last build at: $($meta.builtAt)")
+            Write-Step ("  last build variant: $($meta.variant)")
+            if ($meta.head -eq $git.Head -and $meta.variant -eq $Config.Name -and -not $git.Dirty) {
+                Write-Step '  APK authority: matches current HEAD and variant'
+            }
+            else {
+                Write-Step '  APK authority: STALE or ambiguous (rebuild required before install)'
+            }
+        }
+        else {
+            Write-Step '  APK authority: no last-build.json (rebuild required before install)'
+        }
+        if ($installed) {
+            if ($installed.VersionCode -eq $apk.VersionCode) {
+                Write-Step '  installed vs APK: versionCode MATCH'
+            }
+            elseif ($apk.VersionCode -lt $installed.VersionCode) {
+                Write-Step '  installed vs APK: APK would be DOWNGRADE (install refused)'
+            }
+            else {
+                Write-Step '  installed vs APK: APK is newer than installed'
+            }
         }
     }
     else {
@@ -289,13 +374,10 @@ function Invoke-AndroidBuild {
 function Invoke-AndroidInstall {
     param([string]$Serial, $Config)
     Write-Step '[5/7] Install - adb install -r (preserve data)'
-    if (-not (Test-Path $Config.ApkPath)) {
-        Write-Fail "APK not found at $($Config.ApkPath). Run with -Build first."
-    }
-    $apk = Get-ApkMetadata -ApkPath $Config.ApkPath
+    $apk = Test-BuildArtifactAuthoritative -Config $Config
     $installed = Get-InstalledPackageInfo -Serial $Serial -Package $Config.Package
     if ($installed -and $apk.VersionCode -lt $installed.VersionCode) {
-        Write-Fail "Refusing downgrade: APK code $($apk.VersionCode) < installed $($installed.VersionCode). Build current source with -Build."
+        Write-Fail "Refusing downgrade: APK code $($apk.VersionCode) < installed $($installed.VersionCode)."
     }
     if ($apk.Package -ne $Config.Package) {
         Write-Fail "APK package $($apk.Package) does not match variant package $($Config.Package)"
@@ -396,6 +478,9 @@ if ($Build) {
     Invoke-AndroidBuild -Config $Config
 }
 elseif (($Install -or $Launch -or $Verify) -and -not (Test-Path $Config.ApkPath)) {
+    if ($Install) {
+        Write-Fail "APK missing at $($Config.ApkPath). Run with -Build."
+    }
     Write-Fail "APK missing at $($Config.ApkPath). Run with -Build."
 }
 
