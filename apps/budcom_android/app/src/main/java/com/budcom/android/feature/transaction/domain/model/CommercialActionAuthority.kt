@@ -10,6 +10,7 @@ import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
 
 enum class CommercialAction {
     BuyerCreateOrder,
+    ReturnSeen,
     SellerConfirm,
     SellerRevise,
     RevisionSend,
@@ -90,6 +91,7 @@ fun interface CommercialActionAuthorityResolver {
 object CommercialActionAuthorityPolicy {
     fun requiredScope(action: CommercialAction): String? = when (action) {
         CommercialAction.BuyerCreateOrder -> CREATE_ORDERS_CAPABILITY
+        CommercialAction.ReturnSeen -> CREATE_ORDERS_CAPABILITY
         CommercialAction.SellerConfirm -> OrderConfirmAuthority.CONFIRM_ORDERS_CAPABILITY
         CommercialAction.SellerRevise, CommercialAction.RevisionSend -> OrderConfirmAuthority.REVISE_ORDERS_CAPABILITY
         CommercialAction.BuyerAcceptRevision -> OrderConfirmAuthority.ACCEPT_ORDER_REVISIONS_CAPABILITY
@@ -101,6 +103,9 @@ object CommercialActionAuthorityPolicy {
             CommercialAction.BuyerCreateOrder -> request.orderId.isEmpty() && request.orderVersion == 0 &&
                 request.inboxOrderId.isEmpty() && request.inboxOrderVersion == 0 &&
                 request.viewerBusinessId == request.buyerBusinessId
+            CommercialAction.ReturnSeen -> request.orderId.isNotBlank() && request.orderVersion >= 1 &&
+                request.sellerBusinessId != request.buyerBusinessId &&
+                (request.viewerBusinessId == request.sellerBusinessId || request.viewerBusinessId == request.buyerBusinessId)
             CommercialAction.SellerConfirm, CommercialAction.SellerRevise, CommercialAction.RevisionSend ->
                 request.orderId.isNotBlank() && request.orderVersion >= 1 &&
                     request.sellerBusinessId != request.buyerBusinessId &&

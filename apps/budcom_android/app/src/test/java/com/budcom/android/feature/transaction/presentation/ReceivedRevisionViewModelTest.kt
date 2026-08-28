@@ -117,6 +117,7 @@ private class RevisionAcceptFakeRepository : TransactionRepository {
         viewerCompanyId: String,
         envelopeId: String,
         open: OrderStructuredOpenEvent,
+        authorityRequest: CommercialActionAuthorityRequest,
     ): OrderCommercialEvent = OrderCommercialEvent(
         companyId = viewerCompanyId,
         eventId = "seen-2", idempotencyKey = open.idempotencyKey, orderId = open.orderId, orderVersion = open.orderVersion,

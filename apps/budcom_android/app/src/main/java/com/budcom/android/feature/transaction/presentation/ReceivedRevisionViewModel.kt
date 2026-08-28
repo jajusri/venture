@@ -77,6 +77,7 @@ class ReceivedRevisionViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = false, canAcceptChanges = false, message = "Trusted authority is required.") }
             return
         }
+        val deviceKeyVersion = keyStore.getCurrentIdentity()?.keyVersion ?: return
         val now = clock.now()
         val open = OrderStructuredOpenEvent(
             eventId = UUID.randomUUID().toString(),
@@ -90,7 +91,17 @@ class ReceivedRevisionViewModel @Inject constructor(
             senderBusinessId = senderBusinessId,
             openedAt = now,
         )
-        repository.recordOrderSeenFromOpenEvent(companyId, envelopeId, open)
+        repository.recordOrderSeenFromOpenEvent(
+            companyId, envelopeId, open,
+            CommercialActionAuthorityRequest(
+                action = CommercialAction.ReturnSeen, viewerBusinessId = companyId,
+                expectedActorId = authority.actorId, expectedDeviceId = authority.deviceId,
+                expectedDeviceKeyVersion = deviceKeyVersion,
+                orderId = orderId, orderVersion = orderVersion, inboxOrderId = orderId,
+                inboxOrderVersion = orderVersion, sellerBusinessId = senderBusinessId,
+                buyerBusinessId = companyId, nowEpochMillis = now.epochMillis,
+            ),
+        )
         val seenEvidence = repository.findOrderSeenEvidence(companyId, orderId, orderVersion)
             ?: return refreshUi(companyId, repository.findCanonicalOrderById(companyId, orderId))
         val order = repository.applyOrderSeenEvidence(companyId, seenEvidence)

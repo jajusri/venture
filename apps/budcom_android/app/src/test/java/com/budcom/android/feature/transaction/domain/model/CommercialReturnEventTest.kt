@@ -26,6 +26,14 @@ class CommercialReturnEventTest {
     }
 
     @Test
+    fun `seen return is strict deterministic commercial content`() {
+        val seen = event.copy(eventType = CommercialReturnEvent.TYPE_ORDER_SEEN, idempotencyKey = "seen:order-1:v1:seller")
+        val canonical = seen.deterministicEncoding()
+        assertEquals(seen, CommercialReturnEvent.parse(canonical))
+        assertEquals(canonical, CommercialReturnEvent.parse(canonical)?.deterministicEncoding())
+    }
+
+    @Test
     fun `unsupported malformed and non canonical events fail closed`() {
         assertNull(CommercialReturnEvent.parse(event.deterministicEncoding().replace("\"contractVersion\":1", "\"contractVersion\":2")))
         assertNull(CommercialReturnEvent.parse(event.deterministicEncoding().replace("ORDER_CONFIRMED", "UNKNOWN")))

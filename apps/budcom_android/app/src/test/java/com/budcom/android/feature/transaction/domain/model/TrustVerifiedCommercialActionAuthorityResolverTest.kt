@@ -34,6 +34,12 @@ class TrustVerifiedCommercialActionAuthorityResolverTest {
         val forged = buyerCredential.copy(signature = byteArrayOf(1, 2, 3))
         assertEquals(CommercialActionAuthorityOutcome.Unavailable, resolver(keys, forged, 1, "device-b").resolve(buyerCreation()))
         assertEquals(CommercialActionAuthorityOutcome.WrongDevice, resolver(keys, buyerCredential, 1, "other-device").resolve(buyerCreation()))
+        val seenRequest = buyerCreation().copy(
+            action = CommercialAction.ReturnSeen, orderId = "order-1", orderVersion = 2,
+            inboxOrderId = "order-1", inboxOrderVersion = 2,
+            sellerBusinessId = "seller-co", buyerBusinessId = "buyer-co",
+        )
+        assertTrue(resolver(keys, buyerCredential, 1, "device-b").resolve(seenRequest) is CommercialActionAuthorityOutcome.Verified)
     }
 
     @Test

@@ -107,6 +107,7 @@ interface TransactionRepository {
         viewerCompanyId: String,
         envelopeId: String,
         open: OrderStructuredOpenEvent,
+        authorityRequest: CommercialActionAuthorityRequest,
     ): OrderCommercialEvent? = throw UnsupportedOperationException("Order seen evidence is not implemented by this repository")
 
     /** Applies validated Seen evidence to the sender-side canonical Order state. */

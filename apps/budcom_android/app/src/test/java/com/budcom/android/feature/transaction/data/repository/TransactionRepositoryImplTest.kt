@@ -168,7 +168,7 @@ class TransactionRepositoryImplTest {
             if (!authorityGranted) com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome.Unavailable
             else com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityOutcome.Verified(
                 com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityContext(
-                    request.viewerBusinessId, "test-actor", request.expectedDeviceId, "test-credential", 1, 1,
+                    request.viewerBusinessId, request.expectedActorId ?: "test-actor", request.expectedDeviceId, "test-credential", 1, 1,
                     setOf("send_orders"), request.orderId, request.orderVersion, request.action,
                 ),
             )
@@ -181,6 +181,16 @@ class TransactionRepositoryImplTest {
         com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest(
             com.budcom.android.feature.transaction.domain.model.CommercialAction.BuyerCreateOrder,
             companyId, null, "test-device", 1, "", 0, "", 0, "", companyId, 100,
+        )
+
+    private fun seenAuthority(open: OrderStructuredOpenEvent) =
+        com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest(
+            com.budcom.android.feature.transaction.domain.model.CommercialAction.ReturnSeen,
+            open.viewerBusinessId, open.viewerActorId, open.viewerDeviceId, 1,
+            open.orderId, open.orderVersion, open.orderId, open.orderVersion,
+            if (open.viewerBusinessId == "seller-co") open.viewerBusinessId else open.senderBusinessId,
+            if (open.viewerBusinessId == "buyer-co") open.viewerBusinessId else open.senderBusinessId,
+            open.openedAt.epochMillis,
         )
 
     private fun oneLine(amount: String = "1000") = NewLineItem(
@@ -281,6 +291,9 @@ class TransactionRepositoryImplTest {
             note = null, createdAt = 100, createdAtSource = TransactionTimestampSource.DeviceLocalProvisional.name, version = 1,
             buyerBusinessId = "buyer-co", sellerBusinessId = "seller-co",
         )
+        canonicalOrderDao.orders += canonicalOrderDao.orders.last().copy(
+            companyId = "seller-co", creationKey = "received:k", sellerCompanyId = "seller-co",
+        )
         recipientInboxDao.entries += StructuredRecipientInboxEntity(
             companyId = "seller-co", envelopeId = "env-1", idempotencyKey = "inbox-1",
             objectType = "CANONICAL_ORDER", objectId = "order-1", objectVersion = 1,
@@ -296,11 +309,21 @@ class TransactionRepositoryImplTest {
             viewerBusinessId = "seller-co", viewerActorId = "actor-s", viewerDeviceId = "device-s",
             senderBusinessId = "buyer-co", openedAt = ts(300),
         )
-        val recorded = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open)!!
-        val retry = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open)!!
+        assertNull(repository(authorityGranted = false).recordOrderSeenFromOpenEvent(
+            "seller-co", "env-1", open, seenAuthority(open),
+        ))
+        assertTrue(orderCommercialEventDao.events.isEmpty())
+        assertTrue(orderOutboxDao.envelopes.isEmpty())
+        val recorded = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open, seenAuthority(open))!!
+        val retry = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open, seenAuthority(open))!!
         assertEquals(recorded.eventId, retry.eventId)
         assertEquals(OrderCommercialEventType.Seen, recorded.eventType)
         assertEquals(1, orderCommercialEventDao.events.size)
+        assertEquals(1, orderOutboxDao.envelopes.size)
+        assertEquals("seller-co", orderOutboxDao.envelopes.single().senderCompanyId)
+        assertEquals("buyer-co", orderOutboxDao.envelopes.single().recipientBusinessId)
+        val changedOpen = open.copy(openedAt = ts(301))
+        assertNull(repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", changedOpen, seenAuthority(changedOpen)))
         assertEquals("SENT", canonicalOrderDao.orders.single { it.companyId == "buyer-co" }.state)
         val evidence = OrderSeenEvidence(
             eventId = recorded.eventId, orderId = "order-1", orderVersion = 1,
@@ -313,6 +336,7 @@ class TransactionRepositoryImplTest {
         assertNull(repo.recordOrderSeenFromOpenEvent(
             "seller-co", "env-1",
             open.copy(viewerBusinessId = "wrong", idempotencyKey = "seen:wrong"),
+            seenAuthority(open.copy(viewerBusinessId = "wrong", idempotencyKey = "seen:wrong")),
         ))
         assertNull(repo.applyOrderSeenEvidence("buyer-co", evidence.copy(orderVersion = 2)))
     }
@@ -322,16 +346,16 @@ class TransactionRepositoryImplTest {
         val repo = repository()
         seedSentOrderFixture()
         val open = seenOpenEvent()
-        val seen1 = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open)!!
-        val seen2 = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open)!!
+        val seen1 = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open, seenAuthority(open))!!
+        val seen2 = repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", open, seenAuthority(open))!!
         assertEquals(seen1.eventId, seen2.eventId)
         val authority = OrderConfirmAuthority("seller-co", "actor-s", "device-s", setOf("confirm_orders"), 1)
         val confirm1 = repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", authority, "confirm-1", "confirm:key", ts(400))!!
         val confirm2 = repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", authority, "confirm-1", "confirm:key", ts(401))!!
         assertEquals(confirm1.eventId, confirm2.eventId)
-        assertEquals(1, orderOutboxDao.envelopes.size)
-        assertEquals("buyer-co", orderOutboxDao.envelopes.single().recipientBusinessId)
-        assertEquals("application/vnd.budcom.commercial-event+json", orderOutboxDao.envelopes.single().commercialContentType)
+        assertEquals(2, orderOutboxDao.envelopes.size)
+        assertTrue(orderOutboxDao.envelopes.all { it.recipientBusinessId == "buyer-co" })
+        assertTrue(orderOutboxDao.envelopes.all { it.commercialContentType == "application/vnd.budcom.commercial-event+json" })
         assertEquals(CanonicalOrderState.Confirmed.columnValue, canonicalOrderDao.findById("seller-co", "order-1")?.state)
         assertNull(repo.recordOrderConfirmFromSellerAction("seller-co", "env-1", authority, "changed", "confirm:key", ts(402)))
         val seenEvidence = OrderSeenEvidence(
@@ -371,7 +395,7 @@ class TransactionRepositoryImplTest {
     fun `canonical sent seen confirm path leaves accounting untouched`() = runTest(dispatcher) {
         val repo = repository()
         seedSentOrderFixture()
-        repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", seenOpenEvent())
+        seenOpenEvent().let { repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", it, seenAuthority(it)) }
         val seenEvidence = OrderSeenEvidence(
             eventId = "seen-1", orderId = "order-1", orderVersion = 1, viewerBusinessId = "seller-co",
             viewerActorId = "actor-s", viewerDeviceId = "device-s", senderBusinessId = "buyer-co", seenAt = ts(300),
@@ -427,7 +451,7 @@ class TransactionRepositoryImplTest {
         seedBuyerOrderWithLines(CanonicalOrderState.Sent)
         seedSellerReceivedOrder()
         recipientInboxDao.entries += inboxFixture()
-        repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", seenOpenEvent())
+        seenOpenEvent().let { repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", it, seenAuthority(it)) }
         val sellerAuthority = OrderConfirmAuthority("seller-co", "actor-s", "device-s", setOf("revise_orders"), 1)
         val sellerRevision = repo.proposeOrderRevision(
             "seller-co", "env-1", sellerBaselineOrder(), revisionLines("12"), "Need 12 units",
@@ -454,7 +478,7 @@ class TransactionRepositoryImplTest {
             viewerBusinessId = "buyer-co", viewerActorId = "actor-b", viewerDeviceId = "device-b",
             senderBusinessId = "seller-co", openedAt = ts(530),
         )
-        repo.recordOrderSeenFromOpenEvent("buyer-co", "env-2", buyerOpen)
+        repo.recordOrderSeenFromOpenEvent("buyer-co", "env-2", buyerOpen, seenAuthority(buyerOpen))
         val seenEvidence = repo.findOrderSeenEvidence("buyer-co", "order-1", 2)!!
         val revisionSeen = repo.applyOrderSeenEvidence("buyer-co", seenEvidence)!!
         assertEquals(CanonicalOrderState.RevisionSeen, revisionSeen.state)
@@ -467,8 +491,8 @@ class TransactionRepositoryImplTest {
             "buyer-co", "env-2", buyerAuthority, "accept-2", "accept:order-1:v2:buyer-co", ts(600),
         )!!
         assertEquals(acceptedEvent.eventId, retryAccept.eventId)
-        assertEquals(1, orderOutboxDao.envelopes.count { it.companyId == "buyer-co" && it.objectType == "COMMERCIAL_EVENT" })
-        assertEquals("seller-co", orderOutboxDao.envelopes.single { it.companyId == "buyer-co" && it.objectType == "COMMERCIAL_EVENT" }.recipientBusinessId)
+        assertEquals(2, orderOutboxDao.envelopes.count { it.companyId == "buyer-co" && it.objectType == "COMMERCIAL_EVENT" })
+        assertEquals("seller-co", orderOutboxDao.envelopes.single { it.idempotencyKey == "return:accept:order-1:v2:buyer-co" }.recipientBusinessId)
         val acceptEvidence = OrderRevisionAcceptEvidence(
             eventId = acceptedEvent.eventId, orderId = "order-1", orderVersion = 2,
             acceptingBusinessId = "buyer-co", acceptingActorId = "actor-b", acceptingDeviceId = "device-b",
@@ -479,7 +503,7 @@ class TransactionRepositoryImplTest {
         assertEquals("12", confirmed.lines.single().quantity)
         assertEquals("10", repo.findArchivedOrderVersion("buyer-co", "order-1", 1)!!.lines.single().quantity)
         val returnEnvelope = orderOutboxDao.envelopes.single {
-            it.companyId == "buyer-co" && it.objectType == "COMMERCIAL_EVENT"
+            it.idempotencyKey == "return:accept:order-1:v2:buyer-co"
         }
         val returned = CommercialReturnEvent.parse(returnEnvelope.commercialContentCanonical!!)!!
         val returnItem = RelayMailboxDeliveryItem(
@@ -640,6 +664,40 @@ class TransactionRepositoryImplTest {
         assertTrue(!repo.ingestReceivedCommercialEvent("buyer-co", item.copy(senderBusinessId = "attacker"), event, ts(602)))
         assertTrue(!repo.ingestReceivedCommercialEvent("buyer-co", item.copy(objectVersion = 2), event, ts(602)))
         assertTrue(!repo.ingestReceivedCommercialEvent("wrong-origin", item.copy(recipientBusinessId = "wrong-origin"), event, ts(602)))
+    }
+
+    @Test
+    fun `authenticated seen return applies atomically to buyer and duplicate replay is harmless`() = runTest(dispatcher) {
+        seedBuyerOrderWithLines(CanonicalOrderState.Sent)
+        val event = CommercialReturnEvent(
+            1, CommercialReturnEvent.TYPE_ORDER_SEEN, "buyer-co", "seller-co", "order-1", 1,
+            "seen-1", "seen:key", 300, TransactionTimestampSource.DeviceLocalProvisional.name,
+        )
+        val item = RelayMailboxDeliveryItem(
+            "commercial:seen-1", 8, "COMMERCIAL_EVENT", "order-1", 1, "seller-co", "actor-s", "device-s",
+            "buyer-co", "orders", "relay_accepted", 500, "accept-seen", byteArrayOf(1),
+            event.deterministicEncoding(), "application/vnd.budcom.commercial-event+json", 1,
+        )
+        val repo = repository()
+        assertTrue(repo.ingestReceivedCommercialEvent("buyer-co", item, event, ts(600)))
+        assertTrue(repo.ingestReceivedCommercialEvent("buyer-co", item, event, ts(601)))
+        assertEquals(CanonicalOrderState.Seen.columnValue, canonicalOrderDao.findById("buyer-co", "order-1")?.state)
+        assertEquals(1, orderCommercialEventDao.events.count { it.companyId == "buyer-co" && it.eventId == "seen-1" })
+        assertEquals(1, recipientInboxDao.entries.count { it.companyId == "buyer-co" && it.envelopeId == item.envelopeId })
+        assertFalse(repo.ingestReceivedCommercialEvent("buyer-co", item.copy(senderBusinessId = "third-co"), event, ts(602)))
+        assertFalse(repo.ingestReceivedCommercialEvent("third-co", item.copy(recipientBusinessId = "third-co"), event, ts(603)))
+        val conflict = event.copy(idempotencyKey = "seen:changed")
+        assertFalse(repo.ingestReceivedCommercialEvent("buyer-co", item.copy(
+            envelopeId = "commercial:seen-conflict", commercialSnapshotCanonical = conflict.deterministicEncoding(),
+        ), conflict, ts(604)))
+        assertEquals(1, orderCommercialEventDao.events.count { it.companyId == "buyer-co" && it.eventId == "seen-1" })
+
+        canonicalOrderDao.updateState("buyer-co", "order-1", CanonicalOrderState.Confirmed.columnValue)
+        val laterSeen = event.copy(eventId = "seen-late", idempotencyKey = "seen:late", occurredAtEpochMillis = 700)
+        assertFalse(repo.ingestReceivedCommercialEvent("buyer-co", item.copy(
+            envelopeId = "commercial:seen-late", commercialSnapshotCanonical = laterSeen.deterministicEncoding(),
+        ), laterSeen, ts(700)))
+        assertEquals(CanonicalOrderState.Confirmed.columnValue, canonicalOrderDao.findById("buyer-co", "order-1")?.state)
     }
 
     @Test
