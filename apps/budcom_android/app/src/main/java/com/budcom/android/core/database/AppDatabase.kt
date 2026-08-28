@@ -82,6 +82,8 @@ import com.budcom.android.feature.transaction.data.local.SellerInboxEntryDao
 import com.budcom.android.feature.transaction.data.local.SellerInboxEntryEntity
 import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentDao
 import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEntity
+import com.budcom.android.feature.transaction.data.local.AuthenticatedCounterpartyBindingDao
+import com.budcom.android.feature.transaction.data.local.AuthenticatedCounterpartyBindingEntity
 
 @Database(
     entities = [
@@ -131,6 +133,7 @@ import com.budcom.android.feature.transaction.data.local.TermsAcknowledgmentEnti
         OrderCommercialEventEntity::class,
         OrderVersionArchiveEntity::class,
         OrderVersionLineArchiveEntity::class,
+        AuthenticatedCounterpartyBindingEntity::class,
     ],
     version = DatabaseConstants.VERSION,
     exportSchema = true,
@@ -175,4 +178,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun recipientInboxCursorDao(): RecipientInboxCursorDao
     abstract fun orderCommercialEventDao(): OrderCommercialEventDao
     abstract fun orderVersionArchiveDao(): OrderVersionArchiveDao
+    abstract fun authenticatedCounterpartyBindingDao(): AuthenticatedCounterpartyBindingDao
 }

@@ -1428,4 +1428,17 @@ class AppDatabaseMigrationTest {
         }
         db.close()
     }
+
+    @Test
+    fun migrate20To21_addsEmptyAuthenticatedCounterpartyBindingStore() {
+        val dbName = "migration-test-db-20-21"
+        var db = helper.createDatabase(dbName, 20)
+        db.close()
+        db = helper.runMigrationsAndValidate(dbName, 21, true, DatabaseModule.MIGRATION_20_21)
+        db.query("SELECT COUNT(*) FROM authenticated_counterparty_binding").use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(0, cursor.getInt(0))
+        }
+        db.close()
+    }
 }

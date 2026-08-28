@@ -77,7 +77,7 @@ object DatabaseModule {
         ).addMigrations(
             MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
             MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15,
-            MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20,
+            MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
         )
         if (BuildConfig.DEBUG) {
             builder.setQueryCallback(::logTd041Query, td041SqlLogExecutor)
@@ -205,6 +205,10 @@ object DatabaseModule {
     @Provides
     fun provideOrderVersionArchiveDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.OrderVersionArchiveDao =
         db.orderVersionArchiveDao()
+
+    @Provides
+    fun provideAuthenticatedCounterpartyBindingDao(db: AppDatabase): com.budcom.android.feature.transaction.data.local.AuthenticatedCounterpartyBindingDao =
+        db.authenticatedCounterpartyBindingDao()
 
     val MIGRATION_1_2 = object : Migration(1, 2) {
         override fun migrate(db: SupportSQLiteDatabase) {
@@ -855,6 +859,18 @@ object DatabaseModule {
             db.execSQL("ALTER TABLE `txn_order_outbox` ADD COLUMN `commercialContentType` TEXT")
             db.execSQL("ALTER TABLE `txn_order_outbox` ADD COLUMN `commercialContentVersion` INTEGER")
             db.execSQL("ALTER TABLE `txn_order_outbox` ADD COLUMN `commercialContentCanonical` TEXT")
+        }
+    }
+
+    val MIGRATION_20_21 = object : Migration(20, 21) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `authenticated_counterparty_binding` (" +
+                    "`localBusinessId` TEXT NOT NULL, `partyId` TEXT NOT NULL, `counterpartyBusinessId` TEXT NOT NULL, " +
+                    "`verifiedActorId` TEXT NOT NULL, `verifiedDeviceId` TEXT NOT NULL, `authorityEpoch` INTEGER NOT NULL, " +
+                    "`verificationReference` TEXT NOT NULL, `status` TEXT NOT NULL, `verifiedAtEpochMillis` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`localBusinessId`, `partyId`))",
+            )
         }
     }
 }

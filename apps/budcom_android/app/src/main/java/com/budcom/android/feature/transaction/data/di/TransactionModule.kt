@@ -35,6 +35,8 @@ import com.budcom.android.feature.transaction.domain.port.TransactionReminderSch
 import com.budcom.android.feature.transaction.domain.port.TransactionSubmissionPort
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
+import com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBindingRepository
+import com.budcom.android.feature.transaction.data.repository.AuthenticatedCounterpartyBindingRepositoryImpl
 import com.budcom.android.feature.transaction.sharing.AndroidTransactionShareCoordinator
 import com.budcom.android.feature.transaction.sharing.TransactionShareCoordinator
 import dagger.Binds
@@ -58,6 +60,12 @@ abstract class TransactionBindModule {
     @Binds
     @Singleton
     abstract fun bindTransactionRepository(impl: TransactionRepositoryImpl): TransactionRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthenticatedCounterpartyBindingRepository(
+        impl: AuthenticatedCounterpartyBindingRepositoryImpl,
+    ): AuthenticatedCounterpartyBindingRepository
 
     @Binds
     @Singleton
