@@ -25,13 +25,14 @@ data class CommercialReturnEvent(
     }
 
     private fun isBounded() = contractVersion == COMMERCIAL_EVENT_CONTENT_VERSION &&
-        eventType == TYPE_ORDER_CONFIRMED &&
+        eventType in setOf(TYPE_ORDER_CONFIRMED, TYPE_ORDER_REVISION_ACCEPTED) &&
         originBusinessId.valid(128) && respondingBusinessId.valid(128) && originBusinessId != respondingBusinessId &&
         orderId.valid(128) && orderVersion > 0 && eventId.valid(128) && idempotencyKey.valid(256) &&
         occurredAtEpochMillis >= 0 && TransactionTimestampSource.entries.any { it.name == occurredAtSource }
 
     companion object {
         const val TYPE_ORDER_CONFIRMED = "ORDER_CONFIRMED"
+        const val TYPE_ORDER_REVISION_ACCEPTED = "ORDER_REVISION_ACCEPTED"
         private val JSON = Json { encodeDefaults = true; explicitNulls = false; ignoreUnknownKeys = false }
 
         fun parse(canonical: String): CommercialReturnEvent? {

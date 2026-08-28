@@ -155,8 +155,9 @@ object CanonicalOrderConfirmedTransitions {
 object CanonicalOrderRevisionAcceptTransitions {
     fun apply(order: CanonicalOrder, evidence: OrderRevisionAcceptEvidence): CanonicalOrderState? {
         if (evidence.orderId != order.orderId || evidence.orderVersion != order.version) return null
-        if (evidence.acceptingBusinessId != order.companyId) return null
-        if (evidence.counterpartyBusinessId == order.companyId) return null
+        val localAcceptance = evidence.acceptingBusinessId == order.companyId && evidence.counterpartyBusinessId != order.companyId
+        val returnedAcceptance = evidence.acceptingBusinessId != order.companyId && evidence.counterpartyBusinessId == order.companyId
+        if (!localAcceptance && !returnedAcceptance) return null
         return when (order.state) {
             CanonicalOrderState.Confirmed -> CanonicalOrderState.Confirmed
             CanonicalOrderState.RevisionSent, CanonicalOrderState.RevisionSeen -> CanonicalOrderState.Confirmed

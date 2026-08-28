@@ -137,12 +137,14 @@ private class RecordingBuyingCycleRepository : TransactionRepository {
         return order
     }
 
-    override suspend fun recordOrderRevisionAcceptFromBuyerAction(buyerCompanyId: String, envelopeId: String, authority: OrderConfirmAuthority, eventId: String, idempotencyKey: String, timestamp: TransactionTimestamp) =
-        com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent(
+    override suspend fun recordOrderRevisionAcceptFromBuyerAction(buyerCompanyId: String, envelopeId: String, authority: OrderConfirmAuthority, eventId: String, idempotencyKey: String, timestamp: TransactionTimestamp): com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent {
+        order = order.copy(companyId = buyerCompanyId, state = CanonicalOrderState.Confirmed)
+        return com.budcom.android.feature.transaction.domain.model.OrderCommercialEvent(
             buyerCompanyId, eventId, idempotencyKey, "order-1", 2,
             com.budcom.android.feature.transaction.domain.model.OrderCommercialEventType.RevisionAccepted,
             authority.businessId, authority.actorId, authority.deviceId, "seller-co", timestamp,
         )
+    }
 
     override suspend fun applyOrderRevisionAcceptEvidence(companyId: String, evidence: com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence): CanonicalOrder {
         order = order.copy(state = CanonicalOrderState.Confirmed)

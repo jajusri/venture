@@ -79,25 +79,14 @@ class CanonicalBuyingCycleCoordinator @Inject constructor(
         timestamp: TransactionTimestamp,
     ): CanonicalOrder? {
         val authority = verified(request, CommercialAction.BuyerAcceptRevision) ?: return null
-        return dbTransaction.run {
+        val result = dbTransaction.run {
             val recorded = repository.recordOrderRevisionAcceptFromBuyerAction(
                 request.viewerBusinessId, envelopeId, authority.toConfirmAuthority(), eventId, idempotencyKey, timestamp,
             ) ?: return@run null
-            repository.applyOrderRevisionAcceptEvidence(
-                request.viewerBusinessId,
-                OrderRevisionAcceptEvidence(
-                    eventId = recorded.eventId,
-                    orderId = recorded.orderId,
-                    orderVersion = recorded.orderVersion,
-                    acceptingBusinessId = authority.businessId,
-                    acceptingActorId = authority.actorId,
-                    acceptingDeviceId = authority.deviceId,
-                    counterpartyBusinessId = recorded.counterpartyBusinessId,
-                    authorityEpoch = authority.authorityEpoch,
-                    acceptedAt = recorded.occurredAt,
-                ),
-            )
+            repository.findCanonicalOrderById(request.viewerBusinessId, recorded.orderId)
         }
+        if (result != null) outbox.submitPending(request.viewerBusinessId)
+        return result
     }
 
     private suspend fun verified(request: CommercialActionAuthorityRequest, action: CommercialAction): CommercialActionAuthorityContext? =

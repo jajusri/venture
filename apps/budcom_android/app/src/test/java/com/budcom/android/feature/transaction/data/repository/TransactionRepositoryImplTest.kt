@@ -432,9 +432,11 @@ class TransactionRepositoryImplTest {
             "buyer-co", "env-2", buyerAuthority, "accept-2", "accept:order-1:v2:buyer-co", ts(600),
         )!!
         val retryAccept = repo.recordOrderRevisionAcceptFromBuyerAction(
-            "buyer-co", "env-2", buyerAuthority, "accept-2-retry", "accept:order-1:v2:buyer-co", ts(601),
+            "buyer-co", "env-2", buyerAuthority, "accept-2", "accept:order-1:v2:buyer-co", ts(600),
         )!!
         assertEquals(acceptedEvent.eventId, retryAccept.eventId)
+        assertEquals(1, orderOutboxDao.envelopes.count { it.companyId == "buyer-co" && it.objectType == "COMMERCIAL_EVENT" })
+        assertEquals("seller-co", orderOutboxDao.envelopes.single { it.companyId == "buyer-co" && it.objectType == "COMMERCIAL_EVENT" }.recipientBusinessId)
         val acceptEvidence = OrderRevisionAcceptEvidence(
             eventId = acceptedEvent.eventId, orderId = "order-1", orderVersion = 2,
             acceptingBusinessId = "buyer-co", acceptingActorId = "actor-b", acceptingDeviceId = "device-b",
@@ -444,12 +446,41 @@ class TransactionRepositoryImplTest {
         assertEquals(CanonicalOrderState.Confirmed, confirmed.state)
         assertEquals("12", confirmed.lines.single().quantity)
         assertEquals("10", repo.findArchivedOrderVersion("buyer-co", "order-1", 1)!!.lines.single().quantity)
+        val returnEnvelope = orderOutboxDao.envelopes.single {
+            it.companyId == "buyer-co" && it.objectType == "COMMERCIAL_EVENT"
+        }
+        val returned = CommercialReturnEvent.parse(returnEnvelope.commercialContentCanonical!!)!!
+        val returnItem = RelayMailboxDeliveryItem(
+            returnEnvelope.envelopeId, 11, "COMMERCIAL_EVENT", "order-1", 2,
+            "buyer-co", "actor-b", "device-b", "seller-co", "orders", "relay_accepted", 610,
+            "accept-return", byteArrayOf(2), returnEnvelope.commercialContentCanonical,
+            returnEnvelope.commercialContentType!!, returnEnvelope.commercialContentVersion!!,
+        )
+        assertTrue(repo.ingestReceivedCommercialEvent("seller-co", returnItem, returned, ts(620)))
+        assertTrue(repo.ingestReceivedCommercialEvent("seller-co", returnItem, returned, ts(621)))
+        assertEquals(CanonicalOrderState.Confirmed, repo.findCanonicalOrderById("seller-co", "order-1")!!.state)
+        assertEquals(1, orderCommercialEventDao.events.count {
+            it.companyId == "seller-co" && it.eventId == returned.eventId
+        })
+        assertFalse(repo.ingestReceivedCommercialEvent(
+            "seller-co", returnItem.copy(envelopeId = "return-conflict"),
+            returned.copy(idempotencyKey = "accept:changed"), ts(622),
+        ))
+        assertFalse(repo.ingestReceivedCommercialEvent(
+            "seller-co", returnItem.copy(envelopeId = "return-stale", objectVersion = 1),
+            returned.copy(eventId = "accept-stale", idempotencyKey = "accept:stale", orderVersion = 1), ts(623),
+        ))
         assertNull(repo.applyOrderRevisionAcceptEvidence("buyer-co", acceptEvidence.copy(orderVersion = 1)))
         assertNull(
             repo.recordOrderRevisionAcceptFromBuyerAction(
                 "buyer-co", "env-2",
                 OrderConfirmAuthority("buyer-co", "actor-b", "device-b", setOf("send_orders"), 1),
                 "denied", "accept:denied", ts(602),
+            ),
+        )
+        assertNull(
+            repo.recordOrderRevisionAcceptFromBuyerAction(
+                "buyer-co", "env-2", buyerAuthority, "accept-conflict", "accept:order-1:v2:buyer-co", ts(603),
             ),
         )
         assertTrue(transactionDao.store.isEmpty())
