@@ -11,6 +11,7 @@ import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderRevisionAcceptEvidence
 import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
 import com.budcom.android.feature.transaction.domain.model.OrderVersionSnapshot
+import com.budcom.android.feature.transaction.domain.port.RelayMailboxDeliveryItem
 import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
 import com.budcom.android.feature.transaction.domain.model.EstimatePo
 import com.budcom.android.feature.transaction.domain.model.LedgerGroupChoice
@@ -167,6 +168,13 @@ interface TransactionRepository {
         snapshot: OrderVersionSnapshot,
         timestamp: TransactionTimestamp,
     ): CanonicalOrder? = throw UnsupportedOperationException("Received order materialization is not implemented by this repository")
+
+    suspend fun ingestReceivedOrderVersion(
+        recipientCompanyId: String,
+        item: RelayMailboxDeliveryItem,
+        snapshot: OrderVersionSnapshot,
+        timestamp: TransactionTimestamp,
+    ): Boolean = throw UnsupportedOperationException("Atomic received order ingestion is not implemented by this repository")
 
     /** Materializes a received seller revision on the buyer device without accepting it. */
     suspend fun receiveOrderRevisionOnBuyer(

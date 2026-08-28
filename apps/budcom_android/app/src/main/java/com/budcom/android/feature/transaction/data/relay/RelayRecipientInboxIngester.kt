@@ -7,6 +7,8 @@ import com.budcom.android.feature.transaction.domain.port.RelayCredentialSource
 import com.budcom.android.feature.transaction.domain.port.RelayEndpointProvider
 import com.budcom.android.feature.transaction.domain.port.RelayRecipientInboxIngester
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
+import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_TYPE
+import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_VERSION
 import com.budcom.android.feature.transaction.domain.repository.StructuredRecipientInboxRepository
 import com.budcom.android.feature.transaction.domain.model.OrderVersionSnapshot
 import com.budcom.android.feature.transaction.domain.repository.TransactionRepository
@@ -39,29 +41,24 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
                 mailboxId = DEFAULT_MAILBOX,
                 cursor = cursor,
             ) ?: break
-            page.items.forEach { item ->
-                if (StructuredRecipientInboxValidation.validate(item, companyId)) {
-                    val snapshot = item.commercialSnapshotCanonical?.let { OrderVersionSnapshot.parse(it) }
-                    if (snapshot == null ||
-                        snapshot.orderId != item.objectId ||
-                        snapshot.orderVersion != item.objectVersion ||
-                        snapshot.senderBusinessId != item.senderBusinessId ||
-                        snapshot.recipientBusinessId != companyId
-                    ) {
-                        return@forEach
-                    }
-                    val stored = inbox.persistIfNew(companyId, item, clock.now())
-                    if (stored != null) {
-                        orders.materializeReceivedOrderVersion(companyId, stored.envelopeId, snapshot, stored.ingestedAt)
-                        client.acknowledgeDelivery(
-                            envelopeId = item.envelopeId,
-                            recipientBusinessId = companyId,
-                            recipientActorId = credential.actorId,
-                            recipientDeviceId = identity.deviceId,
-                            receivedAtEpochMillis = stored.ingestedAt.epochMillis,
-                        )
-                    }
-                }
+            for (item in page.items) {
+                if (!StructuredRecipientInboxValidation.validate(item, companyId) ||
+                    item.commercialContentType != ORDER_SNAPSHOT_CONTENT_TYPE ||
+                    item.commercialContentVersion != ORDER_SNAPSHOT_CONTENT_VERSION
+                ) return@withContext
+                val snapshot = item.commercialSnapshotCanonical?.let { OrderVersionSnapshot.parse(it) }
+                    ?: return@withContext
+                val ingestedAt = clock.now()
+                val committed = orders.ingestReceivedOrderVersion(companyId, item, snapshot, ingestedAt)
+                if (!committed) return@withContext
+                val acknowledged = client.acknowledgeDelivery(
+                    envelopeId = item.envelopeId,
+                    recipientBusinessId = companyId,
+                    recipientActorId = credential.actorId,
+                    recipientDeviceId = identity.deviceId,
+                    receivedAtEpochMillis = ingestedAt.epochMillis,
+                )
+                if (!acknowledged) return@withContext
             }
             cursor = page.nextCursor
             inbox.saveMailboxCursor(companyId, DEFAULT_MAILBOX, cursor)

@@ -87,6 +87,7 @@ import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestampSource
 import com.budcom.android.feature.transaction.domain.model.toBigDecimalOrNullSafe
 import com.budcom.android.feature.transaction.domain.port.OrderSentFromRelayEvidence
+import com.budcom.android.feature.transaction.domain.port.RelayMailboxDeliveryItem
 import com.budcom.android.feature.transaction.domain.port.TransactionReminderScheduler
 import com.budcom.android.feature.transaction.domain.port.TransactionSubmissionPort
 import com.budcom.android.feature.transaction.domain.repository.AcceptSellerInboxEntryResult
@@ -134,6 +135,29 @@ class TransactionRepositoryImpl @Inject constructor(
     private val orderVersionArchiveDao: OrderVersionArchiveDao,
     private val dbTransaction: CommercialDbTransaction,
 ) : TransactionRepository, OrderSentFromRelayEvidence {
+
+    override suspend fun ingestReceivedOrderVersion(
+        recipientCompanyId: String,
+        item: RelayMailboxDeliveryItem,
+        snapshot: OrderVersionSnapshot,
+        timestamp: TransactionTimestamp,
+    ): Boolean = withContext(dispatchers.io) {
+        if (snapshot.recipientBusinessId != recipientCompanyId || snapshot.senderBusinessId == recipientCompanyId ||
+            snapshot.envelopeId != item.envelopeId || snapshot.orderId != item.objectId ||
+            snapshot.orderVersion != item.objectVersion || snapshot.senderBusinessId != item.senderBusinessId
+        ) return@withContext false
+        dbTransaction.run {
+            val existingInbox = recipientInboxDao.findByEnvelopeId(recipientCompanyId, item.envelopeId)
+            if (existingInbox == null) {
+                recipientInboxDao.insert(item.toInboxEntity(recipientCompanyId, timestamp))
+            } else if (!existingInbox.matches(item, recipientCompanyId)) {
+                return@run false
+            }
+            val materialized = materializeReceivedOrderVersion(recipientCompanyId, item.envelopeId, snapshot, timestamp)
+                ?: throw IllegalStateException("Received Order materialization failed")
+            materialized.version > snapshot.orderVersion || materialized.matches(snapshot)
+        }
+    }
 
     override suspend fun createDraftOrder(
         draft: TransactionDraft,
@@ -543,8 +567,8 @@ class TransactionRepositoryImpl @Inject constructor(
         if (inboxEntity.objectId != snapshot.orderId || inboxEntity.objectVersion != snapshot.orderVersion) return@withContext null
         if (inboxEntity.senderBusinessId != snapshot.senderBusinessId) return@withContext null
         val existing = findCanonicalOrderById(recipientCompanyId, snapshot.orderId)
-        if (existing != null && existing.version == snapshot.orderVersion && existing.lines.map { it.quantity } == snapshot.lines.map { it.quantity }) {
-            return@withContext existing
+        if (existing != null && existing.version == snapshot.orderVersion) {
+            return@withContext existing.takeIf { it.matches(snapshot) }
         }
         val state = if (snapshot.orderVersion <= 1) CanonicalOrderState.Sent else CanonicalOrderState.RevisionSent
         val canonical = snapshot.toCanonicalOrder(recipientCompanyId, state)
@@ -1295,6 +1319,50 @@ private fun StructuredRecipientInboxEntity.toInboxDomain() = com.budcom.android.
     ingestedAt = TransactionTimestamp(ingestedAt, TransactionTimestampSource.valueOf(ingestedAtSource)),
     transportState = RecipientInboxTransportState.fromColumn(transportState),
 )
+
+private fun RelayMailboxDeliveryItem.toInboxEntity(
+    companyId: String,
+    timestamp: TransactionTimestamp,
+) = StructuredRecipientInboxEntity(
+    companyId = companyId,
+    envelopeId = envelopeId,
+    idempotencyKey = "relay:$envelopeId",
+    objectType = objectType,
+    objectId = objectId,
+    objectVersion = objectVersion,
+    senderBusinessId = senderBusinessId,
+    senderActorId = senderActorId,
+    senderDeviceId = senderDeviceId,
+    mailboxId = mailboxId,
+    mailboxSequence = mailboxSequence,
+    acceptanceId = acceptanceId,
+    acceptedAt = acceptedAtEpochMillis,
+    acceptedAtSource = TransactionTimestampSource.DeviceLocalProvisional.name,
+    ingestedAt = timestamp.epochMillis,
+    ingestedAtSource = timestamp.source.name,
+    transportState = RecipientInboxTransportState.Received.columnValue,
+)
+
+private fun StructuredRecipientInboxEntity.matches(item: RelayMailboxDeliveryItem, recipientCompanyId: String): Boolean =
+    companyId == recipientCompanyId && envelopeId == item.envelopeId && objectType == item.objectType &&
+        objectId == item.objectId && objectVersion == item.objectVersion && senderBusinessId == item.senderBusinessId &&
+        senderActorId == item.senderActorId && senderDeviceId == item.senderDeviceId && mailboxId == item.mailboxId &&
+        mailboxSequence == item.mailboxSequence && acceptanceId == item.acceptanceId
+
+private fun CanonicalOrder.matches(snapshot: OrderVersionSnapshot): Boolean {
+    if (orderId != snapshot.orderId || version != snapshot.orderVersion || sellerCompanyId != snapshot.senderBusinessId ||
+        buyerPartyId != snapshot.recipientBusinessId || note != snapshot.note || source.columnValue != snapshot.source ||
+        submissionType.columnValue != snapshot.submissionType || createdAt.epochMillis != snapshot.createdAtEpochMillis ||
+        lines.size != snapshot.lines.size
+    ) return false
+    return lines.sortedBy { it.lineId }.zip(snapshot.lines.sortedBy { it.lineId }).all { (stored, received) ->
+        stored.lineId == received.lineId && stored.linkedProductId == received.linkedProductId &&
+            stored.snapshotProductName == received.snapshotProductName && stored.snapshotUnit == received.snapshotUnit &&
+            stored.snapshotSku == received.snapshotSku && stored.quantity == received.quantity &&
+            stored.unitPriceAmount == received.unitPriceAmount && stored.unitPriceCurrencyCode == received.unitPriceCurrencyCode &&
+            stored.priceState.toColumnValue() == received.priceState && stored.lineTotalAmount == received.lineTotalAmount
+    }
+}
 
 private fun OrderCommercialEventEntity.toDomain() = OrderCommercialEvent(
     companyId = companyId,

@@ -58,6 +58,7 @@ import com.budcom.android.feature.transaction.data.local.OrderVersionArchiveEnti
 import com.budcom.android.feature.transaction.data.local.OrderVersionLineArchiveEntity
 import com.budcom.android.feature.transaction.data.local.StructuredRecipientInboxDao
 import com.budcom.android.feature.transaction.data.local.StructuredRecipientInboxEntity
+import com.budcom.android.feature.transaction.data.local.CommercialDbTransaction
 import com.budcom.android.feature.transaction.domain.model.OrderCommercialEventType
 import com.budcom.android.feature.transaction.domain.model.OrderConfirmAuthority
 import com.budcom.android.feature.transaction.domain.model.OrderConfirmEvidence
@@ -79,6 +80,7 @@ import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestampSource
 import com.budcom.android.feature.transaction.domain.port.TransactionReminderScheduler
 import com.budcom.android.feature.transaction.domain.port.TransactionSubmissionPort
+import com.budcom.android.feature.transaction.domain.port.RelayMailboxDeliveryItem
 import com.budcom.android.feature.transaction.domain.repository.AcceptSellerInboxEntryResult
 import com.budcom.android.feature.transaction.domain.repository.NewLineItem
 import com.budcom.android.feature.transaction.domain.repository.ProposedTerms
@@ -141,11 +143,11 @@ class TransactionRepositoryImplTest {
         orderVersionArchiveDao.lines.clear()
     }
 
-    private fun repository() = TransactionRepositoryImpl(
+    private fun repository(dbTransaction: CommercialDbTransaction = com.budcom.android.feature.transaction.data.local.PassthroughCommercialDbTransaction) = TransactionRepositoryImpl(
         estimatePoDao, lineItemDao, sellerInboxEntryDao, transactionDao, termsDao, paymentEventDao,
         ledgerIntentDao, accessGrantDao, submissionPort, reminderScheduler, partyRepository, dispatchers,
         canonicalOrderDao, orderOutboxDao, recipientInboxDao, orderCommercialEventDao, orderVersionArchiveDao,
-        com.budcom.android.feature.transaction.data.local.PassthroughCommercialDbTransaction,
+        dbTransaction,
     )
 
     private fun ts(millis: Long) = TransactionTimestamp(millis, TransactionTimestampSource.DeviceLocalProvisional)
@@ -476,6 +478,113 @@ class TransactionRepositoryImplTest {
         )))
         assertFalse(hidden.deterministicEncoding().contains("unitPrice:100"))
     }
+
+    @Test
+    fun `atomic inbox ingestion materializes under recipient namespace and replays idempotently`() = runTest(dispatcher) {
+        val snapshot = receivedSnapshot()
+        val item = receivedItem(snapshot)
+        val repo = repository()
+        assertTrue(repo.ingestReceivedOrderVersion("buyer-co", item, snapshot, ts(700)))
+        assertTrue(repo.ingestReceivedOrderVersion("buyer-co", item, snapshot, ts(701)))
+        assertEquals(1, recipientInboxDao.entries.count { it.companyId == "buyer-co" })
+        assertEquals(1, canonicalOrderDao.orders.count { it.companyId == "buyer-co" && it.orderId == snapshot.orderId })
+        assertEquals(0, canonicalOrderDao.orders.count { it.companyId == "seller-co" && it.orderId == snapshot.orderId })
+        assertEquals("seller-co", canonicalOrderDao.orders.single().sellerCompanyId)
+    }
+
+    @Test
+    fun `historical stranded inbox and missing inbox both converge safely`() = runTest(dispatcher) {
+        val snapshot = receivedSnapshot()
+        val item = receivedItem(snapshot)
+        recipientInboxDao.entries += item.toTestInbox("buyer-co", 600)
+        assertTrue(repository().ingestReceivedOrderVersion("buyer-co", item, snapshot, ts(700)))
+        recipientInboxDao.entries.clear()
+        assertTrue(repository().ingestReceivedOrderVersion("buyer-co", item, snapshot, ts(701)))
+        assertEquals(1, recipientInboxDao.entries.size)
+        assertEquals(1, canonicalOrderDao.orders.size)
+    }
+
+    @Test
+    fun `same immutable version with changed content fails closed`() = runTest(dispatcher) {
+        val snapshot = receivedSnapshot()
+        val item = receivedItem(snapshot)
+        val repo = repository()
+        assertTrue(repo.ingestReceivedOrderVersion("buyer-co", item, snapshot, ts(700)))
+        val changed = snapshot.copy(lines = listOf(snapshot.lines.single().copy(quantity = "99")))
+        assertTrue(
+            runCatching {
+                repo.ingestReceivedOrderVersion("buyer-co", item.copy(commercialSnapshotCanonical = changed.deterministicEncoding()), changed, ts(701))
+            }.isFailure,
+        )
+        assertEquals("10", canonicalOrderDao.findLines("buyer-co", snapshot.orderId).single().quantity)
+    }
+
+    @Test
+    fun `newer version followed by stale replay never regresses`() = runTest(dispatcher) {
+        val first = receivedSnapshot()
+        val repo = repository()
+        assertTrue(repo.ingestReceivedOrderVersion("buyer-co", receivedItem(first), first, ts(700)))
+        val second = first.copy(orderVersion = 2, envelopeId = "env-2", lines = listOf(first.lines.single().copy(quantity = "12")))
+        assertTrue(repo.ingestReceivedOrderVersion("buyer-co", receivedItem(second), second, ts(701)))
+        assertTrue(repo.ingestReceivedOrderVersion("buyer-co", receivedItem(first), first, ts(702)))
+        assertEquals(2, canonicalOrderDao.findById("buyer-co", first.orderId)?.version)
+        assertEquals("12", canonicalOrderDao.findLines("buyer-co", first.orderId).single().quantity)
+    }
+
+    @Test
+    fun `failure before transaction writes neither inbox nor order`() = runTest(dispatcher) {
+        val failing = object : CommercialDbTransaction {
+            override suspend fun <T> run(block: suspend () -> T): T = throw IllegalStateException("before write")
+        }
+        val snapshot = receivedSnapshot()
+        assertTrue(runCatching { repository(failing).ingestReceivedOrderVersion("buyer-co", receivedItem(snapshot), snapshot, ts(700)) }.isFailure)
+        assertTrue(recipientInboxDao.entries.isEmpty())
+        assertTrue(canonicalOrderDao.orders.isEmpty())
+    }
+
+    @Test
+    fun `failure during materialization rolls inbox and order back together`() = runTest(dispatcher) {
+        val rollback = object : CommercialDbTransaction {
+            override suspend fun <T> run(block: suspend () -> T): T {
+                val inboxBefore = recipientInboxDao.entries.toList()
+                val ordersBefore = canonicalOrderDao.orders.toList()
+                val linesBefore = canonicalOrderDao.snapshotLines()
+                return try {
+                    block()
+                } catch (failure: Throwable) {
+                    recipientInboxDao.entries.clear(); recipientInboxDao.entries += inboxBefore
+                    canonicalOrderDao.orders.clear(); canonicalOrderDao.orders += ordersBefore
+                    canonicalOrderDao.restoreLines(linesBefore)
+                    throw failure
+                }
+            }
+        }
+        canonicalOrderDao.failUpsertLines = true
+        val snapshot = receivedSnapshot()
+        assertTrue(runCatching { repository(rollback).ingestReceivedOrderVersion("buyer-co", receivedItem(snapshot), snapshot, ts(700)) }.isFailure)
+        assertTrue(recipientInboxDao.entries.isEmpty())
+        assertTrue(canonicalOrderDao.orders.isEmpty())
+        assertTrue(canonicalOrderDao.snapshotLines().isEmpty())
+    }
+
+    private fun receivedSnapshot() = OrderVersionSnapshot(
+        OrderVersionSnapshot.CURRENT_CONTRACT_VERSION, "remote-order-1", 1, "seller-co", "buyer-co", 100, "Deliver", "CATALOGUE", "ESTIMATE", "env-1",
+        listOf(OrderVersionLineSnapshot("line-1", "p1", "Widget", "Nos", "SKU-1", "10", null, null, OrderVersionLineSnapshot.HIDDEN, null)),
+    )
+
+    private fun receivedItem(snapshot: OrderVersionSnapshot) = RelayMailboxDeliveryItem(
+        snapshot.envelopeId, snapshot.orderVersion.toLong(), "ORDER", snapshot.orderId, snapshot.orderVersion,
+        snapshot.senderBusinessId, "actor-seller", "device-seller", snapshot.recipientBusinessId, "orders", "relay_accepted",
+        100, "accept-${snapshot.envelopeId}", byteArrayOf(1), snapshot.deterministicEncoding(),
+        "application/vnd.budcom.order-snapshot+json", 2,
+    )
+
+    private fun RelayMailboxDeliveryItem.toTestInbox(companyId: String, ingestedAt: Long) = StructuredRecipientInboxEntity(
+        companyId, envelopeId, "relay:$envelopeId", objectType, objectId, objectVersion, senderBusinessId, senderActorId,
+        senderDeviceId, mailboxId, mailboxSequence, acceptanceId, acceptedAtEpochMillis,
+        TransactionTimestampSource.DeviceLocalProvisional.name, ingestedAt, TransactionTimestampSource.DeviceLocalProvisional.name,
+        RecipientInboxTransportState.Received.columnValue,
+    )
 
     private suspend fun seedBuyerOrderWithLines(state: CanonicalOrderState) {
         canonicalOrderDao.orders += CanonicalOrderEntity(
@@ -839,6 +948,7 @@ class FakeCatalogueAccessGrantDao : CatalogueAccessGrantDao {
 class FakeCanonicalOrderDao : CanonicalOrderDao {
     val orders = mutableListOf<CanonicalOrderEntity>()
     private val lines = mutableListOf<CanonicalOrderLineEntity>()
+    var failUpsertLines = false
 
     override suspend fun insert(entity: CanonicalOrderEntity) {
         if (orders.any { it.companyId == entity.companyId && it.creationKey == entity.creationKey }) {
@@ -848,6 +958,7 @@ class FakeCanonicalOrderDao : CanonicalOrderDao {
     }
 
     override suspend fun upsertLines(entities: List<CanonicalOrderLineEntity>) {
+        if (failUpsertLines) throw IllegalStateException("line write failed")
         lines.removeAll { old -> entities.any { it.companyId == old.companyId && it.orderId == old.orderId && it.lineId == old.lineId } }
         lines += entities
     }
@@ -877,7 +988,11 @@ class FakeCanonicalOrderDao : CanonicalOrderDao {
 
     fun clearLines() {
         lines.clear()
+        failUpsertLines = false
     }
+
+    fun snapshotLines(): List<CanonicalOrderLineEntity> = lines.toList()
+    fun restoreLines(value: List<CanonicalOrderLineEntity>) { lines.clear(); lines += value }
 }
 
 class FakeOrderOutboxDao : OrderOutboxDao {
