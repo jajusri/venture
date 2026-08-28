@@ -60,10 +60,17 @@ function Write-Step {
     Write-LauncherLog $Message
 }
 
+function Write-Pass {
+    param([string]$Message = 'Operation completed successfully.')
+    Write-Host "PASS: $Message" -ForegroundColor Green
+    Write-LauncherLog "PASS: $Message"
+    exit 0
+}
+
 function Write-Fail {
     param([string]$Message)
-    Write-Host "FAILED: $Message" -ForegroundColor Red
-    Write-LauncherLog "FAILED: $Message"
+    Write-Host "FAIL: $Message" -ForegroundColor Red
+    Write-LauncherLog "FAIL: $Message"
     if ($LauncherLogFile) {
         Write-Host "Launcher log: $LauncherLogFile"
     }
@@ -427,6 +434,7 @@ function Show-BudcomStatus {
     if ($env:ELECTRON_RUN_AS_NODE) {
         Write-Step 'WARNING: ELECTRON_RUN_AS_NODE is set in this shell - Launch clears it for the child process'
     }
+    Write-Pass 'Status collected.'
 }
 
 # --- Main ---
@@ -451,7 +459,6 @@ if (-not (Test-Path $DesktopDir)) {
 
 if ($Status) {
     Show-BudcomStatus
-    exit 0
 }
 
 if ($Restart) {
@@ -477,6 +484,7 @@ if ($Verify) {
 elseif ($Launch) {
     Write-Step '[5/6] Verify skipped (pass -Verify to validate startup)'
     Write-Step '[6/6] Result - launch issued (detached)'
+    Write-Pass 'Launch issued (detached).'
 }
 
-exit 0
+Write-Pass 'Desktop operations completed.'

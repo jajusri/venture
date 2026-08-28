@@ -35,6 +35,8 @@ are debugging the script itself.
 | User data | `%APPDATA%\@budcom\desktop` |
 | Connector default port | `8080` (overridden by `desktop-config.json` when present) |
 
+See also: [budcom-development-golden-commands.md](./budcom-development-golden-commands.md)
+
 ## Notes
 
 - Clears `ELECTRON_RUN_AS_NODE` for the child process (required for a real GUI window).
