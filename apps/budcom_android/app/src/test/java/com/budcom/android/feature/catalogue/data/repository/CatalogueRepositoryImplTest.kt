@@ -580,6 +580,170 @@ class CatalogueRepositoryImplTest {
         assertEquals(listOf("co-1"), stockItemLookup.warmCalls)
     }
 
+    // ============================== Bounded/batched retrieval (Catalogue perf package) ==============================
+
+    @Test
+    fun `listProductsPage never returns more than pageSize regardless of company size`() = runTest(dispatcher) {
+        val repo = repository()
+        repeat(1_200) { i -> repo.createManualDraft("co-1", "Item $i", ts(i.toLong())) }
+
+        val page = repo.listProductsPage("co-1", cursor = null, pageSize = 50)
+
+        assertEquals(50, page.products.size)
+        assertNotNull("more than one page must exist for 1,200 items at pageSize 50", page.nextCursor)
+    }
+
+    @Test
+    fun `listProductsPage pages through an entire company without gaps or duplicates`() = runTest(dispatcher) {
+        val repo = repository()
+        val created = (1..237).map { i -> repo.createManualDraft("co-1", "Item $i", ts(i.toLong())) }
+
+        val seen = mutableListOf<String>()
+        var cursor: com.budcom.android.feature.catalogue.domain.repository.CatalogueProductPageCursor? = null
+        do {
+            val page = repo.listProductsPage("co-1", cursor, pageSize = 50)
+            seen += page.products.map { it.productId }
+            cursor = page.nextCursor
+        } while (cursor != null)
+
+        assertEquals(created.size, seen.size)
+        assertEquals(created.map { it.productId }.toSet(), seen.toSet())
+        assertEquals("no duplicate row across pages", seen.size, seen.distinct().size)
+    }
+
+    @Test
+    fun `keyset pagination stays gap-free and duplicate-free when many rows share the exact same updatedAt`() = runTest(dispatcher) {
+        val repo = repository()
+        val created = (1..120).map { i -> repo.createManualDraft("co-1", "Item $i", ts(1_000L)) }
+
+        val seen = mutableListOf<String>()
+        var cursor: com.budcom.android.feature.catalogue.domain.repository.CatalogueProductPageCursor? = null
+        do {
+            val page = repo.listProductsPage("co-1", cursor, pageSize = 50)
+            seen += page.products.map { it.productId }
+            cursor = page.nextCursor
+        } while (cursor != null)
+
+        assertEquals("the productId tiebreak must prevent ties on updatedAt from skipping or repeating a row", created.size, seen.distinct().size)
+        assertEquals(created.map { it.productId }.toSet(), seen.toSet())
+    }
+
+    @Test
+    fun `listProductsPage resolves every Tally-linked row's Stock Item with a single batched lookup, never one per row`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }
+        repeat(80) { i -> stockItemLookup.stored["co-1"]!!["guid:$i"] = stockItem(id = "guid:$i", name = "Item $i") }
+        val repo = repository()
+        repeat(80) { i -> repo.createDraftFromStockItem("co-1", "guid:$i", ts(i.toLong())) }
+
+        val callsBefore = stockItemLookup.findByIdsCallCount
+        val page = repo.listProductsPage("co-1", cursor = null, pageSize = 50)
+
+        assertEquals(50, page.products.size)
+        assertEquals(
+            "exactly one batched Stock Item lookup for the whole page, never one per row",
+            callsBefore + 1,
+            stockItemLookup.findByIdsCallCount,
+        )
+    }
+
+    @Test
+    fun `reconciliation resolves every linked product's Stock Item with a single batched lookup`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }
+        repeat(500) { i -> stockItemLookup.stored["co-1"]!!["guid:$i"] = stockItem(id = "guid:$i", name = "Item $i") }
+        val repo = repository()
+        repeat(500) { i -> repo.createDraftFromStockItem("co-1", "guid:$i", ts(i.toLong())) }
+
+        val callsBefore = stockItemLookup.findByIdsCallCount
+        repo.reconcileStockItemLinks("co-1", ts())
+
+        assertEquals(
+            "one batched lookup for the whole reconciliation sweep, never one per linked product",
+            callsBefore + 1,
+            stockItemLookup.findByIdsCallCount,
+        )
+    }
+
+    @Test
+    fun `primaryAssetFiles resolves an entire page's thumbnails with a single batched query`() = runTest(dispatcher) {
+        val repo = repository()
+        val ids = (1..60).map { i -> repo.createManualDraft("co-1", "Item $i", ts(i.toLong())).productId }
+        ids.forEach { id -> repo.addAsset("co-1", id, android.net.TestUri.create(), ts()) }
+
+        val callsBefore = assetDao.findAllForProductsCallCount
+        val files = repo.primaryAssetFiles("co-1", ids)
+
+        assertEquals(1, assetDao.findAllForProductsCallCount - callsBefore)
+        assertEquals(ids.size, files.size)
+    }
+
+    // ============================== Scale evidence (Catalogue perf package) ==============================
+    // Deterministic, count-based proof (not a subjective speed claim) that retrieval stays bounded
+    // and lookups stay batched regardless of company size -- current real observed business scale
+    // is ~1,208 stock items (see CATALOGUE_LINK_ALL_CHUNK_SIZE's own doc comment); this exercises
+    // one order of magnitude below and above that, plus 10x further. Never claims SCALE-1M.
+
+    @Test
+    fun `bounded page fetch and single batched lookups hold at 100, 1,000 and 10,000 synthetic products`() = runTest(dispatcher) {
+        listOf(100, 1_000, 10_000).forEach { size ->
+            val companyId = "scale-$size"
+            stockItemLookup.stored.getOrPut(companyId) { mutableMapOf() }
+            repeat(size) { i -> stockItemLookup.stored[companyId]!!["guid:$i"] = stockItem(id = "guid:$i", name = "Item $i") }
+            val repo = repository()
+            repeat(size) { i -> repo.createDraftFromStockItem(companyId, "guid:$i", ts(i.toLong())) }
+
+            val pageCallsBefore = stockItemLookup.findByIdsCallCount
+            val page = repo.listProductsPage(companyId, cursor = null, pageSize = 50)
+            assertEquals("initial screen-open must fetch exactly one page regardless of company size ($size)", 50, page.products.size)
+            assertEquals(
+                "exactly one batched Stock Item lookup for the page regardless of company size ($size)",
+                pageCallsBefore + 1,
+                stockItemLookup.findByIdsCallCount,
+            )
+
+            val reconcileCallsBefore = stockItemLookup.findByIdsCallCount
+            repo.reconcileStockItemLinks(companyId, ts())
+            assertEquals(
+                "reconciliation sweep at company size ($size) must still be exactly one batched lookup",
+                reconcileCallsBefore + 1,
+                stockItemLookup.findByIdsCallCount,
+            )
+        }
+    }
+
+    // ============================== Freshness signal (resume-refresh replacement) ==============================
+
+    @Test
+    fun `currentChangeSignal is stable when nothing has changed`() = runTest(dispatcher) {
+        val repo = repository()
+        val first = repo.currentChangeSignal("co-1")
+        val second = repo.currentChangeSignal("co-1")
+        assertEquals("no write happened between the two calls", first, second)
+    }
+
+    @Test
+    fun `currentChangeSignal changes after a local write`() = runTest(dispatcher) {
+        val repo = repository()
+        val before = repo.currentChangeSignal("co-1")
+
+        repo.createManualDraft("co-1", "Widget", ts())
+
+        assertTrue("a local write must change the signal", repo.currentChangeSignal("co-1") != before)
+    }
+
+    @Test
+    fun `currentChangeSignal changes when the Stock Item cache changes, even with no local Catalogue write`() = runTest(dispatcher) {
+        stockItemLookup.stored.getOrPut("co-1") { mutableMapOf() }["guid:a"] = stockItem(id = "guid:a")
+        val repo = repository()
+        val before = repo.currentChangeSignal("co-1")
+
+        stockItemLookup.stored["co-1"]!!["guid:b"] = stockItem(id = "guid:b", name = "New Item")
+
+        assertTrue(
+            "a Stock Item cache change must be reflected even without any Catalogue-side write",
+            repo.currentChangeSignal("co-1") != before,
+        )
+    }
+
     // ============================== Assets ==============================
 
     @Test
@@ -767,6 +931,17 @@ private class FakeCatalogueProductDao : CatalogueProductDao {
         store.values.filter { it.companyId == companyId && it.lifecycleState == lifecycleState }
     override suspend fun findAllLinkedToStockItems(companyId: String): List<CatalogueProductEntity> =
         store.values.filter { it.companyId == companyId && it.linkedStockItemId != null }
+    override suspend fun findPageForCompany(
+        companyId: String,
+        cursorUpdatedAt: Long,
+        cursorProductId: String,
+        limit: Int,
+    ): List<CatalogueProductEntity> =
+        store.values
+            .filter { it.companyId == companyId }
+            .filter { it.updatedAt < cursorUpdatedAt || (it.updatedAt == cursorUpdatedAt && it.productId > cursorProductId) }
+            .sortedWith(compareByDescending<CatalogueProductEntity> { it.updatedAt }.thenBy { it.productId })
+            .take(limit)
 }
 
 private class FakeCatalogueProductSourceLinkDao : CatalogueProductSourceLinkDao {
@@ -834,6 +1009,12 @@ private class FakeCatalogueAssetDao : CatalogueAssetDao {
     }
     override suspend fun findAllForProduct(companyId: String, productId: String) =
         store.values.filter { it.companyId == companyId && it.productId == productId }.sortedBy { it.sortOrder }
+    var findAllForProductsCallCount = 0
+        private set
+    override suspend fun findAllForProducts(companyId: String, productIds: List<String>): List<CatalogueAssetEntity> {
+        findAllForProductsCallCount++
+        return store.values.filter { it.companyId == companyId && it.productId in productIds }.sortedBy { it.sortOrder }
+    }
     override suspend fun findById(companyId: String, productId: String, assetId: String) = store[Triple(companyId, productId, assetId)]
     override suspend fun clearPrimaryExcept(companyId: String, productId: String, keepAssetId: String) {
         store.values.filter { it.companyId == companyId && it.productId == productId && it.assetId != keepAssetId }
@@ -860,8 +1041,22 @@ private class FakeCatalogueCustomFieldDao : CatalogueCustomFieldDao {
 private class FakeStockItemLookupPort : StockItemLookupPort {
     val stored = mutableMapOf<String, MutableMap<String, StockItem>>()
     val warmCalls = mutableListOf<String>()
+    /** Counts [findByIds] calls so a test can assert the reconciliation/page-read N+1 fix actually
+     * makes one batched call, never one per item. */
+    var findByIdsCallCount = 0
+        private set
+
     override suspend fun findById(companyId: String, stockItemId: String): StockItem? = stored[companyId]?.get(stockItemId)
     override suspend fun listAllForCompany(companyId: String): List<StockItem> = stored[companyId]?.values?.toList().orEmpty()
+    override suspend fun findByIds(companyId: String, stockItemIds: List<String>): List<StockItem> {
+        findByIdsCallCount++
+        val company = stored[companyId] ?: return emptyList()
+        return stockItemIds.mapNotNull { company[it] }
+    }
+    override suspend fun freshnessFingerprint(companyId: String): String {
+        val company = stored[companyId] ?: return "0:"
+        return "${company.size}:${company.values.maxOfOrNull { it.syncedAt } ?: ""}"
+    }
     override suspend fun warmStockItemCache(companyId: String) {
         warmCalls += companyId
     }

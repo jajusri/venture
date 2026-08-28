@@ -29,6 +29,12 @@ data class CatalogueUiState(
     val isInitialLoading: Boolean = true,
     val isRefreshing: Boolean = false,
     val products: List<CatalogueProductRowUi> = emptyList(),
+    /** Whether another page exists beyond what [products] currently holds (Catalogue perf package
+     * -- bounded/paged retrieval, never the whole company table at once). */
+    val canLoadMore: Boolean = false,
+    /** True only while a [CatalogueEvent.LoadMoreProducts] page fetch is in flight -- distinct from
+     * [isInitialLoading]/[isRefreshing], which apply to the first page only. */
+    val isLoadingMore: Boolean = false,
     val showAddChoiceDialog: Boolean = false,
     val showAddManualDialog: Boolean = false,
     val addManualName: String = "",
@@ -66,6 +72,13 @@ data class CatalogueUiState(
 
 sealed interface CatalogueEvent {
     data object Refresh : CatalogueEvent
+    /** Fired on every RESUMED (see CatalogueRoute) -- unlike [Refresh], this is a cheap staleness
+     * check first (see [CatalogueViewModel]'s own `checkFreshnessAndReloadIfNeeded` doc comment)
+     * that only reconciles/reloads when something could actually have changed. */
+    data object ResumeCheck : CatalogueEvent
+    /** Requests the next page once the list is scrolled near its current end. A no-op if the last
+     * page was already reached or a load is already in flight. */
+    data object LoadMoreProducts : CatalogueEvent
     /** FAB tap — offers a choice between manual entry and linking from Tally stock, rather than
      * assuming one (architecture: Catalogue supports both a Manual and a Tally
      * [com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource] from day one). */

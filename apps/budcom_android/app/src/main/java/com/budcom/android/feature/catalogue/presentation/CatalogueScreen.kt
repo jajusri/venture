@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -51,7 +52,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -134,13 +138,19 @@ fun CatalogueRoute(
     // time this destination becomes current again -- a "skip the first resume" guard here was
     // tried first and does NOT work, precisely because every return looks like a first resume to
     // a freshly recomposed effect scope. The ViewModel instance itself persists (hiltViewModel is
-    // entry-scoped), so this harmless extra refresh on true first-entry just races the ViewModel's
+    // entry-scoped), so this harmless extra check on true first-entry just races the ViewModel's
     // own initial company-subscription load, not a correctness issue. Mirrors DashboardScreen's
     // own RESUMED-lifecycle reconciliation pattern.
+    //
+    // Catalogue perf package (2026-08-28): this used to fire an unconditional CatalogueEvent.Refresh
+    // here, repeating a full reconciliation sweep + whole-list reload on every single return to this
+    // screen even when nothing had changed. ResumeCheck preserves the same correctness guarantee
+    // (still fully reconciles/reloads whenever a local edit or Stock Item cache change is actually
+    // detected) via a cheap staleness check first -- see CatalogueViewModel's own doc comment.
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(viewModel, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            viewModel.onEvent(CatalogueEvent.Refresh)
+            viewModel.onEvent(CatalogueEvent.ResumeCheck)
         }
     }
     CatalogueScreen(
@@ -246,9 +256,33 @@ fun CatalogueScreen(
             when {
                 state.isInitialLoading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 state.isEmpty -> CatalogueEmptyState(modifier = Modifier.align(Alignment.Center))
-                else -> LazyColumn(modifier = Modifier.fillMaxSize().testTag("catalogue_product_list")) {
-                    items(state.products, key = { it.productId }) { row ->
-                        CatalogueProductRow(row = row, onClick = { onOpenProductDetail(row.productId) })
+                else -> {
+                    // rememberSaveable (not plain remember) so scroll position survives this
+                    // Composable being disposed and recreated on a Detail round trip (see
+                    // CatalogueRoute's own doc comment on that behavior) -- its backing store is
+                    // tied to this NavBackStackEntry's saved state, not to this composition.
+                    val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+                    val latestState = rememberUpdatedState(state)
+                    LaunchedEffect(listState, onEvent) {
+                        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+                            .collect { lastVisibleIndex ->
+                                val current = latestState.value
+                                if (current.canLoadMore && !current.isLoadingMore && lastVisibleIndex >= current.products.size - 5) {
+                                    onEvent(CatalogueEvent.LoadMoreProducts)
+                                }
+                            }
+                    }
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize().testTag("catalogue_product_list")) {
+                        items(state.products, key = { it.productId }) { row ->
+                            CatalogueProductRow(row = row, onClick = { onOpenProductDetail(row.productId) })
+                        }
+                        if (state.isLoadingMore) {
+                            item(key = "catalogue_load_more_indicator") {
+                                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp).testTag("catalogue_load_more_indicator"))
+                                }
+                            }
+                        }
                     }
                 }
             }

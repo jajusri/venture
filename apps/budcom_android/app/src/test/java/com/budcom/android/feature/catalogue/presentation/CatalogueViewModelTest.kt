@@ -78,6 +78,86 @@ class CatalogueViewModelTest {
         assertTrue(!vm.uiState.value.isInitialLoading)
     }
 
+    // ============================== Resume freshness (Catalogue perf package) ==============================
+
+    @Test
+    fun `ResumeCheck does nothing when the change signal is unchanged`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1", displayName = "Widget"))
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+        val reconcileCountAfterInitialLoad = repository.reconcileCallCount
+
+        vm.onEvent(CatalogueEvent.ResumeCheck)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(
+            "an unchanged signal must skip reconciliation entirely, not merely skip the UI update",
+            reconcileCountAfterInitialLoad,
+            repository.reconcileCallCount,
+        )
+        assertEquals(listOf("Widget"), vm.uiState.value.products.map { it.displayName })
+    }
+
+    @Test
+    fun `ResumeCheck reconciles and reloads when the change signal differs`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1", displayName = "Widget"))
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+        val reconcileCountAfterInitialLoad = repository.reconcileCallCount
+        repository.changeSignal = repository.changeSignal.copy(localRevision = repository.changeSignal.localRevision + 1)
+        repository.products["co-1"]!!.add(sampleProduct(productId = "p2", displayName = "Gadget"))
+
+        vm.onEvent(CatalogueEvent.ResumeCheck)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(reconcileCountAfterInitialLoad + 1, repository.reconcileCallCount)
+        assertEquals(setOf("Widget", "Gadget"), vm.uiState.value.products.map { it.displayName }.toSet())
+    }
+
+    // ============================== Pagination (Catalogue perf package) ==============================
+
+    @Test
+    fun `only the first page loads initially, with canLoadMore set once more products exist`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = (1..(CATALOGUE_PAGE_SIZE + 20)).map { i ->
+            sampleProduct(productId = "p$i", displayName = "Item $i")
+        }.toMutableList()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(CATALOGUE_PAGE_SIZE, vm.uiState.value.products.size)
+        assertTrue("a company with more products than one page must report canLoadMore", vm.uiState.value.canLoadMore)
+    }
+
+    @Test
+    fun `a company with fewer products than one page reports no more pages`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = mutableListOf(sampleProduct(productId = "p1", displayName = "Widget"))
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(!vm.uiState.value.canLoadMore)
+    }
+
+    @Test
+    fun `LoadMoreProducts appends the next page and stops once exhausted`() = runTest(dispatcher) {
+        val repository = FakeCatalogueRepository()
+        repository.products["co-1"] = (1..(CATALOGUE_PAGE_SIZE + 20)).map { i ->
+            sampleProduct(productId = "p$i", displayName = "Item $i")
+        }.toMutableList()
+        val vm = viewModel(repository, FakeCompanySessionPort("co-1"))
+        dispatcher.scheduler.advanceUntilIdle()
+
+        vm.onEvent(CatalogueEvent.LoadMoreProducts)
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(CATALOGUE_PAGE_SIZE + 20, vm.uiState.value.products.size)
+        assertTrue("every product must have been paged in exactly once, no duplicates", vm.uiState.value.products.map { it.productId }.distinct().size == CATALOGUE_PAGE_SIZE + 20)
+        assertTrue("no more pages left beyond what exists", !vm.uiState.value.canLoadMore)
+    }
+
     // ============================== product-card photo display ==============================
 
     private fun ts(millis: Long = 1_000L) = CatalogueTimestamp(millis, CatalogueTimestampSource.DeviceLocalProvisional)
@@ -909,8 +989,20 @@ val unlinkedStockItems = mutableMapOf<String, MutableList<com.budcom.android.fea
         return CatalogueLifecycleResult.Success(updated)
     }
 
-    override suspend fun reconcileStockItemLinks(companyId: String, timestamp: CatalogueTimestamp): CatalogueReconciliationResult =
-        CatalogueReconciliationResult(emptyList(), emptyList())
+    var reconcileCallCount = 0
+        private set
+    override suspend fun reconcileStockItemLinks(companyId: String, timestamp: CatalogueTimestamp): CatalogueReconciliationResult {
+        reconcileCallCount++
+        return CatalogueReconciliationResult(emptyList(), emptyList())
+    }
+
+    /** Controllable stand-in for the real cheap freshness signal (default interface behavior is
+     * "always different," i.e. every check reloads) -- tests that need to prove the resume-skip
+     * fast path set this explicitly instead. */
+    var changeSignal = com.budcom.android.feature.catalogue.domain.repository.CatalogueChangeSignal(localRevision = 0, stockItemFingerprint = "")
+    var currentChangeSignalCallCount = 0
+        private set
+    override suspend fun currentChangeSignal(companyId: String) = changeSignal.also { currentChangeSignalCallCount++ }
 
     val branches = mutableMapOf<String, MutableList<Branch>>()
 

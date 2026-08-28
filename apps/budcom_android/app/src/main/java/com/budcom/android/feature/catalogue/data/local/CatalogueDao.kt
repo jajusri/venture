@@ -22,6 +22,28 @@ interface CatalogueProductDao {
     @Query("SELECT * FROM catalogue_product WHERE companyId = :companyId ORDER BY updatedAt DESC")
     suspend fun findAllForCompany(companyId: String): List<CatalogueProductEntity>
 
+    /** Deterministic keyset page (Catalogue perf package) -- newest-updated first, tiebroken by
+     * [CatalogueProductEntity.productId] so two rows sharing the same `updatedAt` millisecond still
+     * get a stable, gap-free order across pages. Never loads more than [limit] rows regardless of
+     * how large the company's catalogue is -- this is what replaces [findAllForCompany] on the
+     * normal list-open path. Pass `cursorUpdatedAt = Long.MAX_VALUE, cursorProductId = ""` for the
+     * first page; for a later page, pass the previous page's last row's own `(updatedAt, productId)`. */
+    @Query(
+        """
+        SELECT * FROM catalogue_product
+        WHERE companyId = :companyId
+          AND (updatedAt < :cursorUpdatedAt OR (updatedAt = :cursorUpdatedAt AND productId > :cursorProductId))
+        ORDER BY updatedAt DESC, productId ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun findPageForCompany(
+        companyId: String,
+        cursorUpdatedAt: Long,
+        cursorProductId: String,
+        limit: Int,
+    ): List<CatalogueProductEntity>
+
     @Query("SELECT * FROM catalogue_product WHERE companyId = :companyId AND lifecycleState = :lifecycleState ORDER BY updatedAt DESC")
     suspend fun findAllByLifecycleState(companyId: String, lifecycleState: String): List<CatalogueProductEntity>
 
@@ -119,6 +141,14 @@ interface CatalogueAssetDao {
 
     @Query("SELECT * FROM catalogue_asset WHERE companyId = :companyId AND productId = :productId ORDER BY sortOrder ASC")
     suspend fun findAllForProduct(companyId: String, productId: String): List<CatalogueAssetEntity>
+
+    /** Batched equivalent of calling [findAllForProduct] once per id (Catalogue perf package) --
+     * resolves every asset for a whole page of products in one query instead of one round trip per
+     * row. Still ordered by `sortOrder ASC` within each product, so grouping the result by
+     * `productId` and taking the first entry per group reproduces [findAllForProduct]'s own
+     * ordering exactly. */
+    @Query("SELECT * FROM catalogue_asset WHERE companyId = :companyId AND productId IN (:productIds) ORDER BY sortOrder ASC")
+    suspend fun findAllForProducts(companyId: String, productIds: List<String>): List<CatalogueAssetEntity>
 
     @Query("SELECT * FROM catalogue_asset WHERE companyId = :companyId AND productId = :productId AND assetId = :assetId")
     suspend fun findById(companyId: String, productId: String, assetId: String): CatalogueAssetEntity?

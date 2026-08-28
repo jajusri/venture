@@ -50,6 +50,23 @@ data class CatalogueReconciliationResult(
     val reappeared: List<String>,
 )
 
+/** Opaque cursor into [CatalogueRepository.listProductsPage]'s deterministic order (newest-updated
+ * first, tiebroken by id) -- always sourced from a previous page's own [CatalogueProductPage.nextCursor],
+ * never constructed by a caller from scratch. */
+data class CatalogueProductPageCursor(val updatedAt: Long, val productId: String)
+
+data class CatalogueProductPage(
+    val products: List<CatalogueProduct>,
+    /** `null` means this was the last page. */
+    val nextCursor: CatalogueProductPageCursor?,
+)
+
+/** Cheap, poll-friendly signal for "might this company's Catalogue list or its live-resolved Stock
+ * Item fields have changed since the last time I loaded/reconciled it." Comparing two calls'
+ * results for equality is enough to decide whether a resume-triggered refresh needs to do any work
+ * at all -- see [CatalogueRepository.currentChangeSignal]. */
+data class CatalogueChangeSignal(val localRevision: Int, val stockItemFingerprint: String)
+
 interface CatalogueRepository {
     suspend fun createDraftFromStockItem(companyId: String, stockItemId: String, timestamp: CatalogueTimestamp): CatalogueProduct?
     suspend fun createManualDraft(companyId: String, displayName: String, timestamp: CatalogueTimestamp): CatalogueProduct
@@ -91,8 +108,84 @@ interface CatalogueRepository {
      * discipline — never a fresh network fetch of its own. */
     suspend fun listUnlinkedStockItems(companyId: String): List<StockItem>
     suspend fun findProduct(companyId: String, productId: String): CatalogueProduct?
+
+    /** Every product for [companyId], unbounded -- correct for a genuine "need the whole list"
+     * operation (Excel-import identity resolution, Excel export), never for a screen-open cost.
+     * The normal Catalogue list screen uses [listProductsPage] instead. */
     suspend fun listProducts(companyId: String): List<CatalogueProduct>
     suspend fun listProductsByState(companyId: String, state: CatalogueLifecycleState): List<CatalogueProduct>
+
+    /**
+     * Bounded, deterministically-ordered page of [companyId]'s products (newest-updated first) --
+     * never materializes the whole company's product table regardless of catalogue size. Pass the
+     * previous call's [CatalogueProductPage.nextCursor] as [cursor] to fetch the following page, or
+     * `null` for the first page. Every Tally-linked row's live-resolved fields (name/unit/HSN/GST)
+     * are resolved with a single batched Stock Item lookup for the whole page, never one query per
+     * row (architecture: this is what replaces [listProducts] on the Catalogue screen's own
+     * list-open/resume path).
+     *
+     * The default implementation here delegates to [listProducts] and pages the result in memory --
+     * correct but not bounded at the DB layer; [com.budcom.android.feature.catalogue.data.repository.CatalogueRepositoryImpl]
+     * overrides this with an actual bounded/indexed Room query. The default exists purely so an
+     * older test fake that hasn't been taught about paging still compiles and behaves correctly.
+     */
+    suspend fun listProductsPage(
+        companyId: String,
+        cursor: CatalogueProductPageCursor? = null,
+        pageSize: Int = 50,
+    ): CatalogueProductPage {
+        val ordered = listProducts(companyId).sortedWith(
+            compareByDescending<CatalogueProduct> { it.updatedAt.epochMillis }.thenBy { it.productId },
+        )
+        val afterCursor = if (cursor == null) {
+            ordered
+        } else {
+            ordered.filter { p ->
+                p.updatedAt.epochMillis < cursor.updatedAt ||
+                    (p.updatedAt.epochMillis == cursor.updatedAt && p.productId > cursor.productId)
+            }
+        }
+        val page = afterCursor.take(pageSize)
+        val nextCursor = if (afterCursor.size > pageSize) {
+            page.last().let { CatalogueProductPageCursor(it.updatedAt.epochMillis, it.productId) }
+        } else {
+            null
+        }
+        return CatalogueProductPage(page, nextCursor)
+    }
+
+    /** One primary-photo file per id in [productIds], resolved in a single batched call rather than
+     * one [listAssets]/[resolveAssetFile] round trip per product (architecture: this is what
+     * replaces the Catalogue list screen's own former per-row thumbnail N+1). A product with no
+     * asset, or whose primary asset's file has since gone missing, is simply absent/`null` in the
+     * result -- never throws, matching every other asset-resolution path in this codebase.
+     *
+     * Default implementation delegates to [listAssets]/[resolveAssetFile] per id (same fallback
+     * rationale as [listProductsPage]'s own default); [com.budcom.android.feature.catalogue.data.repository.CatalogueRepositoryImpl]
+     * overrides this with one batched Room query for the whole page.
+     */
+    suspend fun primaryAssetFiles(companyId: String, productIds: List<String>): Map<String, File?> =
+        productIds.associateWith { productId ->
+            val assets = listAssets(companyId, productId)
+            val primary = assets.firstOrNull { it.isPrimary } ?: assets.firstOrNull()
+            primary?.let { resolveAssetFile(companyId, productId, it.filePath) }
+        }
+
+    /**
+     * Cheap, poll-friendly signal for "might anything relevant to the Catalogue list have changed
+     * since the last time I checked" -- see [CatalogueChangeSignal]. Comparing two calls' results
+     * for equality lets a resume-triggered check skip a full reconciliation+reload when nothing
+     * changed, instead of always doing one unconditionally.
+     *
+     * Default implementation returns a value that is never equal across two calls (built from
+     * [System.nanoTime]) -- an implementation that hasn't overridden this (e.g. an older test fake)
+     * simply never unlocks the "skip, nothing changed" fast path, which is exactly this package's
+     * prior always-refresh behavior, so existing test expectations on the default keep holding.
+     * [com.budcom.android.feature.catalogue.data.repository.CatalogueRepositoryImpl] overrides this
+     * with the real cheap signal.
+     */
+    suspend fun currentChangeSignal(companyId: String): CatalogueChangeSignal =
+        CatalogueChangeSignal(localRevision = 0, stockItemFingerprint = System.nanoTime().toString())
     /** [update.unit] is written only when the target product's [CatalogueProduct.source] is
      * [com.budcom.android.feature.catalogue.domain.model.CatalogueProductSource.Manual] (TD-047) —
      * silently ignored for a Tally-linked product, exactly like every other Tally-owned field this
