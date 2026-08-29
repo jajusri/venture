@@ -36,7 +36,14 @@ param(
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+# Deliberately 'Continue', not 'Stop': every native command this script calls (adb, npm) is checked
+# via an explicit $LASTEXITCODE test immediately afterward (never relied on PowerShell's own
+# exception machinery for control flow) -- but under 'Stop', ANY stderr line from a native command
+# becomes a terminating NativeCommandError even on a genuine success (reproduced live: adb push's own
+# progress line, and adb shell am broadcast's own confirmation line, both write to stderr and both
+# aborted this entire script despite exit code 0). 'Continue' lets those informational lines print
+# and this script's own explicit exit-code checks remain the sole source of truth for failure.
+$ErrorActionPreference = 'Continue'
 
 $Script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Script:BackendDir = Join-Path $RepoRoot 'backend'
@@ -160,22 +167,17 @@ function Send-PilotPayloadAndTrigger {
         Remove-Item -Force $localTempFile -ErrorAction SilentlyContinue
     }
 
-    # A pre-existing result file from a stale prior attempt, or "the file doesn't exist yet" while
-    # polling below, are both EXPECTED, non-fatal conditions here -- adb's own stderr on a native
-    # command becomes a terminating NativeCommandError under this script's $ErrorActionPreference =
-    # 'Stop', so each of these must be wrapped in try/catch rather than relying on a plain exit code.
-    try { & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath 2>$null | Out-Null } catch { }
-    $ErrorActionPreference = 'Continue'
+    # A pre-existing result file from a stale prior attempt is an EXPECTED, non-fatal condition --
+    # `rm -f` deliberately never errors on a missing file, so no special handling is needed here.
+    & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath 2>$null | Out-Null
     & $Adb -s $Serial shell am broadcast -n $PilotReceiver -a $PilotAction | Out-Null
-    $ErrorActionPreference = 'Stop'
     if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to broadcast enrollment trigger to device $Serial." }
 
     $deadline = (Get-Date).AddSeconds(20)
     while ((Get-Date) -lt $deadline) {
-        $raw = $null
-        try { $raw = & $Adb -s $Serial shell run-as $DevDebugPackage cat $ResultPath 2>$null } catch { }
+        $raw = & $Adb -s $Serial shell run-as $DevDebugPackage cat $ResultPath 2>$null
         if ($raw -and $raw.Trim().StartsWith('{')) {
-            try { & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath | Out-Null } catch { }
+            & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath | Out-Null
             try { return ($raw | ConvertFrom-Json) } catch { Write-ErrorAndExit "Malformed enrollment result from device $Serial`: $raw" }
         }
         Start-Sleep -Milliseconds 750
