@@ -160,15 +160,22 @@ function Send-PilotPayloadAndTrigger {
         Remove-Item -Force $localTempFile -ErrorAction SilentlyContinue
     }
 
-    & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath 2>$null | Out-Null
+    # A pre-existing result file from a stale prior attempt, or "the file doesn't exist yet" while
+    # polling below, are both EXPECTED, non-fatal conditions here -- adb's own stderr on a native
+    # command becomes a terminating NativeCommandError under this script's $ErrorActionPreference =
+    # 'Stop', so each of these must be wrapped in try/catch rather than relying on a plain exit code.
+    try { & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath 2>$null | Out-Null } catch { }
+    $ErrorActionPreference = 'Continue'
     & $Adb -s $Serial shell am broadcast -n $PilotReceiver -a $PilotAction | Out-Null
+    $ErrorActionPreference = 'Stop'
     if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to broadcast enrollment trigger to device $Serial." }
 
     $deadline = (Get-Date).AddSeconds(20)
     while ((Get-Date) -lt $deadline) {
-        $raw = & $Adb -s $Serial shell run-as $DevDebugPackage cat $ResultPath 2>$null
+        $raw = $null
+        try { $raw = & $Adb -s $Serial shell run-as $DevDebugPackage cat $ResultPath 2>$null } catch { }
         if ($raw -and $raw.Trim().StartsWith('{')) {
-            & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath | Out-Null
+            try { & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath | Out-Null } catch { }
             try { return ($raw | ConvertFrom-Json) } catch { Write-ErrorAndExit "Malformed enrollment result from device $Serial`: $raw" }
         }
         Start-Sleep -Milliseconds 750
