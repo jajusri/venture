@@ -16,6 +16,7 @@
 #   .\scripts\budcom-controlled-pilot.ps1 -Verify
 #   .\scripts\budcom-controlled-pilot.ps1 -Status
 #   .\scripts\budcom-controlled-pilot.ps1 -RunTransport
+#   .\scripts\budcom-controlled-pilot.ps1 -RunLifecycle
 #   .\scripts\budcom-controlled-pilot.ps1 -Stop
 #   .\scripts\budcom-controlled-pilot.ps1 -RunAll
 #
@@ -31,6 +32,7 @@ param(
     [switch]$Status,
     [switch]$Stop,
     [switch]$RunTransport,
+    [switch]$RunLifecycle,
     [switch]$RunAll,
 
     [string]$PhoneASerial = '',
@@ -390,6 +392,99 @@ function Invoke-PilotIngestInbox {
     return $result
 }
 
+function Invoke-PilotSeenOrder {
+    param([string]$Serial, [string]$Label, [string]$OrderId = $null)
+    $payload = @{ op = 'seen-order' }
+    if ($OrderId) { $payload.orderId = $OrderId }
+    $result = Send-PilotTransportOp -Serial $Serial -Payload $payload
+    Write-Host "  [$Label] seen-order outcome=$($result.outcome) orderId=$(Get-SafeProperty $result 'orderId') eventId=$(Get-SafeProperty $result 'eventId')"
+    return $result
+}
+
+function Invoke-PilotConfirmOrder {
+    param([string]$Serial, [string]$Label, [string]$OrderId = $null)
+    $payload = @{ op = 'confirm-order' }
+    if ($OrderId) { $payload.orderId = $OrderId }
+    $result = Send-PilotTransportOp -Serial $Serial -Payload $payload
+    Write-Host "  [$Label] confirm-order outcome=$($result.outcome) orderId=$(Get-SafeProperty $result 'orderId') eventId=$(Get-SafeProperty $result 'eventId')"
+    return $result
+}
+
+function Invoke-PilotProposeRevision {
+    param([string]$Serial, [string]$Label, [string]$OrderId = $null, [string]$NewQuantity, [string]$Reason)
+    $payload = @{ op = 'propose-revision'; quantity = $NewQuantity; revisionReason = $Reason }
+    if ($OrderId) { $payload.orderId = $OrderId }
+    $result = Send-PilotTransportOp -Serial $Serial -Payload $payload
+    Write-Host "  [$Label] propose-revision outcome=$($result.outcome) orderId=$(Get-SafeProperty $result 'orderId') orderVersion=$(Get-SafeProperty $result 'orderVersion')"
+    return $result
+}
+
+function Invoke-PilotAcceptRevision {
+    param([string]$Serial, [string]$Label, [string]$OrderId = $null)
+    $payload = @{ op = 'accept-revision' }
+    if ($OrderId) { $payload.orderId = $OrderId }
+    $result = Send-PilotTransportOp -Serial $Serial -Payload $payload
+    Write-Host "  [$Label] accept-revision outcome=$($result.outcome) orderId=$(Get-SafeProperty $result 'orderId') eventId=$(Get-SafeProperty $result 'eventId')"
+    return $result
+}
+
+function Invoke-PilotRunLifecycle {
+    Write-Section 'Commercial lifecycle: Order -> Seen -> Confirm, Order -> Revision -> Accept'
+    $serials = Resolve-PhoneSerials
+    & (Join-Path $RepoRoot 'scripts\budcom-services.ps1') -Verify | Out-Host
+    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit 'Trust/Relay must be healthy before running lifecycle proofs.' }
+    foreach ($serial in @($serials.A, $serials.B)) {
+        & $Adb -s $serial reverse "tcp:$RelayPort" "tcp:$RelayPort" | Out-Null
+        & $Adb -s $serial reverse "tcp:$TrustPort" "tcp:$(Get-HostTrustPort)" | Out-Null
+    }
+
+    $identityA = Get-PilotIdentity -Serial $serials.A -Label 'Phone A / Test Company 1'
+    $identityB = Get-PilotIdentity -Serial $serials.B -Label 'Phone B / Test Company 2'
+    # Re-bind is idempotent (same partyId returned for an already-bound Business) -- makes this
+    # function runnable standalone, not only chained right after -RunTransport's own binding.
+    $bindAonB = Invoke-PilotBindCounterparty -Serial $serials.A -Label 'Phone A' -PeerDisplayName 'BUDCOM Test 2 Company' -PeerCredential $identityB.credential
+
+    Write-Host "`n-- Order -> Seen -> Confirm (own order, kept separate from the revision proof below) --"
+    $submitConfirm = Invoke-PilotSubmitOrder -Serial $serials.A -Label 'Phone A' -BuyerPartyId $bindAonB.partyId -PeerBusinessId $identityB.businessId -CreationKey "pilot-lifecycle-confirm-$([guid]::NewGuid())"
+    if ($submitConfirm.transportState -ne 'RelayAccepted') { Write-ErrorAndExit "Seen/Confirm proof's own order submit did not reach Relay (got $($submitConfirm.transportState))." }
+    $confirmOrderId = $submitConfirm.orderId
+    Start-Sleep -Seconds 2
+    Invoke-PilotIngestInbox -Serial $serials.B -Label 'Phone B' | Out-Null
+    $seenB = Invoke-PilotSeenOrder -Serial $serials.B -Label 'Phone B (seller)' -OrderId $confirmOrderId
+    if ($seenB.outcome -ne 'success') { Write-ErrorAndExit "seen-order failed on Phone B: $($seenB.outcome)" }
+    $confirmB = Invoke-PilotConfirmOrder -Serial $serials.B -Label 'Phone B (seller)' -OrderId $confirmOrderId
+    if ($confirmB.outcome -ne 'success') { Write-ErrorAndExit "confirm-order failed on Phone B: $($confirmB.outcome)" }
+    Start-Sleep -Seconds 2
+    Invoke-PilotIngestInbox -Serial $serials.A -Label 'Phone A' | Out-Null
+    Write-Ok "Order -> Seen -> Confirm PASS: order $confirmOrderId confirmed by seller, return events delivered to buyer."
+
+    Write-Host "`n-- Order -> Revision -> Accept (separate order) --"
+    $submitRevise = Invoke-PilotSubmitOrder -Serial $serials.A -Label 'Phone A' -BuyerPartyId $bindAonB.partyId -PeerBusinessId $identityB.businessId -CreationKey "pilot-lifecycle-revise-$([guid]::NewGuid())"
+    if ($submitRevise.transportState -ne 'RelayAccepted') { Write-ErrorAndExit "Revision proof's own order submit did not reach Relay (got $($submitRevise.transportState))." }
+    $reviseOrderId = $submitRevise.orderId
+    Start-Sleep -Seconds 2
+    Invoke-PilotIngestInbox -Serial $serials.B -Label 'Phone B' | Out-Null
+    $seenBRevise = Invoke-PilotSeenOrder -Serial $serials.B -Label 'Phone B (seller)' -OrderId $reviseOrderId
+    if ($seenBRevise.outcome -ne 'success') { Write-ErrorAndExit "seen-order (pre-revision) failed on Phone B: $($seenBRevise.outcome)" }
+    $revise = Invoke-PilotProposeRevision -Serial $serials.B -Label 'Phone B (seller)' -OrderId $reviseOrderId -NewQuantity '5' -Reason 'controlled-pilot revision proof'
+    if ($revise.outcome -ne 'success') { Write-ErrorAndExit "propose-revision failed on Phone B: $($revise.outcome)" }
+    if ($revise.orderVersion -ne 2) { Write-ErrorAndExit "propose-revision did not advance the order to version 2 (got $($revise.orderVersion))." }
+    Start-Sleep -Seconds 2
+    Invoke-PilotIngestInbox -Serial $serials.A -Label 'Phone A' | Out-Null
+    $seenA = Invoke-PilotSeenOrder -Serial $serials.A -Label 'Phone A (buyer)' -OrderId $reviseOrderId
+    if ($seenA.outcome -ne 'success') { Write-ErrorAndExit "seen-order (revision) failed on Phone A: $($seenA.outcome)" }
+    if ($seenA.orderVersion -ne 2) { Write-ErrorAndExit "Phone A's seen-order resolved to the wrong version of the order (got $($seenA.orderVersion), expected 2)." }
+    $acceptA = Invoke-PilotAcceptRevision -Serial $serials.A -Label 'Phone A (buyer)' -OrderId $reviseOrderId
+    if ($acceptA.outcome -ne 'success') { Write-ErrorAndExit "accept-revision failed on Phone A: $($acceptA.outcome)" }
+    Start-Sleep -Seconds 2
+    Invoke-PilotIngestInbox -Serial $serials.B -Label 'Phone B' | Out-Null
+    Write-Ok "Order -> Revision -> Accept PASS: order $reviseOrderId revised to version 2 (quantity 5) and accepted, return events delivered to seller."
+
+    Write-Host "`nCOMMERCIAL LIFECYCLE`n"
+    Write-Host "  Order -> Seen -> Confirm ... PASS (order $confirmOrderId)"
+    Write-Host "  Order -> Revision -> Accept  PASS (order $reviseOrderId)"
+}
+
 function Invoke-PilotRunTransport {
     Write-Section 'Real two-phone Relay transport + replay/tamper proof'
     $serials = Resolve-PhoneSerials
@@ -477,7 +572,7 @@ function Invoke-PilotStop {
 
 Import-DotEnv
 
-if (-not ($Doctor -or $Bootstrap -or $Start -or $Enroll -or $Verify -or $Status -or $Stop -or $RunTransport -or $RunAll)) {
+if (-not ($Doctor -or $Bootstrap -or $Start -or $Enroll -or $Verify -or $Status -or $Stop -or $RunTransport -or $RunLifecycle -or $RunAll)) {
     Write-Host 'No mode selected. Examples:'
     Write-Host '  .\scripts\budcom-controlled-pilot.ps1 -Doctor'
     Write-Host '  .\scripts\budcom-controlled-pilot.ps1 -RunAll'
@@ -491,6 +586,8 @@ if ($RunAll) {
     Invoke-PilotEnroll
     Invoke-PilotVerify
     Invoke-PilotStatus
+    Invoke-PilotRunTransport
+    Invoke-PilotRunLifecycle
     exit 0
 }
 
@@ -501,5 +598,6 @@ if ($Enroll) { Invoke-PilotEnroll }
 if ($Verify) { Invoke-PilotVerify }
 if ($Status) { Invoke-PilotStatus }
 if ($RunTransport) { Invoke-PilotRunTransport }
+if ($RunLifecycle) { Invoke-PilotRunLifecycle }
 if ($Stop) { Invoke-PilotStop }
 exit 0

@@ -11,6 +11,8 @@ import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
 import com.budcom.android.feature.transaction.domain.model.CommercialAction
 import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest
 import com.budcom.android.feature.transaction.domain.model.CommercialTrustCredentialSource
+import com.budcom.android.feature.transaction.domain.model.OrderRevisionLineChange
+import com.budcom.android.feature.transaction.domain.model.OrderStructuredOpenEvent
 import com.budcom.android.feature.transaction.domain.model.TransactionSubmissionType
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestampSource
@@ -65,6 +67,14 @@ import javax.inject.Inject
  *    itself calls, ending in a real signed HTTP POST to the running Relay.
  *  - `ingest-inbox`: `RelayRecipientInboxIngester.ingestPending` -- the exact production fetch +
  *    materialize + real signed acknowledge sequence, unmodified.
+ *  - `seen-order`/`confirm-order`/`propose-revision`/`accept-revision`: thin wrappers around
+ *    `TransactionRepository.recordOrderSeenFromOpenEvent`/`recordOrderConfirmFromSellerAction`/
+ *    `proposeOrderRevision`+`enqueueOrderDelivery`+`markRevisionSent`/
+ *    `recordOrderRevisionAcceptFromBuyerAction` -- each act-and-send half of the Seen/Confirm and
+ *    Revision/Accept commercial lifecycle. The receive-and-apply half of each is already fully
+ *    automatic inside the existing `ingest-inbox` op's `RelayRecipientInboxIngester` ->
+ *    `TransactionRepository.ingestReceivedCommercialEvent` path (unmodified production code), so no
+ *    separate "apply" op is needed here.
  *
  * Only non-secret evidence is ever written to [RESULT_FILE] (ids, states) except where the whole
  * point of the operation is to carry a real credential to be handed to the OTHER device for real
@@ -117,6 +127,10 @@ class PilotTransportReceiver : BroadcastReceiver() {
                 "bind-counterparty" -> handleBindCounterparty(request)
                 "submit-order" -> handleSubmitOrder(request)
                 "ingest-inbox" -> handleIngestInbox(request)
+                "seen-order" -> handleSeenOrder(request)
+                "confirm-order" -> handleConfirmOrder(request)
+                "propose-revision" -> handleProposeRevision(request)
+                "accept-revision" -> handleAcceptRevision(request)
                 else -> PilotTransportResult(outcome = "unknown_op:${request.op}")
             }
         } catch (e: Exception) {
@@ -208,6 +222,128 @@ class PilotTransportReceiver : BroadcastReceiver() {
         )
     }
 
+    /** Most recently ingested inbox delivery for [orderId] (or overall, if `orderId` is null) --
+     * used to recover the inbound `envelopeId` an act-and-send op must reference (production's own
+     * `recordOrderSeenFromOpenEvent`/`recordOrderConfirmFromSellerAction`/`proposeOrderRevision`/
+     * `recordOrderRevisionAcceptFromBuyerAction` all require the envelope that carried the specific
+     * order version being acted on, not a synthesized id). */
+    private suspend fun findLatestReceivedEntry(companyId: String, orderId: String?) =
+        structuredInbox.findAll(companyId)
+            .let { entries -> if (orderId != null) entries.filter { it.objectId == orderId } else entries }
+            .maxByOrNull { it.mailboxSequence }
+
+    private suspend fun handleSeenOrder(request: PilotTransportRequest): PilotTransportResult {
+        val stored = trustCredentialStore.current() ?: return PilotTransportResult(outcome = "not_enrolled")
+        val identity = keyStore.getCurrentIdentity() ?: return PilotTransportResult(outcome = "no_keystore_identity")
+        val entry = findLatestReceivedEntry(stored.businessId, request.orderId) ?: return PilotTransportResult(outcome = "no_received_order")
+        val order = transactionRepository.findCanonicalOrderById(stored.businessId, entry.objectId)
+            ?: return PilotTransportResult(outcome = "order_not_materialized")
+        val sellerBusinessId = order.sellerBusinessId ?: return PilotTransportResult(outcome = "order_missing_seller_business")
+        val buyerBusinessId = order.buyerBusinessId ?: return PilotTransportResult(outcome = "order_missing_buyer_business")
+        val now = TransactionTimestamp(System.currentTimeMillis(), TransactionTimestampSource.DeviceLocalProvisional)
+        val open = OrderStructuredOpenEvent(
+            eventId = UUID.randomUUID().toString(),
+            idempotencyKey = "pilot-seen:${entry.objectId}:v${entry.objectVersion}:${stored.businessId}",
+            orderId = entry.objectId, orderVersion = entry.objectVersion, objectType = entry.objectType,
+            viewerBusinessId = stored.businessId, viewerActorId = stored.actorId, viewerDeviceId = identity.deviceId,
+            senderBusinessId = entry.senderBusinessId, openedAt = now,
+        )
+        val authorityRequest = CommercialActionAuthorityRequest(
+            action = CommercialAction.ReturnSeen, viewerBusinessId = stored.businessId, expectedActorId = null,
+            expectedDeviceId = identity.deviceId, expectedDeviceKeyVersion = identity.keyVersion,
+            orderId = entry.objectId, orderVersion = entry.objectVersion,
+            inboxOrderId = entry.objectId, inboxOrderVersion = entry.objectVersion,
+            sellerBusinessId = sellerBusinessId, buyerBusinessId = buyerBusinessId, nowEpochMillis = now.epochMillis,
+        )
+        val event = transactionRepository.recordOrderSeenFromOpenEvent(stored.businessId, entry.envelopeId, open, authorityRequest)
+            ?: return PilotTransportResult(outcome = "seen_rejected")
+        relayOutboxDispatcher.submitPending(stored.businessId)
+        return PilotTransportResult(outcome = "success", orderId = entry.objectId, orderVersion = entry.objectVersion, eventId = event.eventId)
+    }
+
+    private suspend fun handleConfirmOrder(request: PilotTransportRequest): PilotTransportResult {
+        val stored = trustCredentialStore.current() ?: return PilotTransportResult(outcome = "not_enrolled")
+        val identity = keyStore.getCurrentIdentity() ?: return PilotTransportResult(outcome = "no_keystore_identity")
+        val entry = findLatestReceivedEntry(stored.businessId, request.orderId) ?: return PilotTransportResult(outcome = "no_received_order")
+        val order = transactionRepository.findCanonicalOrderById(stored.businessId, entry.objectId)
+            ?: return PilotTransportResult(outcome = "order_not_materialized")
+        val sellerBusinessId = order.sellerBusinessId ?: return PilotTransportResult(outcome = "order_missing_seller_business")
+        val buyerBusinessId = order.buyerBusinessId ?: return PilotTransportResult(outcome = "order_missing_buyer_business")
+        val now = TransactionTimestamp(System.currentTimeMillis(), TransactionTimestampSource.DeviceLocalProvisional)
+        val authorityRequest = CommercialActionAuthorityRequest(
+            action = CommercialAction.SellerConfirm, viewerBusinessId = stored.businessId, expectedActorId = null,
+            expectedDeviceId = identity.deviceId, expectedDeviceKeyVersion = identity.keyVersion,
+            orderId = entry.objectId, orderVersion = entry.objectVersion,
+            inboxOrderId = entry.objectId, inboxOrderVersion = entry.objectVersion,
+            sellerBusinessId = sellerBusinessId, buyerBusinessId = buyerBusinessId, nowEpochMillis = now.epochMillis,
+        )
+        val event = transactionRepository.recordOrderConfirmFromSellerAction(
+            stored.businessId, entry.envelopeId, authorityRequest, UUID.randomUUID().toString(),
+            "pilot-confirm:${entry.objectId}:v${entry.objectVersion}:${stored.businessId}", now,
+        ) ?: return PilotTransportResult(outcome = "confirm_rejected")
+        relayOutboxDispatcher.submitPending(stored.businessId)
+        return PilotTransportResult(outcome = "success", orderId = entry.objectId, orderVersion = entry.objectVersion, eventId = event.eventId)
+    }
+
+    private suspend fun handleProposeRevision(request: PilotTransportRequest): PilotTransportResult {
+        val stored = trustCredentialStore.current() ?: return PilotTransportResult(outcome = "not_enrolled")
+        val identity = keyStore.getCurrentIdentity() ?: return PilotTransportResult(outcome = "no_keystore_identity")
+        val entry = findLatestReceivedEntry(stored.businessId, request.orderId) ?: return PilotTransportResult(outcome = "no_received_order")
+        val baseline = transactionRepository.findCanonicalOrderById(stored.businessId, entry.objectId)
+            ?: return PilotTransportResult(outcome = "order_not_materialized")
+        val sellerBusinessId = baseline.sellerBusinessId ?: return PilotTransportResult(outcome = "order_missing_seller_business")
+        val buyerBusinessId = baseline.buyerBusinessId ?: return PilotTransportResult(outcome = "order_missing_buyer_business")
+        val now = TransactionTimestamp(System.currentTimeMillis(), TransactionTimestampSource.DeviceLocalProvisional)
+        val proposedLines = baseline.lines.map { line ->
+            OrderRevisionLineChange(
+                lineId = line.lineId, linkedProductId = line.linkedProductId, snapshotProductName = line.snapshotProductName,
+                snapshotUnit = line.snapshotUnit, snapshotSku = line.snapshotSku,
+                quantity = request.quantity ?: line.quantity,
+                unitPriceAmount = line.unitPriceAmount, unitPriceCurrencyCode = line.unitPriceCurrencyCode,
+                priceState = line.priceState, lineTotalAmount = line.lineTotalAmount,
+            )
+        }
+        val authorityRequest = CommercialActionAuthorityRequest(
+            action = CommercialAction.SellerRevise, viewerBusinessId = stored.businessId, expectedActorId = null,
+            expectedDeviceId = identity.deviceId, expectedDeviceKeyVersion = identity.keyVersion,
+            orderId = baseline.orderId, orderVersion = baseline.version,
+            inboxOrderId = entry.objectId, inboxOrderVersion = entry.objectVersion,
+            sellerBusinessId = sellerBusinessId, buyerBusinessId = buyerBusinessId, nowEpochMillis = now.epochMillis,
+        )
+        val revised = transactionRepository.proposeOrderRevision(
+            stored.businessId, entry.envelopeId, baseline, proposedLines, request.revisionReason, authorityRequest, now,
+            "pilot-revise:${baseline.orderId}:v${baseline.version + 1}:${stored.businessId}",
+        ) ?: return PilotTransportResult(outcome = "revision_rejected")
+        val envelope = transactionRepository.enqueueOrderDelivery(revised, now)
+        transactionRepository.markRevisionSent(stored.businessId, revised.orderId, envelope)
+        relayOutboxDispatcher.submitPending(stored.businessId)
+        return PilotTransportResult(outcome = "success", orderId = revised.orderId, orderVersion = revised.version, envelopeId = envelope.envelopeId)
+    }
+
+    private suspend fun handleAcceptRevision(request: PilotTransportRequest): PilotTransportResult {
+        val stored = trustCredentialStore.current() ?: return PilotTransportResult(outcome = "not_enrolled")
+        val identity = keyStore.getCurrentIdentity() ?: return PilotTransportResult(outcome = "no_keystore_identity")
+        val entry = findLatestReceivedEntry(stored.businessId, request.orderId) ?: return PilotTransportResult(outcome = "no_received_order")
+        val order = transactionRepository.findCanonicalOrderById(stored.businessId, entry.objectId)
+            ?: return PilotTransportResult(outcome = "order_not_materialized")
+        val sellerBusinessId = order.sellerBusinessId ?: return PilotTransportResult(outcome = "order_missing_seller_business")
+        val buyerBusinessId = order.buyerBusinessId ?: return PilotTransportResult(outcome = "order_missing_buyer_business")
+        val now = TransactionTimestamp(System.currentTimeMillis(), TransactionTimestampSource.DeviceLocalProvisional)
+        val authorityRequest = CommercialActionAuthorityRequest(
+            action = CommercialAction.BuyerAcceptRevision, viewerBusinessId = stored.businessId, expectedActorId = null,
+            expectedDeviceId = identity.deviceId, expectedDeviceKeyVersion = identity.keyVersion,
+            orderId = entry.objectId, orderVersion = entry.objectVersion,
+            inboxOrderId = entry.objectId, inboxOrderVersion = entry.objectVersion,
+            sellerBusinessId = sellerBusinessId, buyerBusinessId = buyerBusinessId, nowEpochMillis = now.epochMillis,
+        )
+        val event = transactionRepository.recordOrderRevisionAcceptFromBuyerAction(
+            stored.businessId, entry.envelopeId, authorityRequest, UUID.randomUUID().toString(),
+            "pilot-accept:${entry.objectId}:v${entry.objectVersion}:${stored.businessId}", now,
+        ) ?: return PilotTransportResult(outcome = "accept_rejected")
+        relayOutboxDispatcher.submitPending(stored.businessId)
+        return PilotTransportResult(outcome = "success", orderId = entry.objectId, orderVersion = entry.objectVersion, eventId = event.eventId)
+    }
+
     companion object {
         const val ACTION_PILOT_TRANSPORT = "com.budcom.android.dev.debug.action.PILOT_TRANSPORT"
         const val PAYLOAD_FILE = "pilot_transport.json"
@@ -252,6 +388,8 @@ data class PilotTransportRequest(
     val productName: String? = null,
     val quantity: String? = null,
     val creationKey: String? = null,
+    val orderId: String? = null,
+    val revisionReason: String? = null,
 )
 
 @Serializable
@@ -274,4 +412,5 @@ data class PilotTransportResult(
     val transportState: String? = null,
     val transportError: String? = null,
     val receivedOrders: List<PilotReceivedOrder>? = null,
+    val eventId: String? = null,
 )
