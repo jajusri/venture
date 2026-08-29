@@ -91,6 +91,20 @@ function Get-HostTrustPort {
     return $TrustPort
 }
 
+function Get-SafeProperty {
+    # PilotTransportResult fields left at their (null) default are omitted from the JSON entirely --
+    # kotlinx.serialization's default encodeDefaults=false -- so an exception/failure outcome (e.g.
+    # the deliberate duplicate-key exception this script's own idempotency proof expects) genuinely
+    # lacks keys like orderId/transportState/transportError. Under Set-StrictMode -Version Latest,
+    # plain `$result.orderId` throws PropertyNotFoundException for a genuinely-absent key (unlike a
+    # present key with a null value, which is fine) -- this accessor makes that safe everywhere this
+    # script reads an optional PilotTransportResult field.
+    param($Object, [string]$Name)
+    $prop = $Object.PSObject.Properties[$Name]
+    if ($prop) { return $prop.Value }
+    return $null
+}
+
 function Write-Section { param([string]$Message) Write-Host "`n=== $Message ===" -ForegroundColor Cyan }
 function Write-Ok { param([string]$Message) Write-Host "PASS: $Message" -ForegroundColor Green }
 function Write-Warn { param([string]$Message) Write-Host "WARN: $Message" -ForegroundColor Yellow }
@@ -362,7 +376,8 @@ function Invoke-PilotSubmitOrder {
     $payload = @{ op = 'submit-order'; buyerPartyId = $BuyerPartyId; peerBusinessId = $PeerBusinessId; productName = 'Controlled-Pilot Test Product'; quantity = '3' }
     if ($CreationKey) { $payload.creationKey = $CreationKey }
     $result = Send-PilotTransportOp -Serial $Serial -Payload $payload
-    Write-Host "  [$Label] submit-order outcome=$($result.outcome) orderId=$($result.orderId) transportState=$($result.transportState)$(if ($result.transportError) { " error=$($result.transportError)" })"
+    $errorSuffix = if (Get-SafeProperty $result 'transportError') { " error=$(Get-SafeProperty $result 'transportError')" } else { '' }
+    Write-Host "  [$Label] submit-order outcome=$($result.outcome) orderId=$(Get-SafeProperty $result 'orderId') transportState=$(Get-SafeProperty $result 'transportState')$errorSuffix"
     return $result
 }
 
@@ -426,8 +441,12 @@ function Invoke-PilotRunTransport {
     $dupKey = "pilot-replay-test-$([guid]::NewGuid())"
     $first = Invoke-PilotSubmitOrder -Serial $serials.A -Label 'Phone A (replay 1)' -BuyerPartyId $bindAonB.partyId -PeerBusinessId $identityB.businessId -CreationKey $dupKey
     $second = Invoke-PilotSubmitOrder -Serial $serials.A -Label 'Phone A (replay 2)' -BuyerPartyId $bindAonB.partyId -PeerBusinessId $identityB.businessId -CreationKey $dupKey
-    if ($first.orderId -ne $second.orderId) { Write-ErrorAndExit "Duplicate Submit with the same creationKey produced two different orders -- idempotency violated." }
-    Write-Ok "Duplicate Submit correctly idempotent: both calls resolved to order $($first.orderId)."
+    $firstOrderId = Get-SafeProperty $first 'orderId'
+    $secondOrderId = Get-SafeProperty $second 'orderId'
+    if (-not $firstOrderId -or $firstOrderId -ne $secondOrderId) {
+        Write-ErrorAndExit "Duplicate Submit with the same creationKey did not resolve to the same order (first=$($first.outcome)/$firstOrderId, second=$($second.outcome)/$secondOrderId) -- idempotency violated."
+    }
+    Write-Ok "Duplicate Submit correctly idempotent: both calls resolved to order $firstOrderId."
 
     Write-Host "`n-- Gate 6: B -> Relay -> A --"
     $submitBtoA = Invoke-PilotSubmitOrder -Serial $serials.B -Label 'Phone B' -BuyerPartyId $bindBonA.partyId -PeerBusinessId $identityA.businessId
