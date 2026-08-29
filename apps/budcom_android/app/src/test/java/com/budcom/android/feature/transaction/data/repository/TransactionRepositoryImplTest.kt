@@ -88,6 +88,8 @@ import com.budcom.android.feature.transaction.domain.repository.ProposedTerms
 import com.budcom.android.feature.transaction.domain.repository.SellerInboxActionResult
 import com.budcom.android.feature.transaction.data.port.toDomain
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -223,9 +225,14 @@ class TransactionRepositoryImplTest {
         )
 
         val first = repo.createDraftOrder(draft, "review-1", "Deliver Friday", ts(100), creationAuthority("co-1"))
-        val retry = repo.createDraftOrder(draft.copy(lines = draft.lines.map { it.copy(quantity = "99") }), "review-1", timestamp = ts(200), authorityRequest = creationAuthority("co-1"))
+        // An EXACT retry -- same immutable creation intent (Party, submission type, line content),
+        // only the timestamp/note differ -- is idempotent: repeated calls resolve to the SAME order,
+        // never a duplicate, regardless of how many times it is retried.
+        val retry = repo.createDraftOrder(draft, "review-1", timestamp = ts(200), authorityRequest = creationAuthority("co-1"))
+        val retryAgain = repo.createDraftOrder(draft, "review-1", "A different note", ts(300), creationAuthority("co-1"))
 
         assertEquals(first.orderId, retry.orderId)
+        assertEquals(first.orderId, retryAgain.orderId)
         assertEquals("DRAFT", first.state.columnValue)
         assertEquals("co-1", first.sellerCompanyId)
         assertEquals("buyer-1", first.buyerPartyId)
@@ -235,6 +242,128 @@ class TransactionRepositoryImplTest {
         assertEquals(1, canonicalOrderDao.orders.size)
         assertTrue(estimatePoDao.store.isEmpty())
         assertTrue(transactionDao.store.isEmpty())
+    }
+
+    @Test
+    fun `retry with the same creationKey but a different immutable creation intent fails closed`() = runTest(dispatcher) {
+        val repo = repository()
+        var draft = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
+        draft = TransactionDraftOperations.addOrIncrementLine(
+            draft, "product-1", "Widget", "Nos", "SKU-1",
+            TransactionDraftPriceState.ActualPrice("100", "INR"), "3",
+        )
+        val first = repo.createDraftOrder(draft, "review-conflict-1", "Deliver Friday", ts(100), creationAuthority("co-1"))
+
+        // Same creationKey, different quantity: a real conflict, not a legitimate retry.
+        assertTrue(
+            runCatching {
+                repo.createDraftOrder(
+                    draft.copy(lines = draft.lines.map { it.copy(quantity = "99") }), "review-conflict-1",
+                    timestamp = ts(200), authorityRequest = creationAuthority("co-1"),
+                )
+            }.isFailure,
+        )
+        // Same creationKey, different buyer Party: also a real conflict.
+        assertTrue(
+            runCatching {
+                repo.createDraftOrder(
+                    draft.copy(buyerPartyId = "other-buyer"), "review-conflict-1",
+                    timestamp = ts(200), authorityRequest = creationAuthority("co-1"),
+                )
+            }.isFailure,
+        )
+        // Same creationKey, different submission type: also a real conflict.
+        assertTrue(
+            runCatching {
+                repo.createDraftOrder(
+                    draft.copy(submissionType = TransactionSubmissionType.PurchaseOrder), "review-conflict-1",
+                    timestamp = ts(200), authorityRequest = creationAuthority("co-1"),
+                )
+            }.isFailure,
+        )
+        // The original order is untouched by every rejected conflicting attempt.
+        assertEquals(1, canonicalOrderDao.orders.size)
+        val unchanged = repo.createDraftOrder(draft, "review-conflict-1", timestamp = ts(300), authorityRequest = creationAuthority("co-1"))
+        assertEquals(first.orderId, unchanged.orderId)
+        assertEquals("3", unchanged.lines.single().quantity)
+    }
+
+    @Test
+    fun `creationKey alone never grants authority -- retry after authority becomes unavailable fails closed`() = runTest(dispatcher) {
+        var draft = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
+        draft = TransactionDraftOperations.addOrIncrementLine(
+            draft, "product-1", "Widget", "Nos", "SKU-1",
+            TransactionDraftPriceState.ActualPrice("100", "INR"), "3",
+        )
+        val first = repository(authorityGranted = true).createDraftOrder(draft, "review-authority-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1"))
+        assertEquals(1, canonicalOrderDao.orders.size)
+
+        // A fresh authority check runs on EVERY call, retries included -- once authority is
+        // unavailable (expired/revoked/whatever the resolver now reports), the EXACT same retry
+        // must fail closed, never fall back to "creationKey already exists, return it" as a bypass.
+        assertTrue(
+            runCatching {
+                repository(authorityGranted = false).createDraftOrder(draft, "review-authority-1", timestamp = ts(200), authorityRequest = creationAuthority("co-1"))
+            }.isFailure,
+        )
+        assertTrue(
+            runCatching {
+                repository(bindingStatus = com.budcom.android.feature.transaction.domain.model.CounterpartyBindingStatus.Revoked)
+                    .createDraftOrder(draft, "review-authority-1", timestamp = ts(300), authorityRequest = creationAuthority("co-1"))
+            }.isFailure,
+        )
+        // No duplicate and no mutation: the original order (and only it) remains canonical.
+        assertEquals(1, canonicalOrderDao.orders.size)
+        assertEquals(first.orderId, canonicalOrderDao.orders.single().orderId)
+    }
+
+    @Test
+    fun `concurrent exact duplicate creation resolves to exactly one canonical order`() = runTest(dispatcher) {
+        val repo = repository()
+        var draft = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
+        draft = TransactionDraftOperations.addOrIncrementLine(
+            draft, "product-1", "Widget", "Nos", "SKU-1",
+            TransactionDraftPriceState.ActualPrice("100", "INR"), "3",
+        )
+        val outcomes = listOf(
+            async { repo.createDraftOrder(draft, "concurrent-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1")) },
+            async { repo.createDraftOrder(draft, "concurrent-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1")) },
+            async { repo.createDraftOrder(draft, "concurrent-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1")) },
+        ).awaitAll()
+        assertEquals(1, canonicalOrderDao.orders.size)
+        assertTrue(outcomes.all { it.orderId == outcomes.first().orderId })
+    }
+
+    @Test
+    fun `physical-pilot reproduction -- retrying createDraftOrder after the order already reached Sent still returns it idempotently`() = runTest(dispatcher) {
+        // Reproduces the real controlled-pilot duplicate-Submit exception exactly: the FIRST call's
+        // full pipeline (create -> enqueue -> Relay-accept -> mark Sent) completes between the two
+        // creationKey-identical calls a real automation retry makes. createDraftOrder's own
+        // idempotency was never actually broken by this -- it already correctly returns the existing
+        // order regardless of the order's CURRENT lifecycle state (Draft creation and delivery-state
+        // progression are separate concerns). The exception physically observed came from the pilot
+        // harness unconditionally calling enqueueOrderDelivery() on the returned order without
+        // checking whether it was still in a deliverable state -- fixed separately in
+        // PilotTransportReceiver.kt, not here.
+        val repo = repository()
+        var draft = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
+        draft = TransactionDraftOperations.addOrIncrementLine(draft, "product-1", "Widget", "Nos", "SKU-1", TransactionDraftPriceState.ContactForPrice)
+        val order = repo.createDraftOrder(draft, "pilot-repro-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1"))
+        val envelope = repo.enqueueOrderDelivery(order, ts(200))
+        val evidence = RelayAcceptanceEvidence(
+            acceptanceId = "accept-1", envelopeId = envelope.envelopeId, objectType = envelope.objectType,
+            objectId = order.orderId, objectVersion = order.version, senderBusinessId = order.sellerCompanyId,
+            // order.sellerBusinessId, not envelope.recipientBusinessId: see the identical pattern's
+            // own note in "matching relay acceptance marks draft order sent..." above.
+            recipientBusinessId = order.sellerBusinessId!!, acceptedAtEpochMillis = 250, status = "relay_accepted",
+        )
+        val sent = repo.markOrderSentFromRelayEvidence("co-1", envelope.copy(recipientBusinessId = order.sellerBusinessId), evidence)!!
+        assertEquals(CanonicalOrderState.Sent, sent.state)
+
+        val retry = repo.createDraftOrder(draft, "pilot-repro-1", timestamp = ts(300), authorityRequest = creationAuthority("co-1"))
+        assertEquals(order.orderId, retry.orderId)
+        assertEquals(CanonicalOrderState.Sent, retry.state)
+        assertEquals(1, canonicalOrderDao.orders.size)
     }
 
     @Test

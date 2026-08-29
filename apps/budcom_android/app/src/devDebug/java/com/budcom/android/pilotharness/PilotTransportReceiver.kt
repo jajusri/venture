@@ -7,6 +7,7 @@ import com.budcom.android.core.trust.domain.TrustCredentialStore
 import com.budcom.android.feature.party.domain.model.ProspectDraft
 import com.budcom.android.feature.party.domain.usecase.CreateProspectUseCase
 import com.budcom.android.feature.transaction.domain.model.AuthenticatedCounterpartyBindingRepository
+import com.budcom.android.feature.transaction.domain.model.CanonicalOrderState
 import com.budcom.android.feature.transaction.domain.model.CommercialAction
 import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest
 import com.budcom.android.feature.transaction.domain.model.CommercialTrustCredentialSource
@@ -175,12 +176,25 @@ class PilotTransportReceiver : BroadcastReceiver() {
             sellerBusinessId = request.peerBusinessId ?: "", buyerBusinessId = stored.businessId, nowEpochMillis = now.epochMillis,
         )
         val order = transactionRepository.createDraftOrder(draft, creationKey, note = "controlled-pilot", timestamp = now, authorityRequest = authorityRequest)
-        val envelope = transactionRepository.enqueueOrderDelivery(order, now)
-        relayOutboxDispatcher.submitPending(stored.businessId)
+        // createDraftOrder is idempotent on creationKey: an exact retry (same Business, same
+        // authority, same immutable intent) correctly returns the SAME canonical order rather than
+        // creating a duplicate -- but that order's state may have already progressed past
+        // Draft/RevisionPending (e.g. a prior call with this same creationKey already reached
+        // Relay). enqueueOrderDelivery() correctly refuses to re-enqueue delivery for a
+        // non-deliverable state (Codex STOP: that invariant must not be weakened) -- an exact
+        // retry of an already-delivered order must report the existing delivery outcome, not
+        // attempt to re-deliver it.
+        val envelopeId = if (order.state == CanonicalOrderState.Draft || order.state == CanonicalOrderState.RevisionPending) {
+            val envelope = transactionRepository.enqueueOrderDelivery(order, now)
+            relayOutboxDispatcher.submitPending(stored.businessId)
+            envelope.envelopeId
+        } else {
+            null
+        }
         val after = transactionRepository.findOrderDeliveryEnvelope(stored.businessId, order.orderId, order.version)
         return PilotTransportResult(
             outcome = "success", orderId = order.orderId, orderVersion = order.version,
-            envelopeId = envelope.envelopeId, transportState = after?.state?.name, transportError = after?.lastError,
+            envelopeId = envelopeId ?: after?.envelopeId, transportState = after?.state?.name, transportError = after?.lastError,
         )
     }
 

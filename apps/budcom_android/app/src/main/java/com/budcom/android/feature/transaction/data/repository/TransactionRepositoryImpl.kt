@@ -266,7 +266,18 @@ class TransactionRepositoryImpl @Inject constructor(
         requireNotNull(authority) { "Verified local creation authority is required" }
         require(authority.businessId == draft.companyId && authorityRequest.buyerBusinessId == draft.companyId)
         val existing = canonicalOrderDao.findByCreationKey(draft.companyId, creationKey)
-        if (existing != null) return@withContext existing.toDomain(canonicalOrderDao.findLines(draft.companyId, existing.orderId))
+        if (existing != null) {
+            // creationKey is idempotency, not authority: freshly-resolved authority above already
+            // proved this caller currently has legitimate BuyerCreateOrder capability for
+            // draft.companyId. An EXACT retry must still match the ORIGINAL immutable creation
+            // intent -- a different Party/submission type/line content sharing the same creationKey
+            // is a genuine conflict, not a legitimate retry, and must fail closed rather than
+            // silently returning a stale order that doesn't reflect what this call actually asked
+            // to create.
+            val existingOrder = existing.toDomain(canonicalOrderDao.findLines(draft.companyId, existing.orderId))
+            require(existingOrder.matchesCreationIntent(draft)) { "creationKey is already bound to a different order creation intent" }
+            return@withContext existingOrder
+        }
         dbTransaction.run {
             val orderId = UUID.randomUUID().toString()
             val entity = CanonicalOrderEntity(
@@ -1381,6 +1392,29 @@ private fun TransactionDraftLine.lineTotalAmount(): String? {
     val quantity = quantity.toBigDecimalOrNullSafe() ?: return null
     return price.multiply(quantity).toPlainString()
 }
+
+/**
+ * Whether `draft` is the SAME immutable creation intent this already-persisted order was created
+ * from -- an exact retry (same Business/actor authority, same creationKey) must still match the
+ * ORIGINAL request to be treated as idempotent; a different Party/submission type/line content
+ * sharing the same creationKey is a real conflict, not a retry (relay-authority-repair, 2026-08-30
+ * createDraftOrder idempotency gap). Deliberately excludes `note` (an annotation, not commercial
+ * substance) and anything authority/Business-derived (already independently re-verified fresh on
+ * every call before this is ever reached).
+ */
+internal fun CanonicalOrder.matchesCreationIntent(draft: TransactionDraft): Boolean =
+    buyerPartyId == draft.buyerPartyId &&
+        submissionType == draft.submissionType &&
+        lines.size == draft.lines.size &&
+        lines.zip(draft.lines).all { (existingLine, draftLine) -> existingLine.matchesIntent(draftLine) }
+
+private fun CanonicalOrderLine.matchesIntent(draftLine: TransactionDraftLine): Boolean =
+    linkedProductId == draftLine.linkedProductId &&
+        snapshotProductName == draftLine.snapshotProductName &&
+        snapshotUnit == draftLine.snapshotUnit &&
+        snapshotSku == draftLine.snapshotSku &&
+        quantity == draftLine.quantity &&
+        priceState == draftLine.priceState
 
 internal fun CanonicalOrderEntity.toDomain(lines: List<CanonicalOrderLineEntity>): CanonicalOrder = CanonicalOrder(
     companyId = companyId,
