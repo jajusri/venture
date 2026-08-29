@@ -13,16 +13,16 @@
   PilotEnrollmentReceiver's own doc comment for exactly what it does and does not do.
 
   exported="true" is deliberate, not an oversight: on current Android (verified against a real
-  device, API 36), `adb shell am broadcast -n` cannot reliably reach a non-exported explicit
-  component even from the privileged `shell` UID, and a signature-level custom permission would be
-  self-defeating here (adb's `shell` UID is not signed with this app's key, so it could never hold
-  such a permission -- that would just break the orchestration script's own ability to call this).
-  This does NOT meaningfully widen the attack surface: there is no <intent-filter>, so the receiver
-  is not discoverable via any implicit broadcast; the Intent itself carries no extras and no secret
-  material (the grant lives only in this app's own already-sandboxed private storage, unreachable by
-  any other app without root); and the only action a co-located app could ever trigger is "re-read
-  whatever is already sitting in your own private files directory" -- which it has no way to have
-  written in the first place. Compiled out of every build except devDebug regardless.
+  device, API 36), adb shell am broadcast with an explicit component name cannot reliably reach a
+  non-exported receiver even from the privileged shell UID, and a signature-level custom permission
+  would be self-defeating here since adb's shell UID is not signed with this app's key, so it could
+  never hold such a permission; that would just break the orchestration script's own ability to call
+  this. This does not meaningfully widen the attack surface: there is no intent-filter, so the
+  receiver is not discoverable via any implicit broadcast; the Intent itself carries no extras and no
+  secret material (the grant lives only in this app's own already-sandboxed private storage,
+  unreachable by any other app without root); and the only action a co-located app could ever trigger
+  is "re-read whatever is already sitting in your own private files directory", which it has no way
+  to have written in the first place. Compiled out of every build except devDebug regardless.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
