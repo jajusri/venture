@@ -45,9 +45,12 @@ import javax.inject.Inject
  *     receiver never constructs a credential itself and never bypasses that call.
  *  5. Write only NON-SECRET outcome fields (outcome tag, businessId, deviceId on success) to
  *     [RESULT_FILE] for the orchestration script to poll and read back via `run-as ... cat`. The
- *     grant secret is never written to this file, never logged (no `Log.*`/`println` of either
- *     payload field anywhere in this class), and this receiver is `android:exported="false"` --
- *     reachable only by an adb shell explicitly naming this component, never by another app.
+ *     grant secret is never written to this file and never logged (no `Log.*`/`println` of either
+ *     payload field anywhere in this class). `exported="true"` (see this source set's own
+ *     AndroidManifest.xml doc comment for why) does not widen the attack surface: there is no
+ *     intent-filter (not discoverable via implicit broadcast), the Intent carries no extras/secret
+ *     material, and the only action any sender can trigger is "re-read whatever is already sitting
+ *     in this app's own sandboxed private storage" -- which no other app can have written.
  */
 @AndroidEntryPoint
 class PilotEnrollmentReceiver : BroadcastReceiver() {
