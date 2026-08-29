@@ -371,6 +371,15 @@ function Invoke-PilotRunTransport {
     & (Join-Path $RepoRoot 'scripts\budcom-services.ps1') -Verify | Out-Host
     if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit 'Trust/Relay must be healthy before running transport proofs.' }
 
+    # Re-establish the USB reverse tunnel each already-enrolled phone needs to reach Relay --
+    # `adb reverse` bindings do not survive an adb server restart (e.g. the daemon coming up fresh
+    # this session), and unlike enrollment this path never re-provisions credentials, so nothing
+    # else in -RunTransport would otherwise repair a stale/missing tunnel. Idempotent and
+    # non-destructive: no app data, credential, or Business state is touched.
+    foreach ($serial in @($serials.A, $serials.B)) {
+        & $Adb -s $serial reverse "tcp:$RelayPort" "tcp:$RelayPort" | Out-Null
+    }
+
     Write-Host "`n-- Gate 2: identity discovery --"
     $identityA = Get-PilotIdentity -Serial $serials.A -Label 'Phone A / Test Company 1'
     $identityB = Get-PilotIdentity -Serial $serials.B -Label 'Phone B / Test Company 2'
