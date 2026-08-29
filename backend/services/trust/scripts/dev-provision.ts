@@ -10,9 +10,20 @@
  * application-layer invocation over adding a remotely exposed unauthenticated HTTP provisioning
  * API." There is no public "bootstrap anyone" endpoint anywhere in this backend.
  *
- * PRODUCTION GUARD: refuses to run at all if BUDCOM_RUNTIME_ENV or NODE_ENV is "production". This
- * is DEV/TEST tooling only -- production business/device/credential provisioning through this exact
- * shape of authority-establishment code is architecturally legitimate (these ARE the real
+ * PRODUCTION GUARD (relay-authority-repair, 2026-08-29 -- hardened per Codex's audit of fcbc04c):
+ * positive allowlist, fail closed. Runs ONLY when every runtime-environment signal that is actually
+ * set (NODE_ENV, BUDCOM_RUNTIME_ENV) normalizes to "development" or "test" -- not merely "is not
+ * production". Three concrete weaknesses in the prior `=== 'production'` check are fixed by this:
+ *   1. Case sensitivity: "Production"/"PRODUCTION" used to slip through a strict `===` check.
+ *      Both signals are now trimmed and lowercased before comparison.
+ *   2. BUDCOM_RUNTIME_ENV could silently override a stricter NODE_ENV (e.g. a real deployment sets
+ *      NODE_ENV=production, but a stray/leftover BUDCOM_RUNTIME_ENV=development in the shell or an
+ *      `.env` file would still let this tool run against production data). Every signal that is set
+ *      must independently be in the allowlist -- none can override another into running.
+ *   3. An unset environment used to default to "development" (i.e. silently allow). It now refuses:
+ *      if neither variable is set at all, that is treated as unknown/ambiguous, not safe.
+ * This is DEV/TEST tooling only -- production business/device/credential provisioning through this
+ * exact shape of authority-establishment code is architecturally legitimate (these ARE the real
  * application services, not a bypass), but wiring a *real* production operator flow around them
  * (real user verification, real approval workflow, real key custody) is an open architecture
  * decision this package does not make. See the final report's PRODUCTION PROVISIONING BLOCKER.
@@ -36,6 +47,7 @@ import { parseArgs } from 'node:util';
 import { createPrivateKey, createPublicKey, createHash, generateKeyPairSync } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { CreateBusiness } from '../src/application/create-business.js';
 import { RegisterBusinessDevice } from '../src/application/register-device.js';
 import { BusinessDeviceCredentialIssuer } from '../src/application/issue-credential.js';
@@ -46,10 +58,24 @@ import { InMemoryCredentialIssuanceStore } from '../src/persistence/in-memory-cr
 import { LocalFileTrustCredentialSigner, localSignerKeyExists } from '../src/persistence/local-signer.js';
 import { readTrustServiceConfig } from '../src/config.js';
 
-function refuseInProduction(): void {
-  const runtimeEnv = process.env.BUDCOM_RUNTIME_ENV ?? process.env.NODE_ENV ?? 'development';
-  if (runtimeEnv === 'production') {
-    console.error('REFUSED: dev-provision.ts is DEV/TEST-ONLY tooling and will not run with BUDCOM_RUNTIME_ENV=production or NODE_ENV=production.');
+const ALLOWED_DEV_PROVISION_RUNTIME_ENVS = new Set(['development', 'test']);
+
+/** Pure decision function -- unit-tested directly in `dev-provision-guard.test.ts` without needing
+ * to spawn the CLI. See the module doc comment above for exactly what this fixes and why. */
+export function isDevProvisionRuntimeAllowed(nodeEnv: string | undefined, budcomRuntimeEnv: string | undefined): boolean {
+  const normalize = (value: string | undefined): string | undefined => value?.trim().toLowerCase();
+  const signals = [normalize(nodeEnv), normalize(budcomRuntimeEnv)].filter((value): value is string => value !== undefined);
+  return signals.length > 0 && signals.every((value) => ALLOWED_DEV_PROVISION_RUNTIME_ENVS.has(value));
+}
+
+function refuseUnlessDevOrTestRuntime(): void {
+  if (!isDevProvisionRuntimeAllowed(process.env.NODE_ENV, process.env.BUDCOM_RUNTIME_ENV)) {
+    console.error(
+      `REFUSED: dev-provision.ts is DEV/TEST-ONLY tooling. It runs only when every runtime-environment signal that is set ` +
+      `(NODE_ENV, BUDCOM_RUNTIME_ENV) is explicitly "development" or "test" -- an unset, unrecognized, or conflicting ` +
+      `environment is refused by design (fail closed), never defaulted to allowed. ` +
+      `NODE_ENV=${process.env.NODE_ENV ?? '<unset>'} BUDCOM_RUNTIME_ENV=${process.env.BUDCOM_RUNTIME_ENV ?? '<unset>'}`,
+    );
     process.exit(1);
   }
 }
@@ -72,7 +98,7 @@ function loadOrCreateDeviceKey(keyPath: string): { privateKeyPem: string; public
 }
 
 async function main(): Promise<void> {
-  refuseInProduction();
+  refuseUnlessDevOrTestRuntime();
   const [command, ...rest] = process.argv.slice(2);
   const store = new FileBackedAuthorityStore(statePath());
   const config = readTrustServiceConfig({ ...process.env, BUDCOM_TRUST_DATABASE_URL: process.env.BUDCOM_TRUST_DATABASE_URL ?? 'unused-by-dev-provision' });
@@ -156,4 +182,8 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+// Only run the CLI when this file is executed directly (`tsx dev-provision.ts ...`) -- guarded so
+// `isDevProvisionRuntimeAllowed` can be unit-tested by importing this module without also invoking
+// `main()` (which reads real argv and calls `process.exit`).
+const isMainModule = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMainModule) await main();

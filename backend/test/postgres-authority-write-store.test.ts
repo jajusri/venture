@@ -20,9 +20,14 @@ import { deriveIntentScopedId } from '../services/trust/src/persistence/file-bac
  */
 class RecordingDatabase implements DatabaseSession {
   readonly calls: { sql: string; parameters: readonly unknown[] }[] = [];
+  // Default fake response simulates a normal, non-conflicting write: an INSERT affects one row
+  // (`rowCount: 1`), matching what a real successful insert returns. Tests that specifically need to
+  // simulate a concurrent duplicate (an `ON CONFLICT DO NOTHING` that inserted zero rows) override
+  // this via a subclass -- see `RacingInsertDatabase` below.
   query<Row extends Record<string, unknown>>(sql: string, parameters: readonly unknown[] = []): Promise<QueryResult<Row>> {
     this.calls.push({ sql, parameters });
-    return Promise.resolve({ rows: [], rowCount: 0 });
+    const rowCount = /^\s*INSERT/i.test(sql) ? 1 : 0;
+    return Promise.resolve({ rows: [], rowCount });
   }
   async transaction<T>(work: (session: DatabaseSession) => Promise<T>): Promise<T> {
     return work(this);
@@ -65,6 +70,75 @@ describe('postgres authority write stores (SQL shape only -- no live database in
     await new PostgresDeviceRegistrationStore(db).find('biz-1', 'device-1', 1);
     expect(db.calls[0]?.sql).toContain('WHERE business_id = $1 AND device_id = $2 AND device_key_version = $3');
     expect(db.calls[0]?.parameters).toEqual(['biz-1', 'device-1', 1]);
+  });
+
+  it('BusinessBootstrapStore.createAtomically re-reads and returns the winning row instead of throwing when a concurrent duplicate create already committed', async () => {
+    const now = new Date(1000);
+    const businessId = deriveIntentScopedId(['actor-1', 'intent-1'], 'business');
+    const membershipId = deriveIntentScopedId(['actor-1', 'intent-1'], 'membership');
+    const membershipRow = {
+      membership_id: membershipId, business_id: businessId, actor_id: 'actor-1', status: 'active',
+      authority_scope: ['send_orders'], authority_epoch: '1', created_at: now, modified_at: now,
+    };
+    class RacedCreateDatabase extends RecordingDatabase {
+      query<Row extends Record<string, unknown>>(sql: string, parameters: readonly unknown[] = []): Promise<QueryResult<Row>> {
+        this.calls.push({ sql, parameters });
+        if (/^\s*INSERT INTO trust_business_authority/i.test(sql)) return Promise.resolve({ rows: [], rowCount: 0 }); // lost the race
+        if (/^\s*SELECT .* FROM trust_business_authority/i.test(sql)) return Promise.resolve({ rows: [{ business_id: businessId, status: 'active', authority_epoch: '1', created_at: now }] as unknown as Row[], rowCount: 1 });
+        if (/^\s*SELECT .* FROM trust_business_membership/i.test(sql)) return Promise.resolve({ rows: [membershipRow as unknown as Row], rowCount: 1 });
+        return Promise.resolve({ rows: [], rowCount: 1 });
+      }
+    }
+    const db = new RacedCreateDatabase();
+    const result = await new PostgresBusinessBootstrapStore(db).createAtomically('intent-1', {
+      businessId: identifier(businessId, 'BusinessId'),
+      membership: { membershipId: identifier(membershipId, 'MembershipId'), businessId: identifier(businessId, 'BusinessId'), actorId: identifier('actor-1', 'ActorId'), status: 'active', authorityScope: new AuthorityScope(['send_orders']), authorityEpoch: { value: 1 }, createdAt: now, modifiedAt: now },
+      authorityEpoch: 1,
+      auditEvent: { eventId: 'evt-1', kind: 'business_authority_created', businessId: identifier(businessId, 'BusinessId'), actorId: 'actor-1', occurredAt: now },
+    });
+    expect(result.businessId).toBe(businessId);
+    expect(result.membership.membershipId).toBe(membershipId);
+  });
+
+  it('DeviceRegistrationStore.save re-reads and returns the winning row instead of throwing when a concurrent duplicate registration already committed', async () => {
+    const now = new Date(3000);
+    const deviceRow = {
+      business_id: 'biz-1', actor_id: 'actor-1', membership_id: 'mem-1', device_id: 'device-1', device_key_id: 'device-1-key-1',
+      device_key_version: 1, public_key: Buffer.from([1, 2, 3]), public_key_fingerprint: 'fp-1', status: 'active', authority_epoch: '1', created_at: now, revoked_at: null,
+    };
+    class RacedRegisterDatabase extends RecordingDatabase {
+      query<Row extends Record<string, unknown>>(sql: string, parameters: readonly unknown[] = []): Promise<QueryResult<Row>> {
+        this.calls.push({ sql, parameters });
+        if (/^\s*INSERT INTO trust_registered_device/i.test(sql)) return Promise.resolve({ rows: [], rowCount: 0 }); // lost the race
+        if (/^\s*SELECT .* FROM trust_registered_device/i.test(sql)) return Promise.resolve({ rows: [deviceRow as unknown as Row], rowCount: 1 });
+        return Promise.resolve({ rows: [], rowCount: 1 });
+      }
+    }
+    const db = new RacedRegisterDatabase();
+    const result = await new PostgresDeviceRegistrationStore(db).save({
+      businessId: identifier('biz-1', 'BusinessId'), actorId: identifier('actor-1', 'ActorId'), membershipId: identifier('mem-1', 'MembershipId'),
+      deviceId: identifier('device-1', 'DeviceId'), deviceKeyId: identifier('device-1-key-1', 'DeviceKeyId'), deviceKeyVersion: 1,
+      publicKey: new Uint8Array([1, 2, 3]), publicKeyFingerprint: 'fp-1', status: 'active', authorityEpoch: { value: 1 }, createdAt: now,
+    });
+    expect(result.publicKeyFingerprint).toBe('fp-1');
+    expect(result.status).toBe('active');
+  });
+
+  it('BusinessBootstrapStore.findByCreationIntent refuses to return a membership row that does not match the expected business/actor', async () => {
+    const now = new Date(4000);
+    class MismatchedDatabase extends RecordingDatabase {
+      query<Row extends Record<string, unknown>>(sql: string, parameters: readonly unknown[] = []): Promise<QueryResult<Row>> {
+        this.calls.push({ sql, parameters });
+        if (/^\s*SELECT .* FROM trust_business_authority/i.test(sql)) return Promise.resolve({ rows: [{ business_id: 'biz-1', status: 'active', authority_epoch: '1', created_at: now }] as unknown as Row[], rowCount: 1 });
+        if (/^\s*SELECT .* FROM trust_business_membership/i.test(sql)) {
+          // Simulates a corrupted/mismatched row: belongs to a different actor than the one asking.
+          return Promise.resolve({ rows: [{ membership_id: 'mem-1', business_id: 'biz-1', actor_id: 'someone-else', status: 'active', authority_scope: ['send_orders'], authority_epoch: '1', created_at: now, modified_at: now }] as unknown as Row[], rowCount: 1 });
+        }
+        return Promise.resolve({ rows: [], rowCount: 0 });
+      }
+    }
+    const db = new MismatchedDatabase();
+    await expect(new PostgresBusinessBootstrapStore(db).findByCreationIntent('actor-1', 'intent-1')).rejects.toThrow('does not match the expected business/actor');
   });
 
   it('AuthorityMutationStore updates are optimistic-concurrency guarded by authority_epoch in the WHERE clause', async () => {

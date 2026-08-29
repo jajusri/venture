@@ -69,26 +69,43 @@ export class PostgresBusinessBootstrapStore implements BusinessBootstrapStore {
     const membership = await this.database.query<MembershipRow>('SELECT membership_id, business_id, actor_id, status, authority_scope, authority_epoch, created_at, modified_at FROM trust_business_membership WHERE membership_id = $1', [membershipId]);
     if (business.rowCount === 0 || membership.rowCount === 0) return null;
     const businessRow = business.rows[0]!;
+    const membershipRow = membership.rows[0]!;
+    // Defensive confirmation: the deterministic-id derivation ties (actorId, intentId) to exactly
+    // one (businessId, membershipId) pair, but this still confirms the ROW CONTENT actually matches
+    // the caller's identity rather than trusting ID-based lookup alone -- a cheap guard against ever
+    // silently returning a mismatched business/membership record for this intent.
+    if (membershipRow.business_id !== businessId || membershipRow.actor_id !== actorId) {
+      throw new Error('Creation-intent lookup returned a membership that does not match the expected business/actor -- refusing to return a possibly-inconsistent authority record');
+    }
     const auditEvent: BusinessCreationAuditEvent = {
       eventId: deriveIntentScopedId([actorId, intentId], 'audit'), kind: 'business_authority_created',
       businessId: identifier(businessId, 'BusinessId'), actorId, occurredAt: businessRow.created_at,
     };
-    return { businessId: identifier(businessId, 'BusinessId'), membership: toMembership(membership.rows[0]!), authorityEpoch: Number(businessRow.authority_epoch), auditEvent };
+    return { businessId: identifier(businessId, 'BusinessId'), membership: toMembership(membershipRow), authorityEpoch: Number(businessRow.authority_epoch), auditEvent };
   }
 
-  createAtomically(_intentId: string, result: CreatedBusinessAuthority): Promise<CreatedBusinessAuthority> {
-    return this.database.transaction(async (tx: DatabaseSession) => {
-      await tx.query(
-        'INSERT INTO trust_business_authority(business_id, status, authority_epoch, created_at, modified_at) VALUES ($1,$2,$3,$4,$4)',
+  async createAtomically(intentId: string, result: CreatedBusinessAuthority): Promise<CreatedBusinessAuthority> {
+    const inserted = await this.database.transaction(async (tx: DatabaseSession) => {
+      const businessInsert = await tx.query(
+        'INSERT INTO trust_business_authority(business_id, status, authority_epoch, created_at, modified_at) VALUES ($1,$2,$3,$4,$4) ON CONFLICT (business_id) DO NOTHING',
         [result.businessId, 'active', result.authorityEpoch, result.membership.createdAt],
       );
       await tx.query(
-        'INSERT INTO trust_business_membership(membership_id, business_id, actor_id, status, authority_scope, authority_epoch, created_at, modified_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        'INSERT INTO trust_business_membership(membership_id, business_id, actor_id, status, authority_scope, authority_epoch, created_at, modified_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (membership_id) DO NOTHING',
         [result.membership.membershipId, result.businessId, result.membership.actorId, result.membership.status,
           [...result.membership.authorityScope.capabilities], result.membership.authorityEpoch.value, result.membership.createdAt, result.membership.modifiedAt],
       );
-      return result;
+      return businessInsert.rowCount > 0;
     });
+    if (inserted) return result;
+    // A concurrent caller with the identical (actorId, intentId) already committed this exact
+    // deterministic business/membership pair between this call's own findByCreationIntent check and
+    // this insert (Codex Postgres finding: a raced duplicate create must not surface a raw
+    // unique-violation to the caller) -- re-read what actually landed instead of trusting the
+    // in-flight `result` this call was about to insert.
+    const existing = await this.findByCreationIntent(result.membership.actorId, intentId);
+    if (!existing) throw new Error('Concurrent business creation left an inconsistent row after conflict');
+    return existing;
   }
 }
 
@@ -123,13 +140,22 @@ export class PostgresDeviceRegistrationStore implements DeviceRegistrationStore 
   }
 
   async save(device: RegisteredBusinessDevice): Promise<RegisteredBusinessDevice> {
-    await this.database.query(
+    const inserted = await this.database.query(
       `INSERT INTO trust_registered_device(business_id, actor_id, membership_id, device_id, device_key_id, device_key_version, public_key, public_key_fingerprint, status, authority_epoch, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (business_id, device_id, device_key_version) DO NOTHING`,
       [device.businessId, device.actorId, device.membershipId, device.deviceId, device.deviceKeyId, device.deviceKeyVersion,
         Buffer.from(device.publicKey), device.publicKeyFingerprint, device.status, device.authorityEpoch.value, device.createdAt],
     );
-    return device;
+    if (inserted.rowCount > 0) return device;
+    // A concurrent duplicate registration for the identical (business_id, device_id,
+    // device_key_version) primary key already committed between `RegisterBusinessDevice.execute()`'s
+    // own find()-then-save() check and this insert (Codex Postgres finding). Re-read whichever row
+    // actually won instead of throwing a raw unique-violation -- a genuinely-identical concurrent
+    // retry stays idempotent at the store layer.
+    const existing = await this.find(device.businessId, device.deviceId, device.deviceKeyVersion);
+    if (!existing) throw new Error('Concurrent device registration left an inconsistent row after conflict');
+    return existing;
   }
 }
 
