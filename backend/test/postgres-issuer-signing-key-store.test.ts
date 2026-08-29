@@ -229,6 +229,17 @@ describe('PostgresIssuerSigningKeyStore (stateful, real transaction/rollback sem
     await expect(new PostgresIssuerSigningKeyStore(db).revoke(ISSUER_ID, 'no-such-key', NOW)).rejects.toBeInstanceOf(UnknownSigningKeyError);
   });
 
+  it('neither listForIssuer() nor describe() ever exposes anything beyond public verification material and lifecycle metadata -- no private key path, no file system detail', async () => {
+    const db = new StatefulSigningKeyDatabase();
+    seedActive(db, 'key-1');
+    const store = new PostgresIssuerSigningKeyStore(db);
+    const verificationKeys = await store.listForIssuer(ISSUER_ID);
+    expect(Object.keys(verificationKeys[0]!).sort()).toEqual(['issuerId', 'issuerKeyId', 'profile', 'publicKey', 'status', 'validFrom'].sort());
+    const descriptors = await store.describe(ISSUER_ID);
+    expect(Object.keys(descriptors[0]!).sort()).toEqual(['issuerId', 'keyId', 'status', 'profile', 'createdAt', 'activatedAt', 'retiredAt', 'revokedAt'].sort());
+    expect(JSON.stringify(descriptors)).not.toMatch(/private|pem|BEGIN|\.pem/i);
+  });
+
   it('listForIssuer() and describe() return every key regardless of status -- a revoked key remains visible, not hidden', async () => {
     const db = new StatefulSigningKeyDatabase();
     seedActive(db, 'key-1', { status: 'revoked', revoked_at: NOW, created_at: new Date(0) });

@@ -44,16 +44,24 @@
  *
  * Every command prints only non-secret identifiers/status to stdout -- never private key material.
  *
- * `create-enrollment-grant` is the ONE exception to "never touches Postgres": it is the LOCAL,
- * dev/test-runtime-guarded operator path Gate 2B calls for -- the enrollment grant it creates is
- * consumed over the network by Trust's real `POST /v1/trust/enrollment/consume` (`app.ts`), which is
- * Postgres-backed only (`PostgresEnrollmentGrantStore`), so issuance must write to that SAME store or
- * the HTTP endpoint would never see it. Every other command here still uses `FileBackedAuthorityStore`
- * -- wiring real Postgres-backed business/membership provisioning into this CLI too remains the
- * pre-existing, separately-tracked PRODUCTION PROVISIONING BLOCKER this file's own doc comment above
- * already calls out (this command therefore only works against a business/membership that ALREADY
- * exists in Postgres, e.g. seeded by test setup or a future real onboarding flow -- not by this CLI's
- * own file-backed `create-business`).
+ * `create-enrollment-grant` is the ONE exception to "never touches Postgres" for IDENTITY: it is the
+ * LOCAL, dev/test-runtime-guarded operator path Gate 2B calls for -- the enrollment grant it creates
+ * is consumed over the network by Trust's real `POST /v1/trust/enrollment/consume` (`app.ts`), which
+ * is Postgres-backed only (`PostgresEnrollmentGrantStore`), so issuance must write to that SAME
+ * store or the HTTP endpoint would never see it. Every other identity command here still uses
+ * `FileBackedAuthorityStore` -- wiring real Postgres-backed business/membership provisioning into
+ * this CLI too remains the pre-existing, separately-tracked PRODUCTION PROVISIONING BLOCKER this
+ * file's own doc comment above already calls out (this command therefore only works against a
+ * business/membership that ALREADY exists in Postgres, e.g. seeded by test setup or a future real
+ * onboarding flow -- not by this CLI's own file-backed `create-business`).
+ *
+ * `issue-credential` is the analogous exception for the SIGNING KEY (round 6): it signs with
+ * whichever key `ManagedSigningKeyRegistry`/`PostgresIssuerSigningKeyStore` reports as currently
+ * active in Postgres -- the SAME source of truth Trust's real server process and
+ * `manage-signing-keys.ts` both use -- rather than a standalone file-only signer, so a CLI-issued
+ * test credential actually verifies against the real, live verification-keys endpoint instead of a
+ * disconnected key nothing else knows about. Requires an already-bootstrapped active issuer key
+ * (`manage-signing-keys.ts bootstrap` first, or Trust's own `main.ts` auto-bootstrap on first run).
  */
 import { parseArgs } from 'node:util';
 import { createPrivateKey, createPublicKey, createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
@@ -68,7 +76,10 @@ import { AuthorityScope, identifier, type AuthorityCapability } from '../src/dom
 import { hashEnrollmentGrantSecret, validateEnrollmentGrantLifetime, type EnrollmentGrantId } from '../src/domain/enrollment.js';
 import { FileBackedAuthorityStore, createBusinessDeterministicIds } from '../src/persistence/file-backed-authority-store.js';
 import { InMemoryCredentialIssuanceStore } from '../src/persistence/in-memory-credential-store.js';
-import { LocalFileTrustCredentialSigner, localSignerKeyExists } from '../src/persistence/local-signer.js';
+import { localSignerKeyExists } from '../src/persistence/local-signer.js';
+import { ManagedSigningKeyRegistry } from '../src/persistence/managed-signing-key-registry.js';
+import { PostgresIssuerSigningKeyStore } from '../src/persistence/postgres-issuer-signing-key-store.js';
+import { RotatingTrustCredentialSigner } from '../src/application/signer-rotation.js';
 import { PostgresEnrollmentGrantStore } from '../src/persistence/postgres-enrollment-grant-store.js';
 import { PostgresDatabase } from '../../../packages/persistence/src/postgres-database.js';
 import { readTrustServiceConfig } from '../src/config.js';
@@ -162,12 +173,20 @@ async function main(): Promise<void> {
       if (!membership) throw new Error(`No membership found for id ${values.membership}`);
       const device = await store.find(values.business, values.device, 1);
       if (!device) throw new Error(`No registered device found for business=${values.business} device=${values.device} keyVersion=1`);
-      const signer = new LocalFileTrustCredentialSigner({ keyPath: config.issuerKeyPath, issuerId: config.issuerId, issuerKeyId: config.issuerKeyId });
-      const issuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, Number(values['lifetime-ms'] ?? '3600000'));
-      const credential = await issuer.issue({
-        business: { businessId: identifier(values.business, 'BusinessId'), status: 'active' }, membership, device,
-        requestedScope: new AuthorityScope(values.scope.split(',').map((s) => s.trim()) as AuthorityCapability[]), intentId: values.intent,
-      });
+      const signingDatabase = new PostgresDatabase(config.databaseUrl, config.databasePoolMax);
+      const signingKeyRegistry = new ManagedSigningKeyRegistry(new PostgresIssuerSigningKeyStore(signingDatabase), config.issuerId, config.issuerKeyDir);
+      let credential;
+      try {
+        await signingKeyRegistry.refresh();
+        const signer = new RotatingTrustCredentialSigner(() => signingKeyRegistry.handles());
+        const issuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, Number(values['lifetime-ms'] ?? '3600000'));
+        credential = await issuer.issue({
+          business: { businessId: identifier(values.business, 'BusinessId'), status: 'active' }, membership, device,
+          requestedScope: new AuthorityScope(values.scope.split(',').map((s) => s.trim()) as AuthorityCapability[]), intentId: values.intent,
+        });
+      } finally {
+        await signingDatabase.close();
+      }
       const wire = {
         credentialClaims: {
           credentialVersion: credential.claims.credentialVersion, credentialId: credential.claims.credentialId, businessId: credential.claims.businessId,
