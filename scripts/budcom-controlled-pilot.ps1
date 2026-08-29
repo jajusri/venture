@@ -158,7 +158,7 @@ function Send-PilotPayloadAndTrigger {
         # sequence survives adb's argv-joining as one unit and the redirect happens under the
         # already-transitioned uid).
         [System.IO.File]::WriteAllText($localTempFile, $json, (New-Object System.Text.UTF8Encoding($false)))
-        & $Adb -s $Serial push $localTempFile $sharedTempPathOnDevice | Out-Null
+        & $Adb -s $Serial push $localTempFile $sharedTempPathOnDevice 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to push pilot enrollment payload to device $Serial." }
         & $Adb -s $Serial shell "run-as $DevDebugPackage sh -c 'cat $sharedTempPathOnDevice > $PayloadPath'"
         if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to copy pilot enrollment payload into app-private storage on $Serial (is $DevDebugPackage installed and debuggable?)." }
