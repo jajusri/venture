@@ -128,6 +128,30 @@ function Start-BudcomService {
     Write-Host "[$Name] started (pid $($proc.Id)). Log: $logPath"
 }
 
+function Get-DescendantProcessIds {
+    # `Start-Process cmd.exe /c "npm run ..."` spawns a process TREE (cmd -> npm -> node); Windows
+    # does not cascade-terminate children when only the top PID is stopped (no job-object grouping
+    # here), so a plain `Stop-Process` on the tracked PID alone silently orphans the real node.exe
+    # underneath -- it keeps running, keeps the port bound, and keeps serving whatever it was serving
+    # (stale env/config) even though `-Status`/`-Stop` both reported success. Walk the WMI parent-child
+    # chain recursively so every descendant is found regardless of tree depth.
+    param([int]$RootProcessId)
+    $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+    $result = New-Object System.Collections.Generic.List[int]
+    $frontier = New-Object System.Collections.Generic.Queue[int]
+    $frontier.Enqueue($RootProcessId)
+    while ($frontier.Count -gt 0) {
+        $current = $frontier.Dequeue()
+        foreach ($child in ($all | Where-Object { $_.ParentProcessId -eq $current })) {
+            if (-not $result.Contains([int]$child.ProcessId)) {
+                $result.Add([int]$child.ProcessId)
+                $frontier.Enqueue([int]$child.ProcessId)
+            }
+        }
+    }
+    return $result
+}
+
 function Stop-BudcomService {
     param([string]$Name)
     $proc = Get-TrackedProcess -Name $Name
@@ -137,8 +161,12 @@ function Stop-BudcomService {
         if (Test-Path $pidFile) { Remove-Item -Force $pidFile }
         return
     }
-    Write-Host "[$Name] stopping pid $($proc.Id)..."
-    Stop-Process -Id $proc.Id -Force -Confirm:$false
+    $descendants = @(Get-DescendantProcessIds -RootProcessId $proc.Id)
+    Write-Host "[$Name] stopping pid $($proc.Id)$(if ($descendants.Count) { " and $($descendants.Count) descendant process(es) ($($descendants -join ', '))" })..."
+    foreach ($descendantId in $descendants) {
+        Stop-Process -Id $descendantId -Force -Confirm:$false -ErrorAction SilentlyContinue
+    }
+    Stop-Process -Id $proc.Id -Force -Confirm:$false -ErrorAction SilentlyContinue
     Remove-Item -Force $pidFile -ErrorAction SilentlyContinue
     Write-Host "[$Name] stopped."
 }

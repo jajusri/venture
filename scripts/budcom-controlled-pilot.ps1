@@ -1,0 +1,310 @@
+# BUDCOM controlled-pilot, two-company / two-phone physical enrollment orchestration.
+#
+# ORCHESTRATION ONLY -- this script owns no business/security logic of its own. Every authority
+# decision (business/membership creation, equivalence/idempotency, enrollment-grant issuance and
+# consumption, credential issuance) is made by the certified backend application services via
+# `pilot-provision.ts` and Trust's real HTTP endpoints, and by the real, unmodified
+# `TrustEnrollmentRepository`/Android Keystore on-device. This script's only job is to call the
+# existing tools (`budcom-services.ps1`, `budcom-android.ps1`, `pilot-provision.ts`) in the right
+# order and move non-secret bytes between them.
+#
+# Usage:
+#   .\scripts\budcom-controlled-pilot.ps1 -Doctor
+#   .\scripts\budcom-controlled-pilot.ps1 -Bootstrap
+#   .\scripts\budcom-controlled-pilot.ps1 -Start
+#   .\scripts\budcom-controlled-pilot.ps1 -Enroll
+#   .\scripts\budcom-controlled-pilot.ps1 -Verify
+#   .\scripts\budcom-controlled-pilot.ps1 -Status
+#   .\scripts\budcom-controlled-pilot.ps1 -Stop
+#   .\scripts\budcom-controlled-pilot.ps1 -RunAll
+#
+# NEVER prints a grant secret, a credential body, a private key, or a database connection string.
+
+[CmdletBinding()]
+param(
+    [switch]$Doctor,
+    [switch]$Bootstrap,
+    [switch]$Start,
+    [switch]$Enroll,
+    [switch]$Verify,
+    [switch]$Status,
+    [switch]$Stop,
+    [switch]$RunAll,
+
+    [string]$PhoneASerial = '',
+    [string]$PhoneBSerial = ''
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$Script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$Script:BackendDir = Join-Path $RepoRoot 'backend'
+$Script:SdkRoot = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
+$Script:Adb = Join-Path $SdkRoot 'platform-tools\adb.exe'
+$Script:DevDebugPackage = 'com.budcom.android.dev.debug'
+$Script:PilotReceiver = "$DevDebugPackage/com.budcom.android.pilotharness.PilotEnrollmentReceiver"
+$Script:PilotAction = "$DevDebugPackage.action.PILOT_ENROLL"
+$Script:PayloadPath = "/data/data/$DevDebugPackage/files/pilot_enrollment.json"
+$Script:ResultPath = "/data/data/$DevDebugPackage/files/pilot_enrollment_result.json"
+$Script:TrustPort = 8080
+$Script:RelayPort = 8082
+$Script:FullScope = 'manage_memberships,approve_memberships,register_devices,revoke_devices,issue_credentials,send_orders,confirm_orders,receive_orders'
+
+function Import-DotEnv {
+    $envFile = Join-Path $BackendDir '.env'
+    if (-not (Test-Path $envFile)) {
+        Write-Warn "backend\.env not found -- copy backend\.env.example to backend\.env and set BUDCOM_TRUST_DATABASE_URL first."
+        return
+    }
+    Get-Content $envFile | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' } | ForEach-Object {
+        $parts = $_ -split '=', 2
+        [System.Environment]::SetEnvironmentVariable($parts[0].Trim(), $parts[1])
+    }
+}
+
+$Script:TestCompanies = @(
+    [ordered]@{ Index = 1; Slug = 'pilot-test-1'; DisplayName = 'BUDCOM Test 1 Company'; Actor = 'pilot-test-1-actor'; VerificationId = 'pilot-test-1-verified' },
+    [ordered]@{ Index = 2; Slug = 'pilot-test-2'; DisplayName = 'BUDCOM Test 2 Company'; Actor = 'pilot-test-2-actor'; VerificationId = 'pilot-test-2-verified' }
+)
+
+function Write-Section { param([string]$Message) Write-Host "`n=== $Message ===" -ForegroundColor Cyan }
+function Write-Ok { param([string]$Message) Write-Host "PASS: $Message" -ForegroundColor Green }
+function Write-Warn { param([string]$Message) Write-Host "WARN: $Message" -ForegroundColor Yellow }
+function Write-ErrorAndExit { param([string]$Message) Write-Host "FAIL: $Message" -ForegroundColor Red; exit 1 }
+
+# --- backend CLI invocation (never echoes secret-bearing stdout to the console) ---
+
+function Invoke-BackendCli {
+    param([string]$NpmScript, [string[]]$CliArgs, [switch]$AllowFailure)
+    Push-Location $BackendDir
+    try {
+        $output = & npm run $NpmScript -- @CliArgs 2>&1
+        $exit = $LASTEXITCODE
+        if ($exit -ne 0 -and -not $AllowFailure) {
+            Write-ErrorAndExit "pilot-provision '$($CliArgs -join ' ')' failed (exit $exit). Output: $($output -join "`n")"
+        }
+        # npm's own banner lines ("> @budcom/backend...", "> tsx ...") precede the JSON payload --
+        # take everything from the first '{' onward.
+        $joined = ($output -join "`n")
+        $jsonStart = $joined.IndexOf('{')
+        if ($jsonStart -lt 0) { return $null }
+        try { return ($joined.Substring($jsonStart) | ConvertFrom-Json) } catch { return $null }
+    } finally {
+        Pop-Location
+    }
+}
+
+function Get-OrCreateTestBusiness {
+    param($Company)
+    $result = Invoke-BackendCli -NpmScript 'pilot:provision' -CliArgs @('create-business', '--actor', $Company.Actor, '--verification-id', $Company.VerificationId, '--name', $Company.DisplayName, '--intent', "$($Company.Slug)-create")
+    if (-not $result) { Write-ErrorAndExit "create-business returned no parseable result for $($Company.DisplayName)" }
+    return $result
+}
+
+function Set-TestBusinessScope {
+    param($Company, $Created)
+    $currentScope = @($Created.authorityScope) | Sort-Object
+    $targetScope = @($FullScope -split ',') | Sort-Object
+    if (-not (Compare-Object $currentScope $targetScope)) {
+        Write-Host "  [$($Company.DisplayName)] scope already correct -- no change (avoids an unnecessary authority-epoch bump)."
+        return
+    }
+    Write-Host "  [$($Company.DisplayName)] scope differs from target -- updating."
+    Invoke-BackendCli -NpmScript 'pilot:provision' -CliArgs @('grant-scope', '--membership', $Created.membershipId, '--scope', $FullScope) | Out-Null
+}
+
+# --- ADB helpers ---
+
+function Get-ConnectedDevices {
+    if (-not (Test-Path $Adb)) { return @() }
+    $lines = & $Adb devices -l | Select-Object -Skip 1 | Where-Object { $_.Trim() -ne '' }
+    return @($lines | ForEach-Object { ($_ -split '\s+')[0] })
+}
+
+function Resolve-PhoneSerials {
+    $devices = @(Get-ConnectedDevices) | Sort-Object
+    $a = if ($PhoneASerial) { $PhoneASerial } elseif ($devices.Count -ge 1) { $devices[0] } else { $null }
+    $b = if ($PhoneBSerial) { $PhoneBSerial } elseif ($devices.Count -ge 2) { $devices[1] } else { $null }
+    if (-not $a -or -not $b -or $a -eq $b) {
+        Write-ErrorAndExit "Need exactly two distinct connected ADB devices (found: $($devices -join ', ')). Pass -PhoneASerial/-PhoneBSerial explicitly if more than two are attached."
+    }
+    return [ordered]@{ A = $a; B = $b }
+}
+
+function Send-PilotPayloadAndTrigger {
+    param([string]$Serial, [hashtable]$Payload)
+    $json = $Payload | ConvertTo-Json -Compress
+    # Stdin, never argv -- the grant secret never appears in any process's command-line arguments.
+    $json | & $Adb -s $Serial shell run-as $DevDebugPackage sh -c "cat > $PayloadPath"
+    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to write pilot enrollment payload to device $Serial (run-as/cat failed -- is $DevDebugPackage installed and debuggable?)." }
+    & $Adb -s $Serial shell rm -f $ResultPath 2>$null | Out-Null
+    & $Adb -s $Serial shell am broadcast -n $PilotReceiver -a $PilotAction | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to broadcast enrollment trigger to device $Serial." }
+
+    $deadline = (Get-Date).AddSeconds(20)
+    while ((Get-Date) -lt $deadline) {
+        $raw = & $Adb -s $Serial shell run-as $DevDebugPackage sh -c "cat $ResultPath 2>/dev/null"
+        if ($raw -and $raw.Trim().StartsWith('{')) {
+            & $Adb -s $Serial shell run-as $DevDebugPackage sh -c "rm -f $ResultPath" | Out-Null
+            try { return ($raw | ConvertFrom-Json) } catch { Write-ErrorAndExit "Malformed enrollment result from device $Serial`: $raw" }
+        }
+        Start-Sleep -Milliseconds 750
+    }
+    Write-ErrorAndExit "Timed out waiting for enrollment result from device $Serial (20s)."
+}
+
+# --- responsibilities ---
+
+function Invoke-PilotDoctor {
+    Write-Section 'Doctor (read-only)'
+    & (Join-Path $RepoRoot 'scripts\budcom-services.ps1') -Doctor
+    Write-Host "`n-- Android / ADB --"
+    if (-not (Test-Path $Adb)) { Write-Warn "adb not found at $Adb"; return }
+    Write-Host "adb: $Adb"
+    $devices = @(Get-ConnectedDevices)
+    Write-Host "Connected devices: $(if ($devices.Count) { $devices -join ', ' } else { '(none)' })"
+    if ($devices.Count -lt 2) { Write-Warn "Fewer than two devices attached -- physical enrollment gates cannot run yet." }
+    $localProps = Join-Path $RepoRoot 'apps\budcom_android\local.properties'
+    Write-Host "local.properties: $(if (Test-Path $localProps) { 'present' } else { 'MISSING -- create it with sdk.dir pointing at the Android SDK before building' })"
+    $gradlew = Join-Path $RepoRoot 'apps\budcom_android\gradlew.bat'
+    Write-Host "gradlew.bat: $(if (Test-Path $gradlew) { 'present' } else { 'MISSING' })"
+}
+
+function Invoke-PilotBootstrap {
+    Write-Section 'Bootstrap (idempotent test identities)'
+    Invoke-BackendCli -NpmScript 'trust:migrate' -CliArgs @() | Out-Null
+    Write-Host '  migrations: applied (idempotent).'
+    foreach ($company in $TestCompanies) {
+        $created = Get-OrCreateTestBusiness -Company $company
+        Write-Host "  [$($company.DisplayName)] businessId=$($created.businessId) membershipId=$($created.membershipId)"
+        Set-TestBusinessScope -Company $company -Created $created
+    }
+    Write-Ok 'Both test companies ensured (business + active membership).'
+}
+
+function Invoke-PilotStart {
+    Write-Section 'Start Trust + Relay'
+    & (Join-Path $RepoRoot 'scripts\budcom-services.ps1') -Start -Verify
+    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit 'Trust/Relay failed to start or verify healthy.' }
+    Write-Ok 'Trust + Relay healthy.'
+}
+
+function Invoke-PilotEnrollOne {
+    param($Company, [string]$Serial)
+    Write-Section "Enroll Phone ($Serial) as $($Company.DisplayName)"
+
+    $created = Get-OrCreateTestBusiness -Company $Company
+    Set-TestBusinessScope -Company $Company -Created $created
+
+    Write-Host '  building/installing/launching devDebug...'
+    & (Join-Path $RepoRoot 'scripts\budcom-android.ps1') -DeviceSerial $Serial -Variant DevDebug -Install -Launch -Verify
+    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "devDebug install/launch/verify failed on $Serial. Run '.\scripts\budcom-android.ps1 -DeviceSerial $Serial -Variant DevDebug -Build' first if no APK has been built yet for the current commit." }
+
+    Write-Host "  adb reverse tcp:$TrustPort / tcp:$RelayPort (USB tunnel -- no LAN IP, no firewall change needed)..."
+    & $Adb -s $Serial reverse "tcp:$TrustPort" "tcp:$TrustPort" | Out-Null
+    & $Adb -s $Serial reverse "tcp:$RelayPort" "tcp:$RelayPort" | Out-Null
+
+    $grant = Invoke-BackendCli -NpmScript 'pilot:provision' -CliArgs @('create-enrollment-grant', '--business', $created.businessId, '--actor', $Company.Actor, '--membership', $created.membershipId, '--scope', $FullScope, '--lifetime-ms', '600000')
+    if (-not $grant) { Write-ErrorAndExit "create-enrollment-grant returned no parseable result for $($Company.DisplayName)" }
+    Write-Host "  fresh one-time enrollment grant issued (grantId=$($grant.grantId), expires $($grant.expiresAt)) -- secret handed to device only, never displayed."
+
+    $payload = @{
+        grantId = $grant.grantId
+        grantSecret = $grant.grantSecret
+        trustBaseUrl = "http://127.0.0.1:$TrustPort/"
+        relayBaseUrl = "http://127.0.0.1:$RelayPort/"
+    }
+    $result = Send-PilotPayloadAndTrigger -Serial $Serial -Payload $payload
+
+    switch ($result.outcome) {
+        'success' {
+            Write-Ok "$($Company.DisplayName) / $Serial enrolled. businessId=$($result.businessId) deviceId=$($result.deviceId)"
+        }
+        default {
+            Write-ErrorAndExit "Enrollment failed for $($Company.DisplayName) / $Serial`: $($result.outcome)"
+        }
+    }
+
+    $status = Invoke-BackendCli -NpmScript 'pilot:provision' -CliArgs @('status', '--business', $created.businessId)
+    $consumedGrant = $status.enrollmentGrants | Where-Object { $_.grantId -eq $grant.grantId }
+    if (-not $consumedGrant -or -not $consumedGrant.consumed -or $consumedGrant.consumedByDeviceId -ne $result.deviceId) {
+        Write-ErrorAndExit "Post-enrollment verification failed: grant $($grant.grantId) does not show as consumed by $($result.deviceId) in Trust's own records."
+    }
+    Write-Ok "Verified via Trust's own records: grant consumed by device $($result.deviceId), business $($created.businessId) active."
+    return [ordered]@{ Company = $Company.DisplayName; BusinessId = $created.businessId; DeviceId = $result.deviceId; Serial = $Serial }
+}
+
+function Invoke-PilotEnroll {
+    Write-Section 'Enroll both phones'
+    $serials = Resolve-PhoneSerials
+    $resultA = Invoke-PilotEnrollOne -Company $TestCompanies[0] -Serial $serials.A
+    $resultB = Invoke-PilotEnrollOne -Company $TestCompanies[1] -Serial $serials.B
+    if ($resultA.BusinessId -eq $resultB.BusinessId -or $resultA.DeviceId -eq $resultB.DeviceId) {
+        Write-ErrorAndExit 'Phone A and Phone B ended up sharing a Business or device identity -- this must never happen. Investigate before proceeding.'
+    }
+    Write-Ok 'Phone A and Phone B hold distinct Business/device identities, each earned through the real enrollment path.'
+    return @($resultA, $resultB)
+}
+
+function Invoke-PilotVerify {
+    Write-Section 'Verify (Trust/Relay health)'
+    & (Join-Path $RepoRoot 'scripts\budcom-services.ps1') -Verify
+    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit 'Trust/Relay health check failed.' }
+    Write-Ok 'Trust + Relay healthy.'
+}
+
+function Invoke-PilotStatus {
+    Write-Section 'Controlled-pilot status (human-safe -- no secrets, no credential bodies)'
+    foreach ($company in $TestCompanies) {
+        $status = Invoke-BackendCli -NpmScript 'pilot:provision' -CliArgs @('status', '--business', (Get-OrCreateTestBusiness -Company $company).businessId) -AllowFailure
+        Write-Host "`n$($company.DisplayName)"
+        if (-not $status -or -not $status.business) {
+            Write-Host '  Business: not yet provisioned'
+            continue
+        }
+        Write-Host "  Business: $($status.business.status) (epoch $($status.business.authorityEpoch))"
+        foreach ($m in $status.memberships) {
+            Write-Host "  Membership $($m.membershipId): $($m.status), scope=[$($m.authorityScope -join ',')]"
+        }
+        $consumedGrants = @($status.enrollmentGrants | Where-Object { $_.consumed })
+        $pendingGrants = @($status.enrollmentGrants | Where-Object { -not $_.consumed })
+        Write-Host "  Enrollment grants: $($consumedGrants.Count) consumed, $($pendingGrants.Count) pending"
+        foreach ($g in $consumedGrants) { Write-Host "    Phone enrolled: device $($g.consumedByDeviceId)" }
+    }
+}
+
+function Invoke-PilotStop {
+    Write-Section 'Stop'
+    & (Join-Path $RepoRoot 'scripts\budcom-services.ps1') -Stop
+}
+
+# --- main ---
+
+Import-DotEnv
+
+if (-not ($Doctor -or $Bootstrap -or $Start -or $Enroll -or $Verify -or $Status -or $Stop -or $RunAll)) {
+    Write-Host 'No mode selected. Examples:'
+    Write-Host '  .\scripts\budcom-controlled-pilot.ps1 -Doctor'
+    Write-Host '  .\scripts\budcom-controlled-pilot.ps1 -RunAll'
+    exit 0
+}
+
+if ($RunAll) {
+    Invoke-PilotDoctor
+    Invoke-PilotBootstrap
+    Invoke-PilotStart
+    Invoke-PilotEnroll
+    Invoke-PilotVerify
+    Invoke-PilotStatus
+    exit 0
+}
+
+if ($Doctor) { Invoke-PilotDoctor }
+if ($Bootstrap) { Invoke-PilotBootstrap }
+if ($Start) { Invoke-PilotStart }
+if ($Enroll) { Invoke-PilotEnroll }
+if ($Verify) { Invoke-PilotVerify }
+if ($Status) { Invoke-PilotStatus }
+if ($Stop) { Invoke-PilotStop }
+exit 0

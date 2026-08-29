@@ -43,16 +43,19 @@
  * Usage:
  *   tsx services/trust/scripts/pilot-provision.ts create-business --actor <id> --verification-id <id> --name <name> --intent <id>
  *   tsx services/trust/scripts/pilot-provision.ts create-enrollment-grant --business <id> --actor <id> --membership <id> --scope cap1,cap2,... [--lifetime-ms <ms>]
+ *   tsx services/trust/scripts/pilot-provision.ts grant-scope --membership <id> --scope cap1,cap2,...
  *   tsx services/trust/scripts/pilot-provision.ts status --business <id>
  */
 import { parseArgs } from 'node:util';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { CreateBusiness } from '../src/application/create-business.js';
-import { PostgresBusinessBootstrapStore } from '../src/persistence/postgres-authority-write-store.js';
+import { PostgresBusinessBootstrapStore, MEMBERSHIP_COLUMNS, PostgresAuthorityMutationStore, toMembership } from '../src/persistence/postgres-authority-write-store.js';
 import { createBusinessDeterministicIds } from '../src/persistence/file-backed-authority-store.js';
 import { PostgresEnrollmentGrantStore } from '../src/persistence/postgres-enrollment-grant-store.js';
 import { hashEnrollmentGrantSecret, validateEnrollmentGrantLifetime, type EnrollmentGrantId } from '../src/domain/enrollment.js';
+import { AuthorityRevocationService } from '../src/application/revoke-authority.js';
 import { AuthorityScope, identifier, type AuthorityCapability } from '../src/domain/authority.js';
+import type { MembershipRow } from '../src/persistence/postgres-authority-write-store.js';
 import { PostgresDatabase } from '../../../packages/persistence/src/postgres-database.js';
 import { readTrustServiceConfig } from '../src/config.js';
 
@@ -97,6 +100,18 @@ async function main(): Promise<void> {
         console.log(JSON.stringify({ grantId: grant.grantId, grantSecret, expiresAt: grant.expiresAt.toISOString(), grantedDeviceScope: [...grant.grantedDeviceScope.capabilities] }, null, 2));
         break;
       }
+      case 'grant-scope': {
+        const { values } = parseArgs({ args: rest, options: { membership: { type: 'string' }, scope: { type: 'string' } } });
+        if (!values.membership || !values.scope) throw new Error('grant-scope requires --membership --scope cap1,cap2,...');
+        const row = await database.query<MembershipRow>(`SELECT ${MEMBERSHIP_COLUMNS} FROM trust_business_membership WHERE membership_id = $1`, [values.membership]);
+        if (row.rowCount === 0) throw new Error(`No membership found for id ${values.membership}`);
+        const membership = toMembership(row.rows[0]!);
+        const updated = await new AuthorityRevocationService(new PostgresAuthorityMutationStore(database)).changeScope(
+          membership, new AuthorityScope(values.scope.split(',').map((s) => s.trim()) as AuthorityCapability[]),
+        );
+        console.log(JSON.stringify({ membershipId: updated.membershipId, authorityScope: [...updated.authorityScope.capabilities], authorityEpoch: updated.authorityEpoch.value }, null, 2));
+        break;
+      }
       case 'status': {
         const { values } = parseArgs({ args: rest, options: { business: { type: 'string' } } });
         if (!values.business) throw new Error('status requires --business <id>');
@@ -121,7 +136,7 @@ async function main(): Promise<void> {
         break;
       }
       default:
-        console.error('Usage: pilot-provision.ts <create-business|create-enrollment-grant|status> [options]');
+        console.error('Usage: pilot-provision.ts <create-business|create-enrollment-grant|grant-scope|status> [options]');
         process.exitCode = 1;
     }
   } finally {
