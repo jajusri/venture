@@ -81,6 +81,16 @@ $Script:TestCompanies = @(
     [ordered]@{ Index = 2; Slug = 'pilot-test-2'; DisplayName = 'BUDCOM Test 2 Company'; Actor = 'pilot-test-2-actor'; VerificationId = 'pilot-test-2-verified' }
 )
 
+function Get-HostTrustPort {
+    # Where Trust is actually listening on the HOST right now -- normally == $TrustPort, but may be
+    # session-overridden (BUDCOM_TRUST_PORT in backend/.env) to avoid colliding with an unrelated
+    # already-running local service on the default port. The DEVICE side of every `adb reverse` below
+    # always stays $TrustPort (the address every enrolled phone actually holds), only the HOST side
+    # follows the override -- a port-translating tunnel, never a re-enrollment.
+    if ($env:BUDCOM_TRUST_PORT) { return $env:BUDCOM_TRUST_PORT }
+    return $TrustPort
+}
+
 function Write-Section { param([string]$Message) Write-Host "`n=== $Message ===" -ForegroundColor Cyan }
 function Write-Ok { param([string]$Message) Write-Host "PASS: $Message" -ForegroundColor Green }
 function Write-Warn { param([string]$Message) Write-Host "WARN: $Message" -ForegroundColor Yellow }
@@ -259,7 +269,7 @@ function Invoke-PilotEnrollOne {
     if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "devDebug install/launch/verify failed on $Serial. Run '.\scripts\budcom-android.ps1 -DeviceSerial $Serial -Variant DevDebug -Build' first if no APK has been built yet for the current commit." }
 
     Write-Host "  adb reverse tcp:$TrustPort / tcp:$RelayPort (USB tunnel -- no LAN IP, no firewall change needed)..."
-    & $Adb -s $Serial reverse "tcp:$TrustPort" "tcp:$TrustPort" | Out-Null
+    & $Adb -s $Serial reverse "tcp:$TrustPort" "tcp:$(Get-HostTrustPort)" | Out-Null
     & $Adb -s $Serial reverse "tcp:$RelayPort" "tcp:$RelayPort" | Out-Null
 
     $grant = Invoke-BackendCli -NpmScript 'pilot:provision' -CliArgs @('create-enrollment-grant', '--business', $created.businessId, '--actor', $Company.Actor, '--membership', $created.membershipId, '--scope', $FullScope, '--lifetime-ms', '600000')
@@ -380,10 +390,9 @@ function Invoke-PilotRunTransport {
     # Trust is actually listening now (BUDCOM_TRUST_PORT, when overridden for this session -- see
     # backend/.env) -- a plain port-translating reverse tunnel, no re-enrollment, no app data,
     # credential, or Business state touched.
-    $hostTrustPort = if ($env:BUDCOM_TRUST_PORT) { $env:BUDCOM_TRUST_PORT } else { $TrustPort }
     foreach ($serial in @($serials.A, $serials.B)) {
         & $Adb -s $serial reverse "tcp:$RelayPort" "tcp:$RelayPort" | Out-Null
-        & $Adb -s $serial reverse "tcp:$TrustPort" "tcp:$hostTrustPort" | Out-Null
+        & $Adb -s $serial reverse "tcp:$TrustPort" "tcp:$(Get-HostTrustPort)" | Out-Null
     }
 
     Write-Host "`n-- Gate 2: identity discovery --"
