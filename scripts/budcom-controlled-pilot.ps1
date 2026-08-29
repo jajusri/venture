@@ -36,7 +36,8 @@ param(
     [switch]$RunAll,
 
     [string]$PhoneASerial = '',
-    [string]$PhoneBSerial = ''
+    [string]$PhoneBSerial = '',
+    [switch]$RotateDeviceKey
 )
 
 Set-StrictMode -Version Latest
@@ -270,7 +271,7 @@ function Invoke-PilotStart {
 }
 
 function Invoke-PilotEnrollOne {
-    param($Company, [string]$Serial)
+    param($Company, [string]$Serial, [switch]$RotateDeviceKey)
     Write-Section "Enroll Phone ($Serial) as $($Company.DisplayName)"
 
     $created = Get-OrCreateTestBusiness -Company $Company
@@ -298,6 +299,14 @@ function Invoke-PilotEnrollOne {
         trustBaseUrl = "http://127.0.0.1:$TrustPort/"
         relayBaseUrl = "http://127.0.0.1:$RelayPort/"
     }
+    if ($RotateDeviceKey) {
+        # A device already registered at the membership's PRIOR authority epoch cannot silently
+        # re-register at a NEW one (Trust's own RegisterBusinessDevice treats that as "Conflicting
+        # device key registration", by design -- an epoch-stale row is not the same registration).
+        # rotate() is the real, production-designed recovery: a genuinely new key version under the
+        # SAME logical deviceId, done through the same real enrollment path as everything else here.
+        $payload.rotateDeviceKey = $true
+    }
     $result = Send-PilotPayloadAndTrigger -Serial $Serial -Payload $payload
 
     switch ($result.outcome) {
@@ -319,10 +328,11 @@ function Invoke-PilotEnrollOne {
 }
 
 function Invoke-PilotEnroll {
+    param([switch]$RotateDeviceKey)
     Write-Section 'Enroll both phones'
     $serials = Resolve-PhoneSerials
-    $resultA = Invoke-PilotEnrollOne -Company $TestCompanies[0] -Serial $serials.A
-    $resultB = Invoke-PilotEnrollOne -Company $TestCompanies[1] -Serial $serials.B
+    $resultA = Invoke-PilotEnrollOne -Company $TestCompanies[0] -Serial $serials.A -RotateDeviceKey:$RotateDeviceKey
+    $resultB = Invoke-PilotEnrollOne -Company $TestCompanies[1] -Serial $serials.B -RotateDeviceKey:$RotateDeviceKey
     if ($resultA.BusinessId -eq $resultB.BusinessId -or $resultA.DeviceId -eq $resultB.DeviceId) {
         Write-ErrorAndExit 'Phone A and Phone B ended up sharing a Business or device identity -- this must never happen. Investigate before proceeding.'
     }
@@ -594,7 +604,7 @@ if ($RunAll) {
 if ($Doctor) { Invoke-PilotDoctor }
 if ($Bootstrap) { Invoke-PilotBootstrap }
 if ($Start) { Invoke-PilotStart }
-if ($Enroll) { Invoke-PilotEnroll }
+if ($Enroll) { Invoke-PilotEnroll -RotateDeviceKey:$RotateDeviceKey }
 if ($Verify) { Invoke-PilotVerify }
 if ($Status) { Invoke-PilotStatus }
 if ($RunTransport) { Invoke-PilotRunTransport }

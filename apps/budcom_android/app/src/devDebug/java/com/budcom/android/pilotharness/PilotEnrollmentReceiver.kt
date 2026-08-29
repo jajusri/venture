@@ -11,6 +11,7 @@ import com.budcom.android.core.trust.data.remote.TrustEndpointProvider
 import com.budcom.android.core.trust.domain.EnrollmentGrantProof
 import com.budcom.android.core.trust.domain.TrustEnrollmentOutcome
 import com.budcom.android.feature.serverconfig.domain.validation.ConnectorUrlValidator
+import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,7 +38,12 @@ import javax.inject.Inject
  *  3. If present, persist `trustBaseUrl`/`relayBaseUrl` through the SAME real, already-existing
  *     runtime-configuration stores a settings screen would use ([TrustEndpointLocalStore],
  *     [RelayEndpointLocalStore]) and hydrate the in-memory providers so the change takes effect on
- *     this process immediately, with no restart.
+ *     this process immediately, with no restart. If `rotateDeviceKey` is set, rotate this
+ *     installation's own device key ([VartalapDeviceKeyStore.rotate]) BEFORE enrolling -- the same
+ *     production-designed recovery a real device uses when its existing registration row no longer
+ *     matches the membership's current authority epoch (e.g. after a scope grant); never a fabricated
+ *     or bypassed credential, and never touches Business/device state beyond this one installation's
+ *     own key.
  *  4. Call the REAL, unmodified [TrustEnrollmentRepository.enroll] -- the exact same production
  *     enrollment path any real device uses: Android Keystore generates/loads this installation's own
  *     device key pair, only the public half + fingerprint ever leaves the device, and Trust's real
@@ -60,6 +66,7 @@ class PilotEnrollmentReceiver : BroadcastReceiver() {
     @Inject lateinit var relayEndpointLocalStore: RelayEndpointLocalStore
     @Inject lateinit var relayEndpointProvider: RelayRuntimeEndpointProvider
     @Inject lateinit var enrollmentRepository: TrustEnrollmentRepository
+    @Inject lateinit var keyStore: VartalapDeviceKeyStore
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_PILOT_ENROLL) return
@@ -104,6 +111,16 @@ class PilotEnrollmentReceiver : BroadcastReceiver() {
             }
         }
 
+        // Opt-in only: a re-enrollment attempt that reuses the SAME device key version against a
+        // membership whose authorityEpoch has since moved (e.g. a scope grant) is correctly rejected
+        // by Trust's own RegisterBusinessDevice ("Conflicting device key registration" -- an existing
+        // registration row is epoch-scoped, not a re-enrollment worth silently overwriting). rotate()
+        // is the same production-designed recovery a real device would use: a genuinely NEW key
+        // version under the SAME logical deviceId, never a fabricated/bypassed credential.
+        if (payload.rotateDeviceKey) {
+            keyStore.getCurrentIdentity()?.let { keyStore.rotate(it.deviceId) }
+        }
+
         val outcome = try {
             enrollmentRepository.enroll(EnrollmentGrantProof(payload.grantId, payload.grantSecret))
         } catch (e: Exception) {
@@ -136,6 +153,7 @@ data class PilotEnrollmentPayload(
     val grantSecret: String,
     val trustBaseUrl: String? = null,
     val relayBaseUrl: String? = null,
+    val rotateDeviceKey: Boolean = false,
 )
 
 @Serializable
