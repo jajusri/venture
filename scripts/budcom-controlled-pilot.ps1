@@ -371,13 +371,19 @@ function Invoke-PilotRunTransport {
     & (Join-Path $RepoRoot 'scripts\budcom-services.ps1') -Verify | Out-Host
     if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit 'Trust/Relay must be healthy before running transport proofs.' }
 
-    # Re-establish the USB reverse tunnel each already-enrolled phone needs to reach Relay --
-    # `adb reverse` bindings do not survive an adb server restart (e.g. the daemon coming up fresh
-    # this session), and unlike enrollment this path never re-provisions credentials, so nothing
-    # else in -RunTransport would otherwise repair a stale/missing tunnel. Idempotent and
-    # non-destructive: no app data, credential, or Business state is touched.
+    # Re-establish the USB reverse tunnel each already-enrolled phone needs to reach Relay and Trust
+    # (bind-counterparty performs a live freshness check against Trust's issuer verification
+    # key/authority epoch, not just local credential state) -- `adb reverse` bindings do not survive
+    # an adb server restart, and unlike enrollment this path never re-provisions credentials, so
+    # nothing else in -RunTransport would otherwise repair a stale/missing tunnel. The device side
+    # always targets the ORIGINAL enrollment-time port ($TrustPort); the host side follows wherever
+    # Trust is actually listening now (BUDCOM_TRUST_PORT, when overridden for this session -- see
+    # backend/.env) -- a plain port-translating reverse tunnel, no re-enrollment, no app data,
+    # credential, or Business state touched.
+    $hostTrustPort = if ($env:BUDCOM_TRUST_PORT) { $env:BUDCOM_TRUST_PORT } else { $TrustPort }
     foreach ($serial in @($serials.A, $serials.B)) {
         & $Adb -s $serial reverse "tcp:$RelayPort" "tcp:$RelayPort" | Out-Null
+        & $Adb -s $serial reverse "tcp:$TrustPort" "tcp:$hostTrustPort" | Out-Null
     }
 
     Write-Host "`n-- Gate 2: identity discovery --"
