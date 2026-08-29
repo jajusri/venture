@@ -3,8 +3,6 @@ package com.budcom.android.core.trust.data
 import com.budcom.android.core.security.CachedIssuerVerificationKey
 import com.budcom.android.core.security.IssuerVerificationKeyCache
 import com.budcom.android.core.trust.data.remote.TrustApi
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 import java.util.Base64
 import javax.inject.Inject
@@ -20,37 +18,26 @@ fun decodePemPublicKey(pem: String): ByteArray {
     return Base64.getDecoder().decode(body)
 }
 
-private data class VerificationKeyCacheEntry(val key: CachedIssuerVerificationKey?, val fetchedAtEpochMillis: Long)
-
-/** Real [IssuerVerificationKeyCache] -- fetches from Trust's own public, cacheable
- * `GET /v1/trust/issuers/{issuerId}/verification-keys` endpoint (already certified, unchanged here)
- * and caches for a bounded TTL matching that endpoint's own `cache-control: max-age=300`. A fetch
- * failure (network, malformed PEM, key not found) caches `null` too -- a short-lived negative cache
- * entry, not a permanent one, so a transient Trust outage does not need an app restart to recover
- * from, but also does not retry on every single verification call in a burst. */
+/**
+ * Real [IssuerVerificationKeyCache] -- despite the port's own name (fixed by
+ * `core/security/CachedTransportCredentialVerifier.kt`, not owned by this class), this
+ * implementation deliberately holds NO positive cache of key acceptability.
+ *
+ * ROUND 5 SECURITY FIX (Codex BLOCKER 1): the previous implementation cached the fetched
+ * `CachedIssuerVerificationKey` -- including `revoked` -- for a 5-minute TTL. That let an earlier
+ * `revoked=false` answer keep authorizing signatures for up to 5 minutes after Trust actually
+ * revoked or removed the key server-side: POSITIVE AUTHORIZATION STATE MUST NOT BE STALE-CACHED.
+ * Every call now queries Trust's own public `GET /v1/trust/issuers/{issuerId}/verification-keys`
+ * fresh -- no TTL, no stored map, nothing retained between calls. Trust being unreachable, the key
+ * being absent, or the PEM being malformed all return `null` here, which
+ * `CachedTransportCredentialVerifier` already treats as `TemporarilyUnverifiable` (fail closed) --
+ * so "smallest safe implementation" is genuinely just: don't cache at all.
+ */
 @Singleton
-class TrustBackedIssuerVerificationKeyCache(
+class TrustBackedIssuerVerificationKeyCache @Inject constructor(
     private val api: TrustApi,
-    private val now: () -> Long = { System.currentTimeMillis() },
 ) : IssuerVerificationKeyCache {
-    // See TrustBackedAuthorityEpochCache's identical secondary-constructor comment: Dagger only
-    // ever sees this @Inject constructor (single real dependency), never the primary constructor's
-    // defaulted `now` parameter.
-    @Inject constructor(api: TrustApi) : this(api, { System.currentTimeMillis() })
-
-    private val mutex = Mutex()
-    private val cache = mutableMapOf<String, VerificationKeyCacheEntry>()
-
-    override suspend fun get(issuerId: String, issuerKeyId: String): CachedIssuerVerificationKey? = mutex.withLock {
-        val cacheKey = "$issuerId::$issuerKeyId"
-        val cached = cache[cacheKey]
-        if (cached != null && now() - cached.fetchedAtEpochMillis < CACHE_TTL_MILLIS) return@withLock cached.key
-        val fetched = fetchFromTrust(issuerId, issuerKeyId)
-        cache[cacheKey] = VerificationKeyCacheEntry(fetched, now())
-        fetched
-    }
-
-    private suspend fun fetchFromTrust(issuerId: String, issuerKeyId: String): CachedIssuerVerificationKey? {
+    override suspend fun get(issuerId: String, issuerKeyId: String): CachedIssuerVerificationKey? {
         val response = try { api.getVerificationKeys(issuerId) } catch (e: IOException) { return null }
         if (!response.isSuccessful) return null
         val match = response.body()?.keys?.firstOrNull { it.issuerKeyId == issuerKeyId } ?: return null
@@ -60,6 +47,4 @@ class TrustBackedIssuerVerificationKeyCache(
             publicKey = derBytes, revoked = match.status == "revoked",
         )
     }
-
-    private companion object { const val CACHE_TTL_MILLIS = 5 * 60 * 1000L }
 }

@@ -4,7 +4,15 @@ import com.budcom.android.core.security.AuthorityEpochCache
 import com.budcom.android.core.security.CachedIssuerVerificationKey
 import com.budcom.android.core.security.CachedTransportCredentialVerifier
 import com.budcom.android.core.security.IssuerVerificationKeyCache
+import com.budcom.android.core.trust.data.TrustBackedAuthorityEpochCache
 import com.budcom.android.core.trust.data.TrustBackedCommercialCredentialSource
+import com.budcom.android.core.trust.data.TrustBackedIssuerVerificationKeyCache
+import com.budcom.android.core.trust.data.remote.TrustApi
+import com.budcom.android.core.trust.data.remote.TrustAuthorityEpochResponseDto
+import com.budcom.android.core.trust.data.remote.TrustEnrollmentRequestDto
+import com.budcom.android.core.trust.data.remote.TrustEnrollmentResponseDto
+import com.budcom.android.core.trust.data.remote.TrustVerificationKeyDto
+import com.budcom.android.core.trust.data.remote.TrustVerificationKeysResponseDto
 import com.budcom.android.core.trust.domain.StoredTrustCredential
 import com.budcom.android.core.trust.domain.TrustCredentialReadOutcome
 import com.budcom.android.core.trust.domain.TrustCredentialStore
@@ -18,11 +26,16 @@ import com.budcom.android.feature.transaction.domain.port.DeviceSigningResult
 import com.budcom.android.feature.transaction.domain.port.TrustedBusinessDeviceCredential
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
 import kotlinx.coroutines.test.runTest
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import retrofit2.Response
+import java.io.IOException
 import java.security.KeyPairGenerator
 import java.security.PrivateKey
+import java.security.PublicKey
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.util.Base64
@@ -100,6 +113,166 @@ private fun identity(keyVersion: Int = 1) = DeviceSigningIdentity(
     deviceId = DEVICE_ID, keyId = "device-1-key-1", keyVersion = keyVersion, publicKey = ByteArray(65) { 9 },
     publicKeyFingerprint = "fingerprint-1", createdAtEpochMillis = 0L, securityLevel = DeviceKeySecurityLevel.HardwareBacked,
 )
+
+private fun pemOf(publicKey: PublicKey): String {
+    val base64 = Base64.getEncoder().encodeToString(publicKey.encoded)
+    return "-----BEGIN PUBLIC KEY-----\n" + base64.chunked(64).joinToString("\n") + "\n-----END PUBLIC KEY-----\n"
+}
+
+/**
+ * Mutable, stateful fake [TrustApi] -- unlike [FixedIssuerKeyCache]/[FixedEpochCache] above (which
+ * model one fixed Trust answer for the lifetime of a test), this models Trust's OWN state actually
+ * changing between two calls from the SAME, never-recreated cache/resolver instances -- exactly
+ * what [LiveAuthorityRevocationTest] below needs to prove the Round 5 fix against the REAL
+ * [TrustBackedIssuerVerificationKeyCache]/[TrustBackedAuthorityEpochCache] production classes, not
+ * a fixed-answer test double.
+ */
+private class StatefulTrustApi(
+    var verificationKeyPem: String,
+    var verificationKeyStatus: String = "active",
+    var verificationKeyPresent: Boolean = true,
+    var verificationKeyThrows: Throwable? = null,
+    var epoch: Long? = 3L,
+    var epochThrows: Throwable? = null,
+) : TrustApi {
+    var verificationKeyCallCount = 0
+    var epochCallCount = 0
+
+    override suspend fun consumeEnrollmentGrant(body: TrustEnrollmentRequestDto): Response<TrustEnrollmentResponseDto> = error("not used")
+
+    override suspend fun getVerificationKeys(issuerId: String): Response<TrustVerificationKeysResponseDto> {
+        verificationKeyCallCount += 1
+        verificationKeyThrows?.let { throw it }
+        val keys = if (verificationKeyPresent) listOf(TrustVerificationKeyDto(issuerId, ISSUER_KEY_ID, "P256-SHA256-v1", verificationKeyPem, "2026-01-01T00:00:00Z", null, verificationKeyStatus)) else emptyList()
+        return Response.success(TrustVerificationKeysResponseDto(1, issuerId, keys))
+    }
+
+    override suspend fun getCurrentAuthorityEpoch(businessId: String, membershipId: String, deviceId: String): Response<TrustAuthorityEpochResponseDto> {
+        epochCallCount += 1
+        epochThrows?.let { throw it }
+        val current = epoch ?: return Response.error(404, "{}".toResponseBody("application/json".toMediaType()))
+        return Response.success(TrustAuthorityEpochResponseDto(businessId, membershipId, deviceId, current))
+    }
+}
+
+/**
+ * ROUND 5 (Codex BLOCKERS 1 and 2): proves the live-authority fix against the REAL
+ * [TrustBackedIssuerVerificationKeyCache]/[TrustBackedAuthorityEpochCache] production
+ * implementations -- not the fixed fakes [FixedIssuerKeyCache]/[FixedEpochCache] used above -- by
+ * calling the SAME, never-recreated resolver/cache instances twice, mutating [StatefulTrustApi]'s
+ * backing state in between to simulate Trust itself revoking/advancing authority server-side. The
+ * master security rule under test: POSITIVE AUTHORIZATION STATE MUST NOT BE STALE-CACHED -- a first
+ * successful authorization must never make a second, later authorization succeed on stale grounds.
+ */
+class LiveAuthorityRevocationTest {
+    private val keyPair = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
+    private val pem = pemOf(keyPair.public)
+
+    private fun resolverWithRealCaches(api: TrustApi, stored: StoredTrustCredential?): TrustVerifiedCommercialActionAuthorityResolver {
+        val issuerCache = TrustBackedIssuerVerificationKeyCache(api)
+        val epochCache = TrustBackedAuthorityEpochCache(api)
+        val credentials = TrustBackedCommercialCredentialSource(FakeWiringCredentialStore(stored))
+        val verifier = CachedTransportCredentialVerifier(issuerCache, epochCache)
+        return TrustVerifiedCommercialActionAuthorityResolver(credentials, verifier, FakeIdentityStore(identity()), epochCache)
+    }
+
+    private fun signedStoredCredential(authorityEpoch: Long = 3L) =
+        storedFrom(unsignedCredential(authorityEpoch = authorityEpoch).let { it.copy(signature = signCredential(keyPair.private, it)) })
+
+    // ---- Issuer key cache: never positively caches key acceptability ----
+
+    @Test
+    fun `issuer key cache never serves a cached positive answer across two separate authorization decisions`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem)
+        resolverWithRealCaches(api, signedStoredCredential()).resolve(baseRequest())
+        resolverWithRealCaches(api, signedStoredCredential()).resolve(baseRequest())
+        assertEquals(2, api.verificationKeyCallCount)
+    }
+
+    @Test
+    fun `1 -- issuer key revoked after a prior successful authorization -- second authorization on the SAME resolver MUST FAIL`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem)
+        val resolver = resolverWithRealCaches(api, signedStoredCredential())
+        val first = resolver.resolve(baseRequest())
+        assertTrue("first authorization should have succeeded", first is CommercialActionAuthorityOutcome.Verified)
+        api.verificationKeyStatus = "revoked"
+        val second = resolver.resolve(baseRequest())
+        assertEquals(CommercialActionAuthorityOutcome.Revoked, second)
+    }
+
+    @Test
+    fun `issuer key removed entirely after a prior successful authorization -- second authorization on the SAME resolver MUST FAIL`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem)
+        val resolver = resolverWithRealCaches(api, signedStoredCredential())
+        val first = resolver.resolve(baseRequest())
+        assertTrue("first authorization should have succeeded", first is CommercialActionAuthorityOutcome.Verified)
+        api.verificationKeyPresent = false
+        val second = resolver.resolve(baseRequest())
+        assertEquals(CommercialActionAuthorityOutcome.Unavailable, second)
+    }
+
+    @Test
+    fun `5 -- Trust unreachable for issuer-key lookups after a prior successful authorization -- second authorization MUST FAIL CLOSED`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem)
+        val resolver = resolverWithRealCaches(api, signedStoredCredential())
+        val first = resolver.resolve(baseRequest())
+        assertTrue("first authorization should have succeeded", first is CommercialActionAuthorityOutcome.Verified)
+        api.verificationKeyThrows = IOException("Trust unreachable")
+        val second = resolver.resolve(baseRequest())
+        assertEquals(CommercialActionAuthorityOutcome.Unavailable, second)
+    }
+
+    // ---- Authority epoch cache: never positively caches current epoch ----
+
+    @Test
+    fun `epoch cache never serves a cached positive answer across two separate authorization decisions`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem)
+        resolverWithRealCaches(api, signedStoredCredential()).resolve(baseRequest())
+        val callsAfterFirst = api.epochCallCount
+        resolverWithRealCaches(api, signedStoredCredential()).resolve(baseRequest())
+        assertTrue("second decision must trigger fresh epoch fetches, not reuse a cached one", api.epochCallCount > callsAfterFirst)
+    }
+
+    @Test
+    fun `authority epoch advanced (N to N+1) after a prior successful authorization -- next authorization with the OLD credential epoch MUST FAIL`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem, epoch = 3L)
+        val resolver = resolverWithRealCaches(api, signedStoredCredential(authorityEpoch = 3L))
+        val first = resolver.resolve(baseRequest())
+        assertTrue("first authorization should have succeeded", first is CommercialActionAuthorityOutcome.Verified)
+        api.epoch = 4L
+        val second = resolver.resolve(baseRequest())
+        assertEquals(CommercialActionAuthorityOutcome.StaleEpoch, second)
+    }
+
+    @Test
+    fun `device becomes inactive (Trust reports no active authority) after a prior success -- next authorization MUST FAIL`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem, epoch = 3L)
+        val resolver = resolverWithRealCaches(api, signedStoredCredential(authorityEpoch = 3L))
+        val first = resolver.resolve(baseRequest())
+        assertTrue("first authorization should have succeeded", first is CommercialActionAuthorityOutcome.Verified)
+        api.epoch = null
+        val second = resolver.resolve(baseRequest())
+        assertEquals(CommercialActionAuthorityOutcome.Unavailable, second)
+    }
+
+    @Test
+    fun `6 -- Trust unreachable for epoch lookups after a prior successful authorization -- second authorization MUST FAIL CLOSED`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem, epoch = 3L)
+        val resolver = resolverWithRealCaches(api, signedStoredCredential(authorityEpoch = 3L))
+        val first = resolver.resolve(baseRequest())
+        assertTrue("first authorization should have succeeded", first is CommercialActionAuthorityOutcome.Verified)
+        api.epochThrows = IOException("Trust unreachable")
+        val second = resolver.resolve(baseRequest())
+        assertEquals(CommercialActionAuthorityOutcome.Unavailable, second)
+    }
+
+    @Test
+    fun `7 -- negative or absent authority is rejected from the very first decision, not only on a later transition`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem, epoch = null)
+        val outcome = resolverWithRealCaches(api, signedStoredCredential()).resolve(baseRequest())
+        assertEquals(CommercialActionAuthorityOutcome.Unavailable, outcome)
+    }
+}
 
 class CommercialAuthorityWiringTest {
     private val keyPair = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()

@@ -47,16 +47,21 @@ class TrustBackedAuthorityEpochCacheTest {
     }
 
     @Test
-    fun `caches within the short TTL window, then re-fetches once elapsed`() = runTest {
+    fun `ROUND 5 SECURITY FIX -- never caches a positive answer -- two calls always mean two live Trust fetches`() = runTest {
         val api = FakeEpochApi { Response.success(TrustAuthorityEpochResponseDto("business-1", "membership-1", "device-1", 4L)) }
-        var clock = 0L
-        val cache = TrustBackedAuthorityEpochCache(api, now = { clock })
+        val cache = TrustBackedAuthorityEpochCache(api)
         cache.currentEpoch("business-1", "membership-1", "device-1")
-        clock += 5_000L
-        cache.currentEpoch("business-1", "membership-1", "device-1")
-        assertEquals(1, api.callCount)
-        clock += 6_000L
         cache.currentEpoch("business-1", "membership-1", "device-1")
         assertEquals(2, api.callCount)
+    }
+
+    @Test
+    fun `ROUND 5 SECURITY FIX -- an epoch advanced between two calls is reflected immediately, not after a TTL expires`() = runTest {
+        var epoch = 3L
+        val api = FakeEpochApi { Response.success(TrustAuthorityEpochResponseDto("business-1", "membership-1", "device-1", epoch)) }
+        val cache = TrustBackedAuthorityEpochCache(api)
+        assertEquals(3L, cache.currentEpoch("business-1", "membership-1", "device-1"))
+        epoch = 4L
+        assertEquals(4L, cache.currentEpoch("business-1", "membership-1", "device-1"))
     }
 }

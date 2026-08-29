@@ -2,50 +2,44 @@ package com.budcom.android.core.trust.data
 
 import com.budcom.android.core.security.AuthorityEpochCache
 import com.budcom.android.core.trust.data.remote.TrustApi
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private data class EpochCacheEntry(val epoch: Long?, val fetchedAtEpochMillis: Long)
-
-/** Real [AuthorityEpochCache] -- fetches from Trust's `GET /v1/trust/authority/epoch` (which itself
- * responds `cache-control: no-store`, since staleness detection is the entire point). This cache's
- * own TTL is deliberately much shorter than [TrustBackedIssuerVerificationKeyCache]'s (10 seconds
- * vs. 5 minutes): a burst of local commercial actions in quick succession should not each trigger a
- * network round trip, but a revocation should still be noticed within a few seconds, not five
- * minutes. A fetch failure caches `null` for the same short window, matching `TemporarilyUnverifiable`
- * fail-closed semantics rather than either retrying every call or wedging a stale value in place. */
+/**
+ * Real [AuthorityEpochCache] -- despite the port's own name, holds NO positive cache of "current
+ * epoch." Every call queries Trust's `GET /v1/trust/authority/epoch` fresh (that endpoint itself
+ * responds `cache-control: no-store` for exactly this reason).
+ *
+ * ROUND 5 SECURITY FIX (Codex BLOCKER 2): the previous implementation cached the fetched epoch for
+ * 10 seconds. That let a credential bearing an epoch Trust had already advanced past (revocation,
+ * scope change, device deactivation) keep being accepted as fresh for up to 10 seconds after the
+ * change: POSITIVE AUTHORIZATION STATE MUST NOT BE STALE-CACHED. A fetch failure (network, 404 "no
+ * active authority") returns `null` on every call, which both callers
+ * (`CachedTransportCredentialVerifier` and `TrustVerifiedCommercialActionAuthorityResolver`,
+ * `feature/transaction`, both unmodified) already treat as fail-closed
+ * (`TemporarilyUnverifiable`/`Unavailable`) -- so, as with the issuer-key cache, the smallest safe
+ * implementation is simply: don't cache at all.
+ *
+ * KNOWN, ACCEPTED TRADE-OFF (documented per this round's own "same decision / duplicate fetch"
+ * instruction, not overlooked): `TrustVerifiedCommercialActionAuthorityResolver.resolve()` calls
+ * `epochs.currentEpoch(...)` once for its own pre-check, then `CachedTransportCredentialVerifier.verify()`
+ * calls it AGAIN internally -- meaning one authorization decision now makes two live network calls
+ * to the same endpoint instead of one. Collapsing that into a single fetch would require changing
+ * `TransportCredentialVerifier`/`CredentialVerificationRequest`'s shape (add an epoch field, or drop
+ * the resolver's own pre-check) inside `feature/transaction/domain/port` and
+ * `feature/transaction/domain/model` -- both outside this round's DO-NOT-TOUCH boundary and neither
+ * strictly necessary for correctness (both calls independently return the same fresh truth; the
+ * only cost is network overhead, not staleness or inconsistency). Left as two fresh calls rather
+ * than touching protected commercial-domain files for a pure efficiency gain.
+ */
 @Singleton
-class TrustBackedAuthorityEpochCache(
+class TrustBackedAuthorityEpochCache @Inject constructor(
     private val api: TrustApi,
-    private val now: () -> Long = { System.currentTimeMillis() },
 ) : AuthorityEpochCache {
-    // Kotlin default parameter values do NOT exempt a constructor parameter from Dagger's
-    // dependency graph -- `@Inject constructor(api, now = {...})` still asks Dagger to provide a
-    // `Function0<Long>` binding, which does not exist. This secondary constructor is the one Dagger
-    // actually sees (single real dependency); the primary constructor above stays available for
-    // tests that need to inject a fake clock.
-    @Inject constructor(api: TrustApi) : this(api, { System.currentTimeMillis() })
-
-    private val mutex = Mutex()
-    private val cache = mutableMapOf<String, EpochCacheEntry>()
-
-    override suspend fun currentEpoch(businessId: String, membershipId: String, deviceId: String): Long? = mutex.withLock {
-        val cacheKey = "$businessId::$membershipId::$deviceId"
-        val cached = cache[cacheKey]
-        if (cached != null && now() - cached.fetchedAtEpochMillis < CACHE_TTL_MILLIS) return@withLock cached.epoch
-        val fetched = fetchFromTrust(businessId, membershipId, deviceId)
-        cache[cacheKey] = EpochCacheEntry(fetched, now())
-        fetched
-    }
-
-    private suspend fun fetchFromTrust(businessId: String, membershipId: String, deviceId: String): Long? {
+    override suspend fun currentEpoch(businessId: String, membershipId: String, deviceId: String): Long? {
         val response = try { api.getCurrentAuthorityEpoch(businessId, membershipId, deviceId) } catch (e: IOException) { return null }
         if (!response.isSuccessful) return null
         return response.body()?.authorityEpoch
     }
-
-    private companion object { const val CACHE_TTL_MILLIS = 10_000L }
 }

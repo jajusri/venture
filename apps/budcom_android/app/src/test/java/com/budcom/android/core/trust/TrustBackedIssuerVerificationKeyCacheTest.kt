@@ -86,26 +86,23 @@ class TrustBackedIssuerVerificationKeyCacheTest {
     }
 
     @Test
-    fun `caches a successful lookup and does not re-fetch within the TTL window`() = runTest {
+    fun `ROUND 5 SECURITY FIX -- never caches a positive answer -- two calls always mean two live Trust fetches`() = runTest {
         val (_, pem) = realEcPublicKeyPem()
         val api = FakeVerificationKeysApi { Response.success(TrustVerificationKeysResponseDto(1, "issuer-1", listOf(TrustVerificationKeyDto("issuer-1", "key-1", "P256-SHA256-v1", pem, "2026-01-01T00:00:00Z", null, "active")))) }
-        var clock = 0L
-        val cache = TrustBackedIssuerVerificationKeyCache(api, now = { clock })
+        val cache = TrustBackedIssuerVerificationKeyCache(api)
         cache.get("issuer-1", "key-1")
-        clock += 60_000L
         cache.get("issuer-1", "key-1")
-        assertEquals(1, api.callCount)
+        assertEquals(2, api.callCount)
     }
 
     @Test
-    fun `re-fetches once the TTL window has elapsed`() = runTest {
+    fun `ROUND 5 SECURITY FIX -- a key revoked between two calls is reflected immediately, not after a TTL expires`() = runTest {
         val (_, pem) = realEcPublicKeyPem()
-        val api = FakeVerificationKeysApi { Response.success(TrustVerificationKeysResponseDto(1, "issuer-1", listOf(TrustVerificationKeyDto("issuer-1", "key-1", "P256-SHA256-v1", pem, "2026-01-01T00:00:00Z", null, "active")))) }
-        var clock = 0L
-        val cache = TrustBackedIssuerVerificationKeyCache(api, now = { clock })
-        cache.get("issuer-1", "key-1")
-        clock += 6 * 60_000L
-        cache.get("issuer-1", "key-1")
-        assertEquals(2, api.callCount)
+        var status = "active"
+        val api = FakeVerificationKeysApi { Response.success(TrustVerificationKeysResponseDto(1, "issuer-1", listOf(TrustVerificationKeyDto("issuer-1", "key-1", "P256-SHA256-v1", pem, "2026-01-01T00:00:00Z", null, status)))) }
+        val cache = TrustBackedIssuerVerificationKeyCache(api)
+        assertEquals(false, cache.get("issuer-1", "key-1")?.revoked)
+        status = "revoked"
+        assertEquals(true, cache.get("issuer-1", "key-1")?.revoked)
     }
 }
