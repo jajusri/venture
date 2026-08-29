@@ -6,10 +6,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Database, DatabaseSession, QueryResult } from '../packages/persistence/src/database.js';
 import { AuthorityScope, identifier, type BusinessMembership, type RegisteredBusinessDevice } from '../services/trust/src/domain/authority.js';
 import { BusinessDeviceCredentialIssuer, credentialSigningPayload } from '../services/trust/src/application/issue-credential.js';
-import { RotatingTrustCredentialSigner } from '../services/trust/src/application/signer-rotation.js';
 import { VerificationKeyDirectory } from '../services/trust/src/application/verification-keys.js';
 import { InMemoryCredentialIssuanceStore } from '../services/trust/src/persistence/in-memory-credential-store.js';
 import { ManagedSigningKeyRegistry } from '../services/trust/src/persistence/managed-signing-key-registry.js';
+import { PostgresBackedTrustCredentialSigner } from '../services/trust/src/persistence/postgres-backed-signer.js';
 import { PostgresIssuerSigningKeyStore } from '../services/trust/src/persistence/postgres-issuer-signing-key-store.js';
 
 /** Same stateful fake shape as the other round-6 test files -- duplicated per this codebase's own
@@ -93,8 +93,11 @@ describe('Trust issuer signing-key lifecycle -- end-to-end (round 6 key-lifecycl
     const verificationKeys = new VerificationKeyDirectory(store);
 
     // --- A: key A active -> credential A issued -> verification succeeds ---
+    // `signer` is constructed exactly ONCE and reused for every issuance below (A, B, and after
+    // "restart") -- it is never recreated and holds no cached lifecycle state of its own; it
+    // re-reads Postgres fresh on every single sign() call (round 7 Codex Critical Fix 1).
     await registry.bootstrap('key-A', PROFILE, new Date(0));
-    const signer = new RotatingTrustCredentialSigner(() => registry.handles());
+    const signer = new PostgresBackedTrustCredentialSigner(store, ISSUER_ID, workDir);
     const credentialA = await new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => new Date(100)).issue({
       business, membership, device, requestedScope: new AuthorityScope(['send_orders']), intentId: 'issue-A',
     });
@@ -137,34 +140,34 @@ describe('Trust issuer signing-key lifecycle -- end-to-end (round 6 key-lifecycl
     // for a real verifier to act on.
     expect(verify('sha256', credentialSigningPayload(credentialA.claims), keyAAfterRevoke.publicKey, credentialA.signature.signature)).toBe(true);
 
-    // --- F: restart -- construct entirely fresh store/registry instances (simulating a new process)
+    // --- F: restart -- construct entirely fresh store/signer instances (simulating a new process)
     // against the SAME persisted state; lifecycle must survive, B remains current, A remains revoked ---
     const freshStore = new PostgresIssuerSigningKeyStore(db);
-    const freshRegistry = new ManagedSigningKeyRegistry(freshStore, ISSUER_ID, workDir);
-    await freshRegistry.refresh();
-    const freshHandles = freshRegistry.handles();
-    expect(freshHandles.filter((h) => h.status === 'active')).toHaveLength(1);
     const freshDescribe = await freshStore.describe(ISSUER_ID);
+    expect(freshDescribe.filter((k) => k.status === 'active')).toHaveLength(1);
     expect(freshDescribe.find((k) => k.keyId === 'key-B')?.status).toBe('active');
     expect(freshDescribe.find((k) => k.keyId === 'key-A')?.status).toBe('revoked');
-    const freshSigner = new RotatingTrustCredentialSigner(() => freshRegistry.handles());
+    const freshSigner = new PostgresBackedTrustCredentialSigner(freshStore, ISSUER_ID, workDir);
     const credentialAfterRestart = await new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), freshSigner, 3_600_000, () => new Date(500)).issue({
       business, membership, device, requestedScope: new AuthorityScope(['send_orders']), intentId: 'issue-after-restart',
     });
     expect(credentialAfterRestart.signature.issuerKeyId).toBe('key-B');
   });
 
-  it('revoking the only active key stops all new issuance (fail-closed outage, not a bypass) until an operator activates a replacement', async () => {
+  it('revoking the only active key stops all new issuance (fail-closed outage, not a bypass) until an operator explicitly activates a replacement -- the SAME never-recreated signer picks it up immediately', async () => {
     const db = new StatefulSigningKeyDatabase();
     const store = new PostgresIssuerSigningKeyStore(db);
     const registry = new ManagedSigningKeyRegistry(store, ISSUER_ID, workDir);
     await registry.bootstrap('key-A', PROFILE, new Date(0));
     await registry.revoke('key-A', new Date(100));
-    const signer = new RotatingTrustCredentialSigner(() => registry.handles());
+    const signer = new PostgresBackedTrustCredentialSigner(store, ISSUER_ID, workDir);
     await expect(new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => new Date(200)).issue({
       business, membership, device, requestedScope: new AuthorityScope(['send_orders']), intentId: 'issue-after-revoke',
-    })).rejects.toThrow('Exactly one');
-    // Recovery: activating a replacement restores issuance immediately, no restart required.
+    })).rejects.toThrow('exactly one authoritative active key');
+    // Recovery: an explicit, privileged operator action (registry.bootstrap here plays the role of
+    // "manage-signing-keys.ts bootstrap", NOT the automatic startup decision -- see
+    // signing-key-startup.test.ts for that distinction proven through the actual startup path)
+    // restores issuance immediately -- no restart, no refresh call, same signer instance throughout.
     await registry.bootstrap('key-B', PROFILE, new Date(300));
     const credential = await new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => new Date(400)).issue({
       business, membership, device, requestedScope: new AuthorityScope(['send_orders']), intentId: 'issue-after-recovery',

@@ -69,35 +69,35 @@ describe('ManagedSigningKeyRegistry', () => {
   beforeEach(() => { workDir = mkdtempSync(join(tmpdir(), 'budcom-signing-key-registry-')); });
   afterEach(() => { rmSync(workDir, { recursive: true, force: true }); });
 
-  it('bootstrap() generates a real local key, records it in Postgres, and exposes it as the sole active handle', async () => {
+  it('bootstrap() generates a real local key and records it in Postgres as the sole active key', async () => {
     const db = new StatefulSigningKeyDatabase();
     const store = new PostgresIssuerSigningKeyStore(db);
     const registry = new ManagedSigningKeyRegistry(store, ISSUER_ID, workDir);
     await registry.bootstrap('key-1', 'P256-SHA256-v1', new Date());
-    const handles = registry.handles();
-    expect(handles).toHaveLength(1);
-    expect(handles[0]?.status).toBe('active');
+    const described = await registry.describe();
+    expect(described).toHaveLength(1);
+    expect(described[0]?.status).toBe('active');
   });
 
-  it('rotate() updates the in-memory handles immediately -- no restart required for the new key to be selectable', async () => {
+  it('rotate() updates Postgres immediately -- no registry refresh step exists or is needed for the new key to be selectable', async () => {
     const db = new StatefulSigningKeyDatabase();
     const store = new PostgresIssuerSigningKeyStore(db);
     const registry = new ManagedSigningKeyRegistry(store, ISSUER_ID, workDir);
     await registry.bootstrap('key-1', 'P256-SHA256-v1', new Date());
     await registry.rotate('key-2', 'P256-SHA256-v1', new Date());
-    const handles = registry.handles();
-    expect(handles.map((h) => h.status).sort()).toEqual(['active', 'retired']);
+    const described = await registry.describe();
+    expect(described.map((k) => k.status).sort()).toEqual(['active', 'retired']);
   });
 
-  it('revoke() updates the in-memory handles immediately -- a revoked key is no longer status active in handles()', async () => {
+  it('revoke() updates Postgres immediately -- describe() reflects it with no separate refresh call', async () => {
     const db = new StatefulSigningKeyDatabase();
     const store = new PostgresIssuerSigningKeyStore(db);
     const registry = new ManagedSigningKeyRegistry(store, ISSUER_ID, workDir);
     await registry.bootstrap('key-1', 'P256-SHA256-v1', new Date());
     await registry.revoke('key-1', new Date());
-    const handles = registry.handles();
-    expect(handles).toHaveLength(1);
-    expect(handles[0]?.status).toBe('revoked');
+    const described = await registry.describe();
+    expect(described).toHaveLength(1);
+    expect(described[0]?.status).toBe('revoked');
   });
 
   it('a safe retry with the same keyId after a failed bootstrap reuses the already-generated local key rather than regenerating it', async () => {
@@ -108,8 +108,22 @@ describe('ManagedSigningKeyRegistry', () => {
     // Second bootstrap attempt for the SAME issuer fails (an active key already exists) -- but must
     // not corrupt or replace the already-generated local key file for key-1.
     await expect(registry.bootstrap('key-1', 'P256-SHA256-v1', new Date())).rejects.toThrow();
-    await registry.refresh();
-    expect(registry.handles()).toHaveLength(1);
-    expect(registry.handles()[0]?.status).toBe('active');
+    const described = await registry.describe();
+    expect(described).toHaveLength(1);
+    expect(described[0]?.status).toBe('active');
+  });
+
+  it('this registry no longer exposes any cached signing-authority accessor -- handles()/refresh() do not exist (round 7 Codex Critical Fix 1)', () => {
+    const registry = new ManagedSigningKeyRegistry(new PostgresIssuerSigningKeyStore(new StatefulSigningKeyDatabase()), ISSUER_ID, workDir);
+    expect((registry as unknown as { handles?: unknown }).handles).toBeUndefined();
+    expect((registry as unknown as { refresh?: unknown }).refresh).toBeUndefined();
+  });
+
+  it('key ids containing path traversal or path separators are rejected before any filesystem access', async () => {
+    const db = new StatefulSigningKeyDatabase();
+    const registry = new ManagedSigningKeyRegistry(new PostgresIssuerSigningKeyStore(db), ISSUER_ID, workDir);
+    for (const unsafe of ['../escape', 'a/b', 'a\\b', '..', '.', '']) {
+      await expect(registry.bootstrap(unsafe, 'P256-SHA256-v1', new Date())).rejects.toThrow(/Invalid signing key id/);
+    }
   });
 });

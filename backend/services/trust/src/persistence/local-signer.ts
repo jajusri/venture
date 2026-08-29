@@ -37,14 +37,29 @@ export class LocalFileTrustCredentialSigner implements TrustCredentialSigner {
   private readonly publicKeyPem: string;
   private readonly identity: TrustSignerIdentity;
 
-  constructor(config: LocalTrustSignerConfig) {
+  /**
+   * `options.allowGenerate` (default `true`, unchanged for every pre-existing caller) governs what
+   * happens when `config.keyPath` does not exist. Round 7 (Codex Critical Fix on missing/corrupt
+   * active PEM): the real issuance path (`PostgresBackedTrustCredentialSigner`) constructs with
+   * `allowGenerate: false` for whichever key_id PostgreSQL currently reports active -- if that
+   * key's local file is missing, silently generating a replacement would desynchronize the signer
+   * from the public key already published at the verification-keys endpoint (a fresh keypair's
+   * public half would never match what was recorded at bootstrap/rotation time), so issuance must
+   * fail closed instead. Administrative key-creation call sites (`ManagedSigningKeyRegistry.bootstrap`/
+   * `.rotate`, which are creating a brand-new key_id that has never existed before) keep the default
+   * `true` -- generating a new key IS their entire purpose.
+   */
+  constructor(config: LocalTrustSignerConfig, options: { allowGenerate?: boolean } = {}) {
+    const allowGenerate = options.allowGenerate ?? true;
     if (existsSync(config.keyPath)) {
       this.privateKeyPem = readFileSync(config.keyPath, 'utf8');
-    } else {
+    } else if (allowGenerate) {
       const keyPair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
       this.privateKeyPem = keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
       mkdirSync(dirname(config.keyPath), { recursive: true });
       writeFileSync(config.keyPath, this.privateKeyPem, { mode: 0o600 });
+    } else {
+      throw new Error(`Issuer signing key file not found for key ${config.issuerKeyId}: ${config.keyPath}`);
     }
     this.publicKeyPem = createPublicKey(createPrivateKey(this.privateKeyPem)).export({ type: 'spki', format: 'pem' }).toString();
     this.identity = { issuerId: config.issuerId, issuerKeyId: config.issuerKeyId, profile: PROFILE };
