@@ -59,6 +59,26 @@ export function toDevice(row: DeviceRow): RegisteredBusinessDevice {
   };
 }
 
+/**
+ * Every authority-significant field of the REQUIRED initial Membership that a Business-creation
+ * winner must match for a concurrent duplicate create to count as idempotent success (Codex
+ * re-certification BLOCKER 3) -- business creation authority is not complete merely because the
+ * Business row exists; the initial Membership is part of the same atomic creation invariant.
+ * `membershipId` is deliberately excluded: it is the lookup key itself (deterministically derived
+ * from the same `(actorId, intentId)` this equivalence check is guarding), guaranteed equal once
+ * both rows share that key.
+ */
+export function isEquivalentInitialMembership(a: BusinessMembership, b: BusinessMembership): boolean {
+  return (
+    a.businessId === b.businessId &&
+    a.actorId === b.actorId &&
+    a.status === b.status &&
+    a.authorityEpoch.value === b.authorityEpoch.value &&
+    a.authorityScope.capabilities.size === b.authorityScope.capabilities.size &&
+    [...a.authorityScope.capabilities].every((capability) => b.authorityScope.permits(capability))
+  );
+}
+
 export class PostgresBusinessBootstrapStore implements BusinessBootstrapStore {
   constructor(private readonly database: Database) {}
 
@@ -98,13 +118,20 @@ export class PostgresBusinessBootstrapStore implements BusinessBootstrapStore {
       return businessInsert.rowCount > 0;
     });
     if (inserted) return result;
-    // A concurrent caller with the identical (actorId, intentId) already committed this exact
-    // deterministic business/membership pair between this call's own findByCreationIntent check and
-    // this insert (Codex Postgres finding: a raced duplicate create must not surface a raw
-    // unique-violation to the caller) -- re-read what actually landed instead of trusting the
-    // in-flight `result` this call was about to insert.
+    // A concurrent caller with the identical (actorId, intentId) already committed a business row at
+    // this exact deterministic id between this call's own findByCreationIntent check and this insert
+    // (Codex Postgres finding: a raced duplicate create must not surface a raw unique-violation to
+    // the caller) -- re-read what actually landed instead of trusting the in-flight `result` this
+    // call was about to insert. But the Business row existing is not enough (Codex re-certification
+    // BLOCKER 3): the REQUIRED initial Membership is part of the same atomic creation invariant, and
+    // its own `ON CONFLICT DO NOTHING` insert above could independently have lost a race against a
+    // membership that does not actually match what this call intended to create. Only a winner whose
+    // membership is semantically EQUIVALENT counts as idempotent success.
     const existing = await this.findByCreationIntent(result.membership.actorId, intentId);
     if (!existing) throw new Error('Concurrent business creation left an inconsistent row after conflict');
+    if (!isEquivalentInitialMembership(existing.membership, result.membership)) {
+      throw new Error('Conflicting business creation: concurrent winner does not match the requested initial membership');
+    }
     return existing;
   }
 }
@@ -128,6 +155,26 @@ export class PostgresMembershipApprovalStore implements MembershipApprovalStore 
   }
 }
 
+/**
+ * Every authority-significant field that distinguishes one device REGISTRATION from another for the
+ * SAME (business_id, device_id, device_key_version) primary key -- used by
+ * `PostgresDeviceRegistrationStore.save()`'s concurrent-winner check below (Codex re-certification
+ * BLOCKER 2). `businessId`/`deviceId`/`deviceKeyVersion` are deliberately excluded: they are the
+ * lookup key itself, guaranteed equal by construction once both rows share that key. Mirrors --
+ * without importing across the application/persistence boundary -- the same field set
+ * `RegisterBusinessDevice.execute()` already compares in its own find()-then-save() pre-check.
+ */
+export function isEquivalentDeviceRegistration(a: RegisteredBusinessDevice, b: RegisteredBusinessDevice): boolean {
+  return (
+    a.actorId === b.actorId &&
+    a.membershipId === b.membershipId &&
+    a.deviceKeyId === b.deviceKeyId &&
+    a.publicKeyFingerprint === b.publicKeyFingerprint &&
+    Buffer.from(a.publicKey).equals(Buffer.from(b.publicKey)) &&
+    a.status === b.status
+  );
+}
+
 export class PostgresDeviceRegistrationStore implements DeviceRegistrationStore {
   constructor(private readonly database: Database) {}
 
@@ -148,13 +195,17 @@ export class PostgresDeviceRegistrationStore implements DeviceRegistrationStore 
         Buffer.from(device.publicKey), device.publicKeyFingerprint, device.status, device.authorityEpoch.value, device.createdAt],
     );
     if (inserted.rowCount > 0) return device;
-    // A concurrent duplicate registration for the identical (business_id, device_id,
-    // device_key_version) primary key already committed between `RegisterBusinessDevice.execute()`'s
-    // own find()-then-save() check and this insert (Codex Postgres finding). Re-read whichever row
-    // actually won instead of throwing a raw unique-violation -- a genuinely-identical concurrent
-    // retry stays idempotent at the store layer.
+    // A concurrent registration for the identical (business_id, device_id, device_key_version)
+    // primary key already committed between `RegisterBusinessDevice.execute()`'s own
+    // find()-then-save() check and this insert. Re-read whichever row actually won -- but Codex's
+    // re-certification BLOCKER 2 is exactly that the winner was previously returned as-is, with no
+    // proof it was actually the SAME registration rather than some other concurrent (and possibly
+    // adversarial) one that happened to target the same key. Only a winner that is semantically
+    // EQUIVALENT to what this call attempted may be treated as idempotent success; anything else is
+    // a deterministic domain conflict, not a raw unique-violation and not a silently-accepted swap.
     const existing = await this.find(device.businessId, device.deviceId, device.deviceKeyVersion);
     if (!existing) throw new Error('Concurrent device registration left an inconsistent row after conflict');
+    if (!isEquivalentDeviceRegistration(existing, device)) throw new Error('Conflicting device key registration');
     return existing;
   }
 }
