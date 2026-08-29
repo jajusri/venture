@@ -19,6 +19,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +41,7 @@ import com.journeyapps.barcodescanner.ScanOptions
 @Composable
 fun SecurePairingRoute(
     onPairingCompleted: () -> Unit = {},
+    onOpenStatus: () -> Unit = {},
     viewModel: SecurePairingViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -72,7 +74,7 @@ fun SecurePairingRoute(
         }
     }
 
-    SecurePairingScreen(state = state, onEvent = viewModel::onEvent)
+    SecurePairingScreen(state = state, onEvent = viewModel::onEvent, onOpenStatus = onOpenStatus)
 }
 
 private fun qrScanOptions(): ScanOptions = ScanOptions()
@@ -86,10 +88,27 @@ fun SecurePairingScreen(
     state: SecurePairingUiState,
     onEvent: (SecurePairingEvent) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenStatus: () -> Unit = {},
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize().testTag("secure_pairing_screen"),
-        topBar = { TopAppBar(title = { Text("Secure Pairing") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Secure Pairing") },
+                actions = {
+                    // Connector pairing is one capability among many -- it must not block access to
+                    // unrelated BUDCOM functionality (Trust/Relay status, commercial areas whose own
+                    // prerequisites are already satisfied). Shown only while idle (the "stuck, no
+                    // escape" state a never-paired device lands on) so it never interrupts an
+                    // in-progress scan/confirm/redeem/verify step.
+                    if (state.phase == SecurePairingPhase.Idle) {
+                        TextButton(onClick = onOpenStatus, modifier = Modifier.testTag("secure_pairing_view_status_button")) {
+                            Text("View App Status")
+                        }
+                    }
+                },
+            )
+        },
     ) { innerPadding ->
         Column(
             modifier = Modifier

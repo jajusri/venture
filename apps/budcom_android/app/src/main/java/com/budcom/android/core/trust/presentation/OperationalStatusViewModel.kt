@@ -2,16 +2,21 @@ package com.budcom.android.core.trust.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.budcom.android.core.pairing.data.local.SecureCredentialVault
+import com.budcom.android.core.pairing.data.local.SecureCredentialVaultReadOutcome
+import com.budcom.android.core.pairing.domain.model.SecurePairingCredentialState
 import com.budcom.android.core.relay.data.remote.RelayRuntimeEndpointProvider
 import com.budcom.android.core.trust.data.remote.TrustEndpointProvider
 import com.budcom.android.core.trust.domain.TrustCredentialReadOutcome
 import com.budcom.android.core.trust.domain.TrustCredentialStore
+import com.budcom.android.feature.company.data.repository.SelectedCompanyStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -31,11 +36,25 @@ sealed interface EnrollmentUiStatus {
     data object Unreadable : EnrollmentUiStatus
 }
 
+/** Connector pairing is a distinct capability from Trust enrollment (see the round's own "post-
+ * certification navigation gap" directive) -- a user must be able to see one without it implying
+ * anything about the other. Mirrors [com.budcom.android.core.pairing.domain.model.SecurePairingCredentialState]
+ * one for one, plus the vault's own [SecureCredentialVaultReadOutcome.NoRecord]/[SecureCredentialVaultReadOutcome.Unreadable]. */
+sealed interface ConnectorPairingUiStatus {
+    data object NotPaired : ConnectorPairingUiStatus
+    data object PendingVerification : ConnectorPairingUiStatus
+    data object Paired : ConnectorPairingUiStatus
+    data object RePairRequired : ConnectorPairingUiStatus
+    data object Unreadable : ConnectorPairingUiStatus
+}
+
 data class OperationalStatusUiState(
     val enrollment: EnrollmentUiStatus = EnrollmentUiStatus.NotEnrolled,
     val trustEndpointConfigured: Boolean = false,
     val relayEndpointConfigured: Boolean = false,
     val statusMessage: String = INITIAL_MESSAGE,
+    val connectorPairing: ConnectorPairingUiStatus = ConnectorPairingUiStatus.NotPaired,
+    val selectedCompanyName: String? = null,
 ) {
     companion object { const val INITIAL_MESSAGE = "Checking enrollment status..." }
 }
@@ -49,11 +68,22 @@ fun statusMessageFor(enrollment: EnrollmentUiStatus, trustEndpointConfigured: Bo
     else -> "This device is enrolled and ready."
 }
 
+/** Human-safe, in the same style as [statusMessageFor] -- never a raw record/state name. */
+fun connectorPairingMessageFor(status: ConnectorPairingUiStatus): String = when (status) {
+    ConnectorPairingUiStatus.NotPaired -> "Not paired with a Desktop Connector."
+    ConnectorPairingUiStatus.PendingVerification -> "Pairing started but not yet verified."
+    ConnectorPairingUiStatus.Paired -> "Paired with a Desktop Connector."
+    ConnectorPairingUiStatus.RePairRequired -> "Connector pairing needs to be redone."
+    ConnectorPairingUiStatus.Unreadable -> "Pairing status could not be read. Please re-pair."
+}
+
 @HiltViewModel
 class OperationalStatusViewModel @Inject constructor(
     private val credentialStore: TrustCredentialStore,
     private val trustEndpointProvider: TrustEndpointProvider,
     private val relayEndpointProvider: RelayRuntimeEndpointProvider,
+    private val secureCredentialVault: SecureCredentialVault,
+    private val selectedCompanyStore: SelectedCompanyStore,
 ) : ViewModel() {
     private val nowEpochMillis: () -> Long = { System.currentTimeMillis() }
     private val _uiState = MutableStateFlow(OperationalStatusUiState())
@@ -61,8 +91,12 @@ class OperationalStatusViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(trustEndpointProvider.observe(), relayEndpointProvider.observe()) { trustUrl, relayUrl -> (trustUrl != null) to (relayUrl != null) }
-                .collectLatest { (trustConfigured, relayConfigured) -> refresh(trustConfigured, relayConfigured) }
+            combine(
+                trustEndpointProvider.observe(),
+                relayEndpointProvider.observe(),
+                selectedCompanyStore.observeSelectedCompany(),
+            ) { trustUrl, relayUrl, company -> Triple(trustUrl != null, relayUrl != null, company?.name) }
+                .collectLatest { (trustConfigured, relayConfigured, companyName) -> refresh(trustConfigured, relayConfigured, companyName) }
         }
     }
 
@@ -71,10 +105,16 @@ class OperationalStatusViewModel @Inject constructor(
      * status view reflects it immediately, since [TrustCredentialStore] itself has no observable
      * stream of its own for this ViewModel to react to automatically. */
     fun refreshNow() {
-        viewModelScope.launch { refresh(trustEndpointProvider.snapshot() != null, relayEndpointProvider.snapshot() != null) }
+        viewModelScope.launch {
+            refresh(
+                trustEndpointProvider.snapshot() != null,
+                relayEndpointProvider.snapshot() != null,
+                selectedCompanyStore.observeSelectedCompany().first()?.name,
+            )
+        }
     }
 
-    private suspend fun refresh(trustConfigured: Boolean, relayConfigured: Boolean) {
+    private suspend fun refresh(trustConfigured: Boolean, relayConfigured: Boolean, selectedCompanyName: String?) {
         val enrollment = when (val outcome = credentialStore.readOutcome()) {
             TrustCredentialReadOutcome.NoRecord -> EnrollmentUiStatus.NotEnrolled
             TrustCredentialReadOutcome.Unreadable -> EnrollmentUiStatus.Unreadable
@@ -84,9 +124,19 @@ class OperationalStatusViewModel @Inject constructor(
                 EnrollmentUiStatus.Enrolled(outcome.credential.businessId)
             }
         }
+        val connectorPairing = when (val outcome = secureCredentialVault.readOutcome()) {
+            SecureCredentialVaultReadOutcome.NoRecord -> ConnectorPairingUiStatus.NotPaired
+            SecureCredentialVaultReadOutcome.Unreadable -> ConnectorPairingUiStatus.Unreadable
+            is SecureCredentialVaultReadOutcome.Present -> when (outcome.record.state) {
+                SecurePairingCredentialState.PENDING_VERIFICATION -> ConnectorPairingUiStatus.PendingVerification
+                SecurePairingCredentialState.ACTIVE -> ConnectorPairingUiStatus.Paired
+                SecurePairingCredentialState.RE_PAIR_REQUIRED -> ConnectorPairingUiStatus.RePairRequired
+            }
+        }
         _uiState.value = OperationalStatusUiState(
             enrollment = enrollment, trustEndpointConfigured = trustConfigured, relayEndpointConfigured = relayConfigured,
             statusMessage = statusMessageFor(enrollment, trustConfigured, relayConfigured),
+            connectorPairing = connectorPairing, selectedCompanyName = selectedCompanyName,
         )
     }
 }

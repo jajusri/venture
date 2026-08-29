@@ -99,6 +99,14 @@ fun BudcomNavHost(
                         popUpTo(navController.graph.startDestinationId) { inclusive = true }
                     }
                 },
+                onOpenStatus = {
+                    // Deliberately no popUpTo: pairing is not abandoned, just set aside -- back
+                    // navigation from Dashboard returns here so pairing remains resumable. Safe to
+                    // compose Dashboard here (unlike at NavHost start) because pairing classification
+                    // has already resolved by the time this screen -- and this explicit user tap --
+                    // exist at all.
+                    navController.navigate(Routes.HOME)
+                },
             )
         }
         composable(route = Routes.HOME) {

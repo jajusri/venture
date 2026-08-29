@@ -69,6 +69,27 @@ fun OperationalStatusScreen(state: OperationalStatusUiState, onBack: () -> Unit,
                     }
                 }
             }
+            Card(modifier = Modifier.fillMaxWidth().testTag("trust_status_connector_pairing")) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "Desktop Connector", style = MaterialTheme.typography.titleSmall)
+                    // A separate capability from Trust enrollment above -- never implied by it.
+                    Text(
+                        text = connectorPairingMessageFor(state.connectorPairing),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag("trust_status_connector_pairing_message"),
+                    )
+                }
+            }
+            Card(modifier = Modifier.fillMaxWidth().testTag("trust_status_company")) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(text = "Business Data", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = state.selectedCompanyName?.let { "Selected company: $it" } ?: "No company selected yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.testTag("trust_status_company_message"),
+                    )
+                }
+            }
         }
     }
 }

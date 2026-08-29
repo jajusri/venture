@@ -420,6 +420,82 @@ class TransactionRepositoryImplTest {
     }
 
     @Test
+    fun `Jules M-1 evidence -- order and archived revision history remain readable, and a new action succeeds, using fresh v2 authority after a device key rotation`() = runTest(dispatcher) {
+        // TransactionRepositoryImpl has no VartalapDeviceKeyStore dependency at all (see its own
+        // constructor) -- device-key material belongs entirely to the transport/enrollment layer,
+        // never to local read/write of already-materialized commercial data. This test makes that
+        // structural guarantee an explicit, runtime-verified fact for a genuine rotation scenario:
+        // order + revision history created and archived entirely under "device key v1" authority, then
+        // read back AND acted upon using fresh "device key v2" authority -- same business/actor/device
+        // identity throughout (a real rotation never changes those), only the presented key version
+        // differs. Classified by Codex as an evidence gap only, not a confirmed defect; this closes it.
+        val repo = repository()
+        seedBuyerOrderWithLines(CanonicalOrderState.Sent)
+        seedSellerReceivedOrder()
+        recipientInboxDao.entries += inboxFixture()
+        seenOpenEvent().let { repo.recordOrderSeenFromOpenEvent("seller-co", "env-1", it, seenAuthority(it)) }
+
+        val v1Revise = com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest(
+            com.budcom.android.feature.transaction.domain.model.CommercialAction.SellerRevise,
+            "seller-co", "actor-s", "device-s", 1, "order-1", 1, "order-1", 1, "seller-co", "buyer-co", 500,
+        )
+        val sellerRevision = repo.proposeOrderRevision(
+            "seller-co", "env-1", sellerBaselineOrder(), revisionLines("12"), "Need 12 units", v1Revise, ts(500), "revision:order-1:v2",
+        )!!
+        assertEquals(2, sellerRevision.version)
+        val revisionEnvelope = repo.enqueueOrderDelivery(sellerRevision, ts(510))
+        repo.markRevisionSent("seller-co", "order-1", revisionEnvelope)!!
+        val revisionSnapshot = OrderVersionSnapshot.fromCanonicalOrder(sellerRevision, "buyer-co", "env-2")
+        val revisionItem = RelayMailboxDeliveryItem(
+            "env-2", 2, "CANONICAL_ORDER", "order-1", 2, "seller-co", "actor-s", "device-s",
+            "buyer-co", "orders", "relay_accepted", 520, "accept-2", byteArrayOf(1),
+            revisionSnapshot.deterministicEncoding(), "application/vnd.budcom.order-snapshot+json", 3,
+        )
+        assertTrue(repo.ingestReceivedOrderVersion("buyer-co", revisionItem, revisionSnapshot, ts(520)))
+
+        // Everything above happened entirely under v1 authority. Reading the current order AND its
+        // archived v1 line history back requires no authority/key parameter of any kind -- these
+        // methods do not even accept one.
+        val currentOrder = repo.findCanonicalOrderById("buyer-co", "order-1")!!
+        assertEquals(2, currentOrder.version)
+        val archivedV1 = repo.findArchivedOrderVersion("buyer-co", "order-1", 1)!!
+        assertEquals("10", archivedV1.lines.single().quantity)
+
+        // Buyer sees the revision, then accepts it presenting FRESH "device key v2" authority (same
+        // business/actor/device identity as every v1 call above -- only expectedDeviceKeyVersion
+        // differs, exactly matching what a real rotation changes). This must succeed against an order
+        // whose creation and revision were both produced entirely under v1.
+        val buyerOpen = OrderStructuredOpenEvent(
+            eventId = "seen-rev-1", idempotencyKey = "seen:order-1:v2:buyer-co",
+            orderId = "order-1", orderVersion = 2, objectType = "CANONICAL_ORDER",
+            viewerBusinessId = "buyer-co", viewerActorId = "actor-b", viewerDeviceId = "device-b",
+            senderBusinessId = "seller-co", openedAt = ts(530),
+        )
+        repo.recordOrderSeenFromOpenEvent("buyer-co", "env-2", buyerOpen, seenAuthority(buyerOpen))
+        repo.applyOrderSeenEvidence("buyer-co", repo.findOrderSeenEvidence("buyer-co", "order-1", 2)!!)
+
+        val v2Accept = com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityRequest(
+            com.budcom.android.feature.transaction.domain.model.CommercialAction.BuyerAcceptRevision,
+            "buyer-co", "actor-b", "device-b", 2, "order-1", 2, "order-1", 2, "seller-co", "buyer-co", 600,
+        )
+        val acceptedEvent = repo.recordOrderRevisionAcceptFromBuyerAction(
+            "buyer-co", "env-2", v2Accept, "accept-2", "accept:order-1:v2:buyer-co", ts(600),
+        )!!
+        val acceptEvidence = OrderRevisionAcceptEvidence(
+            eventId = acceptedEvent.eventId, orderId = "order-1", orderVersion = 2,
+            acceptingBusinessId = "buyer-co", acceptingActorId = "actor-b", acceptingDeviceId = "device-b",
+            counterpartyBusinessId = "seller-co", authorityEpoch = 1, acceptedAt = ts(600),
+        )
+        val confirmed = repo.applyOrderRevisionAcceptEvidence("buyer-co", acceptEvidence)!!
+
+        // Genuinely accepted (not silently rejected/no-op), and the v1-archived history is still
+        // exactly what it was -- a rotation never rewrites or invalidates prior history.
+        assertEquals(CanonicalOrderState.Confirmed, confirmed.state)
+        assertEquals("12", confirmed.lines.single().quantity)
+        assertEquals("10", repo.findArchivedOrderVersion("buyer-co", "order-1", 1)!!.lines.single().quantity)
+    }
+
+    @Test
     fun `hidden price cannot become a canonical draft order`() = runTest(dispatcher) {
         val repo = repository()
         val draft = TransactionDraftOperations.addOrIncrementLine(
