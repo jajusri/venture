@@ -6,6 +6,7 @@ import { BusinessDeviceCredentialIssuer } from './application/issue-credential.j
 import { InMemoryCredentialIssuanceStore } from './persistence/in-memory-credential-store.js';
 import { LocalFileTrustCredentialSigner } from './persistence/local-signer.js';
 import { PostgresEnrollmentGrantStore } from './persistence/postgres-enrollment-grant-store.js';
+import { PostgresTrustAuthoritySnapshotReader } from './persistence/postgres-authority-snapshot-reader.js';
 import { VerificationKeyDirectory } from './application/verification-keys.js';
 
 const config = readTrustServiceConfig();
@@ -23,7 +24,8 @@ const enrollmentGrantStore = new PostgresEnrollmentGrantStore(database);
 // and `consume-enrollment-grant.ts`'s KNOWN LIMITATION note) -- no `trust_issued_credential` table
 // exists yet in any code path, not one newly introduced for enrollment.
 const credentialIssuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 60 * 60 * 1000);
-const app = buildTrustService({ verificationKeys, enrollment: { store: enrollmentGrantStore, credentialIssuer } });
+const authoritySnapshots = new PostgresTrustAuthoritySnapshotReader(database);
+const app = buildTrustService({ verificationKeys, enrollment: { store: enrollmentGrantStore, credentialIssuer }, authoritySnapshots });
 await runMigrations(database);
 app.addHook('onClose', async () => database.close());
 app.log.info({ issuerId: config.issuerId, issuerKeyId: config.issuerKeyId }, 'trust_service_issuer_ready');

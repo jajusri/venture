@@ -1,9 +1,11 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ConsumeDeviceEnrollmentGrant, DeviceEnrollmentRejected, type DeviceEnrollmentRejectionReason, type EnrollmentGrantConsumptionStore } from './application/consume-enrollment-grant.js';
 import type { BusinessDeviceCredentialIssuer } from './application/issue-credential.js';
+import { ReadCurrentAuthorityEpoch } from './application/read-authority-epoch.js';
 import { TrustServiceError, type ServiceErrorBody } from './errors.js';
 import { mapDeviceEnrollmentRequestBody, type DeviceEnrollmentRequestBody } from './http/map-enrollment.js';
 import type { VerificationKeyDirectory } from './application/verification-keys.js';
+import type { TrustAuthoritySnapshotReader } from '../../relay/src/application/pilot-authority-verifier.js';
 
 const ENROLLMENT_REJECTION_STATUS: Record<DeviceEnrollmentRejectionReason, number> = {
   grant_not_found: 404, grant_already_consumed: 409, grant_expired: 410, grant_secret_mismatch: 403,
@@ -13,6 +15,7 @@ const ENROLLMENT_REJECTION_STATUS: Record<DeviceEnrollmentRejectionReason, numbe
 export function buildTrustService(options: {
   verificationKeys?: VerificationKeyDirectory;
   enrollment?: { store: EnrollmentGrantConsumptionStore; credentialIssuer: BusinessDeviceCredentialIssuer };
+  authoritySnapshots?: TrustAuthoritySnapshotReader;
   now?: () => Date;
 } = {}): FastifyInstance {
   const app = Fastify({ logger: true });
@@ -22,6 +25,24 @@ export function buildTrustService(options: {
     void reply.header('cache-control', 'public, max-age=300, stale-if-error=3600');
     return { version: 1, issuerId: request.params.issuerId, keys: keys.map((key) => ({ ...key, validFrom: key.validFrom.toISOString(), validUntil: key.validUntil?.toISOString() })) };
   });
+  if (options.authoritySnapshots) {
+    const readEpoch = new ReadCurrentAuthorityEpoch(options.authoritySnapshots);
+    // Public, unauthenticated read -- same sensitivity class as verification-keys above (a bare
+    // monotonic counter, never membership/device content). Lets a device detect its OWN cached
+    // credential has gone stale (authority changed since issuance) without re-deriving Relay's own
+    // snapshot logic -- see `read-authority-epoch.ts`'s doc comment for why this reuses
+    // `TrustAuthoritySnapshotReader` rather than a second read path.
+    app.get<{ Querystring: { businessId?: string; membershipId?: string; deviceId?: string } }>('/v1/trust/authority/epoch', async (request, reply) => {
+      const { businessId, membershipId, deviceId } = request.query;
+      if (!businessId?.trim() || !membershipId?.trim() || !deviceId?.trim()) {
+        throw new TrustServiceError('invalid_authority_epoch_request', 'businessId, membershipId, and deviceId are all required', 400);
+      }
+      const epoch = await readEpoch.execute({ businessId, membershipId, deviceId });
+      if (epoch === null) throw new TrustServiceError('authority_not_found', 'No active authority found for the given business/membership/device', 404);
+      void reply.header('cache-control', 'no-store');
+      return { businessId, membershipId, deviceId, authorityEpoch: epoch };
+    });
+  }
   if (options.enrollment) {
     const consume = new ConsumeDeviceEnrollmentGrant(options.enrollment.store, options.enrollment.credentialIssuer, options.now);
     // Never accepts caller-supplied business/actor/membership authority (see `ConsumeDeviceEnrollmentGrant`'s
