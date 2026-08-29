@@ -120,6 +120,33 @@ export const migrations: readonly Migration[] = [{
   );
   CREATE INDEX trust_enrollment_grant_membership_idx ON trust_enrollment_grant(membership_id);
   CREATE INDEX trust_enrollment_grant_expiry_idx ON trust_enrollment_grant(expires_at) WHERE consumed_at IS NULL;`,
+}, {
+  version: 8,
+  name: 'trust_issuer_signing_key',
+  // Small, additive (operational-mobile-path round 6, 2026-08-29): server-authoritative issuer
+  // signing-key LIFECYCLE metadata only -- never the private key material itself, which stays in a
+  // local file per key (see `persistence/local-signer.ts`; unchanged pattern, no HSM/KMS available
+  // in this environment). This table is what makes key status genuinely server-authoritative
+  // (round 6 Gate 1 answer 6): Postgres is the sole source of truth for "which key is currently
+  // active/retired/revoked," the local file is merely storage for that key's own immutable bytes.
+  //
+  // The partial unique index below is the entire enforcement mechanism for "exactly one active key
+  // per issuer" (key-lifecycle invariant 1) -- a second concurrent attempt to mark a row 'active'
+  // for the same issuer_id fails atomically at the database level, not via application-level
+  // locking alone. No existing table or column is altered or removed.
+  sql: `CREATE TABLE trust_issuer_signing_key (
+    issuer_id TEXT NOT NULL,
+    key_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('active', 'retired', 'revoked')),
+    profile TEXT NOT NULL,
+    public_key_pem TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    activated_at TIMESTAMPTZ,
+    retired_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ,
+    PRIMARY KEY (issuer_id, key_id)
+  );
+  CREATE UNIQUE INDEX trust_issuer_signing_key_one_active_idx ON trust_issuer_signing_key(issuer_id) WHERE status = 'active';`,
 }];
 
 export async function runMigrations(database: Database): Promise<void> {

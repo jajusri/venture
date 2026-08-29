@@ -23,6 +23,6 @@ describe('PostgreSQL persistence foundation', () => {
     await runMigrations(database);
     expect(database.calls.some((call) => call.sql.includes('CREATE TABLE IF NOT EXISTS'))).toBe(true);
     const registryWrites = database.calls.filter((call) => call.sql.startsWith('INSERT INTO trust_schema_migration'));
-    expect(registryWrites.map((call) => call.parameters)).toEqual([[1, 'migration_registry'], [2, 'trust_authority_state'], [3, 'relay_durable_mailbox'], [4, 'relay_acceptance_evidence'], [5, 'relay_authenticated_commercial_content'], [6, 'relay_authenticated_request_replay_guard'], [7, 'trust_enrollment_grant']]);
+    expect(registryWrites.map((call) => call.parameters)).toEqual([[1, 'migration_registry'], [2, 'trust_authority_state'], [3, 'relay_durable_mailbox'], [4, 'relay_acceptance_evidence'], [5, 'relay_authenticated_commercial_content'], [6, 'relay_authenticated_request_replay_guard'], [7, 'trust_enrollment_grant'], [8, 'trust_issuer_signing_key']]);
   });
 });

@@ -3,6 +3,10 @@ export interface TrustServiceConfig {
   /** Controlled-pilot local signing identity -- see `persistence/local-signer.ts`'s own doc comment
    * for exactly what this is (and is not) suitable for. */
   readonly issuerId: string; readonly issuerKeyId: string; readonly issuerKeyPath: string;
+  /** Directory holding one private-key PEM file per managed signing key (round 6 key lifecycle --
+   * see `persistence/managed-signing-key-registry.ts`), named by key_id. Distinct from the legacy
+   * single `issuerKeyPath` above, which only ever addressed one fixed key. */
+  readonly issuerKeyDir: string;
 }
 export function readTrustServiceConfig(env: NodeJS.ProcessEnv = process.env): TrustServiceConfig {
   const port = Number(env.BUDCOM_TRUST_PORT ?? '8080');
@@ -14,5 +18,6 @@ export function readTrustServiceConfig(env: NodeJS.ProcessEnv = process.env): Tr
   const issuerId = env.BUDCOM_TRUST_ISSUER_ID ?? 'budcom-trust-local-pilot';
   const issuerKeyId = env.BUDCOM_TRUST_ISSUER_KEY_ID ?? 'local-pilot-key-1';
   const issuerKeyPath = env.BUDCOM_TRUST_ISSUER_KEY_PATH ?? '.local/trust-issuer-key.pem';
-  return { host: env.BUDCOM_TRUST_HOST ?? '127.0.0.1', port, databaseUrl, databasePoolMax, issuerId, issuerKeyId, issuerKeyPath };
+  const issuerKeyDir = env.BUDCOM_TRUST_ISSUER_KEY_DIR ?? '.local/trust-issuer-keys';
+  return { host: env.BUDCOM_TRUST_HOST ?? '127.0.0.1', port, databaseUrl, databasePoolMax, issuerId, issuerKeyId, issuerKeyPath, issuerKeyDir };
 }
