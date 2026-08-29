@@ -120,5 +120,12 @@ export function validateRelaySubmission(value: RelaySubmission): void {
 }
 
 export const ORDER_SNAPSHOT_CONTENT_TYPE = 'application/vnd.budcom.order-snapshot+json';
-export const ORDER_SNAPSHOT_CONTENT_VERSION = 2;
+/** Current production commercial wire version (Codex-confirmed 2026-08-29): Android's
+ * `OrderVersionSnapshot.CURRENT_CONTRACT_VERSION` is 3 and carries explicit `buyerBusinessId`/
+ * `sellerBusinessId` fields absent from v2. Relay treats this content as opaque bytes-plus-metadata
+ * (it never parses/reconstructs the canonical object -- see this file's own top doc comment), so
+ * bumping this constant does not require Relay to understand buyer/seller roles; it only changes
+ * which version this gate accepts as current. v2 is deliberately NOT accepted here anymore -- see
+ * `relay-domain.test.ts`'s explicit rejection tests. */
+export const ORDER_SNAPSHOT_CONTENT_VERSION = 3;
 export const MAX_COMMERCIAL_CONTENT_BYTES = 24_576;

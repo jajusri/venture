@@ -38,7 +38,7 @@ const strictMailboxVerifier: RelayMailboxVerifier = { verify: () => Promise.reso
 const strictSubmissionVerifier: RelaySubmissionVerifier = { verify: () => Promise.resolve({
   protocolVersion: 1, envelopeId: 'env-1', senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
   recipientBusinessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId'), envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
-  commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2 }) };
+  commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3 }) };
 const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipientBusinessId, recipientActorId: value.recipientActorId,
   recipientDeviceId: value.recipientDeviceId, credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
@@ -46,7 +46,7 @@ const body = {
   protocolVersion: 1, envelopeId: 'env-1', idempotencyKey: 'intent-1', objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
   authenticatedEnvelope: Buffer.from([4, 5]).toString('base64'), commercialContent: '{}',
-  commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2, submittedAt: new Date(1).toISOString(),
+  commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3, submittedAt: new Date(1).toISOString(),
 };
 const apps: ReturnType<typeof buildRelayService>[] = [];
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
@@ -65,7 +65,7 @@ describe('relay security red team', () => {
       repository: new MemoryRepository(),
       verifier: { verify: async () => ({ protocolVersion: 1, envelopeId: 'env-1', senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
         recipientBusinessId: 'business-b', mailboxId: 'orders', envelopeIntegrityValid: true, credentialValid: false, authorityScope: new Set(['send_orders']),
-        commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2 }) },
+        commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3 }) },
       mailboxVerifier: strictMailboxVerifier, acknowledgementVerifier, issuer: issuer(),
     }); apps.push(forgedVerifierApp);
     expect((await forgedVerifierApp.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: body })).statusCode).toBe(403);

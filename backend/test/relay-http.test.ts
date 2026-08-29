@@ -43,7 +43,7 @@ const body = {
   protocolVersion: 1, envelopeId: 'env-1', idempotencyKey: 'intent-1', objectType: 'ORDER', objectId: 'order-1', objectVersion: 3,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
   authenticatedEnvelope: Buffer.from([4, 5]).toString('base64'), commercialContent: '{}',
-  commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2, submittedAt: new Date(1).toISOString(),
+  commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3, submittedAt: new Date(1).toISOString(),
 };
 const apps: ReturnType<typeof buildRelayService>[] = [];
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
@@ -85,7 +85,7 @@ describe('relay HTTP submission', () => {
       objectVersion: 3, senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
       status: 'relay_accepted', acceptedAt: new Date(10), acceptanceId: relayIdentifier('accept-1', 'RelayAcceptanceId'),
       authenticatedEnvelope: new Uint8Array([4, 5]),
-      commercialContent: '{"opaque":true}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+      commercialContent: '{"opaque":true}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
     }];
     const app = buildRelayService({ repository, verifier, mailboxVerifier, acknowledgementVerifier, issuer: issuer() }); apps.push(app);
     const response = await app.inject({

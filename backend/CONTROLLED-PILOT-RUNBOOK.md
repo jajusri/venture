@@ -106,11 +106,16 @@ full detail:
 3. **Relay base URL is build-config-only** (`BuildConfig.RELAY_DEFAULT_BASE_URL`, empty in every
    variant today) — no runtime settings screen sets it, unlike the Connector's own `feature/
    serverconfig`, which is Connector-specific and does not cover Relay.
-4. **Content-version mismatch**: Relay's domain validation requires `commercialContentVersion == 2`
-   for the order-snapshot content type; Android's own `AuthenticatedTransportEnvelope` constant is
-   `3`. Unresolved here deliberately — reconciling it is an architecture decision, not an
-   operational-tooling fix, and touching either side crosses this package's write-scope boundary
-   (`feature/transaction/**` on Android; "canonical JSON/signature semantics" on the backend).
+4. **Content-version mismatch — FIXED (2026-08-29, relay-authority-repair package)**: Relay's domain
+   validation now requires `commercialContentVersion == 3` (`ORDER_SNAPSHOT_CONTENT_VERSION` in
+   `services/relay/src/domain/relay.ts`), matching Android's real
+   `OrderVersionSnapshot.CURRENT_CONTRACT_VERSION`. v2 submissions are explicitly rejected (not
+   silently accepted, not upgraded) — see `relay-domain.test.ts`'s explicit v2/v3/unknown-version
+   tests and `controlled-pilot-integration.test.ts`'s end-to-end equivalents. Relay does not parse
+   or reconstruct the commercial content (it remains opaque bytes-plus-metadata to Relay), so this
+   fix does not require Relay to understand v3's `buyerBusinessId`/`sellerBusinessId` fields — it
+   only changes which version number this gate accepts as current. No v2-to-v3 role fabrication was
+   introduced; nothing on the Android side (`feature/transaction/**`) was touched.
 5. Building a real Android Trust client + credential storage + a Relay-URL settings surface is
    **not** a "narrow operational wiring change" — it is new identity/credential-storage/authority-
    establishment work, which this package's own mandate says to stop at rather than build. See

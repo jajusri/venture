@@ -37,7 +37,7 @@ class RecordingDatabase implements Database {
 }
 const submission: RelaySubmission = { envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
   senderBusinessId: 'sender', senderActorId: 'actor', senderDeviceId: 'device', recipient: { businessId: 'recipient', mailboxId: relayIdentifier('orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{\n  "opaque" : true\n}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{\n  "opaque" : true\n}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
   idempotencyKey: 'intent-1', submittedAt: new Date(1) };
 const acceptance: RelayAcceptance = { acceptanceId: relayIdentifier('accept-1', 'RelayAcceptanceId'), envelopeId: submission.envelopeId,
   objectType: 'ORDER', objectId: 'order-1', objectVersion: 1, senderBusinessId: 'sender', recipientBusinessId: 'recipient',
