@@ -6,7 +6,9 @@ import com.budcom.android.core.trust.data.remote.TrustCredentialClaimsDto
 import com.budcom.android.core.trust.data.remote.TrustEnrolledDeviceDto
 import com.budcom.android.core.trust.data.remote.TrustEnrollmentRequestDto
 import com.budcom.android.core.trust.data.remote.TrustEnrollmentResponseDto
+import com.budcom.android.core.trust.data.remote.TrustAuthorityEpochResponseDto
 import com.budcom.android.core.trust.data.remote.TrustIssuedCredentialDto
+import com.budcom.android.core.trust.data.remote.TrustVerificationKeysResponseDto
 import com.budcom.android.core.trust.domain.EnrollmentGrantProof
 import com.budcom.android.core.trust.domain.StoredTrustCredential
 import com.budcom.android.core.trust.domain.TrustCredentialStore
@@ -35,10 +37,14 @@ private class FakeTrustApi(
         lastRequest = body
         return result()
     }
+    override suspend fun getVerificationKeys(issuerId: String): Response<TrustVerificationKeysResponseDto> = error("not used")
+    override suspend fun getCurrentAuthorityEpoch(businessId: String, membershipId: String, deviceId: String): Response<TrustAuthorityEpochResponseDto> = error("not used")
 }
 
 private class ThrowingTrustApi(private val error: Throwable) : TrustApi {
     override suspend fun consumeEnrollmentGrant(body: TrustEnrollmentRequestDto): Response<TrustEnrollmentResponseDto> = throw error
+    override suspend fun getVerificationKeys(issuerId: String): Response<TrustVerificationKeysResponseDto> = error("not used")
+    override suspend fun getCurrentAuthorityEpoch(businessId: String, membershipId: String, deviceId: String): Response<TrustAuthorityEpochResponseDto> = error("not used")
 }
 
 private class FakeDeviceKeyStore : VartalapDeviceKeyStore {

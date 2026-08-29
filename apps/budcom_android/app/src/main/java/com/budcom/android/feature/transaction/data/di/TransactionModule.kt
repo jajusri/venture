@@ -1,6 +1,5 @@
 package com.budcom.android.feature.transaction.data.di
 
-import com.budcom.android.BuildConfig
 import com.budcom.android.core.security.AndroidVartalapDeviceKeyStore
 import com.budcom.android.feature.transaction.data.TransactionClockImpl
 import com.budcom.android.feature.transaction.data.port.LocalTransactionSubmissionPort
@@ -16,17 +15,13 @@ import com.budcom.android.feature.transaction.domain.port.OrderSentFromRelayEvid
 import com.budcom.android.feature.transaction.domain.port.RelayOutboxDispatcher
 import com.budcom.android.feature.transaction.data.repository.TransactionRepositoryImpl
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
-import com.budcom.android.feature.transaction.domain.port.ConfiguredRelayEndpointProvider
-import com.budcom.android.feature.transaction.domain.port.EmptyRelayEndpointProvider
 import com.budcom.android.core.security.AuthorityEpochCache
 import com.budcom.android.core.security.CachedTransportCredentialVerifier
 import com.budcom.android.core.security.IssuerVerificationKeyCache
 import com.budcom.android.feature.transaction.domain.model.CommercialActionAuthorityResolver
 import com.budcom.android.feature.transaction.domain.model.CommercialTrustCredentialSource
-import com.budcom.android.feature.transaction.domain.model.EmptyCommercialTrustCredentialSource
 import com.budcom.android.feature.transaction.domain.model.TrustVerifiedCommercialActionAuthorityResolver
 import com.budcom.android.feature.transaction.domain.port.TransportCredentialVerifier
-import com.budcom.android.feature.transaction.domain.port.RelayCredentialSource
 import com.budcom.android.feature.transaction.domain.port.RelayEndpointProvider
 import com.budcom.android.feature.transaction.domain.port.RelayEnvelopeAuthenticator
 import com.budcom.android.feature.transaction.domain.port.StructuredBusinessTransport
@@ -119,32 +114,16 @@ abstract class TransactionBindModule {
 @Module
 @InstallIn(SingletonComponent::class)
 object RelayTransportModule {
-    @Provides
-    @Singleton
-    fun provideRelayEndpointProvider(): RelayEndpointProvider {
-        val configured = BuildConfig.RELAY_DEFAULT_BASE_URL
-        return if (configured.isBlank()) EmptyRelayEndpointProvider else ConfiguredRelayEndpointProvider(configured)
-    }
-
-    @Provides
-    @Singleton
-    fun provideRelayCredentialSource(): RelayCredentialSource = RelayCredentialSource { _, _ -> null }
-
+    // RelayEndpointProvider, RelayCredentialSource, CommercialTrustCredentialSource,
+    // IssuerVerificationKeyCache, and AuthorityEpochCache are no longer provided here as inert
+    // stubs (Gate 5A/5B, architecturally approved DI-wiring edit): each is now bound to a real,
+    // Trust-backed implementation from `core/trust/di/TrustModule.kt` / `core/relay/di/RelayConfigModule.kt`
+    // (see the final report). This module's own commercial/domain wiring below
+    // (`TransportCredentialVerifier`, `CommercialActionAuthorityResolver`) is UNCHANGED -- only
+    // where their dependencies come from changed, not what they do with them.
     @Provides
     @Singleton
     fun provideHttpRelayClient(endpoint: RelayEndpointProvider): HttpRelayClient = HttpRelayClient(endpoint)
-
-    @Provides
-    @Singleton
-    fun provideCommercialTrustCredentialSource(): CommercialTrustCredentialSource = EmptyCommercialTrustCredentialSource
-
-    @Provides
-    @Singleton
-    fun provideIssuerVerificationKeyCache(): IssuerVerificationKeyCache = IssuerVerificationKeyCache { _, _ -> null }
-
-    @Provides
-    @Singleton
-    fun provideAuthorityEpochCache(): AuthorityEpochCache = AuthorityEpochCache { _, _, _ -> null }
 
     @Provides
     @Singleton

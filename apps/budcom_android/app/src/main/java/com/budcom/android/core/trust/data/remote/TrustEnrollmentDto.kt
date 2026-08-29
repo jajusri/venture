@@ -68,3 +68,18 @@ data class TrustErrorResponseDto(@SerialName("error") val error: TrustErrorBodyD
 
 @Serializable
 data class TrustErrorBodyDto(val code: String, val message: String, val requestId: String)
+
+/** Mirrors `GET /v1/trust/issuers/{issuerId}/verification-keys`'s response shape exactly
+ * (`app.ts`). `publicKey` is a PEM string, `validFrom`/`validUntil` are ISO-8601. */
+@Serializable
+data class TrustVerificationKeysResponseDto(val version: Int, val issuerId: String, val keys: List<TrustVerificationKeyDto>)
+
+@Serializable
+data class TrustVerificationKeyDto(
+    val issuerId: String, val issuerKeyId: String, val profile: String, val publicKey: String,
+    val validFrom: String, val validUntil: String? = null, val status: String,
+)
+
+/** Mirrors `GET /v1/trust/authority/epoch`'s response shape exactly (`app.ts`). */
+@Serializable
+data class TrustAuthorityEpochResponseDto(val businessId: String, val membershipId: String, val deviceId: String, val authorityEpoch: Long)

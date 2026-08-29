@@ -6,6 +6,7 @@ import androidx.work.Configuration
 import com.budcom.android.BuildConfig
 import com.budcom.android.core.connection.ConnectorConnectionOrchestrator
 import com.budcom.android.core.connection.ConnectorReconnectCoordinator
+import com.budcom.android.core.relay.data.RelayEndpointHydrator
 import com.budcom.android.core.startup.ConnectorBaseUrlHydrator
 import com.budcom.android.core.trust.data.TrustEndpointHydrator
 import dagger.hilt.android.HiltAndroidApp
@@ -40,6 +41,9 @@ class BudcomApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var trustEndpointHydrator: TrustEndpointHydrator
 
+    @Inject
+    lateinit var relayEndpointHydrator: RelayEndpointHydrator
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
@@ -48,6 +52,7 @@ class BudcomApplication : Application(), Configuration.Provider {
         hydrateThenResolveConnectionAsync()
         reconnectCoordinator.start(applicationScope)
         applicationScope.launch(Dispatchers.IO) { trustEndpointHydrator.hydrate() }
+        applicationScope.launch(Dispatchers.IO) { relayEndpointHydrator.hydrate() }
     }
 
     override val workManagerConfiguration: Configuration

@@ -1,7 +1,13 @@
 package com.budcom.android.core.trust.di
 
+import com.budcom.android.core.security.AuthorityEpochCache
+import com.budcom.android.core.security.IssuerVerificationKeyCache
 import com.budcom.android.core.trust.data.DefaultTrustEndpointHydrator
 import com.budcom.android.core.trust.data.DefaultTrustEnrollmentRepository
+import com.budcom.android.core.trust.data.TrustBackedAuthorityEpochCache
+import com.budcom.android.core.trust.data.TrustBackedCommercialCredentialSource
+import com.budcom.android.core.trust.data.TrustBackedIssuerVerificationKeyCache
+import com.budcom.android.core.trust.data.TrustBackedRelayCredentialSource
 import com.budcom.android.core.trust.data.TrustEndpointHydrator
 import com.budcom.android.core.trust.data.TrustEnrollmentRepository
 import com.budcom.android.core.trust.data.local.DataStoreTrustEndpointLocalStore
@@ -12,6 +18,8 @@ import com.budcom.android.core.trust.data.remote.TrustApi
 import com.budcom.android.core.trust.data.remote.TrustDynamicBaseUrlInterceptor
 import com.budcom.android.core.trust.data.remote.TrustEndpointProvider
 import com.budcom.android.core.trust.domain.TrustCredentialStore
+import com.budcom.android.feature.transaction.domain.model.CommercialTrustCredentialSource
+import com.budcom.android.feature.transaction.domain.port.RelayCredentialSource
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import dagger.Binds
 import dagger.Module
@@ -58,6 +66,26 @@ abstract class TrustBindModule {
     @Binds
     @Singleton
     abstract fun bindTrustEnrollmentRepository(impl: DefaultTrustEnrollmentRepository): TrustEnrollmentRepository
+
+    // The four bindings below satisfy protected `feature/transaction` ports from OUTSIDE that
+    // package -- see the final report's Gate 5A/5B section. `TransactionModule.kt`'s own previous
+    // stub `@Provides` for each of these was removed in the same change that added these bindings,
+    // so there is exactly one binding per type in the graph, not two.
+    @Binds
+    @Singleton
+    abstract fun bindRelayCredentialSource(impl: TrustBackedRelayCredentialSource): RelayCredentialSource
+
+    @Binds
+    @Singleton
+    abstract fun bindCommercialTrustCredentialSource(impl: TrustBackedCommercialCredentialSource): CommercialTrustCredentialSource
+
+    @Binds
+    @Singleton
+    abstract fun bindIssuerVerificationKeyCache(impl: TrustBackedIssuerVerificationKeyCache): IssuerVerificationKeyCache
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthorityEpochCache(impl: TrustBackedAuthorityEpochCache): AuthorityEpochCache
 }
 
 @Module
