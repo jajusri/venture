@@ -227,7 +227,11 @@ function Invoke-PilotEnrollOne {
     Set-TestBusinessScope -Company $Company -Created $created | Out-Null
 
     Write-Host '  building/installing/launching devDebug...'
-    & (Join-Path $RepoRoot 'scripts\budcom-android.ps1') -DeviceSerial $Serial -Variant DevDebug -Install -Launch -Verify
+    # `budcom-android.ps1`'s own internal adb calls print raw text that isn't captured there either;
+    # invoking it via `&` runs it in the SAME pipeline context, so without `| Out-Host` that raw text
+    # would silently join this function's own return value (turning the final PSCustomObject into
+    # part of an array) -- Out-Host displays it immediately instead of passing it further down.
+    & (Join-Path $RepoRoot 'scripts\budcom-android.ps1') -DeviceSerial $Serial -Variant DevDebug -Install -Launch -Verify | Out-Host
     if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "devDebug install/launch/verify failed on $Serial. Run '.\scripts\budcom-android.ps1 -DeviceSerial $Serial -Variant DevDebug -Build' first if no APK has been built yet for the current commit." }
 
     Write-Host "  adb reverse tcp:$TrustPort / tcp:$RelayPort (USB tunnel -- no LAN IP, no firewall change needed)..."
