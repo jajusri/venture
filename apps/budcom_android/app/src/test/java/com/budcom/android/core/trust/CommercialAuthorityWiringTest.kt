@@ -129,6 +129,7 @@ private fun pemOf(publicKey: PublicKey): String {
  */
 private class StatefulTrustApi(
     var verificationKeyPem: String,
+    var verificationKeyId: String = ISSUER_KEY_ID,
     var verificationKeyStatus: String = "active",
     var verificationKeyPresent: Boolean = true,
     var verificationKeyThrows: Throwable? = null,
@@ -143,7 +144,7 @@ private class StatefulTrustApi(
     override suspend fun getVerificationKeys(issuerId: String): Response<TrustVerificationKeysResponseDto> {
         verificationKeyCallCount += 1
         verificationKeyThrows?.let { throw it }
-        val keys = if (verificationKeyPresent) listOf(TrustVerificationKeyDto(issuerId, ISSUER_KEY_ID, "P256-SHA256-v1", verificationKeyPem, "2026-01-01T00:00:00Z", null, verificationKeyStatus)) else emptyList()
+        val keys = if (verificationKeyPresent) listOf(TrustVerificationKeyDto(issuerId, verificationKeyId, "P256-SHA256-v1", verificationKeyPem, "2026-01-01T00:00:00Z", null, verificationKeyStatus)) else emptyList()
         return Response.success(TrustVerificationKeysResponseDto(1, issuerId, keys))
     }
 
@@ -220,6 +221,31 @@ class LiveAuthorityRevocationTest {
         api.verificationKeyThrows = IOException("Trust unreachable")
         val second = resolver.resolve(baseRequest())
         assertEquals(CommercialActionAuthorityOutcome.Unavailable, second)
+    }
+
+    @Test
+    fun `Trust round 6 -- issuer key rotated to a brand-new key -- a credential signed by the new key verifies on the SAME resolver, no restart required`() = runTest {
+        val api = StatefulTrustApi(verificationKeyPem = pem, verificationKeyId = ISSUER_KEY_ID)
+        val credentialStore = FakeWiringCredentialStore(signedStoredCredential())
+        val issuerCache = TrustBackedIssuerVerificationKeyCache(api)
+        val epochCache = TrustBackedAuthorityEpochCache(api)
+        val credentials = TrustBackedCommercialCredentialSource(credentialStore)
+        val verifier = CachedTransportCredentialVerifier(issuerCache, epochCache)
+        val resolver = TrustVerifiedCommercialActionAuthorityResolver(credentials, verifier, FakeIdentityStore(identity()), epochCache)
+
+        val first = resolver.resolve(baseRequest())
+        assertTrue("first authorization (original key) should have succeeded", first is CommercialActionAuthorityOutcome.Verified)
+
+        // Trust rotates: a brand-new key pair becomes the issuer's current signing key, under a new key id.
+        val rotatedKeyPair = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
+        api.verificationKeyPem = pemOf(rotatedKeyPair.public)
+        api.verificationKeyId = "issuer-key-2"
+        val credentialFromNewKey = unsignedCredential(authorityEpoch = 3L).copy(issuerKeyId = "issuer-key-2")
+            .let { it.copy(signature = signCredential(rotatedKeyPair.private, it)) }
+        credentialStore.store(storedFrom(credentialFromNewKey))
+
+        val second = resolver.resolve(baseRequest())
+        assertTrue("second authorization (rotated key, same never-recreated resolver) should succeed via a fresh key lookup", second is CommercialActionAuthorityOutcome.Verified)
     }
 
     // ---- Authority epoch cache: never positively caches current epoch ----
