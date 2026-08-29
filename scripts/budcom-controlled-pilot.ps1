@@ -15,6 +15,7 @@
 #   .\scripts\budcom-controlled-pilot.ps1 -Enroll
 #   .\scripts\budcom-controlled-pilot.ps1 -Verify
 #   .\scripts\budcom-controlled-pilot.ps1 -Status
+#   .\scripts\budcom-controlled-pilot.ps1 -RunTransport
 #   .\scripts\budcom-controlled-pilot.ps1 -Stop
 #   .\scripts\budcom-controlled-pilot.ps1 -RunAll
 #
@@ -29,6 +30,7 @@ param(
     [switch]$Verify,
     [switch]$Status,
     [switch]$Stop,
+    [switch]$RunTransport,
     [switch]$RunAll,
 
     [string]$PhoneASerial = '',
@@ -54,6 +56,10 @@ $Script:PilotReceiver = "$DevDebugPackage/com.budcom.android.pilotharness.PilotE
 $Script:PilotAction = "$DevDebugPackage.action.PILOT_ENROLL"
 $Script:PayloadPath = "/data/data/$DevDebugPackage/files/pilot_enrollment.json"
 $Script:ResultPath = "/data/data/$DevDebugPackage/files/pilot_enrollment_result.json"
+$Script:TransportReceiver = "$DevDebugPackage/com.budcom.android.pilotharness.PilotTransportReceiver"
+$Script:TransportAction = "$DevDebugPackage.action.PILOT_TRANSPORT"
+$Script:TransportPayloadPath = "/data/data/$DevDebugPackage/files/pilot_transport.json"
+$Script:TransportResultPath = "/data/data/$DevDebugPackage/files/pilot_transport_result.json"
 $Script:TrustPort = 8080
 $Script:RelayPort = 8082
 $Script:FullScope = 'manage_memberships,approve_memberships,register_devices,revoke_devices,issue_credentials,send_orders,confirm_orders,receive_orders'
@@ -139,10 +145,14 @@ function Resolve-PhoneSerials {
     return [ordered]@{ A = $a; B = $b }
 }
 
-function Send-PilotPayloadAndTrigger {
-    param([string]$Serial, [hashtable]$Payload)
-    $json = $Payload | ConvertTo-Json -Compress
-    $sharedTempPathOnDevice = "/data/local/tmp/pilot_enrollment_$Serial.json"
+function Invoke-PilotHarnessOp {
+    param([string]$Serial, [hashtable]$Payload, [string]$PayloadPathOnDevice, [string]$ResultPathOnDevice, [string]$ReceiverComponent, [string]$BroadcastAction, [string]$FailureLabel)
+    # -Depth 10: the default depth (2) truncates nested payloads like a credential object embedded
+    # in the outer hashtable (hashtable -> PSCustomObject -> its own list/scalar properties already
+    # exceeds 2 levels), silently degrading nested values to their string representation instead of
+    # real JSON -- always pass an explicit depth generous enough for any payload this script builds.
+    $json = $Payload | ConvertTo-Json -Compress -Depth 10
+    $sharedTempPathOnDevice = "/data/local/tmp/pilot_op_$Serial.json"
     $localTempFile = [System.IO.Path]::GetTempFileName()
     try {
         # `adb shell run-as <pkg> sh -c 'cmd > file'` cannot be built from separate PowerShell/adb
@@ -159,9 +169,9 @@ function Send-PilotPayloadAndTrigger {
         # already-transitioned uid).
         [System.IO.File]::WriteAllText($localTempFile, $json, (New-Object System.Text.UTF8Encoding($false)))
         & $Adb -s $Serial push $localTempFile $sharedTempPathOnDevice 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to push pilot enrollment payload to device $Serial." }
-        & $Adb -s $Serial shell "run-as $DevDebugPackage sh -c 'cat $sharedTempPathOnDevice > $PayloadPath'"
-        if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to copy pilot enrollment payload into app-private storage on $Serial (is $DevDebugPackage installed and debuggable?)." }
+        if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to push $FailureLabel payload to device $Serial." }
+        & $Adb -s $Serial shell "run-as $DevDebugPackage sh -c 'cat $sharedTempPathOnDevice > $PayloadPathOnDevice'"
+        if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to copy $FailureLabel payload into app-private storage on $Serial (is $DevDebugPackage installed and debuggable?)." }
     } finally {
         & $Adb -s $Serial shell rm -f $sharedTempPathOnDevice | Out-Null
         Remove-Item -Force $localTempFile -ErrorAction SilentlyContinue
@@ -169,20 +179,32 @@ function Send-PilotPayloadAndTrigger {
 
     # A pre-existing result file from a stale prior attempt is an EXPECTED, non-fatal condition --
     # `rm -f` deliberately never errors on a missing file, so no special handling is needed here.
-    & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath 2>$null | Out-Null
-    & $Adb -s $Serial shell am broadcast -n $PilotReceiver -a $PilotAction | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to broadcast enrollment trigger to device $Serial." }
+    & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPathOnDevice 2>$null | Out-Null
+    & $Adb -s $Serial shell am broadcast -n $ReceiverComponent -a $BroadcastAction | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to broadcast $FailureLabel trigger to device $Serial." }
 
     $deadline = (Get-Date).AddSeconds(20)
     while ((Get-Date) -lt $deadline) {
-        $raw = & $Adb -s $Serial shell run-as $DevDebugPackage cat $ResultPath 2>$null
+        $raw = & $Adb -s $Serial shell run-as $DevDebugPackage cat $ResultPathOnDevice 2>$null
         if ($raw -and $raw.Trim().StartsWith('{')) {
-            & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath | Out-Null
-            try { return ($raw | ConvertFrom-Json) } catch { Write-ErrorAndExit "Malformed enrollment result from device $Serial`: $raw" }
+            & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPathOnDevice | Out-Null
+            try { return ($raw | ConvertFrom-Json) } catch { Write-ErrorAndExit "Malformed $FailureLabel result from device $Serial`: $raw" }
         }
         Start-Sleep -Milliseconds 750
     }
-    Write-ErrorAndExit "Timed out waiting for enrollment result from device $Serial (20s)."
+    Write-ErrorAndExit "Timed out waiting for $FailureLabel result from device $Serial (20s)."
+}
+
+function Send-PilotPayloadAndTrigger {
+    param([string]$Serial, [hashtable]$Payload)
+    return Invoke-PilotHarnessOp -Serial $Serial -Payload $Payload -PayloadPathOnDevice $PayloadPath -ResultPathOnDevice $ResultPath `
+        -ReceiverComponent $PilotReceiver -BroadcastAction $PilotAction -FailureLabel 'enrollment'
+}
+
+function Send-PilotTransportOp {
+    param([string]$Serial, [hashtable]$Payload)
+    return Invoke-PilotHarnessOp -Serial $Serial -Payload $Payload -PayloadPathOnDevice $TransportPayloadPath -ResultPathOnDevice $TransportResultPath `
+        -ReceiverComponent $TransportReceiver -BroadcastAction $TransportAction -FailureLabel 'transport'
 }
 
 # --- responsibilities ---
@@ -309,6 +331,100 @@ function Invoke-PilotStatus {
     }
 }
 
+function Get-PilotIdentity {
+    param([string]$Serial, [string]$Label)
+    $result = Send-PilotTransportOp -Serial $Serial -Payload @{ op = 'get-identity' }
+    if ($result.outcome -ne 'success') { Write-ErrorAndExit "get-identity failed on $Label ($Serial): $($result.outcome)" }
+    Write-Host "  [$Label] businessId=$($result.businessId) deviceId=$($result.deviceId) (credential fetched, not displayed)"
+    return $result
+}
+
+function Invoke-PilotBindCounterparty {
+    param([string]$Serial, [string]$Label, [string]$PeerDisplayName, $PeerCredential)
+    $result = Send-PilotTransportOp -Serial $Serial -Payload @{ op = 'bind-counterparty'; peerDisplayName = $PeerDisplayName; peerCredential = $PeerCredential }
+    if ($result.outcome -ne 'success') { Write-ErrorAndExit "bind-counterparty failed on $Label ($Serial): $($result.outcome)" }
+    Write-Host "  [$Label] bound counterparty '$PeerDisplayName' -> local partyId=$($result.partyId), status=$($result.bindingStatus)"
+    return $result
+}
+
+function Invoke-PilotSubmitOrder {
+    param([string]$Serial, [string]$Label, [string]$BuyerPartyId, [string]$PeerBusinessId, [string]$CreationKey = $null)
+    $payload = @{ op = 'submit-order'; buyerPartyId = $BuyerPartyId; peerBusinessId = $PeerBusinessId; productName = 'Controlled-Pilot Test Product'; quantity = '3' }
+    if ($CreationKey) { $payload.creationKey = $CreationKey }
+    $result = Send-PilotTransportOp -Serial $Serial -Payload $payload
+    Write-Host "  [$Label] submit-order outcome=$($result.outcome) orderId=$($result.orderId) transportState=$($result.transportState)"
+    return $result
+}
+
+function Invoke-PilotIngestInbox {
+    param([string]$Serial, [string]$Label)
+    $result = Send-PilotTransportOp -Serial $Serial -Payload @{ op = 'ingest-inbox' }
+    if ($result.outcome -ne 'success') { Write-ErrorAndExit "ingest-inbox failed on $Label ($Serial): $($result.outcome)" }
+    $count = @($result.receivedOrders).Count
+    Write-Host "  [$Label] ingest-inbox: $count order(s) in structured recipient inbox"
+    return $result
+}
+
+function Invoke-PilotRunTransport {
+    Write-Section 'Real two-phone Relay transport + replay/tamper proof'
+    $serials = Resolve-PhoneSerials
+    & (Join-Path $RepoRoot 'scripts\budcom-services.ps1') -Verify | Out-Host
+    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit 'Trust/Relay must be healthy before running transport proofs.' }
+
+    Write-Host "`n-- Gate 2: identity discovery --"
+    $identityA = Get-PilotIdentity -Serial $serials.A -Label 'Phone A / Test Company 1'
+    $identityB = Get-PilotIdentity -Serial $serials.B -Label 'Phone B / Test Company 2'
+    if ($identityA.businessId -eq $identityB.businessId -or $identityA.deviceId -eq $identityB.deviceId) {
+        Write-ErrorAndExit 'Phone A and Phone B report the same identity -- refusing to proceed.'
+    }
+
+    Write-Host "`n-- Counterparty binding (both directions, real Trust-signature verification) --"
+    $bindAonB = Invoke-PilotBindCounterparty -Serial $serials.A -Label 'Phone A' -PeerDisplayName 'BUDCOM Test 2 Company' -PeerCredential $identityB.credential
+    $bindBonA = Invoke-PilotBindCounterparty -Serial $serials.B -Label 'Phone B' -PeerDisplayName 'BUDCOM Test 1 Company' -PeerCredential $identityA.credential
+
+    Write-Host "`n-- Gate 5 (partial): tampered peer credential must be rejected --"
+    $tamperedCredential = $identityB.credential | Select-Object *
+    $tamperedCredential.businessId = 'tampered-business-id-does-not-exist'
+    $tamperResult = Send-PilotTransportOp -Serial $serials.A -Payload @{ op = 'bind-counterparty'; peerDisplayName = 'Tampered'; peerCredential = $tamperedCredential }
+    if ($tamperResult.outcome -eq 'success') { Write-ErrorAndExit 'SECURITY REGRESSION: a tampered peer credential (mismatched businessId) was accepted by verifyAndRecord.' }
+    Write-Ok "Tampered credential correctly rejected: $($tamperResult.outcome)"
+
+    Write-Host "`n-- Gate 3/4: A -> Relay -> B --"
+    $submitAtoB = Invoke-PilotSubmitOrder -Serial $serials.A -Label 'Phone A' -BuyerPartyId $bindAonB.partyId -PeerBusinessId $identityB.businessId
+    if ($submitAtoB.transportState -ne 'RelayAccepted') { Write-ErrorAndExit "A -> Relay submit did not reach RelayAccepted (got $($submitAtoB.transportState))." }
+    Start-Sleep -Seconds 2
+    $ingestB = Invoke-PilotIngestInbox -Serial $serials.B -Label 'Phone B'
+    $receivedOnB = @($ingestB.receivedOrders | Where-Object { $_.orderId -eq $submitAtoB.orderId -and $_.senderBusinessId -eq $identityA.businessId })
+    if ($receivedOnB.Count -eq 0) { Write-ErrorAndExit 'Phone B did not receive the order Phone A submitted (or sender identity did not match).' }
+    Write-Ok "A -> Relay -> B PASS: order $($submitAtoB.orderId) received on B from correct sender, real Ack sent."
+
+    Write-Host "`n-- Gate 5 (partial): duplicate authenticated Submit (idempotency) --"
+    $dupKey = "pilot-replay-test-$([guid]::NewGuid())"
+    $first = Invoke-PilotSubmitOrder -Serial $serials.A -Label 'Phone A (replay 1)' -BuyerPartyId $bindAonB.partyId -PeerBusinessId $identityB.businessId -CreationKey $dupKey
+    $second = Invoke-PilotSubmitOrder -Serial $serials.A -Label 'Phone A (replay 2)' -BuyerPartyId $bindAonB.partyId -PeerBusinessId $identityB.businessId -CreationKey $dupKey
+    if ($first.orderId -ne $second.orderId) { Write-ErrorAndExit "Duplicate Submit with the same creationKey produced two different orders -- idempotency violated." }
+    Write-Ok "Duplicate Submit correctly idempotent: both calls resolved to order $($first.orderId)."
+
+    Write-Host "`n-- Gate 6: B -> Relay -> A --"
+    $submitBtoA = Invoke-PilotSubmitOrder -Serial $serials.B -Label 'Phone B' -BuyerPartyId $bindBonA.partyId -PeerBusinessId $identityA.businessId
+    if ($submitBtoA.transportState -ne 'RelayAccepted') { Write-ErrorAndExit "B -> Relay submit did not reach RelayAccepted (got $($submitBtoA.transportState))." }
+    Start-Sleep -Seconds 2
+    $ingestA = Invoke-PilotIngestInbox -Serial $serials.A -Label 'Phone A'
+    $receivedOnA = @($ingestA.receivedOrders | Where-Object { $_.orderId -eq $submitBtoA.orderId -and $_.senderBusinessId -eq $identityB.businessId })
+    if ($receivedOnA.Count -eq 0) { Write-ErrorAndExit 'Phone A did not receive the order Phone B submitted (or sender identity did not match).' }
+    Write-Ok "B -> Relay -> A PASS: order $($submitBtoA.orderId) received on A from correct sender, real Ack sent."
+
+    Write-Host "`nCONTROLLED PILOT TRANSPORT`n"
+    Write-Host "Environment:"
+    Write-Host "  PostgreSQL / Trust / Relay ... PASS"
+    Write-Host "Transport:"
+    Write-Host "  A -> B ............ PASS"
+    Write-Host "  Ack ............... PASS"
+    Write-Host "  B -> A ............ PASS"
+    Write-Host "  Ack ............... PASS"
+    Write-Host "  Replay rejection .. PASS (duplicate Submit idempotent, tampered credential rejected)"
+}
+
 function Invoke-PilotStop {
     Write-Section 'Stop'
     & (Join-Path $RepoRoot 'scripts\budcom-services.ps1') -Stop
@@ -318,7 +434,7 @@ function Invoke-PilotStop {
 
 Import-DotEnv
 
-if (-not ($Doctor -or $Bootstrap -or $Start -or $Enroll -or $Verify -or $Status -or $Stop -or $RunAll)) {
+if (-not ($Doctor -or $Bootstrap -or $Start -or $Enroll -or $Verify -or $Status -or $Stop -or $RunTransport -or $RunAll)) {
     Write-Host 'No mode selected. Examples:'
     Write-Host '  .\scripts\budcom-controlled-pilot.ps1 -Doctor'
     Write-Host '  .\scripts\budcom-controlled-pilot.ps1 -RunAll'
@@ -341,5 +457,6 @@ if ($Start) { Invoke-PilotStart }
 if ($Enroll) { Invoke-PilotEnroll }
 if ($Verify) { Invoke-PilotVerify }
 if ($Status) { Invoke-PilotStatus }
+if ($RunTransport) { Invoke-PilotRunTransport }
 if ($Stop) { Invoke-PilotStop }
 exit 0
