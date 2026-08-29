@@ -64,7 +64,7 @@ $Script:TransportPayloadPath = "/data/data/$DevDebugPackage/files/pilot_transpor
 $Script:TransportResultPath = "/data/data/$DevDebugPackage/files/pilot_transport_result.json"
 $Script:TrustPort = 8080
 $Script:RelayPort = 8082
-$Script:FullScope = 'manage_memberships,approve_memberships,register_devices,revoke_devices,issue_credentials,send_orders,confirm_orders,receive_orders'
+$Script:FullScope = 'manage_memberships,approve_memberships,register_devices,revoke_devices,issue_credentials,send_orders,confirm_orders,receive_orders,revise_orders,accept_order_revisions'
 
 function Import-DotEnv {
     $envFile = Join-Path $BackendDir '.env'
