@@ -79,34 +79,79 @@ export function isEquivalentInitialMembership(a: BusinessMembership, b: Business
   );
 }
 
+/**
+ * Authority-significant fields of the persisted Business row that a creation winner must match
+ * (Codex re-certification round 3, BLOCKER 3): a Business row's mere EXISTENCE at the expected
+ * deterministic id is not authority -- its status and authority epoch must also be proven
+ * equivalent to what this call intended. `businessId` itself is excluded: it is the lookup key,
+ * guaranteed equal once both rows share it. There is no caller-supplied Business `status` to compare
+ * against `display name` or other input -- `CreateBusiness.execute()` always creates a business with
+ * status `'active'`, never a value derived from caller input, so `'active'` is the one intended
+ * value, not an incidental default.
+ */
+export function isEquivalentBusinessAuthority(persistedStatus: string, persistedAuthorityEpoch: number, intendedAuthorityEpoch: number): boolean {
+  return persistedStatus === 'active' && persistedAuthorityEpoch === intendedAuthorityEpoch;
+}
+
+function assertMembershipMatchesExpectedIdentity(membershipRow: MembershipRow, businessId: string, actorId: string): void {
+  // Defensive confirmation: the deterministic-id derivation ties (actorId, intentId) to exactly one
+  // (businessId, membershipId) pair, but this still confirms the ROW CONTENT actually matches the
+  // caller's identity rather than trusting ID-based lookup alone -- a cheap guard against ever
+  // silently returning a mismatched business/membership record for this intent.
+  if (membershipRow.business_id !== businessId || membershipRow.actor_id !== actorId) {
+    throw new Error('Creation-intent lookup returned a membership that does not match the expected business/actor -- refusing to return a possibly-inconsistent authority record');
+  }
+}
+
 export class PostgresBusinessBootstrapStore implements BusinessBootstrapStore {
   constructor(private readonly database: Database) {}
 
-  async findByCreationIntent(actorId: string, intentId: string): Promise<CreatedBusinessAuthority | null> {
+  /** Shared read for both `findByCreationIntent` (issuance-time lookup, against `this.database`
+   * directly) and `createAtomically`'s post-write validation (against the SAME transaction session
+   * `tx` the writes just ran in -- see that method) -- a single point of truth for what is actually
+   * persisted for a given (actorId, intentId), including the Business row's own status/epoch, which
+   * `CreatedBusinessAuthority` itself does not carry (Trust's domain model never treats Business
+   * status as a creation input). */
+  private async readPersistedCreation(session: DatabaseSession, actorId: string, intentId: string): Promise<{
+    businessId: string; businessStatus: string; businessAuthorityEpoch: number; businessCreatedAt: Date; membershipRow: MembershipRow;
+  } | null> {
     const businessId = deriveIntentScopedId([actorId, intentId], 'business');
     const membershipId = deriveIntentScopedId([actorId, intentId], 'membership');
-    const business = await this.database.query<AuthorityRow>('SELECT business_id, status, authority_epoch, created_at FROM trust_business_authority WHERE business_id = $1', [businessId]);
-    const membership = await this.database.query<MembershipRow>('SELECT membership_id, business_id, actor_id, status, authority_scope, authority_epoch, created_at, modified_at FROM trust_business_membership WHERE membership_id = $1', [membershipId]);
+    const business = await session.query<AuthorityRow>('SELECT business_id, status, authority_epoch, created_at FROM trust_business_authority WHERE business_id = $1', [businessId]);
+    const membership = await session.query<MembershipRow>('SELECT membership_id, business_id, actor_id, status, authority_scope, authority_epoch, created_at, modified_at FROM trust_business_membership WHERE membership_id = $1', [membershipId]);
     if (business.rowCount === 0 || membership.rowCount === 0) return null;
-    const businessRow = business.rows[0]!;
-    const membershipRow = membership.rows[0]!;
-    // Defensive confirmation: the deterministic-id derivation ties (actorId, intentId) to exactly
-    // one (businessId, membershipId) pair, but this still confirms the ROW CONTENT actually matches
-    // the caller's identity rather than trusting ID-based lookup alone -- a cheap guard against ever
-    // silently returning a mismatched business/membership record for this intent.
-    if (membershipRow.business_id !== businessId || membershipRow.actor_id !== actorId) {
-      throw new Error('Creation-intent lookup returned a membership that does not match the expected business/actor -- refusing to return a possibly-inconsistent authority record');
-    }
+    return {
+      businessId, businessStatus: business.rows[0]!.status, businessAuthorityEpoch: Number(business.rows[0]!.authority_epoch),
+      businessCreatedAt: business.rows[0]!.created_at, membershipRow: membership.rows[0]!,
+    };
+  }
+
+  async findByCreationIntent(actorId: string, intentId: string): Promise<CreatedBusinessAuthority | null> {
+    const persisted = await this.readPersistedCreation(this.database, actorId, intentId);
+    if (!persisted) return null;
+    assertMembershipMatchesExpectedIdentity(persisted.membershipRow, persisted.businessId, actorId);
     const auditEvent: BusinessCreationAuditEvent = {
       eventId: deriveIntentScopedId([actorId, intentId], 'audit'), kind: 'business_authority_created',
-      businessId: identifier(businessId, 'BusinessId'), actorId, occurredAt: businessRow.created_at,
+      businessId: identifier(persisted.businessId, 'BusinessId'), actorId, occurredAt: persisted.businessCreatedAt,
     };
-    return { businessId: identifier(businessId, 'BusinessId'), membership: toMembership(membershipRow), authorityEpoch: Number(businessRow.authority_epoch), auditEvent };
+    return { businessId: identifier(persisted.businessId, 'BusinessId'), membership: toMembership(persisted.membershipRow), authorityEpoch: persisted.businessAuthorityEpoch, auditEvent };
   }
 
   async createAtomically(intentId: string, result: CreatedBusinessAuthority): Promise<CreatedBusinessAuthority> {
-    const inserted = await this.database.transaction(async (tx: DatabaseSession) => {
-      const businessInsert = await tx.query(
+    // EXISTENCE IS NOT AUTHORITY (Codex re-certification round 3): a Business and/or Membership row
+    // existing at the expected deterministic id is not, by itself, proof of successful creation. The
+    // previous shape trusted the in-flight `result` unconditionally whenever the BUSINESS insert's
+    // own rowCount reported a win, without ever checking whether the MEMBERSHIP insert's independent
+    // `ON CONFLICT DO NOTHING` had itself lost a race against some other persisted membership, and
+    // without checking the Business winner's own status/epoch when the Business insert itself lost --
+    // exactly the two gaps Codex's re-certification found. There is now only ONE path, with no branch
+    // on which INSERT's rowCount happened to report a win: both writes AND the read-back that proves
+    // them equivalent to what this call intended happen inside the SAME transaction (`tx` below), so
+    // there is no gap between "write" and "prove" where a torn view could be observed, and a
+    // genuine write failure (not an `ON CONFLICT`, an actual error) rolls back both inserts together
+    // -- no half-created Business-without-Membership state is ever left behind.
+    const persisted = await this.database.transaction(async (tx: DatabaseSession) => {
+      await tx.query(
         'INSERT INTO trust_business_authority(business_id, status, authority_epoch, created_at, modified_at) VALUES ($1,$2,$3,$4,$4) ON CONFLICT (business_id) DO NOTHING',
         [result.businessId, 'active', result.authorityEpoch, result.membership.createdAt],
       );
@@ -115,24 +160,26 @@ export class PostgresBusinessBootstrapStore implements BusinessBootstrapStore {
         [result.membership.membershipId, result.businessId, result.membership.actorId, result.membership.status,
           [...result.membership.authorityScope.capabilities], result.membership.authorityEpoch.value, result.membership.createdAt, result.membership.modifiedAt],
       );
-      return businessInsert.rowCount > 0;
+      return this.readPersistedCreation(tx, result.membership.actorId, intentId);
     });
-    if (inserted) return result;
-    // A concurrent caller with the identical (actorId, intentId) already committed a business row at
-    // this exact deterministic id between this call's own findByCreationIntent check and this insert
-    // (Codex Postgres finding: a raced duplicate create must not surface a raw unique-violation to
-    // the caller) -- re-read what actually landed instead of trusting the in-flight `result` this
-    // call was about to insert. But the Business row existing is not enough (Codex re-certification
-    // BLOCKER 3): the REQUIRED initial Membership is part of the same atomic creation invariant, and
-    // its own `ON CONFLICT DO NOTHING` insert above could independently have lost a race against a
-    // membership that does not actually match what this call intended to create. Only a winner whose
-    // membership is semantically EQUIVALENT counts as idempotent success.
-    const existing = await this.findByCreationIntent(result.membership.actorId, intentId);
-    if (!existing) throw new Error('Concurrent business creation left an inconsistent row after conflict');
-    if (!isEquivalentInitialMembership(existing.membership, result.membership)) {
+    // The read above proves what the database actually holds after the writes -- for BOTH the
+    // Business (status, authority epoch) and the initial Membership (actor, status, epoch, scope) --
+    // before ever returning success. A failed equivalence check below does NOT undo the already
+    // committed writes (they are legitimately persisted; the conflict is a real one to surface, not
+    // an artifact to roll back), but it does mean this CALL never returns or is treated as success.
+    if (!persisted) throw new Error('Business creation left an inconsistent row: Business and/or initial Membership missing after write');
+    if (!isEquivalentBusinessAuthority(persisted.businessStatus, persisted.businessAuthorityEpoch, result.authorityEpoch)) {
+      throw new Error('Conflicting business creation: concurrent winner does not match the intended Business state');
+    }
+    assertMembershipMatchesExpectedIdentity(persisted.membershipRow, persisted.businessId, result.membership.actorId);
+    if (!isEquivalentInitialMembership(toMembership(persisted.membershipRow), result.membership)) {
       throw new Error('Conflicting business creation: concurrent winner does not match the requested initial membership');
     }
-    return existing;
+    const auditEvent: BusinessCreationAuditEvent = {
+      eventId: deriveIntentScopedId([result.membership.actorId, intentId], 'audit'), kind: 'business_authority_created',
+      businessId: identifier(persisted.businessId, 'BusinessId'), actorId: result.membership.actorId, occurredAt: persisted.businessCreatedAt,
+    };
+    return { businessId: identifier(persisted.businessId, 'BusinessId'), membership: toMembership(persisted.membershipRow), authorityEpoch: persisted.businessAuthorityEpoch, auditEvent };
   }
 }
 
@@ -159,10 +206,17 @@ export class PostgresMembershipApprovalStore implements MembershipApprovalStore 
  * Every authority-significant field that distinguishes one device REGISTRATION from another for the
  * SAME (business_id, device_id, device_key_version) primary key -- used by
  * `PostgresDeviceRegistrationStore.save()`'s concurrent-winner check below (Codex re-certification
- * BLOCKER 2). `businessId`/`deviceId`/`deviceKeyVersion` are deliberately excluded: they are the
- * lookup key itself, guaranteed equal by construction once both rows share that key. Mirrors --
- * without importing across the application/persistence boundary -- the same field set
- * `RegisterBusinessDevice.execute()` already compares in its own find()-then-save() pre-check.
+ * BLOCKER 2, extended in round 3 to include `authorityEpoch`). `businessId`/`deviceId`/
+ * `deviceKeyVersion` are deliberately excluded: they are the lookup key itself, guaranteed equal by
+ * construction once both rows share that key. `createdAt`/`revokedAt` are deliberately excluded too:
+ * they are audit/incidental storage metadata (WHEN something happened), not authority identity
+ * (WHETHER it currently holds) -- `status` already captures the latter. `authorityEpoch.value` IS
+ * included: it is persisted, authority-significant (the exact field `validateDeviceAuthority` and
+ * `credentialMatchesCurrentAuthority` both key their own freshness checks on), and its previous
+ * omission here meant two registrations created from different authority epochs could be wrongly
+ * treated as the same registration. Mirrors -- without importing across the application/persistence
+ * boundary -- the same field set `RegisterBusinessDevice.execute()` already compares in its own
+ * find()-then-save() pre-check (extended there too, see that file).
  */
 export function isEquivalentDeviceRegistration(a: RegisteredBusinessDevice, b: RegisteredBusinessDevice): boolean {
   return (
@@ -171,7 +225,8 @@ export function isEquivalentDeviceRegistration(a: RegisteredBusinessDevice, b: R
     a.deviceKeyId === b.deviceKeyId &&
     a.publicKeyFingerprint === b.publicKeyFingerprint &&
     Buffer.from(a.publicKey).equals(Buffer.from(b.publicKey)) &&
-    a.status === b.status
+    a.status === b.status &&
+    a.authorityEpoch.value === b.authorityEpoch.value
   );
 }
 

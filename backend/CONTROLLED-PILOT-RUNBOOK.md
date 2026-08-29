@@ -205,15 +205,36 @@ physically active — see the `controlled-pilot-integration.test.ts` device-key-
 (T0 pre-rotation credential succeeds → T1 new key registered → T2 old credential fails, including with
 the NEW key's own private key → T3 a fresh credential for the new key succeeds).
 
-**A concurrent duplicate write is idempotent only when the winner is actually equivalent to what this
-call attempted** (round 2, 2026-08-29 — Codex re-certification BLOCKERS 2 and 3). Two concurrent
-identical device registrations, or two concurrent identical business-creation calls for the same
-intent, safely converge on one stored row and both callers see the same result. But if a race lands a
-*different* registration or a *different* initial membership at the same key (conflicting actor,
-membership, device key id, fingerprint, public key, status, or scope), that now fails closed with a
+**EXISTENCE IS NOT AUTHORITY: a concurrent duplicate write is idempotent only when the persisted
+winner is semantically equivalent to what this call attempted, for every identity/authority-significant
+field** (round 2, 2026-08-29 — Codex re-certification BLOCKERS 2 and 3; completed round 3,
+2026-08-29 — Codex found the round-2 equivalence checks still incomplete). Two concurrent identical
+device registrations, or two concurrent identical business-creation calls for the same intent, safely
+converge on one stored row and both callers see the same result. But if a race lands a *different*
+registration or a *different* initial membership at the same key, that now fails closed with a
 deterministic domain error (`Conflicting device key registration` / `Conflicting business creation`)
-instead of the previous behavior of silently returning whichever row won as if it were this caller's
-own. See `test/postgres-authority-write-store.test.ts`'s lettered test matrices for both stores.
+instead of silently returning whichever row won as if it were this caller's own. A row's mere presence
+at the expected lookup key — and a `rowCount > 0` on the INSERT that happened to attempt it — are never,
+by themselves, treated as proof.
+- **Device registration equivalence** compares actorId, membershipId, deviceKeyId, publicKeyFingerprint,
+  publicKey bytes, status, **and authorityEpoch** (round 3 fix — a persisted authorityEpoch is
+  authority-significant and was previously omitted, so two registrations from different epochs could
+  wrongly be treated as the same one). `businessId`/`deviceId`/`deviceKeyVersion` are excluded as the
+  lookup key itself; `createdAt`/`revokedAt` are excluded as audit metadata, not authority identity.
+- **Business creation succeeds only when BOTH the persisted Business (status, authority epoch) AND the
+  persisted initial Membership (actor, status, authority epoch, scope) are proven equivalent to what
+  was intended** (round 3 fix — the previous shape trusted the in-flight intended object whenever the
+  Business INSERT's own `rowCount` reported a win, without ever checking whether the Membership
+  INSERT's independent `ON CONFLICT DO NOTHING` had itself lost a race against a non-matching row, and
+  without checking a Business winner's own status/epoch when the Business INSERT itself lost). There is
+  exactly one path now, with no branch on which INSERT happened to report a win: both writes and the
+  read-back that proves them equivalent run inside the same transaction, and a genuine write failure
+  (not an `ON CONFLICT`) rolls back both inserts together — no half-created Business-without-Membership
+  state is ever observable.
+
+See `test/postgres-authority-write-store.test.ts`'s lettered/numbered test matrices for both stores
+(including a direct reproduction of the round-3 gap: a Business INSERT that wins while a conflicting
+Membership already exists must still fail closed, not return success from the winning Business alone).
 
 **Replay protection is separate from acknowledgement idempotency.** A valid signed request cannot
 become reusable bearer authority: each `(businessId, deviceId, requestId)` is consumed exactly once
@@ -236,10 +257,12 @@ unset or ambiguous environment (see section E and the `dev-provision.ts` row in 
 merely "refuses when it happens to see the literal word production."
 
 **What this section does not claim:** LIVE POSTGRES PROOF: NOT PROVEN. No live PostgreSQL was
-reachable in this sandboxed development environment (round 1 or round 2), so the Postgres-backed
-replay guard, authority-snapshot reader, and write stores (including this round's current-device-key
-selection and concurrent-winner equivalence checks) are all SQL-shape/real-repository-semantics
-tested against stateful fakes that model real INSERT/SELECT/DELETE/ON CONFLICT behavior, not proven
+reachable in this sandboxed development environment across rounds 1, 2, or 3 (checked again for round
+3: no `pg_isready`, no listener on port 5432, no Docker), so the Postgres-backed replay guard,
+authority-snapshot reader, and write stores (including current-device-key selection and the full
+concurrent-winner equivalence checks, extended in round 3 to authorityEpoch and the joint
+Business+Membership invariant) are all SQL-shape/real-repository-semantics tested against stateful
+fakes that model real INSERT/SELECT/DELETE/ON CONFLICT/transaction-rollback behavior, not proven
 against a real database. No physical Android device has exercised any of this (Android has no Trust
 HTTP client at all yet — see section G items 1-2). `test/controlled-pilot-integration.test.ts` is real
 Trust + real Relay + real ECDSA signing + real HTTP round trips end to end, against file-backed/
