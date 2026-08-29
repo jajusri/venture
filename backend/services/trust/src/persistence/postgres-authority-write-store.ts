@@ -15,14 +15,16 @@ import { deriveIntentScopedId } from './file-backed-authority-store.js';
  * comment) so `findByCreationIntent`/`findApproved` are plain indexed point lookups by primary key,
  * not a new "intent" column.
  *
- * BOUNDARY: this sandboxed dev environment has no reachable local PostgreSQL (no service, no
- * Docker) -- these classes are structurally verified against a real Postgres schema/SQL shape (see
- * `backend/test/postgres-authority-write-store.test.ts`, mirroring the existing
+ * TESTING: structurally verified against a real Postgres schema/SQL shape via
+ * `backend/test/postgres-authority-write-store.test.ts` (mirroring the existing
  * `authority-persistence.test.ts`/`relay-persistence.test.ts` convention of recording parameterized
- * calls rather than executing them), not behaviorally verified end-to-end against a live database.
- * The automated integration proof in this controlled-pilot package therefore runs against
- * `FileBackedAuthorityStore` instead (see that file and the final report's stated boundary) --
- * identical application-service/crypto logic, different persistence backend only.
+ * calls rather than executing them), AND behaviorally verified end-to-end against a real, live
+ * PostgreSQL 18 database via `backend/test/live-postgres.integration.test.ts` (opt-in, gated on
+ * `BUDCOM_TRUST_DATABASE_URL` -- see that file's own doc comment and `CONTROLLED-PILOT-RUNBOOK.md`
+ * section F.1 for how to run it). The pre-existing `test/controlled-pilot-integration.test.ts`
+ * end-to-end proof still runs against `FileBackedAuthorityStore` instead of these classes -- see that
+ * file and `CONTROLLED-PILOT-RUNBOOK.md` section E/E.1 for the real-pilot-provisioning path that does
+ * use these classes (`pilot-provision.ts`).
  */
 
 export interface AuthorityRow extends Record<string, unknown> { readonly business_id: string; readonly status: string; readonly authority_epoch: string; readonly created_at: Date }

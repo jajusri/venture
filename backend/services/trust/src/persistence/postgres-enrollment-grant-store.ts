@@ -7,11 +7,13 @@ import { MEMBERSHIP_COLUMNS, PostgresDeviceRegistrationStore, toMembership, type
 
 /**
  * Real Postgres-backed enrollment-grant store, against `trust_enrollment_grant` (migration v7 --
- * `packages/persistence/src/migrations.ts`). Same sandboxed-environment boundary as
- * `postgres-authority-write-store.ts`: structurally verified against a real Postgres schema/SQL
- * shape and behaviorally verified against a stateful fake that models real transaction/row-lock
- * semantics (`postgres-enrollment-grant-store.test.ts`), not against a live database -- see that
- * file's own boundary note and the Round-4 final report's LIVE POSTGRES section.
+ * `packages/persistence/src/migrations.ts`). Same testing posture as `postgres-authority-write-store.ts`:
+ * structurally verified against a real Postgres schema/SQL shape and behaviorally verified against a
+ * stateful fake that models real transaction/row-lock semantics (`postgres-enrollment-grant-store.test.ts`),
+ * AND behaviorally verified against a real, live PostgreSQL 18 database -- including the `SELECT ...
+ * FOR UPDATE`-based concurrent double-consume guarantee under genuine two-connection concurrency, not
+ * merely modeled sequential interleaving -- via `backend/test/live-postgres.integration.test.ts`
+ * (opt-in, gated on `BUDCOM_TRUST_DATABASE_URL`).
  */
 export interface GrantRow extends Record<string, unknown> {
   readonly grant_id: string; readonly business_id: string; readonly actor_id: string; readonly membership_id: string;

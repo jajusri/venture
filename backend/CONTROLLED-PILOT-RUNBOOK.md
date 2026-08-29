@@ -72,11 +72,55 @@ its role). This tool:
   not silently allowed** — export `BUDCOM_RUNTIME_ENV=development` (as `.env.example` already shows)
   before running this CLI;
 - persists to a local, gitignored JSON file (`.local/trust-dev-state.json` by default) — **not**
-  the same Postgres store Trust's own `main.ts` would use in a real deployment (see the final
-  report's stated persistence boundary). Wiring this CLI to the real Postgres stores
-  (`postgres-authority-write-store.ts`, already written and SQL-shape tested) is a small, clearly
-  scoped follow-up once a real pilot Postgres is available to validate against.
+  the same Postgres store Trust's own `main.ts` would use in a real deployment. Use `pilot-provision.ts`
+  (section E.1 below) instead once a real pilot Postgres is available — that follow-up is no longer
+  outstanding.
 - prints only non-secret identifiers and status — never private key material.
+
+## E.1. Real-Postgres pilot provisioning (closes the section E gap above)
+
+`pilot-provision.ts` writes ONLY through the real, certified Postgres-backed application
+services/stores (`CreateBusiness` + `PostgresBusinessBootstrapStore`, `PostgresEnrollmentGrantStore`)
+— the same ones `main.ts` itself uses for real credential issuance. Unlike `dev-provision.ts`, it is
+**not** gated to development/test runtime (onboarding a real controlled-pilot business is a
+legitimate pilot operational need, not dev/test data fabrication — same posture as
+`manage-signing-keys.ts`). It never registers a device and never issues a credential: a phone earns
+both by calling the real `POST /v1/trust/enrollment/consume` itself.
+
+```
+cd backend
+npm run pilot:provision -- create-business --actor <actorId> --verification-id <verificationId> --name "<display name>" --intent <intentId>
+npm run pilot:provision -- create-enrollment-grant --business <businessId> --actor <actorId> --membership <membershipId> --scope send_orders,register_devices --lifetime-ms 3600000
+npm run pilot:provision -- status --business <businessId>
+```
+
+`create-business` creates the Business and its initial Membership atomically (identical invariant to
+`CreateBusiness`'s file-backed path — there is no separate "create membership" step for the first
+membership). `create-enrollment-grant` prints the one-time `grantSecret` to stdout **exactly once** —
+redirect it straight to a local, gitignored file (e.g. `> .local/pilot/grant-<name>.json`) rather than
+letting it land anywhere that gets logged or shared; it is never persisted in plaintext by Trust
+itself (only its SHA-256 hash is), and cannot be recovered afterward. Relaying it to the enrolling
+phone (QR code, manual entry) is outside this CLI's scope. `status` reads back Business/Membership/
+grant state directly from Postgres so the operator can confirm what was actually persisted, without
+ever displaying the grant secret.
+
+None of these three commands accept a boolean "trust me" flag (`--verified=true`, `--trusted=true`,
+etc.) — `--actor`/`--verification-id`/`--business`/`--membership` are bare references, exactly like
+`dev-provision.ts`'s flags of the same names; the actual authority created comes from what
+`CreateBusiness`/the Postgres stores persist and enforce, never from a CLI flag's own assertion.
+
+The phone then consumes the grant itself, over the network, against a running Trust service:
+
+```
+POST /v1/trust/enrollment/consume
+{ "grantId": "...", "grantSecret": "...", "deviceId": "...", "deviceKeyId": "...",
+  "deviceKeyVersion": 1, "publicKey": "<base64>", "publicKeyFingerprint": "<base64 sha256>" }
+```
+
+The device generates its own private key (Android Keystore) and sends only the public half plus the
+grant proof — the operator never manually injects a device credential; the device earns its
+credential from `ConsumeDeviceEnrollmentGrant`/`PostgresBackedTrustCredentialSigner`, the same real
+issuance path `dev-provision.ts issue-credential` already exercises for file-backed test identities.
 
 ## F. Run the backend proof
 
@@ -90,9 +134,34 @@ Vitest test, not a manual script, because it needs to construct two real signed 
 real HTTP round trips deterministically; running it IS running the proof. See that file's own doc
 comment for exactly what is real (Trust's application services, real ECDSA signing/verification, a
 real bound Trust HTTP server, Relay's real route/application/repository layer) versus what is an
-explicit, isolated, declared boundary (Postgres persistence — this sandboxed dev environment has
-none reachable; the authenticated-envelope wire format — a dev-test-only placeholder, not the real
-Android<->Relay contract, which does not exist in this backend yet).
+explicit, isolated, declared boundary (Postgres persistence — proven separately, see F.1 below; the
+authenticated-envelope wire format — a dev-test-only placeholder, not the real Android<->Relay
+contract, which does not exist in this backend yet).
+
+## F.1. Run the live-Postgres regression suite
+
+```
+cd backend
+copy .env.example .env   # then edit BUDCOM_TRUST_DATABASE_URL for a real, reachable Postgres
+set -a; . ./.env; set +a   # or export BUDCOM_TRUST_DATABASE_URL yourself
+npm run test:live-postgres
+```
+
+Opt-in only — `test/live-postgres.integration.test.ts` skips itself entirely (via
+`describe.skipIf(!process.env.BUDCOM_TRUST_DATABASE_URL)`) when that env var is absent, so `npm test`
+never attempts a database connection and the ordinary 259-test suite stays independent of PostgreSQL.
+Connect as an ordinary application role, never a superuser. Every row it writes is scoped under a
+fresh `randomUUID()` per run and deleted in a `finally` block even on assertion failure; it never
+touches unrelated tables/schemas and never prints the connection string or any credential. Covers,
+against a real database: migration idempotency and the partial unique index shape; atomic Business +
+Membership creation; the Business-wins/Membership-conflict rollback (zero new Business rows survive);
+exact-retry idempotency; device registration conflict fail-closed; enrollment-grant concurrent
+double-consume under genuine two-connection concurrency (exactly one winner); issuer active-key
+uniqueness under a concurrent bootstrap race; rotation/revocation visibility from a fresh store
+instance with no cache to refresh, plus a real-signature verification; missing-PEM fail-closed; and
+database-unavailable fail-closed. First proven manually (including a real Trust `main.ts`
+process-restart and a genuinely separate `manage-signing-keys.ts` CLI process) in the LIVE POSTGRESQL
+TRUST KEY-LIFECYCLE PROOF GATE round; this file is the standing, repeatable form of that proof.
 
 ## G. What remains before real Phone A / Phone B provisioning
 
@@ -256,14 +325,17 @@ as opaque bytes, so this is a version-number gate only, not role-handling logic.
 unset or ambiguous environment (see section E and the `dev-provision.ts` row in section J) — not
 merely "refuses when it happens to see the literal word production."
 
-**What this section does not claim:** LIVE POSTGRES PROOF: NOT PROVEN. No live PostgreSQL was
-reachable in this sandboxed development environment across rounds 1, 2, or 3 (checked again for round
-3: no `pg_isready`, no listener on port 5432, no Docker), so the Postgres-backed replay guard,
-authority-snapshot reader, and write stores (including current-device-key selection and the full
-concurrent-winner equivalence checks, extended in round 3 to authorityEpoch and the joint
-Business+Membership invariant) are all SQL-shape/real-repository-semantics tested against stateful
-fakes that model real INSERT/SELECT/DELETE/ON CONFLICT/transaction-rollback behavior, not proven
-against a real database. No physical Android device has exercised any of this (Android has no Trust
-HTTP client at all yet — see section G items 1-2). `test/controlled-pilot-integration.test.ts` is real
-Trust + real Relay + real ECDSA signing + real HTTP round trips end to end, against file-backed/
-in-memory persistence standing in for Postgres.
+**What this section now claims, updated:** LIVE POSTGRES PROOF: PROVEN (see F.1) — a real, reachable
+PostgreSQL 18 instance was used to behaviorally verify the Postgres-backed write stores, the
+enrollment-grant store's `SELECT ... FOR UPDATE` concurrent double-consume guarantee under genuine
+two-connection concurrency (not merely modeled sequential interleaving), and the full issuer
+signing-key lifecycle (bootstrap, cross-process rotation/revocation with zero caching, restart
+persistence, explicit recovery) via a real Trust `main.ts` process restart and a genuinely separate
+`manage-signing-keys.ts` CLI process. `test/live-postgres.integration.test.ts` (F.1) is the standing,
+repeatable regression form of that proof — opt-in, so the ordinary suite's independence from
+PostgreSQL is unaffected. What remains genuinely unproven: no physical Android device has exercised
+any of this (Android has no Trust HTTP client at all yet — see section G items 1-2).
+`test/controlled-pilot-integration.test.ts` still runs against file-backed/in-memory persistence
+standing in for Postgres for its own end-to-end HTTP round trip (that boundary is unchanged); the real
+Postgres-backed equivalent of "create a pilot Business/Membership/enrollment-grant" is `pilot-provision.ts`
+(section E.1), exercised for real against a live database as part of this same round.
