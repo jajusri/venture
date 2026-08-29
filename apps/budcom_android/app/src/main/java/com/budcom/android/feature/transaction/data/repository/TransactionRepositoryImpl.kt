@@ -299,9 +299,16 @@ class TransactionRepositoryImpl @Inject constructor(
         try {
             canonicalOrderDao.insert(entity)
         } catch (_: android.database.SQLException) {
+            // The unique-index loser of a genuine concurrent race lands here exactly like the
+            // sequential existing-order path above -- and must be held to the SAME idempotency-intent
+            // invariant: a raced winner sharing this creationKey but NOT this call's immutable
+            // creation intent is a real conflict, not a legitimate concurrent retry, and must fail
+            // closed rather than silently handing back whatever the other caller happened to create.
             val raced = canonicalOrderDao.findByCreationKey(draft.companyId, creationKey)
                 ?: throw IllegalStateException("Draft Order could not be created")
-            return@run raced.toDomain(canonicalOrderDao.findLines(draft.companyId, raced.orderId))
+            val racedOrder = raced.toDomain(canonicalOrderDao.findLines(draft.companyId, raced.orderId))
+            require(racedOrder.matchesCreationIntent(draft)) { "creationKey is already bound to a different order creation intent" }
+            return@run racedOrder
         }
         canonicalOrderDao.upsertLines(draft.lines.mapIndexed { index, line ->
             CanonicalOrderLineEntity(

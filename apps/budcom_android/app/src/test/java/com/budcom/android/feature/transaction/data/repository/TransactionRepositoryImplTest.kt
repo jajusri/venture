@@ -90,6 +90,7 @@ import com.budcom.android.feature.transaction.data.port.toDomain
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -325,13 +326,65 @@ class TransactionRepositoryImplTest {
             draft, "product-1", "Widget", "Nos", "SKU-1",
             TransactionDraftPriceState.ActualPrice("100", "INR"), "3",
         )
+        // Forced, not scheduler-luck: all three callers are held at the creationKey lookup until all
+        // three have arrived, guaranteeing every one of them observes "no order exists yet" and then
+        // genuinely races on insert -- exercising the real unique-index-conflict/requery path, not
+        // just the sequential existing-order path.
+        val barrier = RendezvousBarrier(3)
+        canonicalOrderDao.onBeforeFindByCreationKey = { barrier.arrive() }
         val outcomes = listOf(
             async { repo.createDraftOrder(draft, "concurrent-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1")) },
             async { repo.createDraftOrder(draft, "concurrent-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1")) },
             async { repo.createDraftOrder(draft, "concurrent-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1")) },
         ).awaitAll()
+        canonicalOrderDao.onBeforeFindByCreationKey = null
         assertEquals(1, canonicalOrderDao.orders.size)
         assertTrue(outcomes.all { it.orderId == outcomes.first().orderId })
+    }
+
+    @Test
+    fun `forced concurrent race with a conflicting immutable creation intent rejects the loser and keeps the winner canonical`() = runTest(dispatcher) {
+        val repo = repository()
+        var draftA = TransactionDraftOperations.empty("co-1", "buyer-1", TransactionSubmissionType.Estimate)
+        draftA = TransactionDraftOperations.addOrIncrementLine(
+            draftA, "product-1", "Widget", "Nos", "SKU-1",
+            TransactionDraftPriceState.ActualPrice("100", "INR"), "3",
+        )
+        // Same creationKey, materially different line content (quantity) -- a genuine conflict, not a
+        // legitimate concurrent retry of the same intent.
+        val draftB = draftA.copy(lines = draftA.lines.map { it.copy(quantity = "99") })
+
+        // Forces BOTH callers past the "no existing order yet" lookup before EITHER inserts -- without
+        // this, StandardTestDispatcher would just run one createDraftOrder call to completion before
+        // the other starts, and the second call would take the ALREADY-tested sequential existing-order
+        // path instead of the insert-conflict/requery path this test exists to exercise.
+        val barrier = RendezvousBarrier(2)
+        canonicalOrderDao.onBeforeFindByCreationKey = { barrier.arrive() }
+        val outcomeA = async { runCatching { repo.createDraftOrder(draftA, "race-conflict-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1")) } }
+        val outcomeB = async { runCatching { repo.createDraftOrder(draftB, "race-conflict-1", timestamp = ts(100), authorityRequest = creationAuthority("co-1")) } }
+        val resultA = outcomeA.await()
+        val resultB = outcomeB.await()
+        canonicalOrderDao.onBeforeFindByCreationKey = null
+
+        // Exactly one caller wins (persists) and the other loses (rejected) -- never both succeeding
+        // and never both failing.
+        val results = listOf(resultA, resultB)
+        assertEquals(1, results.count { it.isSuccess })
+        assertEquals(1, results.count { it.isFailure })
+        assertEquals(1, canonicalOrderDao.orders.size)
+        // Deterministic idempotency conflict, not an incidental/unrelated failure.
+        assertEquals(
+            "creationKey is already bound to a different order creation intent",
+            results.single { it.isFailure }.exceptionOrNull()?.message,
+        )
+
+        val winner = results.single { it.isSuccess }.getOrThrow()
+        val loserQuantity = if (resultA.isSuccess) draftB.lines.single().quantity else draftA.lines.single().quantity
+        // The loser must NOT silently be handed back the winner's order as if its own (different)
+        // intent had succeeded -- the persisted order matches only the winning intent's quantity.
+        assertNotEquals(loserQuantity, winner.lines.single().quantity)
+        assertEquals(winner.orderId, canonicalOrderDao.orders.single().orderId)
+        assertEquals(winner.lines.single().quantity, canonicalOrderDao.findLines("co-1", winner.orderId).single().quantity)
     }
 
     @Test
@@ -1402,11 +1455,40 @@ class FakeCatalogueAccessGrantDao : CatalogueAccessGrantDao {
         store.values.filter { it.companyId == companyId && it.buyerPartyId == buyerPartyId }.sortedByDescending { it.grantedAt }
 }
 
+/**
+ * Rendezvous barrier: each of [parties] callers to [arrive] suspends until ALL of them have arrived,
+ * so every caller is guaranteed to observe pre-arrival state (e.g. "no order exists for this
+ * creationKey yet") before any of them is allowed to proceed. Used to force a genuine concurrent race
+ * through a fake DAO's conflict-detection path deterministically -- under StandardTestDispatcher none
+ * of these fakes ever really suspend on their own, so plain `async { }` calls would otherwise just run
+ * to completion one after another and never actually interleave.
+ */
+class RendezvousBarrier(private val parties: Int) {
+    private val lock = kotlinx.coroutines.sync.Mutex()
+    private var arrivedCount = 0
+    private val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+
+    suspend fun arrive() {
+        val isLast = lock.withLock {
+            arrivedCount += 1
+            arrivedCount == parties
+        }
+        if (isLast) release.complete(Unit) else release.await()
+    }
+}
+
 class FakeCanonicalOrderDao : CanonicalOrderDao {
     val orders = mutableListOf<CanonicalOrderEntity>()
     private val lines = mutableListOf<CanonicalOrderLineEntity>()
     var failUpsertLines = false
     var failUpdateState = false
+
+    // Test-only seam: lets a test force TRUE concurrent interleaving through createDraftOrder's
+    // insert-conflict/requery path instead of relying on StandardTestDispatcher's default
+    // (effectively sequential, since none of these fakes ever really suspend) coroutine ordering.
+    // Not used unless a test explicitly sets it -- null by default, so every other test's behavior
+    // is completely unaffected.
+    var onBeforeFindByCreationKey: (suspend () -> Unit)? = null
 
     override suspend fun insert(entity: CanonicalOrderEntity) {
         if (orders.any { it.companyId == entity.companyId && it.creationKey == entity.creationKey }) {
@@ -1421,8 +1503,16 @@ class FakeCanonicalOrderDao : CanonicalOrderDao {
         lines += entities
     }
 
-    override suspend fun findByCreationKey(companyId: String, creationKey: String) =
-        orders.firstOrNull { it.companyId == companyId && it.creationKey == creationKey }
+    override suspend fun findByCreationKey(companyId: String, creationKey: String): CanonicalOrderEntity? {
+        // The lookup itself runs BEFORE the barrier suspends -- mirrors a real concurrent DB race,
+        // where each transaction's own SELECT can observe "no row yet" before either one COMMITs.
+        // Suspending here (not before the read) lets a caller resume holding a stale "not found" result
+        // even after another caller has since inserted, so its own insert() genuinely collides instead
+        // of this fake accidentally serializing everything through the sequential existing-order path.
+        val result = orders.firstOrNull { it.companyId == companyId && it.creationKey == creationKey }
+        onBeforeFindByCreationKey?.invoke()
+        return result
+    }
 
     override suspend fun findById(companyId: String, orderId: String) =
         orders.firstOrNull { it.companyId == companyId && it.orderId == orderId }
