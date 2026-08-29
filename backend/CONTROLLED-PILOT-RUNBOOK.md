@@ -66,7 +66,11 @@ its role). This tool:
 - calls Trust's real application services in-process (no HTTP provisioning route exists anywhere in
   this backend — see `backend/services/trust/src/app.ts`, which only ever registers `GET /health`
   and the verification-keys route);
-- refuses to run at all if `BUDCOM_RUNTIME_ENV=production` or `NODE_ENV=production`;
+- refuses to run unless every runtime-environment signal that is actually set (`BUDCOM_RUNTIME_ENV`,
+  `NODE_ENV`) explicitly normalizes to `development` or `test` — a positive allowlist, not merely
+  "is not production" (hardened 2026-08-29; see section K). **An unset environment is now refused,
+  not silently allowed** — export `BUDCOM_RUNTIME_ENV=development` (as `.env.example` already shows)
+  before running this CLI;
 - persists to a local, gitignored JSON file (`.local/trust-dev-state.json` by default) — **not**
   the same Postgres store Trust's own `main.ts` would use in a real deployment (see the final
   report's stated persistence boundary). Wiring this CLI to the real Postgres stores
@@ -155,4 +159,59 @@ service crashes, `.\scripts\budcom-services.ps1 -Status` will show it as not run
 | `-StartTrust`/`-StartRelay` refuses immediately with "port already in use" | Something else (often BUDCOM Desktop's own bundled server on 8080) already owns that port | `-Doctor`'s port section; change `BUDCOM_TRUST_PORT`/`BUDCOM_RELAY_PORT` |
 | Relay accepts everything unconditionally / rejects everything unconditionally | Relay was launched with a verifier other than `PilotAuthorityVerifier` (only `main.ts`'s real wiring uses it — a script that calls `buildRelayService` directly with hand-built fakes, as the pre-existing tests do, will behave however those fakes say) | Confirm you started Relay via `npm run dev:relay` / `-StartRelay`, not a bespoke script |
 | Credential rejected with no obvious reason | Membership scope doesn't include the capability being exercised (`send_orders` to submit, `receive_orders` to fetch/ack) -- `CreateBusiness`'s own default grant does **not** include `receive_orders` | `provision:dev status`, then `grant-scope` if needed |
-| `dev-provision.ts` refuses to run | `BUDCOM_RUNTIME_ENV`/`NODE_ENV` is `production` | This is intentional (dev-only guard); unset it for local pilot use |
+| `dev-provision.ts` refuses to run | `BUDCOM_RUNTIME_ENV`/`NODE_ENV` is `production`, **or neither is set at all** | This is intentional (dev-only guard, fail-closed positive allowlist — section K); explicitly `export BUDCOM_RUNTIME_ENV=development`, don't just unset it |
+| Fetch/Ack return 400 `authenticatedRequest is required` | Caller sent only plaintext identifiers (`recipientBusinessId`/`recipientActorId`/`recipientDeviceId`) with no signed possession proof | This is intentional (section K) — every Fetch/Ack call must include a base64 `authenticatedRequest` built per `devtools/pilot-envelope.ts`'s `buildAuthenticatedRelayRequest` |
+| Fetch/Ack return 403 despite a credential that "looks" valid | The credential's claims no longer match CURRENT Trust authority (membership/device authority epoch advanced, device rotated/revoked since issuance) even though the credential's own signature and expiry are still fine | Re-issue a fresh credential against current Trust state (`provision:dev issue-credential`) rather than reusing an old one |
+
+## K. Security contract (relay-authority-repair, 2026-08-29)
+
+An independent audit (Codex) of the previous `fcbc04c` state found two authority-bypass defects in
+Relay's mailbox Fetch and Acknowledgement endpoints. Both are fixed; this section states the
+resulting contract plainly so it doesn't quietly regress.
+
+**Identifiers are not authority.** `businessId`/`actorId`/`deviceId`/`membershipId` in a request body
+are claims, not proof. The previous `checkBearerAuthority()` granted Fetch/Ack authority from these
+plaintext identifiers alone (an active DB row matching the claimed identity was enough) — deleted.
+Every Fetch and Acknowledgement call now requires **both**:
+1. A Trust-issued, currently-valid credential (signed by Trust's issuer key, unexpired, and —
+   critically — whose claims still match CURRENT Trust authority state for that business/membership/
+   device: actor, membership, device key id/version/fingerprint, and authority epoch all checked
+   field-by-field, not just "the live rows still look active"). An older credential does not regain
+   validity just because current rows later return to a superficially compatible state.
+2. A device signature (ECDSA P-256/SHA-256) proving possession of that credential's registered
+   device private key, over a canonical payload binding protocol version, action
+   (`mailbox_fetch`/`acknowledge`), business/actor/membership/device/device-key identity, a request
+   id, a timestamp, and the operation's own target and parameters (mailbox id + cursor + limit for
+   Fetch; envelope id + receivedAt for Ack). Changing any one of those fields after signing
+   invalidates the request. **The device's private key never leaves the device** — only its public
+   key and fingerprint are ever registered with Trust.
+
+Presenting identifiers with no `authenticatedRequest` returns 400. Presenting a well-formed,
+validly-signed request for the wrong business/actor/device, or with a stale/rotated/revoked
+credential, returns 403 — see `test/controlled-pilot-integration.test.ts`'s adversarial cases for the
+exact matrix (identifier-only, wrong recipient, tampered signature, wrong signing key, expired
+credential, revoked device, stale authority epoch).
+
+**Replay protection is separate from acknowledgement idempotency.** A valid signed request cannot
+become reusable bearer authority: each `(businessId, deviceId, requestId)` is consumed exactly once
+within a bounded clock-tolerance window (`RelayReplayGuard`, in-memory locally / Postgres-backed in
+`main.ts`'s real wiring, migration v6 `relay_authenticated_request_nonce` — additive, non-destructive,
+indexed by expiry for bounded cleanup). This is deliberately independent from
+`RecordRelayAcknowledgement`'s own business-level idempotency (retrying an acknowledgement for the
+same envelope returns the same result without double-recording delivery) — a legitimate retry mints a
+fresh request id/nonce per transmission; only a literal replay of the exact same signed bytes is
+rejected.
+
+**Current commercial content version is v3** (see section G item 4) — Relay treats the content itself
+as opaque bytes, so this is a version-number gate only, not role-handling logic.
+
+**Dev provisioning is non-production only**, enforced by a positive allowlist that fails closed on an
+unset or ambiguous environment (see section E and the `dev-provision.ts` row in section J) — not
+merely "refuses when it happens to see the literal word production."
+
+**What this section does not claim:** no live PostgreSQL was reachable in this sandboxed development
+environment, so the Postgres-backed replay guard and authority-snapshot reader are SQL-shape/behavior
+tested against a recording fake, not proven against a real database; no physical Android device has
+exercised any of this (Android has no Trust HTTP client at all yet — see section G items 1-2).
+`test/controlled-pilot-integration.test.ts` is real Trust + real Relay + real ECDSA signing + real
+HTTP round trips end to end, against file-backed/in-memory persistence standing in for Postgres.
