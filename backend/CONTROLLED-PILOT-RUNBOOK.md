@@ -190,7 +190,30 @@ Presenting identifiers with no `authenticatedRequest` returns 400. Presenting a 
 validly-signed request for the wrong business/actor/device, or with a stale/rotated/revoked
 credential, returns 403 — see `test/controlled-pilot-integration.test.ts`'s adversarial cases for the
 exact matrix (identifier-only, wrong recipient, tampered signature, wrong signing key, expired
-credential, revoked device, stale authority epoch).
+credential, revoked device, stale authority epoch, device key rotation).
+
+**The CURRENT device key is the highest active-status key version, never whichever version a
+presented credential happens to claim** (round 2, 2026-08-29 — Codex re-certification BLOCKER 1). A
+device identity `(businessId, deviceId)` can have more than one registered key-version row (e.g.
+after a legitimate key rotation); historical rows below the highest active version remain stored for
+audit/history but are never authoritative once a higher version exists — this reuses the exact
+`ORDER BY device_key_version DESC LIMIT 1 WHERE status = 'active'` selection rule
+`AuthorityRepository.findActiveDevice()` already used elsewhere in Trust, rather than inventing a
+second definition of "current". A credential still bound to a superseded version fails once a newer
+version becomes current, even with a valid signature, unexpired lifetime, and the old row still
+physically active — see the `controlled-pilot-integration.test.ts` device-key-rotation sequence
+(T0 pre-rotation credential succeeds → T1 new key registered → T2 old credential fails, including with
+the NEW key's own private key → T3 a fresh credential for the new key succeeds).
+
+**A concurrent duplicate write is idempotent only when the winner is actually equivalent to what this
+call attempted** (round 2, 2026-08-29 — Codex re-certification BLOCKERS 2 and 3). Two concurrent
+identical device registrations, or two concurrent identical business-creation calls for the same
+intent, safely converge on one stored row and both callers see the same result. But if a race lands a
+*different* registration or a *different* initial membership at the same key (conflicting actor,
+membership, device key id, fingerprint, public key, status, or scope), that now fails closed with a
+deterministic domain error (`Conflicting device key registration` / `Conflicting business creation`)
+instead of the previous behavior of silently returning whichever row won as if it were this caller's
+own. See `test/postgres-authority-write-store.test.ts`'s lettered test matrices for both stores.
 
 **Replay protection is separate from acknowledgement idempotency.** A valid signed request cannot
 become reusable bearer authority: each `(businessId, deviceId, requestId)` is consumed exactly once
@@ -200,7 +223,10 @@ indexed by expiry for bounded cleanup). This is deliberately independent from
 `RecordRelayAcknowledgement`'s own business-level idempotency (retrying an acknowledgement for the
 same envelope returns the same result without double-recording delivery) — a legitimate retry mints a
 fresh request id/nonce per transmission; only a literal replay of the exact same signed bytes is
-rejected.
+rejected. Expired nonce rows are cleaned up both per-device (on that device's own next request) and,
+as of round 2 (2026-08-29 — Codex's small replay-cleanup finding), via a small bounded/indexed global
+sweep on every request, so a device that goes permanently inactive doesn't leave its expired rows in
+the table forever without needing a separate scheduler.
 
 **Current commercial content version is v3** (see section G item 4) — Relay treats the content itself
 as opaque bytes, so this is a version-number gate only, not role-handling logic.
@@ -209,9 +235,12 @@ as opaque bytes, so this is a version-number gate only, not role-handling logic.
 unset or ambiguous environment (see section E and the `dev-provision.ts` row in section J) — not
 merely "refuses when it happens to see the literal word production."
 
-**What this section does not claim:** no live PostgreSQL was reachable in this sandboxed development
-environment, so the Postgres-backed replay guard and authority-snapshot reader are SQL-shape/behavior
-tested against a recording fake, not proven against a real database; no physical Android device has
-exercised any of this (Android has no Trust HTTP client at all yet — see section G items 1-2).
-`test/controlled-pilot-integration.test.ts` is real Trust + real Relay + real ECDSA signing + real
-HTTP round trips end to end, against file-backed/in-memory persistence standing in for Postgres.
+**What this section does not claim:** LIVE POSTGRES PROOF: NOT PROVEN. No live PostgreSQL was
+reachable in this sandboxed development environment (round 1 or round 2), so the Postgres-backed
+replay guard, authority-snapshot reader, and write stores (including this round's current-device-key
+selection and concurrent-winner equivalence checks) are all SQL-shape/real-repository-semantics
+tested against stateful fakes that model real INSERT/SELECT/DELETE/ON CONFLICT behavior, not proven
+against a real database. No physical Android device has exercised any of this (Android has no Trust
+HTTP client at all yet — see section G items 1-2). `test/controlled-pilot-integration.test.ts` is real
+Trust + real Relay + real ECDSA signing + real HTTP round trips end to end, against file-backed/
+in-memory persistence standing in for Postgres.
