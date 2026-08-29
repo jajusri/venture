@@ -17,7 +17,7 @@ import { DEVICE_COLUMNS, MEMBERSHIP_COLUMNS, toDevice, toMembership, type Author
 export class PostgresTrustAuthoritySnapshotReader implements TrustAuthoritySnapshotReader {
   constructor(private readonly database: Database) {}
 
-  async read(businessId: string, deviceId: string, deviceKeyVersion: number): Promise<TrustAuthoritySnapshot> {
+  async read(businessId: string, deviceId: string): Promise<TrustAuthoritySnapshot> {
     // Wrapped in one REPEATABLE READ, READ ONLY transaction so all three point lookups below observe
     // a single consistent snapshot as of transaction start (Codex Postgres finding: snapshot read
     // atomicity). Without this, Postgres's default READ COMMITTED lets each statement see the latest
@@ -26,10 +26,25 @@ export class PostgresTrustAuthoritySnapshotReader implements TrustAuthoritySnaps
     // different points in time), which the Fetch/Ack authority check
     // (`credentialMatchesCurrentAuthority`) could then misjudge. READ ONLY additionally guarantees
     // this reader can never itself write.
+    //
+    // CURRENT DEVICE KEY (relay-authority-repair round 2, 2026-08-29 -- fixes Codex's re-certification
+    // BLOCKER 1): this deliberately does NOT take a caller-supplied `deviceKeyVersion`. The previous
+    // shape looked up the device row at EXACTLY the version the presented credential itself claimed,
+    // which made `credentialMatchesCurrentAuthority`'s `claims.deviceKeyVersion === device.deviceKeyVersion`
+    // check a tautology -- the row was fetched BY that value, so it could never disagree, even after a
+    // newer key version had legitimately become current. "Current" here reuses the exact selection
+    // rule `AuthorityRepository.findActiveDevice()` already uses elsewhere in this same service:
+    // the highest device_key_version among this device identity's ACTIVE rows is authoritative.
+    // Historical active rows at lower versions remain stored (for audit/history) but are never
+    // "current" once a higher version exists -- so a credential bound to an old version now fails the
+    // version-match check below, without needing the old row to be separately revoked.
     return this.database.transaction(async (tx) => {
       await tx.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY');
       const business = await tx.query<AuthorityRow>('SELECT business_id, status, authority_epoch, created_at FROM trust_business_authority WHERE business_id = $1', [businessId]);
-      const device = await tx.query<DeviceRow>(`SELECT ${DEVICE_COLUMNS} FROM trust_registered_device WHERE business_id = $1 AND device_id = $2 AND device_key_version = $3`, [businessId, deviceId, deviceKeyVersion]);
+      const device = await tx.query<DeviceRow>(
+        `SELECT ${DEVICE_COLUMNS} FROM trust_registered_device WHERE business_id = $1 AND device_id = $2 AND status = 'active' ORDER BY device_key_version DESC LIMIT 1`,
+        [businessId, deviceId],
+      );
       if (business.rowCount === 0 || device.rowCount === 0) return { businessStatus: null, membership: null, device: null };
       const deviceRow = device.rows[0]!;
       const membership = await tx.query<MembershipRow>(`SELECT ${MEMBERSHIP_COLUMNS} FROM trust_business_membership WHERE membership_id = $1`, [deviceRow.membership_id]);

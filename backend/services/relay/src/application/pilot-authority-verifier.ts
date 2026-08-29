@@ -52,7 +52,11 @@ export interface TrustAuthoritySnapshot {
   readonly device: RegisteredBusinessDevice | null;
 }
 export interface TrustAuthoritySnapshotReader {
-  read(businessId: string, deviceId: string, deviceKeyVersion: number): Promise<TrustAuthoritySnapshot> | TrustAuthoritySnapshot;
+  /** No `deviceKeyVersion` parameter -- implementations must resolve the CURRENT authoritative
+   * device key themselves (highest active-status version for this device identity), never the
+   * version a presented credential happens to claim. See `credentialMatchesCurrentAuthority` below
+   * for why that distinction is the entire point (Codex re-certification BLOCKER 1). */
+  read(businessId: string, deviceId: string): Promise<TrustAuthoritySnapshot> | TrustAuthoritySnapshot;
 }
 export interface TrustVerificationKeyFetcher {
   /** Returns the PEM public key for `(issuerId, issuerKeyId)`, or `null` if unknown/not currently
@@ -72,6 +76,16 @@ interface CredentialCheck {
  * compatible active state -- every authority-sensitive claim the credential carries is checked
  * against the live row it corresponds to, not just internal consistency between the live rows
  * themselves (which is all `validateDeviceAuthority` alone checks).
+ *
+ * `claims.deviceKeyVersion === device.deviceKeyVersion` is where Codex's re-certification BLOCKER 1
+ * lived: `snapshot.device` here comes from `TrustAuthoritySnapshotReader.read()`, which -- as of this
+ * repair round -- resolves the device by CURRENT authority (highest active-status key version for
+ * this device identity), never by whatever version the presented credential itself claims. Before
+ * this fix, the reader was called with `claims.deviceKeyVersion` as an input, making this exact
+ * comparison a tautology (the row was fetched BY that value, so it could never disagree) -- a
+ * credential bound to an old, superseded key version would pass as long as that old row happened to
+ * still be status='active', even after a newer version had legitimately become current. Now that the
+ * snapshot is independent of the claim, this line is the actual current-key enforcement.
  */
 function credentialMatchesCurrentAuthority(claims: PilotCredentialClaimsWire, snapshot: TrustAuthoritySnapshot): boolean {
   const membership = snapshot.membership;
@@ -112,7 +126,7 @@ async function verifyCredentialAgainstCurrentAuthority(
   }
   if (new Date(claims.notBefore) > now || new Date(claims.expiresAt) <= now) return { valid: false, claims, snapshot: null };
 
-  const snapshot = await authority.read(claims.businessId, claims.deviceId, claims.deviceKeyVersion);
+  const snapshot = await authority.read(claims.businessId, claims.deviceId);
   if (!snapshot.businessStatus || !snapshot.membership || !snapshot.device) return { valid: false, claims, snapshot: null };
   if (!credentialMatchesCurrentAuthority(claims, snapshot)) return { valid: false, claims, snapshot: null };
 

@@ -38,17 +38,28 @@ class RecordingDatabase implements DatabaseSession {
 describe('PostgresTrustAuthoritySnapshotReader (SQL shape only -- no live database in this environment)', () => {
   it('pins REPEATABLE READ, READ ONLY as the first statement in the transaction before any of the three point lookups', async () => {
     const db = new RecordingDatabase();
-    await new PostgresTrustAuthoritySnapshotReader(db).read('biz-1', 'device-1', 1);
+    await new PostgresTrustAuthoritySnapshotReader(db).read('biz-1', 'device-1');
     expect(db.calls[0]?.sql).toMatch(/SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY/i);
     expect(db.calls.slice(1).every((call) => call.sql.trim().toUpperCase().startsWith('SELECT'))).toBe(true);
   });
 
   it('assembles business status, membership, and device from the three lookups', async () => {
     const db = new RecordingDatabase();
-    const snapshot = await new PostgresTrustAuthoritySnapshotReader(db).read('biz-1', 'device-1', 1);
+    const snapshot = await new PostgresTrustAuthoritySnapshotReader(db).read('biz-1', 'device-1');
     expect(snapshot.businessStatus).toBe('active');
     expect(snapshot.membership?.membershipId).toBe('mem-1');
     expect(snapshot.device?.deviceId).toBe('device-1');
+  });
+
+  it('does not take a caller-supplied key version -- the device lookup selects the highest active version itself (Codex BLOCKER 1)', async () => {
+    const db = new RecordingDatabase();
+    await new PostgresTrustAuthoritySnapshotReader(db).read('biz-1', 'device-1');
+    const deviceCall = db.calls.find((call) => /FROM trust_registered_device/i.test(call.sql));
+    expect(deviceCall?.sql).toMatch(/status\s*=\s*'active'/i);
+    expect(deviceCall?.sql).toMatch(/ORDER BY device_key_version DESC/i);
+    expect(deviceCall?.sql).toMatch(/LIMIT 1/i);
+    expect(deviceCall?.sql).not.toMatch(/device_key_version\s*=\s*\$/i);
+    expect(deviceCall?.parameters).toEqual(['biz-1', 'device-1']);
   });
 
   it('returns an empty snapshot without looking up membership when the device is not found', async () => {
@@ -61,7 +72,7 @@ describe('PostgresTrustAuthoritySnapshotReader (SQL shape only -- no live databa
       }
     }
     const db = new NoDeviceDatabase();
-    const snapshot = await new PostgresTrustAuthoritySnapshotReader(db).read('biz-1', 'device-missing', 1);
+    const snapshot = await new PostgresTrustAuthoritySnapshotReader(db).read('biz-1', 'device-missing');
     expect(snapshot).toEqual({ businessStatus: null, membership: null, device: null });
     expect(db.calls.some((call) => /FROM trust_business_membership/i.test(call.sql))).toBe(false);
   });

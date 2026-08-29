@@ -164,10 +164,19 @@ export class FileBackedAuthorityStore implements BusinessBootstrapStore, Members
   /** Full current-state snapshot for authority re-validation at credential USE time (not issuance
    * time) -- e.g. Relay's own pilot verifier, checking a presented credential's claims are still
    * backed by live, unrevoked, unchanged authority. Mirrors exactly what a real Postgres reader
-   * would fetch from the same three tables Relay and Trust already share physically. */
-  snapshot(businessId: string, deviceId: string, deviceKeyVersion: number): { businessStatus: 'active' | 'suspended' | 'revoked' | null; membership: BusinessMembership | null; device: RegisteredBusinessDevice | null } {
+   * would fetch from the same three tables Relay and Trust already share physically.
+   *
+   * CURRENT DEVICE KEY (relay-authority-repair round 2, 2026-08-29): takes no `deviceKeyVersion` --
+   * "current" is independently the highest device_key_version among this device identity's ACTIVE
+   * rows, mirroring `PostgresTrustAuthoritySnapshotReader`'s own fix and the pre-existing
+   * `AuthorityRepository.findActiveDevice()` selection rule (`ORDER BY device_key_version DESC LIMIT
+   * 1 WHERE status = 'active'`). See that Postgres reader's doc comment for why looking the device up
+   * BY the credential's own claimed version made the version-match check downstream a tautology. */
+  snapshot(businessId: string, deviceId: string): { businessStatus: 'active' | 'suspended' | 'revoked' | null; membership: BusinessMembership | null; device: RegisteredBusinessDevice | null } {
     const business = this.state.businesses[businessId];
-    const device = this.state.devices[deviceKey(businessId, deviceId, deviceKeyVersion)];
+    const device = Object.values(this.state.devices)
+      .filter((candidate) => candidate.businessId === businessId && candidate.deviceId === deviceId && candidate.status === 'active')
+      .reduce<StoredDevice | undefined>((current, candidate) => (!current || candidate.deviceKeyVersion > current.deviceKeyVersion ? candidate : current), undefined);
     const membership = device ? this.state.memberships[device.membershipId] : undefined;
     return {
       businessStatus: business?.status ?? null,

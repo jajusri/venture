@@ -187,7 +187,7 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
     credentialA = await issuer.issue({ business: { businessId: businessA.businessId, status: 'active' }, membership: businessA.membership, device: businessA.device, requestedScope: new AuthorityScope(['send_orders']), intentId: 'issue-a' });
     credentialB = await issuer.issue({ business: { businessId: businessB.businessId, status: 'active' }, membership: businessB.membership, device: businessB.device, requestedScope: new AuthorityScope(['receive_orders']), intentId: 'issue-b' });
 
-    const authorityReader: TrustAuthoritySnapshotReader = { read: (businessId, deviceId, deviceKeyVersion) => store.snapshot(businessId, deviceId, deviceKeyVersion) };
+    const authorityReader: TrustAuthoritySnapshotReader = { read: (businessId, deviceId) => store.snapshot(businessId, deviceId) };
     const verifierCore = new PilotAuthorityVerifier(new HttpTrustVerificationKeyFetcher(trustBaseUrl, 0), authorityReader, new InMemoryRelayReplayGuard(), () => now);
     repository = new InMemoryRelayRepository();
     const relaySigningKey = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey;
@@ -356,6 +356,105 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
       expect(response.statusCode, response.body).toBe(403);
     });
 
+    it('device key rotation (Codex re-certification BLOCKER 1): a credential bound to a superseded key version fails once a newer version becomes current, even though its signature/expiry remain valid and the old row is still active', async () => {
+      const rotating = await provisionBusiness(store, now, { actor: 'actor-e', name: 'Pilot Business E (rotation case)', intent: 'create-e-rotation', deviceId: 'device-e-1', extraScope: ['receive_orders'] });
+      const rotationIssuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => now);
+
+      // T0: v1 registered and current. C1 issued for v1 succeeds.
+      const c1 = await rotationIssuer.issue({ business: { businessId: rotating.businessId, status: 'active' }, membership: rotating.membership, device: rotating.device, requestedScope: new AuthorityScope(['receive_orders']), intentId: 'issue-rotation-c1' });
+      const c1BeforeRotation = buildAuthenticatedFetchRequest({
+        credential: c1, devicePrivateKeyPem: rotating.devicePrivateKeyPem, requestId: 'req-rotation-c1-before', timestamp: now,
+        recipientBusinessId: rotating.businessId, recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const beforeRotation = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: rotating.businessId, mailboxId: 'orders', recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', limit: 25, authenticatedRequest: Buffer.from(c1BeforeRotation).toString('base64') } });
+      expect(beforeRotation.statusCode, beforeRotation.body).toBe(200);
+
+      // T1: v2 legitimately registered under the same device identity and becomes current (highest
+      // active version) -- v1's row is left untouched, still status='active', never explicitly revoked.
+      const v2KeyPair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+      const v2PublicKeyDer = v2KeyPair.publicKey.export({ type: 'spki', format: 'der' });
+      const v2Fingerprint = createHash('sha256').update(v2PublicKeyDer).digest('base64');
+      const v2PrivateKeyPem = v2KeyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+      const v2Device = await new RegisterBusinessDevice(store, () => now).execute({
+        principal: { actorId: identifier('actor-e', 'ActorId'), verificationId: 'verified-actor-e', verifiedAt: now },
+        membership: rotating.membership, deviceId: identifier('device-e-1', 'DeviceId'), deviceKeyId: identifier('device-e-1-key-2', 'DeviceKeyId'),
+        deviceKeyVersion: 2, publicKey: new Uint8Array(v2PublicKeyDer), publicKeyFingerprint: v2Fingerprint,
+      });
+
+      // T2: C1 presented again. Its own signature and expiry are both still valid, and v1's row still
+      // physically exists and is still active -- but it is no longer CURRENT now that v2 exists. Must fail.
+      const c1AfterRotation = buildAuthenticatedFetchRequest({
+        credential: c1, devicePrivateKeyPem: rotating.devicePrivateKeyPem, requestId: 'req-rotation-c1-after', timestamp: now,
+        recipientBusinessId: rotating.businessId, recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const afterRotation = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: rotating.businessId, mailboxId: 'orders', recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', limit: 25, authenticatedRequest: Buffer.from(c1AfterRotation).toString('base64') } });
+      expect(afterRotation.statusCode, afterRotation.body).toBe(403);
+
+      // v1's own device signature cannot rescue C1 either (redundant with the above -- same key,
+      // proves the rejection is the current-key check, not merely a signature failure).
+      const c1WithV1KeyAgain = buildAuthenticatedFetchRequest({
+        credential: c1, devicePrivateKeyPem: rotating.devicePrivateKeyPem, requestId: 'req-rotation-c1-v1key-again', timestamp: now,
+        recipientBusinessId: rotating.businessId, recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const c1WithV1KeyAgainResponse = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: rotating.businessId, mailboxId: 'orders', recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', limit: 25, authenticatedRequest: Buffer.from(c1WithV1KeyAgain).toString('base64') } });
+      expect(c1WithV1KeyAgainResponse.statusCode, c1WithV1KeyAgainResponse.body).toBe(403);
+
+      // v2's private key cannot rescue C1 either -- C1's claims are still bound to v1's key id/
+      // version/fingerprint, so even a request signed by the NOW-current device key fails the
+      // credential-vs-current-authority field match (the credential itself never claimed v2).
+      const c1WithV2Key = buildAuthenticatedFetchRequest({
+        credential: c1, devicePrivateKeyPem: v2PrivateKeyPem, requestId: 'req-rotation-c1-v2key', timestamp: now,
+        recipientBusinessId: rotating.businessId, recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const c1WithV2KeyResponse = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: rotating.businessId, mailboxId: 'orders', recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', limit: 25, authenticatedRequest: Buffer.from(c1WithV2Key).toString('base64') } });
+      expect(c1WithV2KeyResponse.statusCode, c1WithV2KeyResponse.body).toBe(403);
+
+      // T3: C2 legitimately issued for the now-current v2. Must succeed.
+      const c2 = await rotationIssuer.issue({ business: { businessId: rotating.businessId, status: 'active' }, membership: rotating.membership, device: v2Device, requestedScope: new AuthorityScope(['receive_orders']), intentId: 'issue-rotation-c2' });
+      const c2Fetch = buildAuthenticatedFetchRequest({
+        credential: c2, devicePrivateKeyPem: v2PrivateKeyPem, requestId: 'req-rotation-c2', timestamp: now,
+        recipientBusinessId: rotating.businessId, recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const c2Response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: rotating.businessId, mailboxId: 'orders', recipientActorId: 'actor-e', recipientDeviceId: 'device-e-1', limit: 25, authenticatedRequest: Buffer.from(c2Fetch).toString('base64') } });
+      expect(c2Response.statusCode, c2Response.body).toBe(200);
+    });
+
+    it('wrong key ID: a credential claiming a device key ID other than the CURRENT registered key is rejected', async () => {
+      const forgedDevice: RegisteredBusinessDevice = { ...businessB.device, deviceKeyId: identifier('not-the-real-key-id', 'DeviceKeyId') };
+      const forgedIssuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => now);
+      const forgedCredential = await forgedIssuer.issue({ business: { businessId: businessB.businessId, status: 'active' }, membership: businessB.membership, device: forgedDevice, requestedScope: new AuthorityScope(['receive_orders']), intentId: 'issue-adv-wrong-keyid' });
+      const forgedFetch = buildAuthenticatedFetchRequest({
+        credential: forgedCredential, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-adv-wrong-keyid', timestamp: now,
+        recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25, authenticatedRequest: Buffer.from(forgedFetch).toString('base64') } });
+      expect(response.statusCode, response.body).toBe(403);
+    });
+
+    it('wrong fingerprint: a credential claiming a public-key fingerprint other than the CURRENT registered key is rejected', async () => {
+      const forgedDevice: RegisteredBusinessDevice = { ...businessB.device, publicKeyFingerprint: 'not-the-real-fingerprint' };
+      const forgedIssuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => now);
+      const forgedCredential = await forgedIssuer.issue({ business: { businessId: businessB.businessId, status: 'active' }, membership: businessB.membership, device: forgedDevice, requestedScope: new AuthorityScope(['receive_orders']), intentId: 'issue-adv-wrong-fingerprint' });
+      const forgedFetch = buildAuthenticatedFetchRequest({
+        credential: forgedCredential, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-adv-wrong-fingerprint', timestamp: now,
+        recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25, authenticatedRequest: Buffer.from(forgedFetch).toString('base64') } });
+      expect(response.statusCode, response.body).toBe(403);
+    });
+
+    it('nonexistent future key version: a credential claiming a device key version that was never registered is rejected', async () => {
+      const forgedDevice: RegisteredBusinessDevice = { ...businessB.device, deviceKeyVersion: 99 };
+      const forgedIssuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => now);
+      const forgedCredential = await forgedIssuer.issue({ business: { businessId: businessB.businessId, status: 'active' }, membership: businessB.membership, device: forgedDevice, requestedScope: new AuthorityScope(['receive_orders']), intentId: 'issue-adv-future-key-version' });
+      const forgedFetch = buildAuthenticatedFetchRequest({
+        credential: forgedCredential, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-adv-future-key-version', timestamp: now,
+        recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25, authenticatedRequest: Buffer.from(forgedFetch).toString('base64') } });
+      expect(response.statusCode, response.body).toBe(403);
+    });
+
     it('tampered request signature: flipping a byte in the possession-proof signature is rejected, not silently accepted', async () => {
       const fetchRequest = buildAuthenticatedFetchRequest({
         credential: credentialB, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-adv-tampered-sig', timestamp: now,
@@ -434,7 +533,7 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
     });
 
     it('Trust unavailable at verification time: the submission is not accepted (fails closed, does not crash the process)', async () => {
-      const authorityReader: TrustAuthoritySnapshotReader = { read: (businessId, deviceId, deviceKeyVersion) => store.snapshot(businessId, deviceId, deviceKeyVersion) };
+      const authorityReader: TrustAuthoritySnapshotReader = { read: (businessId, deviceId) => store.snapshot(businessId, deviceId) };
       const unreachableVerifier = new PilotAuthorityVerifier(new HttpTrustVerificationKeyFetcher('http://127.0.0.1:1', 0), authorityReader, new InMemoryRelayReplayGuard(), () => now);
       const isolatedApp = buildRelayService({
         repository: new InMemoryRelayRepository(), now: () => now,
