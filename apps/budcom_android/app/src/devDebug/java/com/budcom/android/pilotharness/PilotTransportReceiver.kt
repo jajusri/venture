@@ -180,7 +180,7 @@ class PilotTransportReceiver : BroadcastReceiver() {
         val after = transactionRepository.findOrderDeliveryEnvelope(stored.businessId, order.orderId, order.version)
         return PilotTransportResult(
             outcome = "success", orderId = order.orderId, orderVersion = order.version,
-            envelopeId = envelope.envelopeId, transportState = after?.state?.name,
+            envelopeId = envelope.envelopeId, transportState = after?.state?.name, transportError = after?.lastError,
         )
     }
 
@@ -258,5 +258,6 @@ data class PilotTransportResult(
     val orderVersion: Int? = null,
     val envelopeId: String? = null,
     val transportState: String? = null,
+    val transportError: String? = null,
     val receivedOrders: List<PilotReceivedOrder>? = null,
 )

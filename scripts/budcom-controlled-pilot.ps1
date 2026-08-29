@@ -352,7 +352,7 @@ function Invoke-PilotSubmitOrder {
     $payload = @{ op = 'submit-order'; buyerPartyId = $BuyerPartyId; peerBusinessId = $PeerBusinessId; productName = 'Controlled-Pilot Test Product'; quantity = '3' }
     if ($CreationKey) { $payload.creationKey = $CreationKey }
     $result = Send-PilotTransportOp -Serial $Serial -Payload $payload
-    Write-Host "  [$Label] submit-order outcome=$($result.outcome) orderId=$($result.orderId) transportState=$($result.transportState)"
+    Write-Host "  [$Label] submit-order outcome=$($result.outcome) orderId=$($result.orderId) transportState=$($result.transportState)$(if ($result.transportError) { " error=$($result.transportError)" })"
     return $result
 }
 
