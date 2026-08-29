@@ -356,6 +356,38 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
       expect(response.statusCode, response.body).toBe(403);
     });
 
+    it('tampered request signature: flipping a byte in the possession-proof signature is rejected, not silently accepted', async () => {
+      const fetchRequest = buildAuthenticatedFetchRequest({
+        credential: credentialB, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-adv-tampered-sig', timestamp: now,
+        recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const wire = JSON.parse(Buffer.from(fetchRequest).toString('utf8')) as { requestSignature: string };
+      const tampered = Buffer.from(wire.requestSignature, 'base64');
+      tampered[tampered.length - 1] = (tampered[tampered.length - 1]! + 1) % 256;
+      const tamperedWire = { ...wire, requestSignature: tampered.toString('base64') };
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25, authenticatedRequest: Buffer.from(JSON.stringify(tamperedWire)).toString('base64') } });
+      expect(response.statusCode, response.body).toBe(403);
+    });
+
+    it('wrong signing key: a request signed by a key other than the credential\'s own registered device key is rejected, even with otherwise-correct claims', async () => {
+      const impostorKey = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+      const forged = buildAuthenticatedFetchRequest({
+        credential: credentialB, devicePrivateKeyPem: impostorKey, requestId: 'req-adv-wrong-key', timestamp: now,
+        recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25, authenticatedRequest: Buffer.from(forged).toString('base64') } });
+      expect(response.statusCode, response.body).toBe(403);
+    });
+
+    it('future timestamp: a fetch request signed far ahead of the replay clock tolerance window is rejected', async () => {
+      const future = buildAuthenticatedFetchRequest({
+        credential: credentialB, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-adv-future-ts', timestamp: new Date(now.getTime() + 3_600_000),
+        recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25, authenticatedRequest: Buffer.from(future).toString('base64') } });
+      expect(response.statusCode, response.body).toBe(403);
+    });
+
     it('expired credential: a credential whose expiresAt is already in the past (relative to verification time) is rejected', async () => {
       const past = new Date(now.getTime() - 7_200_000);
       const expiredIssuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => past);
