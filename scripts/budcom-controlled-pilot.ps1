@@ -135,18 +135,40 @@ function Resolve-PhoneSerials {
 function Send-PilotPayloadAndTrigger {
     param([string]$Serial, [hashtable]$Payload)
     $json = $Payload | ConvertTo-Json -Compress
-    # Stdin, never argv -- the grant secret never appears in any process's command-line arguments.
-    $json | & $Adb -s $Serial shell run-as $DevDebugPackage sh -c "cat > $PayloadPath"
-    if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to write pilot enrollment payload to device $Serial (run-as/cat failed -- is $DevDebugPackage installed and debuggable?)." }
-    & $Adb -s $Serial shell rm -f $ResultPath 2>$null | Out-Null
+    $sharedTempPathOnDevice = "/data/local/tmp/pilot_enrollment_$Serial.json"
+    $localTempFile = [System.IO.Path]::GetTempFileName()
+    try {
+        # `adb shell run-as <pkg> sh -c 'cmd > file'` cannot be built from separate PowerShell/adb
+        # argv elements: adb re-joins every argv element into ONE remote command line with spaces,
+        # so a bare `>` ends up parsed by the OUTER (unprivileged shell) process -- which sets up file
+        # redirection using ITS OWN uid, before run-as's uid transition ever applies to the exec'd
+        # inner shell -- not by the inner, run-as-transitioned `sh`. Every well-known workaround
+        # routes around this rather than fighting adb's argv-joining: push the payload to a
+        # shell-writable staging path first (no BOM -- explicit UTF8Encoding($false), since piping a
+        # PowerShell string through `|` to a native process can silently prepend one, which would
+        # break the device's strict JSON parser), then have run-as's OWN inner shell perform the
+        # `>` redirect as a single quoted command string (so the whole `run-as ... sh -c '...'`
+        # sequence survives adb's argv-joining as one unit and the redirect happens under the
+        # already-transitioned uid).
+        [System.IO.File]::WriteAllText($localTempFile, $json, (New-Object System.Text.UTF8Encoding($false)))
+        & $Adb -s $Serial push $localTempFile $sharedTempPathOnDevice | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to push pilot enrollment payload to device $Serial." }
+        & $Adb -s $Serial shell "run-as $DevDebugPackage sh -c 'cat $sharedTempPathOnDevice > $PayloadPath'"
+        if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to copy pilot enrollment payload into app-private storage on $Serial (is $DevDebugPackage installed and debuggable?)." }
+    } finally {
+        & $Adb -s $Serial shell rm -f $sharedTempPathOnDevice | Out-Null
+        Remove-Item -Force $localTempFile -ErrorAction SilentlyContinue
+    }
+
+    & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath 2>$null | Out-Null
     & $Adb -s $Serial shell am broadcast -n $PilotReceiver -a $PilotAction | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-ErrorAndExit "Failed to broadcast enrollment trigger to device $Serial." }
 
     $deadline = (Get-Date).AddSeconds(20)
     while ((Get-Date) -lt $deadline) {
-        $raw = & $Adb -s $Serial shell run-as $DevDebugPackage sh -c "cat $ResultPath 2>/dev/null"
+        $raw = & $Adb -s $Serial shell run-as $DevDebugPackage cat $ResultPath 2>$null
         if ($raw -and $raw.Trim().StartsWith('{')) {
-            & $Adb -s $Serial shell run-as $DevDebugPackage sh -c "rm -f $ResultPath" | Out-Null
+            & $Adb -s $Serial shell run-as $DevDebugPackage rm -f $ResultPath | Out-Null
             try { return ($raw | ConvertFrom-Json) } catch { Write-ErrorAndExit "Malformed enrollment result from device $Serial`: $raw" }
         }
         Start-Sleep -Milliseconds 750
