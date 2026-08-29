@@ -98,6 +98,28 @@ export const migrations: readonly Migration[] = [{
     PRIMARY KEY (business_id, device_id, request_id)
   );
   CREATE INDEX relay_request_nonce_expiry_idx ON relay_authenticated_request_nonce(expires_at);`,
+}, {
+  version: 7,
+  name: 'trust_enrollment_grant',
+  // Small, additive (operational-mobile-path, 2026-08-29): the one-time bootstrap primitive that
+  // lets a legitimate Android device earn Trust authority over the network for the first time (see
+  // `domain/enrollment.ts`'s own doc comment). `grant_secret_hash` stores only a SHA-256 digest of
+  // the high-entropy grant secret -- the raw secret is never persisted anywhere. No existing table
+  // or column is altered or removed.
+  sql: `CREATE TABLE trust_enrollment_grant (
+    grant_id TEXT PRIMARY KEY,
+    business_id TEXT NOT NULL REFERENCES trust_business_authority(business_id),
+    actor_id TEXT NOT NULL,
+    membership_id TEXT NOT NULL REFERENCES trust_business_membership(membership_id),
+    granted_device_scope TEXT[] NOT NULL,
+    grant_secret_hash TEXT NOT NULL,
+    issued_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    consumed_by_device_id TEXT
+  );
+  CREATE INDEX trust_enrollment_grant_membership_idx ON trust_enrollment_grant(membership_id);
+  CREATE INDEX trust_enrollment_grant_expiry_idx ON trust_enrollment_grant(expires_at) WHERE consumed_at IS NULL;`,
 }];
 
 export async function runMigrations(database: Database): Promise<void> {

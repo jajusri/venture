@@ -40,11 +40,23 @@
  *   tsx services/trust/scripts/dev-provision.ts grant-scope --membership <id> --scope cap1,cap2,...
  *   tsx services/trust/scripts/dev-provision.ts issue-credential --business <id> --membership <id> --device <id> --device-key-path <path> --scope cap1,cap2,... --intent <id> [--lifetime-ms <ms>] [--out <path>]
  *   tsx services/trust/scripts/dev-provision.ts status --membership <id> [--business <id> --device <id> --device-key-version <n>]
+ *   tsx services/trust/scripts/dev-provision.ts create-enrollment-grant --business <id> --actor <id> --membership <id> --scope cap1,cap2,... [--lifetime-ms <ms>]
  *
  * Every command prints only non-secret identifiers/status to stdout -- never private key material.
+ *
+ * `create-enrollment-grant` is the ONE exception to "never touches Postgres": it is the LOCAL,
+ * dev/test-runtime-guarded operator path Gate 2B calls for -- the enrollment grant it creates is
+ * consumed over the network by Trust's real `POST /v1/trust/enrollment/consume` (`app.ts`), which is
+ * Postgres-backed only (`PostgresEnrollmentGrantStore`), so issuance must write to that SAME store or
+ * the HTTP endpoint would never see it. Every other command here still uses `FileBackedAuthorityStore`
+ * -- wiring real Postgres-backed business/membership provisioning into this CLI too remains the
+ * pre-existing, separately-tracked PRODUCTION PROVISIONING BLOCKER this file's own doc comment above
+ * already calls out (this command therefore only works against a business/membership that ALREADY
+ * exists in Postgres, e.g. seeded by test setup or a future real onboarding flow -- not by this CLI's
+ * own file-backed `create-business`).
  */
 import { parseArgs } from 'node:util';
-import { createPrivateKey, createPublicKey, createHash, generateKeyPairSync } from 'node:crypto';
+import { createPrivateKey, createPublicKey, createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -53,9 +65,12 @@ import { RegisterBusinessDevice } from '../src/application/register-device.js';
 import { BusinessDeviceCredentialIssuer } from '../src/application/issue-credential.js';
 import { AuthorityRevocationService } from '../src/application/revoke-authority.js';
 import { AuthorityScope, identifier, type AuthorityCapability } from '../src/domain/authority.js';
+import { hashEnrollmentGrantSecret, validateEnrollmentGrantLifetime, type EnrollmentGrantId } from '../src/domain/enrollment.js';
 import { FileBackedAuthorityStore, createBusinessDeterministicIds } from '../src/persistence/file-backed-authority-store.js';
 import { InMemoryCredentialIssuanceStore } from '../src/persistence/in-memory-credential-store.js';
 import { LocalFileTrustCredentialSigner, localSignerKeyExists } from '../src/persistence/local-signer.js';
+import { PostgresEnrollmentGrantStore } from '../src/persistence/postgres-enrollment-grant-store.js';
+import { PostgresDatabase } from '../../../packages/persistence/src/postgres-database.js';
 import { readTrustServiceConfig } from '../src/config.js';
 
 const ALLOWED_DEV_PROVISION_RUNTIME_ENVS = new Set(['development', 'test']);
@@ -176,8 +191,33 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(report, null, 2));
       break;
     }
+    case 'create-enrollment-grant': {
+      const { values } = parseArgs({ args: rest, options: { business: { type: 'string' }, actor: { type: 'string' }, membership: { type: 'string' }, scope: { type: 'string' }, 'lifetime-ms': { type: 'string' } } });
+      if (!values.business || !values.actor || !values.membership || !values.scope) throw new Error('create-enrollment-grant requires --business --actor --membership --scope cap1,cap2,...');
+      const lifetimeMs = Number(values['lifetime-ms'] ?? '900000');
+      const issuedAt = new Date();
+      const expiresAt = new Date(issuedAt.getTime() + lifetimeMs);
+      validateEnrollmentGrantLifetime(issuedAt, expiresAt);
+      const grantSecret = randomBytes(32).toString('base64url');
+      const database = new PostgresDatabase(config.databaseUrl, config.databasePoolMax);
+      try {
+        const grant = await new PostgresEnrollmentGrantStore(database).create({
+          grantId: identifier(randomUUID(), 'EnrollmentGrantId') as EnrollmentGrantId,
+          businessId: identifier(values.business, 'BusinessId'), actorId: identifier(values.actor, 'ActorId'), membershipId: identifier(values.membership, 'MembershipId'),
+          grantedDeviceScope: new AuthorityScope(values.scope.split(',').map((s) => s.trim()) as AuthorityCapability[]),
+          grantSecretHash: hashEnrollmentGrantSecret(grantSecret), issuedAt, expiresAt,
+        });
+        // The secret is printed EXACTLY ONCE, here, at issuance time -- it is never persisted in
+        // plaintext (only its hash is) and can never be recovered from Trust afterward. Transmitting
+        // it to the enrolling device (QR code, manual entry, etc.) is outside this CLI's scope.
+        console.log(JSON.stringify({ grantId: grant.grantId, grantSecret, expiresAt: grant.expiresAt.toISOString(), grantedDeviceScope: [...grant.grantedDeviceScope.capabilities] }, null, 2));
+      } finally {
+        await database.close();
+      }
+      break;
+    }
     default:
-      console.error('Usage: dev-provision.ts <create-business|register-device|grant-scope|issue-credential|status> [options]');
+      console.error('Usage: dev-provision.ts <create-business|register-device|grant-scope|issue-credential|status|create-enrollment-grant> [options]');
       process.exit(1);
   }
 }

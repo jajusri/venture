@@ -226,7 +226,11 @@ export function isEquivalentDeviceRegistration(a: RegisteredBusinessDevice, b: R
 }
 
 export class PostgresDeviceRegistrationStore implements DeviceRegistrationStore {
-  constructor(private readonly database: Database) {}
+  // Deliberately typed to `DatabaseSession`, not `Database`: this class only ever calls `.query()`,
+  // so it can run equally against a top-level `Database` (existing callers) or against the `tx`
+  // session INSIDE another store's transaction callback (see `PostgresEnrollmentGrantStore`, which
+  // must register a device in the SAME atomic unit as claiming its enrollment grant).
+  constructor(private readonly database: DatabaseSession) {}
 
   async find(businessId: string, deviceId: string, keyVersion: number): Promise<RegisteredBusinessDevice | null> {
     const result = await this.database.query<DeviceRow>(
