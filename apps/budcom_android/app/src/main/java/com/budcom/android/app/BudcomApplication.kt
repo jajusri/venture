@@ -7,6 +7,7 @@ import com.budcom.android.BuildConfig
 import com.budcom.android.core.connection.ConnectorConnectionOrchestrator
 import com.budcom.android.core.connection.ConnectorReconnectCoordinator
 import com.budcom.android.core.startup.ConnectorBaseUrlHydrator
+import com.budcom.android.core.trust.data.TrustEndpointHydrator
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +37,9 @@ class BudcomApplication : Application(), Configuration.Provider {
     @Inject
     lateinit var reconnectCoordinator: ConnectorReconnectCoordinator
 
+    @Inject
+    lateinit var trustEndpointHydrator: TrustEndpointHydrator
+
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
@@ -43,6 +47,7 @@ class BudcomApplication : Application(), Configuration.Provider {
         plantTimber()
         hydrateThenResolveConnectionAsync()
         reconnectCoordinator.start(applicationScope)
+        applicationScope.launch(Dispatchers.IO) { trustEndpointHydrator.hydrate() }
     }
 
     override val workManagerConfiguration: Configuration
