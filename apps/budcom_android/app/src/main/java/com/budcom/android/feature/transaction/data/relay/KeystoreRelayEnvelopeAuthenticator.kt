@@ -25,7 +25,11 @@ class KeystoreRelayEnvelopeAuthenticator @Inject constructor(
     override suspend fun authenticate(envelope: OrderDeliveryEnvelope): AuthenticatedTransportEnvelope? {
         val identity = keyStore.getCurrentIdentity() ?: return null
         val credential = credentials.credentialFor(envelope.senderCompanyId, identity.deviceId) ?: return null
-        val recipientBusinessId = envelope.recipientBusinessId ?: envelope.recipientPartyId ?: return null
+        // Business routing authority MUST come from the envelope's own authenticated Business field,
+        // never from recipientPartyId (a Party reference, never interchangeable with Business
+        // identity -- relay-authority-repair, 2026-08-29 Party/Business materialization gap). Fail
+        // closed if a current envelope has no explicit recipientBusinessId.
+        val recipientBusinessId = envelope.recipientBusinessId ?: return null
         val canonical = envelope.commercialContentCanonical ?: snapshots.forEnvelope(envelope)?.deterministicEncoding() ?: return null
         val contentType = envelope.commercialContentType ?: com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_TYPE
         val contentVersion = envelope.commercialContentVersion ?: com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_VERSION

@@ -281,10 +281,19 @@ class TransactionRepositoryImplTest {
         val evidence = RelayAcceptanceEvidence(
             acceptanceId = "accept-1", envelopeId = envelope.envelopeId, objectType = envelope.objectType,
             objectId = order.orderId, objectVersion = order.version, senderBusinessId = order.sellerCompanyId,
-            recipientBusinessId = "buyer-1", acceptedAtEpochMillis = 250, status = "relay_accepted",
+            // Must echo the real authenticated recipient Business (order.sellerBusinessId here, since
+            // this order's sender==buyer), never a Party id -- Relay's real acceptance response always
+            // echoes back what was actually submitted. NOTE: enqueueOrderDelivery's own returned
+            // `envelope` here has a real (non-null) recipientBusinessId in production (see
+            // RelayOutboxDispatcher.toDispatcherEnvelope(), which the real dispatch path always uses
+            // instead) -- this test constructs evidence from order.sellerBusinessId directly since
+            // TransactionRepositoryImpl's private OrderDeliveryEnvelopeEntity.toDomain() (used only by
+            // this method's own return value, not by the real dispatch path) does not copy
+            // recipientBusinessId through; a separate, non-blocking finding, not this fix's scope.
+            recipientBusinessId = order.sellerBusinessId!!, acceptedAtEpochMillis = 250, status = "relay_accepted",
         )
-        val sent = repo.markOrderSentFromRelayEvidence("co-1", envelope, evidence)!!
-        val retry = repo.markOrderSentFromRelayEvidence("co-1", envelope, evidence)!!
+        val sent = repo.markOrderSentFromRelayEvidence("co-1", envelope.copy(recipientBusinessId = order.sellerBusinessId), evidence)!!
+        val retry = repo.markOrderSentFromRelayEvidence("co-1", envelope.copy(recipientBusinessId = order.sellerBusinessId), evidence)!!
         assertEquals(CanonicalOrderState.Sent, sent.state)
         assertEquals(CanonicalOrderState.Sent, retry.state)
         assertEquals("SENT", canonicalOrderDao.orders.single().state)
@@ -602,6 +611,32 @@ class TransactionRepositoryImplTest {
         assertEquals(1, canonicalOrderDao.orders.count { it.companyId == "buyer-co" && it.orderId == snapshot.orderId })
         assertEquals(0, canonicalOrderDao.orders.count { it.companyId == "seller-co" && it.orderId == snapshot.orderId })
         assertEquals("seller-co", canonicalOrderDao.orders.single().sellerCompanyId)
+    }
+
+    @Test
+    fun `ingestion rejects when the snapshot's recipientBusinessId does not match the local Business context`() = runTest(dispatcher) {
+        // Gate 6 item 3: explicit recipientBusinessId present and well-formed, but not this device's
+        // own Business -- must never be treated as "close enough".
+        val snapshot = receivedSnapshot()
+        val item = receivedItem(snapshot)
+        val repo = repository()
+        assertFalse(repo.ingestReceivedOrderVersion("some-other-co", item, snapshot, ts(700)))
+        assertEquals(0, canonicalOrderDao.orders.size)
+        assertEquals(0, recipientInboxDao.entries.size)
+    }
+
+    @Test
+    fun `ingestion rejects a snapshot whose recipientBusinessId is actually a Party reference -- reproduces the physical Phone B bug`() = runTest(dispatcher) {
+        // Reproduces the exact real-world defect: CanonicalOrderVersionSnapshotFactory.forEnvelope()
+        // once passed envelope.recipientPartyId (a local Party UUID, e.g. a real captured value like
+        // "7d052805-503f-4d9b-be7b-aaa34783f133") into recipientBusinessId. Materializing under the
+        // real recipient Business must reject it -- a Party id can never authenticate Business receipt.
+        val partyShaped = receivedSnapshot().copy(recipientBusinessId = "7d052805-503f-4d9b-be7b-aaa34783f133")
+        val item = receivedItem(partyShaped)
+        val repo = repository()
+        assertFalse(repo.ingestReceivedOrderVersion("buyer-co", item, partyShaped, ts(700)))
+        assertEquals(0, canonicalOrderDao.orders.size)
+        assertEquals(0, recipientInboxDao.entries.size)
     }
 
     @Test

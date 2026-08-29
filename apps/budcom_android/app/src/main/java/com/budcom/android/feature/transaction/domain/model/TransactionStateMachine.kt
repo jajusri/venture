@@ -166,8 +166,15 @@ object CanonicalOrderSentTransitions {
         if (evidence.objectId != order.orderId || envelope.orderId != order.orderId) return null
         if (evidence.objectVersion != order.version || envelope.orderVersion != order.version) return null
         if (evidence.senderBusinessId != order.sellerCompanyId || envelope.senderCompanyId != order.sellerCompanyId) return null
-        val recipient = order.buyerPartyId ?: envelope.recipientPartyId
-        if (recipient == null || evidence.recipientBusinessId != recipient || envelope.recipientPartyId != recipient) return null
+        // Business routing authority (evidence.recipientBusinessId, echoed back by Relay) must be
+        // compared against the envelope's own authenticated Business field, never against a Party
+        // reference -- Business and Party identity are never interchangeable (relay-authority-repair,
+        // 2026-08-29 Party/Business materialization gap). The order's own buyerPartyId/the envelope's
+        // recipientPartyId remain a separate, Party-scoped consistency check.
+        val recipientBusinessId = envelope.recipientBusinessId ?: return null
+        if (evidence.recipientBusinessId != recipientBusinessId) return null
+        val recipientPartyId = order.buyerPartyId
+        if (recipientPartyId == null || envelope.recipientPartyId != recipientPartyId) return null
         return when (order.state) {
             CanonicalOrderState.Sent -> CanonicalOrderState.Sent
             CanonicalOrderState.Draft -> CanonicalOrderState.Sent

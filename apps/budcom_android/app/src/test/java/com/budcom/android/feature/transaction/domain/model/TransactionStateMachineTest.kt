@@ -55,19 +55,20 @@ class SellerInboxTransitionsTest {
 }
 
 class CanonicalOrderSentTransitionsTest {
-    private fun order(state: CanonicalOrderState = CanonicalOrderState.Draft, version: Int = 1) = CanonicalOrder(
-        companyId = "co-1", orderId = "order-1", creationKey = "k", sellerCompanyId = "co-1", buyerPartyId = "buyer-1",
+    private fun order(state: CanonicalOrderState = CanonicalOrderState.Draft, version: Int = 1, buyerPartyId: String? = "buyer-1") = CanonicalOrder(
+        companyId = "co-1", orderId = "order-1", creationKey = "k", sellerCompanyId = "co-1", buyerPartyId = buyerPartyId,
         state = state, source = TransactionEntryPointType.Catalogue, submissionType = TransactionSubmissionType.Estimate,
         note = null, createdAt = TransactionTimestamp(1, TransactionTimestampSource.DeviceLocalProvisional), version = version, lines = emptyList(),
     )
-    private fun envelope() = OrderDeliveryEnvelope(
+    private fun envelope(recipientBusinessId: String? = "seller-co") = OrderDeliveryEnvelope(
         companyId = "co-1", envelopeId = "env-1", idempotencyKey = "order:order-1:v1", objectType = "CANONICAL_ORDER",
         orderId = "order-1", orderVersion = 1, senderCompanyId = "co-1", recipientPartyId = "buyer-1",
         createdAt = TransactionTimestamp(1, TransactionTimestampSource.DeviceLocalProvisional),
         state = OrderTransportState.RelayAccepted, attemptCount = 1, lastAttemptAt = null, lastError = null,
+        recipientBusinessId = recipientBusinessId,
     )
     private fun evidence() = RelayAcceptanceEvidence(
-        "accept-1", "env-1", "CANONICAL_ORDER", "order-1", 1, "co-1", "buyer-1", 10, "relay_accepted",
+        "accept-1", "env-1", "CANONICAL_ORDER", "order-1", 1, "co-1", "seller-co", 10, "relay_accepted",
     )
 
     @Test
@@ -82,6 +83,21 @@ class CanonicalOrderSentTransitionsTest {
         assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(recipientBusinessId = "other")))
         assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(), evidence().copy(status = "seen")))
         assertNull(CanonicalOrderSentTransitions.apply(order(CanonicalOrderState.Seen), envelope(), evidence()))
+    }
+
+    @Test
+    fun `Party-Business materialization gap regression -- Relay acceptance never confirms Sent from Party identity`() {
+        // Reproduces the physical bug class: evidence.recipientBusinessId (a real Business id echoed
+        // back by Relay) must be compared against the envelope's own authenticated Business field,
+        // never against a Party reference. A real Business id can never equal a Party id, so a
+        // pre-fix-shaped comparison would always silently fail closed here too -- Sent would never be
+        // reached for a real v3 order even on a fully legitimate Relay acceptance.
+        assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(recipientBusinessId = null), evidence()))
+        // Business id present but disagreeing with what Relay echoed back: fail closed, not "close enough".
+        assertNull(CanonicalOrderSentTransitions.apply(order(), envelope(recipientBusinessId = "buyer-1"), evidence()))
+        // Business identity correct; Party consistency is still checked as a separate, narrower invariant.
+        assertNull(CanonicalOrderSentTransitions.apply(order(buyerPartyId = null), envelope(), evidence()))
+        assertNull(CanonicalOrderSentTransitions.apply(order(buyerPartyId = "other-party"), envelope(), evidence()))
     }
 }
 
