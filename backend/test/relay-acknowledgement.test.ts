@@ -9,6 +9,7 @@ const submission = (): RelayAcknowledgementSubmission => ({
   recipientActorId: 'actor-b',
   recipientDeviceId: 'device-b',
   receivedAt: new Date(20),
+  authenticatedRequest: new Uint8Array([1]),
 });
 
 class MemoryRepository implements RelayRepository {
@@ -39,6 +40,7 @@ const verifier: RelayAcknowledgementVerifier = { verify: async (value) => ({
   recipientBusinessId: value.recipientBusinessId,
   recipientActorId: value.recipientActorId,
   recipientDeviceId: value.recipientDeviceId,
+  envelopeId: value.envelopeId,
   credentialValid: true,
   authorityScope: new Set(['receive_orders']),
 }) };
@@ -58,7 +60,7 @@ describe('relay delivery acknowledgement', () => {
   it('rejects forged recipient authority', async () => {
     const forged: RelayAcknowledgementVerifier = { verify: async () => ({
       recipientBusinessId: 'other', recipientActorId: 'actor-b', recipientDeviceId: 'device-b',
-      credentialValid: true, authorityScope: new Set(['receive_orders']),
+      envelopeId: 'env-1', credentialValid: true, authorityScope: new Set(['receive_orders']),
     }) };
     await expect(new RecordRelayAcknowledgement(new MemoryRepository(), forged).execute(submission())).rejects.toThrow('binding mismatch');
   });

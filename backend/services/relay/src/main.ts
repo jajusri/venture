@@ -18,6 +18,7 @@ import { PartitionedRelayIngressLimiter } from './application/relay-protections.
 import { PilotAuthorityVerifier, relayAcknowledgementVerifier, relayMailboxVerifier, relaySubmissionVerifier } from './application/pilot-authority-verifier.js';
 import { HttpTrustVerificationKeyFetcher } from './application/http-verification-key-fetcher.js';
 import { PostgresTrustAuthoritySnapshotReader } from '../../trust/src/persistence/postgres-authority-snapshot-reader.js';
+import { PostgresRelayReplayGuard } from './persistence/postgres-relay-replay-guard.js';
 
 const config = readRelayServiceConfig();
 const database = new PostgresDatabase(config.databaseUrl, config.databasePoolMax);
@@ -27,7 +28,11 @@ await runMigrations(database);
 const repository = new PostgresRelayRepository(database);
 const issuer = new SignedRelayAcceptanceIssuer(new LocalFileRelayAcceptanceSigner(config.relayId, 'P256-SHA256-v1', config.relayAcceptanceKeyPath));
 const ingressLimiter = new PartitionedRelayIngressLimiter(config.ingressMaxRequestsPerWindow, config.ingressWindowMs);
-const verifierCore = new PilotAuthorityVerifier(new HttpTrustVerificationKeyFetcher(config.trustBaseUrl), new PostgresTrustAuthoritySnapshotReader(database));
+const verifierCore = new PilotAuthorityVerifier(
+  new HttpTrustVerificationKeyFetcher(config.trustBaseUrl),
+  new PostgresTrustAuthoritySnapshotReader(database),
+  new PostgresRelayReplayGuard(database),
+);
 
 const app = buildRelayService({
   repository, issuer, ingressLimiter,

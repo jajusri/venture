@@ -36,7 +36,7 @@ const mailboxVerifier: RelayMailboxVerifier = { verify: (value) => Promise.resol
   credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
 const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipientBusinessId, recipientActorId: value.recipientActorId,
-  recipientDeviceId: value.recipientDeviceId, credentialValid: true, authorityScope: new Set(['receive_orders']),
+  recipientDeviceId: value.recipientDeviceId, envelopeId: value.envelopeId, credentialValid: true, authorityScope: new Set(['receive_orders']),
 }) };
 const issuer = () => new SignedRelayAcceptanceIssuer({ sign: () => Promise.resolve({ relayId: 'relay-1', profile: 'test-v1', evidence: new Uint8Array([9]) }) }, () => 'accept-1');
 const body = {
@@ -90,7 +90,7 @@ describe('relay HTTP submission', () => {
     const app = buildRelayService({ repository, verifier, mailboxVerifier, acknowledgementVerifier, issuer: issuer() }); apps.push(app);
     const response = await app.inject({
       method: 'POST', url: '/v1/relay/mailboxes/fetch',
-      payload: { recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', limit: 25 },
+      payload: { recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', limit: 25, authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({ recipientBusinessId: 'business-b', mailboxId: 'orders', nextCursor: null });

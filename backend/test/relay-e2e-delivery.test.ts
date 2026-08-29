@@ -72,7 +72,7 @@ const mailboxVerifier: RelayMailboxVerifier = { verify: (value) => Promise.resol
   credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
 const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipientBusinessId, recipientActorId: value.recipientActorId,
-  recipientDeviceId: value.recipientDeviceId, credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
+  recipientDeviceId: value.recipientDeviceId, envelopeId: value.envelopeId, credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
 const apps: ReturnType<typeof buildRelayService>[] = [];
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
 
@@ -96,7 +96,7 @@ describe('relay end to end structured delivery', () => {
 
     const mailbox = await app.inject({
       method: 'POST', url: '/v1/relay/mailboxes/fetch',
-      payload: { recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', limit: 25 },
+      payload: { recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', limit: 25, authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     expect(mailbox.statusCode).toBe(200);
     expect(mailbox.json().items).toHaveLength(1);
@@ -107,11 +107,11 @@ describe('relay end to end structured delivery', () => {
 
     const ack = await app.inject({
       method: 'POST', url: '/v1/relay/acknowledgements',
-      payload: { envelopeId: 'env-e2e-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(200).toISOString() },
+      payload: { envelopeId: 'env-e2e-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(200).toISOString(), authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     const ackRetry = await app.inject({
       method: 'POST', url: '/v1/relay/acknowledgements',
-      payload: { envelopeId: 'env-e2e-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(200).toISOString() },
+      payload: { envelopeId: 'env-e2e-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(200).toISOString(), authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     expect(ack.statusCode).toBe(200);
     expect(ackRetry.statusCode).toBe(200);

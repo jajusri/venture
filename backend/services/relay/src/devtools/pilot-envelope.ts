@@ -117,3 +117,89 @@ export function verifyEcdsaSha256WithDerPublicKey(payload: Uint8Array, signature
     return false;
   }
 }
+
+/**
+ * CONTROLLED-PILOT canonical authenticated-request primitive for Mailbox Fetch and Acknowledgement
+ * (Relay authority repair, 2026-08-29 -- Codex STOP 1).
+ *
+ * Before this, `checkBearerAuthority()` granted mailbox-fetch/acknowledgement authority from
+ * request-supplied `businessId`/`actorId`/`deviceId` alone -- no signature, no possession proof.
+ * Anyone who knew or guessed a valid identifier tuple could obtain authority. This primitive closes
+ * that gap by requiring the SAME kind of device-signed, credential-backed proof Submit already uses
+ * (`PilotEnvelopeWire`/`pilotBindingSigningPayload` above), generalized to carry an action name, a
+ * request nonce, and a timestamp, since Fetch/Ack don't have the fixed set of top-level submission
+ * fields Submit's binding payload is built from. This is intentionally the SAME style of pipe-
+ * delimited canonicalization as `pilotBindingSigningPayload`/`credentialClaimsSigningPayload` above
+ * and Trust's own `credentialSigningPayload()` -- no competing crypto scheme is introduced.
+ *
+ * Binds (per the approved architecture): protocol/request version, action, business/actor/
+ * membership/device/device-key identity, a request id (nonce), a timestamp, the target resource
+ * (mailboxId for fetch, envelopeId for acknowledge), and action-specific security-relevant
+ * parameters (cursor+limit for fetch; receivedAt for acknowledge). Changing ANY of these after
+ * signing invalidates the signature -- see `pilot-authority-verifier.test.ts`'s canonicalization/
+ * tamper tests.
+ */
+export type AuthenticatedRelayRequestAction = 'mailbox_fetch' | 'acknowledge';
+
+export interface AuthenticatedRequestBindingFields {
+  readonly action: AuthenticatedRelayRequestAction;
+  readonly businessId: string;
+  readonly actorId: string;
+  readonly membershipId: string;
+  readonly deviceId: string;
+  readonly deviceKeyId: string;
+  readonly deviceKeyVersion: number;
+  readonly requestId: string;
+  readonly timestamp: string;
+  /** mailboxId for `mailbox_fetch`, envelopeId for `acknowledge`. */
+  readonly target: string;
+  /** Ordered, action-specific security-relevant fields (already stringified/primitive). */
+  readonly parameters: readonly (string | number)[];
+}
+
+export interface AuthenticatedRelayRequestWire {
+  readonly credentialClaims: PilotCredentialClaimsWire;
+  readonly credentialSignature: string;
+  readonly requestId: string;
+  readonly timestamp: string;
+  readonly requestSignature: string;
+}
+
+const AUTHENTICATED_REQUEST_VERSION = 1;
+
+export function authenticatedRequestSigningPayload(fields: AuthenticatedRequestBindingFields): Uint8Array {
+  const parts: readonly (string | number)[] = [
+    AUTHENTICATED_REQUEST_VERSION, fields.action, fields.businessId, fields.actorId, fields.membershipId,
+    fields.deviceId, fields.deviceKeyId, fields.deviceKeyVersion, fields.requestId, fields.timestamp, fields.target,
+    ...fields.parameters,
+  ];
+  return Buffer.from(parts.map((value) => String(value).replaceAll('\\', '\\\\').replaceAll('|', '\\|')).join('|'), 'utf8');
+}
+
+/** Device-side (Android-equivalent, simulated by test tooling) construction: signs the canonical
+ * request payload with the device's own private key and packages it with the Trust credential --
+ * the private key itself is never transmitted, only this signature. */
+export function buildAuthenticatedRelayRequest(input: { claims: PilotCredentialClaimsWire; credentialSignature: Uint8Array; bindingFields: AuthenticatedRequestBindingFields; devicePrivateKeyPem: string }): Uint8Array {
+  const requestSignature = cryptoSign('sha256', authenticatedRequestSigningPayload(input.bindingFields), input.devicePrivateKeyPem);
+  const wire: AuthenticatedRelayRequestWire = {
+    credentialClaims: input.claims,
+    credentialSignature: Buffer.from(input.credentialSignature).toString('base64'),
+    requestId: input.bindingFields.requestId,
+    timestamp: input.bindingFields.timestamp,
+    requestSignature: requestSignature.toString('base64'),
+  };
+  return Buffer.from(JSON.stringify(wire), 'utf8');
+}
+
+export function parseAuthenticatedRelayRequest(bytes: Uint8Array): AuthenticatedRelayRequestWire | null {
+  try {
+    const parsed: unknown = JSON.parse(Buffer.from(bytes).toString('utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    const wire = parsed as Partial<AuthenticatedRelayRequestWire>;
+    if (!wire.credentialClaims || typeof wire.credentialSignature !== 'string' || typeof wire.requestId !== 'string' ||
+      typeof wire.timestamp !== 'string' || typeof wire.requestSignature !== 'string') return null;
+    return wire as AuthenticatedRelayRequestWire;
+  } catch {
+    return null;
+  }
+}

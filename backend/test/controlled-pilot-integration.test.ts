@@ -20,7 +20,8 @@ import { buildRelayService } from '../services/relay/src/http/app.js';
 import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/acceptance-evidence.js';
 import { PilotAuthorityVerifier, relayAcknowledgementVerifier, relayMailboxVerifier, relaySubmissionVerifier, type TrustAuthoritySnapshotReader } from '../services/relay/src/application/pilot-authority-verifier.js';
 import { HttpTrustVerificationKeyFetcher } from '../services/relay/src/application/http-verification-key-fetcher.js';
-import { buildPilotEnvelope, type PilotCredentialClaimsWire } from '../services/relay/src/devtools/pilot-envelope.js';
+import { InMemoryRelayReplayGuard } from '../services/relay/src/application/relay-replay-guard.js';
+import { buildAuthenticatedRelayRequest, buildPilotEnvelope, type AuthenticatedRequestBindingFields, type PilotCredentialClaimsWire } from '../services/relay/src/devtools/pilot-envelope.js';
 import type { RecipientRoutingKey, RelayAcceptance, RelayAcknowledgement, RelayMailboxEntry, RelaySubmission } from '../services/relay/src/domain/relay.js';
 import type { RelayAcknowledgementSubmission } from '../services/relay/src/application/record-acknowledgement.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../services/relay/src/persistence/relay-repository.js';
@@ -139,6 +140,24 @@ function buildSubmissionEnvelope(input: { credential: IssuedBusinessDeviceCreden
   return buildPilotEnvelope({ claims: toWireClaims(input.credential.claims), credentialSignature: input.credential.signature.signature, bindingFields, devicePrivateKeyPem: input.devicePrivateKeyPem });
 }
 
+function buildAuthenticatedFetchRequest(input: { credential: IssuedBusinessDeviceCredential; devicePrivateKeyPem: string; requestId: string; timestamp: Date; recipientBusinessId: string; recipientActorId: string; recipientDeviceId: string; mailboxId: string; cursor: string | null; limit: number }): Uint8Array {
+  const bindingFields: AuthenticatedRequestBindingFields = {
+    action: 'mailbox_fetch', businessId: input.recipientBusinessId, actorId: input.recipientActorId, membershipId: input.credential.claims.membershipId,
+    deviceId: input.recipientDeviceId, deviceKeyId: input.credential.claims.deviceKeyId, deviceKeyVersion: input.credential.claims.deviceKeyVersion,
+    requestId: input.requestId, timestamp: input.timestamp.toISOString(), target: input.mailboxId, parameters: [input.cursor ?? '', input.limit],
+  };
+  return buildAuthenticatedRelayRequest({ claims: toWireClaims(input.credential.claims), credentialSignature: input.credential.signature.signature, bindingFields, devicePrivateKeyPem: input.devicePrivateKeyPem });
+}
+
+function buildAuthenticatedAckRequest(input: { credential: IssuedBusinessDeviceCredential; devicePrivateKeyPem: string; requestId: string; timestamp: Date; recipientBusinessId: string; recipientActorId: string; recipientDeviceId: string; envelopeId: string; receivedAt: Date }): Uint8Array {
+  const bindingFields: AuthenticatedRequestBindingFields = {
+    action: 'acknowledge', businessId: input.recipientBusinessId, actorId: input.recipientActorId, membershipId: input.credential.claims.membershipId,
+    deviceId: input.recipientDeviceId, deviceKeyId: input.credential.claims.deviceKeyId, deviceKeyVersion: input.credential.claims.deviceKeyVersion,
+    requestId: input.requestId, timestamp: input.timestamp.toISOString(), target: input.envelopeId, parameters: [input.receivedAt.toISOString()],
+  };
+  return buildAuthenticatedRelayRequest({ claims: toWireClaims(input.credential.claims), credentialSignature: input.credential.signature.signature, bindingFields, devicePrivateKeyPem: input.devicePrivateKeyPem });
+}
+
 describe('controlled-pilot real Trust + Relay backend integration', () => {
   const workDir = mkdtempSync(join(tmpdir(), 'budcom-pilot-'));
   const issuerKeyPath = join(workDir, 'trust-issuer-key.pem');
@@ -169,7 +188,7 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
     credentialB = await issuer.issue({ business: { businessId: businessB.businessId, status: 'active' }, membership: businessB.membership, device: businessB.device, requestedScope: new AuthorityScope(['receive_orders']), intentId: 'issue-b' });
 
     const authorityReader: TrustAuthoritySnapshotReader = { read: (businessId, deviceId, deviceKeyVersion) => store.snapshot(businessId, deviceId, deviceKeyVersion) };
-    const verifierCore = new PilotAuthorityVerifier(new HttpTrustVerificationKeyFetcher(trustBaseUrl, 0), authorityReader, () => now);
+    const verifierCore = new PilotAuthorityVerifier(new HttpTrustVerificationKeyFetcher(trustBaseUrl, 0), authorityReader, new InMemoryRelayReplayGuard(), () => now);
     repository = new InMemoryRelayRepository();
     const relaySigningKey = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey;
     relayApp = buildRelayService({
@@ -218,17 +237,33 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
     expect(duplicateSubmit.json()).toEqual(accepted.json());
     expect(repository.writes, 'duplicate submit must not write a second time').toBe(1);
 
-    const mailbox = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25 } });
+    const fetchRequest1 = buildAuthenticatedFetchRequest({
+      credential: credentialB, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-fetch-1', timestamp: now,
+      recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', mailboxId: 'orders', cursor: null, limit: 25,
+    });
+    const mailbox = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25, authenticatedRequest: Buffer.from(fetchRequest1).toString('base64') } });
     expect(mailbox.statusCode, mailbox.body).toBe(200);
     expect(mailbox.json().items).toHaveLength(1);
     expect(mailbox.json().items[0]).toMatchObject({ envelopeId: 'env-pilot-1', objectId: 'order-pilot-1', status: 'relay_accepted' });
     expect(mailbox.json().items[0].commercialContent).toBe(canonicalOrderSnapshot);
 
-    const ack = await relayApp.inject({ method: 'POST', url: '/v1/relay/acknowledgements', payload: { envelopeId: 'env-pilot-1', recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', receivedAt: now.toISOString() } });
+    // A real retrying client mints a FRESH request id/nonce per transmission -- possession proof is
+    // per-request, not reusable bearer authority (see relay-replay-guard.ts) -- while the underlying
+    // acknowledgement business action stays idempotent by envelopeId, which `repository.acks` proves
+    // below. These are the two DIFFERENT concepts this package's task explicitly requires preserved.
+    const ackRequest1 = buildAuthenticatedAckRequest({
+      credential: credentialB, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-ack-1', timestamp: now,
+      recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', envelopeId: 'env-pilot-1', receivedAt: now,
+    });
+    const ack = await relayApp.inject({ method: 'POST', url: '/v1/relay/acknowledgements', payload: { envelopeId: 'env-pilot-1', recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', receivedAt: now.toISOString(), authenticatedRequest: Buffer.from(ackRequest1).toString('base64') } });
     expect(ack.statusCode, ack.body).toBe(200);
     expect(ack.json()).toMatchObject({ status: 'delivered', envelopeId: 'env-pilot-1' });
 
-    const ackRetry = await relayApp.inject({ method: 'POST', url: '/v1/relay/acknowledgements', payload: { envelopeId: 'env-pilot-1', recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', receivedAt: now.toISOString() } });
+    const ackRequest2 = buildAuthenticatedAckRequest({
+      credential: credentialB, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-ack-2', timestamp: now,
+      recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', envelopeId: 'env-pilot-1', receivedAt: now,
+    });
+    const ackRetry = await relayApp.inject({ method: 'POST', url: '/v1/relay/acknowledgements', payload: { envelopeId: 'env-pilot-1', recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', receivedAt: now.toISOString(), authenticatedRequest: Buffer.from(ackRequest2).toString('base64') } });
     expect(ackRetry.statusCode).toBe(200);
     expect(repository.acks, 'duplicate acknowledgement must not record a second delivery').toBe(1);
   });
@@ -263,8 +298,61 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
       expect(response.statusCode, response.body).toBe(403);
     });
 
-    it('wrong recipient: business A cannot fetch business B\'s mailbox using its own device identity', async () => {
-      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-a', recipientDeviceId: 'device-a-1', limit: 25 } });
+    it('wrong recipient: business A cannot fetch business B\'s mailbox even with a real, validly-signed credential + possession proof for its own device', async () => {
+      const forgedFetch = buildAuthenticatedFetchRequest({
+        credential: credentialA, devicePrivateKeyPem: businessA.devicePrivateKeyPem, requestId: 'req-adv-wrong-recipient', timestamp: now,
+        recipientBusinessId: businessB.businessId, recipientActorId: 'actor-a', recipientDeviceId: 'device-a-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-a', recipientDeviceId: 'device-a-1', limit: 25, authenticatedRequest: Buffer.from(forgedFetch).toString('base64') } });
+      expect(response.statusCode, response.body).toBe(403);
+    });
+
+    it('identifier-only fetch is rejected: presenting IDs with no authenticatedRequest at all yields no authority (Codex STOP 1)', async () => {
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25 } });
+      expect(response.statusCode, response.body).toBe(400);
+    });
+
+    it('identifier-only acknowledgement is rejected: presenting IDs with no authenticatedRequest at all yields no authority (Codex STOP 1)', async () => {
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/acknowledgements', payload: { envelopeId: 'env-pilot-1', recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', receivedAt: now.toISOString() } });
+      expect(response.statusCode, response.body).toBe(400);
+    });
+
+    it('replay: reusing the exact same signed fetch request a second time is rejected, not treated as a fresh authorized fetch', async () => {
+      const replayable = buildAuthenticatedFetchRequest({
+        credential: credentialB, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-adv-replay', timestamp: now,
+        recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const payload = { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25, authenticatedRequest: Buffer.from(replayable).toString('base64') };
+      const first = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload });
+      expect(first.statusCode, first.body).toBe(200);
+      const replay = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload });
+      expect(replay.statusCode, replay.body).toBe(403);
+    });
+
+    it('stale timestamp: a fetch request signed far outside the replay clock tolerance window is rejected', async () => {
+      const stale = buildAuthenticatedFetchRequest({
+        credential: credentialB, devicePrivateKeyPem: businessB.devicePrivateKeyPem, requestId: 'req-adv-stale-ts', timestamp: new Date(now.getTime() - 3_600_000),
+        recipientBusinessId: businessB.businessId, recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: businessB.businessId, mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b-1', limit: 25, authenticatedRequest: Buffer.from(stale).toString('base64') } });
+      expect(response.statusCode, response.body).toBe(403);
+    });
+
+    it('credential freshness (Codex STOP 2): a credential issued before a later authority-epoch change is rejected even though its signature and expiry are still valid', async () => {
+      const fresh = await provisionBusiness(store, now, { actor: 'actor-d', name: 'Pilot Business D (epoch case)', intent: 'create-d-epoch', deviceId: 'device-d-1', extraScope: ['receive_orders'] });
+      const preRotationIssuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => now);
+      const preRotationCredential = await preRotationIssuer.issue({ business: { businessId: fresh.businessId, status: 'active' }, membership: fresh.membership, device: fresh.device, requestedScope: new AuthorityScope(['receive_orders']), intentId: 'issue-adv-epoch' });
+
+      // Authority epoch advances (membership scope widened) AFTER the credential above was issued.
+      // The credential's own signature and expiry are both still valid -- only its bound authority
+      // epoch is now stale, which is exactly what Codex STOP 2 required Relay to catch.
+      await new AuthorityRevocationService(store, () => now).changeScope(fresh.membership, new AuthorityScope(['receive_orders', 'send_orders']));
+
+      const staleEpochFetch = buildAuthenticatedFetchRequest({
+        credential: preRotationCredential, devicePrivateKeyPem: fresh.devicePrivateKeyPem, requestId: 'req-adv-epoch', timestamp: now,
+        recipientBusinessId: fresh.businessId, recipientActorId: 'actor-d', recipientDeviceId: 'device-d-1', mailboxId: 'orders', cursor: null, limit: 25,
+      });
+      const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/mailboxes/fetch', payload: { recipientBusinessId: fresh.businessId, mailboxId: 'orders', recipientActorId: 'actor-d', recipientDeviceId: 'device-d-1', limit: 25, authenticatedRequest: Buffer.from(staleEpochFetch).toString('base64') } });
       expect(response.statusCode, response.body).toBe(403);
     });
 
@@ -315,7 +403,7 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
 
     it('Trust unavailable at verification time: the submission is not accepted (fails closed, does not crash the process)', async () => {
       const authorityReader: TrustAuthoritySnapshotReader = { read: (businessId, deviceId, deviceKeyVersion) => store.snapshot(businessId, deviceId, deviceKeyVersion) };
-      const unreachableVerifier = new PilotAuthorityVerifier(new HttpTrustVerificationKeyFetcher('http://127.0.0.1:1', 0), authorityReader, () => now);
+      const unreachableVerifier = new PilotAuthorityVerifier(new HttpTrustVerificationKeyFetcher('http://127.0.0.1:1', 0), authorityReader, new InMemoryRelayReplayGuard(), () => now);
       const isolatedApp = buildRelayService({
         repository: new InMemoryRelayRepository(), now: () => now,
         verifier: relaySubmissionVerifier(unreachableVerifier), mailboxVerifier: relayMailboxVerifier(unreachableVerifier), acknowledgementVerifier: relayAcknowledgementVerifier(unreachableVerifier),

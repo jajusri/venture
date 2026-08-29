@@ -16,6 +16,7 @@ const fetch = () => ({
   recipientDeviceId: 'device-b',
   cursor: null,
   limit: 2,
+  authenticatedRequest: new Uint8Array([1]),
 });
 const verified = () => ({
   recipientBusinessId: recipient.businessId,
@@ -102,6 +103,7 @@ describe('recipient mailbox fetch', () => {
     repository.entries = [entry(1)];
     const page = await new FetchRecipientMailbox(repository, verifier).execute(mapRelayMailboxFetchBody({
       recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', limit: 25,
+      authenticatedRequest: Buffer.from([1]).toString('base64'),
     }));
     expect(page.items).toHaveLength(1);
   });
@@ -117,7 +119,7 @@ const submissionVerifier: RelaySubmissionVerifier = { verify: async (value) => (
 const issuer = () => new SignedRelayAcceptanceIssuer({ sign: () => Promise.resolve({ relayId: 'relay-1', profile: 'test-v1', evidence: new Uint8Array([9]) }) }, () => 'accept-1');
 const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: async (value) => ({
   recipientBusinessId: value.recipientBusinessId, recipientActorId: value.recipientActorId,
-  recipientDeviceId: value.recipientDeviceId, credentialValid: true, authorityScope: new Set(['receive_orders']),
+  recipientDeviceId: value.recipientDeviceId, envelopeId: value.envelopeId, credentialValid: true, authorityScope: new Set(['receive_orders']),
 }) };
 const apps: ReturnType<typeof buildRelayService>[] = [];
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
@@ -130,7 +132,7 @@ describe('relay HTTP mailbox fetch', () => {
     apps.push(app);
     const response = await app.inject({
       method: 'POST', url: '/v1/relay/mailboxes/fetch',
-      payload: { recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', limit: 25 },
+      payload: { recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', limit: 25, authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().items).toHaveLength(1);

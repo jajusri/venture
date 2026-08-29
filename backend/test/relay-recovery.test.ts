@@ -124,12 +124,14 @@ describe('relay failure and recovery attacks', () => {
     const page = await mailbox.execute({
       recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
       recipientActorId: 'actor-b', recipientDeviceId: 'device-b', cursor: null, limit: 25,
+      authenticatedRequest: new Uint8Array([1]),
     });
     expect(page.items).toHaveLength(1);
     const ack = new RecordRelayAcknowledgement(repository, acknowledgementVerifier);
     const request = {
       envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), recipientBusinessId: 'business-b',
       recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(50),
+      authenticatedRequest: new Uint8Array([1]),
     };
     await ack.execute(request);
     await ack.execute(request);
@@ -147,6 +149,7 @@ describe('relay failure and recovery attacks', () => {
     await expect(new FetchRecipientMailbox(repository, revokedMailbox).execute({
       recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
       recipientActorId: 'actor-b', recipientDeviceId: 'device-b', cursor: null, limit: 25,
+      authenticatedRequest: new Uint8Array([1]),
     })).rejects.toThrow('rejected');
   });
 
@@ -187,7 +190,7 @@ describe('relay failure and recovery attacks', () => {
     apps.push(app);
     const ack = await app.inject({
       method: 'POST', url: '/v1/relay/acknowledgements',
-      payload: { envelopeId: 'env-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(40).toISOString() },
+      payload: { envelopeId: 'env-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(40).toISOString(), authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     expect(ack.statusCode).toBe(200);
     expect(ack.json().status).toBe('delivered');

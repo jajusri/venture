@@ -81,6 +81,23 @@ export const migrations: readonly Migration[] = [{
     ADD COLUMN commercial_content TEXT,
     ADD COLUMN commercial_content_type TEXT,
     ADD COLUMN commercial_content_version INTEGER;`,
+}, {
+  version: 6,
+  name: 'relay_authenticated_request_replay_guard',
+  // Small, additive, non-destructive (relay-authority-repair, 2026-08-29): durable replay
+  // protection for authenticated Mailbox Fetch / Acknowledgement requests (Codex STOP 1). Scoped to
+  // (business_id, device_id) so one device's nonce space can never collide with another's; bounded
+  // by expires_at (PostgresRelayReplayGuard deletes its own partition's expired rows on every
+  // consume() call -- no separate background job needed at this scale) with a supporting index for
+  // that cleanup. No existing table/column is altered or removed.
+  sql: `CREATE TABLE relay_authenticated_request_nonce (
+    business_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (business_id, device_id, request_id)
+  );
+  CREATE INDEX relay_request_nonce_expiry_idx ON relay_authenticated_request_nonce(expires_at);`,
 }];
 
 export async function runMigrations(database: Database): Promise<void> {
