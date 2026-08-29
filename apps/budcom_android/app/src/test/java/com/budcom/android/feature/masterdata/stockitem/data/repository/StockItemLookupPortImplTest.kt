@@ -101,4 +101,8 @@ private class FakeLocal : StockItemLocalDataSource {
     override suspend fun query(companyId: String, query: StockItemQuery): StockItemPage? = null
     override suspend fun findById(companyId: String, id: String): StockItem? = stored[companyId]?.get(id)
     override suspend fun listAllForCompany(companyId: String): List<StockItem> = stored[companyId]?.values?.toList().orEmpty()
+    override suspend fun findByIds(companyId: String, ids: List<String>): List<StockItem> =
+        ids.mapNotNull { stored[companyId]?.get(it) }
+    override suspend fun freshnessFingerprint(companyId: String): String =
+        "${stored[companyId]?.size ?: 0}:${stored[companyId]?.values?.maxOfOrNull { it.syncedAt } ?: ""}"
 }

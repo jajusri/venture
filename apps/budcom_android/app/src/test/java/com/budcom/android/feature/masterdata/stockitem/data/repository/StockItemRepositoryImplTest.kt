@@ -520,6 +520,12 @@ private class FakeStockLocal : StockItemLocalDataSource {
 
     override suspend fun listAllForCompany(companyId: String): List<StockItem> =
         stored[companyId].orEmpty()
+
+    override suspend fun findByIds(companyId: String, ids: List<String>): List<StockItem> =
+        stored[companyId].orEmpty().filter { it.id in ids }
+
+    override suspend fun freshnessFingerprint(companyId: String): String =
+        "${stored[companyId]?.size ?: 0}:${stored[companyId]?.maxOfOrNull { it.syncedAt } ?: ""}"
 }
 
 private class FakeSelectedCompanyStore(

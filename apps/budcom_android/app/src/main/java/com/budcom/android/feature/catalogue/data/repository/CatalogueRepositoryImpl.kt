@@ -33,8 +33,11 @@ import com.budcom.android.feature.catalogue.domain.model.CataloguePublishedSnaps
 import com.budcom.android.feature.catalogue.domain.model.CatalogueTimestamp
 import com.budcom.android.feature.catalogue.domain.model.CatalogueTimestampSource
 import com.budcom.android.feature.catalogue.domain.model.PriceDisplayMode
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueChangeSignal
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueEnrichmentUpdate
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueLifecycleResult
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueProductPage
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueProductPageCursor
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueReconciliationResult
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository
 import com.budcom.android.feature.catalogue.storage.CatalogueAssetResult
@@ -69,6 +72,28 @@ class CatalogueRepositoryImpl @Inject constructor(
     private val dispatchers: DispatcherProvider,
 ) : CatalogueRepository {
 
+    /** In-memory, per-company local-write counter backing [currentChangeSignal] -- bumped by every
+     * write this repository makes to `catalogue_product` (see [upsertProduct]/[upsertProducts]).
+     * Deliberately not persisted: it only needs to answer "has anything changed since the last time
+     * *this process* checked," and a fresh process always takes the unconditional-load path anyway
+     * (see [CatalogueRepository.listProductsPage]/[CatalogueViewModel]'s own initial load). */
+    private val localRevisions = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    private fun bumpRevision(companyId: String) {
+        localRevisions.merge(companyId, 1, Int::plus)
+    }
+
+    private suspend fun upsertProduct(entity: CatalogueProductEntity) {
+        productDao.upsert(entity)
+        bumpRevision(entity.companyId)
+    }
+
+    private suspend fun upsertProducts(entities: List<CatalogueProductEntity>) {
+        if (entities.isEmpty()) return
+        productDao.upsertAll(entities)
+        bumpRevision(entities.first().companyId)
+    }
+
     override suspend fun createDraftFromStockItem(
         companyId: String,
         stockItemId: String,
@@ -82,7 +107,7 @@ class CatalogueRepositoryImpl @Inject constructor(
         }
         val stockItem = stockItemLookup.findById(companyId, stockItemId) ?: return@withContext null
         val (productEntity, linkEntity) = buildDraftEntities(companyId, stockItemId, stockItem, timestamp)
-        productDao.upsert(productEntity)
+        upsertProduct(productEntity)
         sourceLinkDao.upsert(linkEntity)
         toDomain(companyId, productEntity, stockItem)
     }
@@ -124,7 +149,7 @@ class CatalogueRepositoryImpl @Inject constructor(
                 // List-parameter @Insert in one commit) -- this chunk either contributes both its
                 // products and their links, or (on a mid-chunk failure) neither, since the product
                 // write always happens first and nothing here reads a half-written chunk back.
-                productDao.upsertAll(products)
+                upsertProducts(products)
                 sourceLinkDao.upsertAll(links)
                 linked += products.size
             }
@@ -209,7 +234,7 @@ class CatalogueRepositoryImpl @Inject constructor(
             archivedAt = null,
             archivedAtSource = null,
         )
-        productDao.upsert(entity)
+        upsertProduct(entity)
         toDomain(companyId, entity)
     }
 
@@ -259,7 +284,7 @@ class CatalogueRepositoryImpl @Inject constructor(
             updatedAt = epoch,
             updatedAtSource = source,
         )
-        productDao.upsert(updated)
+        upsertProduct(updated)
         toDomain(companyId, updated)
     }
 
@@ -282,7 +307,7 @@ class CatalogueRepositoryImpl @Inject constructor(
             archivedAt = if (next == CatalogueLifecycleState.Archived) epoch else null,
             archivedAtSource = if (next == CatalogueLifecycleState.Archived) source else null,
         )
-        productDao.upsert(updated)
+        upsertProduct(updated)
 
         when (next) {
             CatalogueLifecycleState.Published -> publishSnapshot(companyId, updated, timestamp)
@@ -328,17 +353,62 @@ class CatalogueRepositoryImpl @Inject constructor(
             val nowUnavailable = mutableListOf<String>()
             val reappeared = mutableListOf<String>()
             val (epoch, source) = timestamp.toPair()
-            productDao.findAllLinkedToStockItems(companyId).forEach { product ->
+            val linkedProducts = productDao.findAllLinkedToStockItems(companyId)
+            // Batched lookup (Catalogue perf package): one query for every linked product's Stock
+            // Item instead of one findById round trip per product -- this loop below is now a pure
+            // in-memory map read, never a DB call.
+            val stockItemsById = linkedProducts.mapNotNull { it.linkedStockItemId }.distinct()
+                .let { ids -> if (ids.isEmpty()) emptyMap() else stockItemLookup.findByIds(companyId, ids).associateBy { it.id } }
+            linkedProducts.forEach { product ->
                 val stockItemId = product.linkedStockItemId ?: return@forEach
-                val stockItem = stockItemLookup.findById(companyId, stockItemId)
+                val stockItem = stockItemsById[stockItemId]
                 val isAvailable = stockItem != null && stockItem.status != StockItemStatus.Inactive
                 if (isAvailable != product.sourceAvailable) {
-                    productDao.upsert(product.copy(sourceAvailable = isAvailable, updatedAt = epoch, updatedAtSource = source))
+                    upsertProduct(product.copy(sourceAvailable = isAvailable, updatedAt = epoch, updatedAtSource = source))
                     if (isAvailable) reappeared += product.productId else nowUnavailable += product.productId
                 }
             }
             CatalogueReconciliationResult(nowUnavailable, reappeared)
         }
+
+    override suspend fun listProductsPage(
+        companyId: String,
+        cursor: CatalogueProductPageCursor?,
+        pageSize: Int,
+    ): CatalogueProductPage = withContext(dispatchers.io) {
+        val cursorUpdatedAt = cursor?.updatedAt ?: Long.MAX_VALUE
+        val cursorProductId = cursor?.productId ?: ""
+        // Fetch one extra row so "is there another page" is known from this single query, never a
+        // second round trip just to check.
+        val fetched = productDao.findPageForCompany(companyId, cursorUpdatedAt, cursorProductId, pageSize + 1)
+        val pageEntities = fetched.take(pageSize)
+        val hasMore = fetched.size > pageSize
+        val stockItemIds = pageEntities.mapNotNull { it.linkedStockItemId }.distinct()
+        val stockItemsById = if (stockItemIds.isEmpty()) emptyMap() else stockItemLookup.findByIds(companyId, stockItemIds).associateBy { it.id }
+        val products = pageEntities.map { entity ->
+            toDomain(companyId, entity, preResolved = entity.linkedStockItemId?.let { stockItemsById[it] })
+        }
+        val nextCursor = if (hasMore) pageEntities.last().let { CatalogueProductPageCursor(it.updatedAt, it.productId) } else null
+        CatalogueProductPage(products, nextCursor)
+    }
+
+    override suspend fun primaryAssetFiles(companyId: String, productIds: List<String>): Map<String, File?> =
+        withContext(dispatchers.io) {
+            if (productIds.isEmpty()) return@withContext emptyMap()
+            val byProduct = assetDao.findAllForProducts(companyId, productIds).groupBy { it.productId }
+            productIds.associateWith { productId ->
+                val productAssets = byProduct[productId] ?: return@associateWith null
+                val primary = productAssets.firstOrNull { it.isPrimary } ?: productAssets.firstOrNull() ?: return@associateWith null
+                assetStore.resolveAssetFile(companyId, productId, primary.filePath)
+            }
+        }
+
+    override suspend fun currentChangeSignal(companyId: String): CatalogueChangeSignal = withContext(dispatchers.io) {
+        CatalogueChangeSignal(
+            localRevision = localRevisions[companyId] ?: 0,
+            stockItemFingerprint = stockItemLookup.freshnessFingerprint(companyId),
+        )
+    }
 
     override suspend fun upsertBranch(
         companyId: String,

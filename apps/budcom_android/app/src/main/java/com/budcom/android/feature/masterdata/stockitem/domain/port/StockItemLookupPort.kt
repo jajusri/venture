@@ -19,6 +19,18 @@ interface StockItemLookupPort {
     suspend fun findById(companyId: String, stockItemId: String): StockItem?
     suspend fun listAllForCompany(companyId: String): List<StockItem>
 
+    /** Batched equivalent of calling [findById] once per id (Catalogue perf package) -- collapses
+     * what used to be one DB round trip per product (reconciliation sweep, page-read Tally-field
+     * resolution) into a single query. An id with no matching cached Stock Item is simply absent
+     * from the result, exactly like [findById] would return `null` for it. */
+    suspend fun findByIds(companyId: String, stockItemIds: List<String>): List<StockItem>
+
+    /** Cheap, poll-friendly signal for "has this company's Stock Item cache changed at all since I
+     * last checked" -- never fetches or deserializes row content, unlike [listAllForCompany]. Two
+     * equal fingerprints across separate calls mean nothing changed; used by Catalogue to decide
+     * whether a resume-triggered reconciliation sweep is actually needed. */
+    suspend fun freshnessFingerprint(companyId: String): String
+
     /**
      * Deliberately the one exception to this port's local-cache-only rule above. TD-050
      * (2026-08-24 live validation): the Sync screen's "Sync Now" for Stock Items only updates the

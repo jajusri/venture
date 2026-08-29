@@ -12,6 +12,8 @@ import com.budcom.android.feature.catalogue.domain.excel.CatalogueExcelValidator
 import com.budcom.android.feature.catalogue.domain.model.CatalogueProduct
 import com.budcom.android.feature.catalogue.domain.port.CatalogueBranchSelectionStore
 import com.budcom.android.feature.catalogue.domain.port.CatalogueClock
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueChangeSignal
+import com.budcom.android.feature.catalogue.domain.repository.CatalogueProductPageCursor
 import com.budcom.android.feature.catalogue.domain.repository.CatalogueRepository
 import com.budcom.android.feature.catalogue.sharing.CatalogueShareCoordinator
 import com.budcom.android.feature.catalogue.sharing.CatalogueShareResult
@@ -59,6 +61,15 @@ class CatalogueViewModel @Inject constructor(
     private var pendingImportRows: List<CatalogueExcelRow> = emptyList()
     private var pendingPdfSave: PreparedCatalogueShare? = null
 
+    /** The next page's cursor for [CatalogueRepository.listProductsPage], `null` once the last page
+     * has been reached. Reset by every full [load]/[checkFreshnessAndReloadIfNeeded] reload. */
+    private var nextCursor: CatalogueProductPageCursor? = null
+
+    /** The change signal captured at the end of the most recent successful reload -- compared
+     * against a fresh [CatalogueRepository.currentChangeSignal] on resume to decide whether a
+     * reconciliation sweep + reload is actually needed (see [checkFreshnessAndReloadIfNeeded]). */
+    private var lastChangeSignal: CatalogueChangeSignal? = null
+
     init {
         // Mirrors ConnectViewModel's own company-switch discipline (TD-037 class): every company
         // change (not just the initial subscription) reloads this screen's list from scratch.
@@ -73,6 +84,8 @@ class CatalogueViewModel @Inject constructor(
     fun onEvent(event: CatalogueEvent) {
         when (event) {
             CatalogueEvent.Refresh -> load(refreshing = true)
+            CatalogueEvent.ResumeCheck -> checkFreshnessAndReloadIfNeeded()
+            CatalogueEvent.LoadMoreProducts -> loadMore()
             CatalogueEvent.OpenAddChoiceDialog -> _uiState.update { it.copy(showAddChoiceDialog = true) }
             CatalogueEvent.DismissAddChoiceDialog -> _uiState.update { it.copy(showAddChoiceDialog = false) }
             CatalogueEvent.ChooseManualEntry ->
@@ -130,59 +143,107 @@ class CatalogueViewModel @Inject constructor(
 
     private fun load(refreshing: Boolean) {
         val id = companyId ?: run {
-            // A resume-triggered CatalogueEvent.Refresh (see CatalogueRoute) can race the
+            // A resume-triggered CatalogueEvent.ResumeCheck (see CatalogueRoute) can race the
             // company-session subscription on a cold start, firing before companyId is known.
             // Only the real, company-driven load path (refreshing = false, from the init-block
             // subscription) is allowed to declare "no company" and clear the loading indicator --
-            // a premature Refresh in this state must be a no-op, not a flash of the empty state
-            // this screen isn't actually in yet.
+            // a premature check in this state must be a no-op, not a flash of the empty state this
+            // screen isn't actually in yet.
             if (!refreshing) _uiState.update { it.copy(isInitialLoading = false, isRefreshing = false, products = emptyList()) }
             return
         }
         viewModelScope.launch {
-            _uiState.update {
-                if (refreshing) it.copy(isRefreshing = true) else it.copy(isInitialLoading = true)
-            }
-            // Opportunistic reconciliation (architecture §6/§14/§21): cheap, local-only sweep
-            // against the already-synced Stock Item cache -- never a network call of its own.
-            runCatching { repository.reconcileStockItemLinks(id, clock.now()) }
-            val products = repository.listProducts(id)
-            val isPublic = repository.isPublic(id)
-            val branches = repository.listBranches(id)
-            val selectedBranchId = branchSelectionStore.observeSelectedBranchId(id).first()
-                // A previously-selected branch that no longer exists for this company (e.g. this
-                // is a fresh install/company-switch with a stale stored id from before) silently
-                // falls back to the catalogue-wide default rather than showing a dangling selection.
-                ?.takeIf { stored -> branches.any { it.branchId == stored } }
-            // Photo display fix: the list row never carried a resolved primary-asset file before,
-            // even though the asset was already stored and already correctly resolvable (the exact
-            // same read the Detail screen's own PhotosSection already uses) -- this reuses
-            // listAssets/resolveAssetFile unchanged, per product, both already company-scoped.
-            val rows = products.map { p -> p.toRowUi(primaryAssetFile(id, p.productId)) }
-            _uiState.update {
-                it.copy(
-                    isInitialLoading = false,
-                    isRefreshing = false,
-                    products = rows,
-                    isPublic = isPublic,
-                    branches = branches.map { CatalogueBranchUi(it.branchId, it.name) },
-                    selectedBranchId = selectedBranchId,
-                    error = null,
-                )
-            }
+            _uiState.update { if (refreshing) it.copy(isRefreshing = true) else it.copy(isInitialLoading = true) }
+            reloadFirstPage(id)
+            _uiState.update { it.copy(isInitialLoading = false, isRefreshing = false) }
         }
     }
 
-    /** Resolves a product's primary photo file, if any -- reuses [CatalogueRepository.listAssets]/
-     * [CatalogueRepository.resolveAssetFile] exactly as-is, both already `companyId`-scoped
-     * (composite key + path-containment check in the underlying asset store), so this can never
-     * resolve a file belonging to another company. Returns `null` (never throws) for a product
-     * with no photo, or if the primary asset's own file has since gone missing -- a stale/invalid
-     * reference must never crash the list, only fall back to the existing no-image state. */
-    private suspend fun primaryAssetFile(companyId: String, productId: String): java.io.File? {
-        val assets = repository.listAssets(companyId, productId)
-        val primary = assets.firstOrNull { it.isPrimary } ?: assets.firstOrNull() ?: return null
-        return repository.resolveAssetFile(companyId, productId, primary.filePath)
+    /**
+     * Resume-triggered replacement for an unconditional [load] (Catalogue perf package). Found live
+     * on a real device (2026-08-24): returning from Detail after a Publish/Archive/enrichment edit
+     * left this list showing stale lifecycle-state chips -- the original fix was an unconditional
+     * reconciliation+reload on every RESUMED. That preserved correctness but repeated the full sweep
+     * even when nothing had changed (e.g. the user only glanced at Detail, or came back from the
+     * Stock Item Picker/Transaction Composer without linking or editing anything).
+     *
+     * [CatalogueRepository.currentChangeSignal] is a cheap, local-only check (an in-memory counter
+     * for this repository's own writes, plus one small aggregate query against the Stock Item
+     * cache) -- comparing it against [lastChangeSignal] (captured at the end of the last successful
+     * reload) tells us whether *anything* that could make the list stale actually happened. If not,
+     * this is a true no-op: no reconciliation, no reload, no state update at all, so scroll position
+     * and everything else already on screen is left completely untouched. If something did change,
+     * this reloads exactly like [load] would, just without flashing the full-screen loading state
+     * for what is usually a fast, already-cached read.
+     */
+    private fun checkFreshnessAndReloadIfNeeded() {
+        val id = companyId ?: return
+        viewModelScope.launch {
+            val signal = repository.currentChangeSignal(id)
+            if (signal == lastChangeSignal) return@launch
+            reloadFirstPage(id)
+        }
+    }
+
+    /** Loads the first page of [id]'s products (after an opportunistic reconciliation sweep) and
+     * publishes it, branches, and the Public toggle to [CatalogueUiState] -- the shared core behind
+     * both an explicit [load] and a resume-triggered [checkFreshnessAndReloadIfNeeded]. Deliberately
+     * does not touch [CatalogueUiState.isInitialLoading]/[CatalogueUiState.isRefreshing]; callers
+     * that want a loading indicator toggle it themselves around this call. */
+    private suspend fun reloadFirstPage(id: String) {
+        // Opportunistic reconciliation (architecture §6/§14/§21): cheap, local-only sweep against
+        // the already-synced Stock Item cache -- never a network call of its own. Now O(linked
+        // products) with one batched Stock Item lookup, not one DB round trip per linked product.
+        runCatching { repository.reconcileStockItemLinks(id, clock.now()) }
+        val page = repository.listProductsPage(id, cursor = null, pageSize = CATALOGUE_PAGE_SIZE)
+        nextCursor = page.nextCursor
+        // Captured after reconciliation so a real change reconciliation just applied is reflected
+        // in what "no change since last load" means for the *next* freshness check.
+        lastChangeSignal = repository.currentChangeSignal(id)
+        val isPublic = repository.isPublic(id)
+        val branches = repository.listBranches(id)
+        val selectedBranchId = branchSelectionStore.observeSelectedBranchId(id).first()
+            // A previously-selected branch that no longer exists for this company (e.g. this
+            // is a fresh install/company-switch with a stale stored id from before) silently
+            // falls back to the catalogue-wide default rather than showing a dangling selection.
+            ?.takeIf { stored -> branches.any { it.branchId == stored } }
+        val rows = toRowUis(id, page.products)
+        _uiState.update {
+            it.copy(
+                products = rows,
+                isPublic = isPublic,
+                branches = branches.map { b -> CatalogueBranchUi(b.branchId, b.name) },
+                selectedBranchId = selectedBranchId,
+                canLoadMore = nextCursor != null,
+                error = null,
+            )
+        }
+    }
+
+    /** Appends the next page after [nextCursor], if any -- a no-op if the last page was already
+     * reached or another load-more is already in flight. */
+    private fun loadMore() {
+        val id = companyId ?: return
+        val cursor = nextCursor ?: return
+        if (_uiState.value.isLoadingMore) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingMore = true) }
+            val page = repository.listProductsPage(id, cursor, CATALOGUE_PAGE_SIZE)
+            nextCursor = page.nextCursor
+            val newRows = toRowUis(id, page.products)
+            _uiState.update { it.copy(products = it.products + newRows, isLoadingMore = false, canLoadMore = page.nextCursor != null) }
+        }
+    }
+
+    /** Resolves every row's primary photo file in one batched call (Catalogue perf package -- was
+     * a [CatalogueRepository.listAssets]/[CatalogueRepository.resolveAssetFile] round trip per
+     * product before). `null` for a product with no photo, or if the primary asset's own file has
+     * since gone missing -- a stale/invalid reference must never crash the list, only fall back to
+     * the existing no-image state. */
+    private suspend fun toRowUis(companyId: String, products: List<CatalogueProduct>): List<CatalogueProductRowUi> {
+        if (products.isEmpty()) return emptyList()
+        val primaryFiles = repository.primaryAssetFiles(companyId, products.map { it.productId })
+        return products.map { p -> p.toRowUi(primaryFiles[p.productId]) }
     }
 
     private fun confirmAddManual() {
@@ -345,6 +406,12 @@ class CatalogueViewModel @Inject constructor(
         }
     }
 }
+
+/** Page size for [CatalogueViewModel]'s [CatalogueRepository.listProductsPage] reads (Catalogue
+ * perf package) -- small enough to keep a single page's DB/asset work cheap, large enough that a
+ * typical seller catalogue rarely needs a second page at all. `internal` so tests can assert
+ * against the exact same value production uses. */
+internal const val CATALOGUE_PAGE_SIZE = 50
 
 private fun CatalogueProduct.toRowUi(primaryAssetFile: java.io.File?) = CatalogueProductRowUi(
     productId = productId,
