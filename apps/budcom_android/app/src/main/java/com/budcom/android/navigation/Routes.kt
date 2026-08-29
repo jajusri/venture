@@ -18,6 +18,7 @@ object Routes {
     const val SYNC = "sync"
     const val DIAGNOSTICS = "diagnostics"
     const val SETTINGS = "settings"
+    const val TRUST_STATUS = "trust_status"
     const val LEDGERS = "ledgers?q={q}"
     const val STOCK_ITEMS = "stock_items?q={q}"
     const val VOUCHERS = "vouchers?q={q}"

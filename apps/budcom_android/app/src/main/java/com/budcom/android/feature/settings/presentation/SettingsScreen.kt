@@ -49,6 +49,7 @@ fun SettingsRoute(
     onOpenSync: () -> Unit,
     onOpenDiagnostics: () -> Unit,
     onOpenSecurePairing: () -> Unit,
+    onOpenTrustStatus: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -60,6 +61,7 @@ fun SettingsRoute(
                 SettingsNavigation.Sync -> onOpenSync()
                 SettingsNavigation.Diagnostics -> onOpenDiagnostics()
                 SettingsNavigation.SecurePairing -> onOpenSecurePairing()
+                SettingsNavigation.TrustStatus -> onOpenTrustStatus()
             }
         }
     }
@@ -119,6 +121,7 @@ fun SettingsScreen(
             LedgerSharingCard(state = state, onEvent = onEvent)
             SyncCard(state = state, onEvent = onEvent)
             DiagnosticsCard(onEvent = onEvent)
+            TrustStatusCard(onEvent = onEvent)
             AboutCard(state = state, onEvent = onEvent)
         }
     }
@@ -448,6 +451,23 @@ private fun DiagnosticsCard(onEvent: (SettingsEvent) -> Unit) {
                 .testTag("settings_open_diagnostics"),
         ) {
             Text(stringResource(R.string.settings_open_diagnostics))
+        }
+    }
+}
+
+@Composable
+private fun TrustStatusCard(onEvent: (SettingsEvent) -> Unit) {
+    SettingsSection(
+        title = "Trust & Enrollment",
+        testTag = "settings_trust_status",
+    ) {
+        Button(
+            onClick = { onEvent(SettingsEvent.OpenTrustStatus) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("settings_open_trust_status"),
+        ) {
+            Text("View enrollment status")
         }
     }
 }

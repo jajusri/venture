@@ -41,6 +41,7 @@ sealed interface SettingsEvent {
     data object OpenSync : SettingsEvent
     data object OpenDiagnostics : SettingsEvent
     data object OpenSecurePairing : SettingsEvent
+    data object OpenTrustStatus : SettingsEvent
     data class SelectLedgerSharingStatementMode(val mode: LedgerStatementMode) : SettingsEvent
     data class SelectLedgerSharingDefaultPeriod(val period: LedgerSharingDefaultPeriod) : SettingsEvent
     data class SelectLedgerSharingDefaultDestination(val destination: LedgerShareDefaultDestination) : SettingsEvent
@@ -52,4 +53,5 @@ enum class SettingsNavigation {
     Sync,
     Diagnostics,
     SecurePairing,
+    TrustStatus,
 }

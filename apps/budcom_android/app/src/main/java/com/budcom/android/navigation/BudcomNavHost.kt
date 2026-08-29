@@ -37,6 +37,7 @@ import com.budcom.android.feature.pairing.presentation.SecurePairingRoute
 import com.budcom.android.feature.search.presentation.UniversalSearchRoute
 import com.budcom.android.feature.serverconfig.presentation.ServerConfigRoute
 import com.budcom.android.feature.settings.presentation.SettingsRoute
+import com.budcom.android.core.trust.presentation.OperationalStatusRoute
 import com.budcom.android.feature.sync.presentation.SyncRoute
 import com.budcom.android.feature.transaction.presentation.ReceivedOrderRoute
 import com.budcom.android.feature.transaction.presentation.ReceivedOrderViewModel
@@ -165,7 +166,11 @@ fun BudcomNavHost(
                 onOpenSync = { navController.navigate(Routes.SYNC) },
                 onOpenDiagnostics = { navController.navigate(Routes.DIAGNOSTICS) },
                 onOpenSecurePairing = { navController.navigate(Routes.SECURE_PAIRING) },
+                onOpenTrustStatus = { navController.navigate(Routes.TRUST_STATUS) },
             )
+        }
+        composable(route = Routes.TRUST_STATUS) {
+            OperationalStatusRoute(onBack = { navController.popBackStack() })
         }
         composable(
             route = Routes.LEDGERS,

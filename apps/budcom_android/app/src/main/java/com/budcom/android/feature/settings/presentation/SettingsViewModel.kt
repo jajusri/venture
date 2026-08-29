@@ -90,6 +90,8 @@ class SettingsViewModel @Inject constructor(
                 viewModelScope.launch { _navigation.emit(SettingsNavigation.Diagnostics) }
             SettingsEvent.OpenSecurePairing ->
                 viewModelScope.launch { _navigation.emit(SettingsNavigation.SecurePairing) }
+            SettingsEvent.OpenTrustStatus ->
+                viewModelScope.launch { _navigation.emit(SettingsNavigation.TrustStatus) }
             is SettingsEvent.SelectLedgerSharingStatementMode -> saveLedgerSharingPreferences { it.copy(statementMode = event.mode) }
             is SettingsEvent.SelectLedgerSharingDefaultPeriod -> saveLedgerSharingPreferences { it.copy(defaultPeriod = event.period) }
             is SettingsEvent.SelectLedgerSharingDefaultDestination ->
