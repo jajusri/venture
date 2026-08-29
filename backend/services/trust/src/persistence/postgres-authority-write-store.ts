@@ -138,19 +138,19 @@ export class PostgresBusinessBootstrapStore implements BusinessBootstrapStore {
   }
 
   async createAtomically(intentId: string, result: CreatedBusinessAuthority): Promise<CreatedBusinessAuthority> {
-    // EXISTENCE IS NOT AUTHORITY (Codex re-certification round 3): a Business and/or Membership row
-    // existing at the expected deterministic id is not, by itself, proof of successful creation. The
-    // previous shape trusted the in-flight `result` unconditionally whenever the BUSINESS insert's
-    // own rowCount reported a win, without ever checking whether the MEMBERSHIP insert's independent
-    // `ON CONFLICT DO NOTHING` had itself lost a race against some other persisted membership, and
-    // without checking the Business winner's own status/epoch when the Business insert itself lost --
-    // exactly the two gaps Codex's re-certification found. There is now only ONE path, with no branch
-    // on which INSERT's rowCount happened to report a win: both writes AND the read-back that proves
-    // them equivalent to what this call intended happen inside the SAME transaction (`tx` below), so
-    // there is no gap between "write" and "prove" where a torn view could be observed, and a
-    // genuine write failure (not an `ON CONFLICT`, an actual error) rolls back both inserts together
-    // -- no half-created Business-without-Membership state is ever left behind.
-    const persisted = await this.database.transaction(async (tx: DatabaseSession) => {
+    // NO AUTHORITY SUCCESS BEFORE COMMIT-OR-ROLLBACK CORRECTNESS IS PROVEN (Codex re-certification
+    // round 4 -- fixes a defect in round 3's own fix). Both INSERTs, the read-back, AND every
+    // equivalence validation ALL happen inside this ONE transaction, and any mismatch THROWS from
+    // inside the callback -- never after it returns. This matters concretely: if the Business INSERT
+    // wins (no prior row) but the Membership INSERT's own independent `ON CONFLICT DO NOTHING` loses
+    // against some other persisted (non-matching) Membership, round 3's shape still let the whole
+    // transaction COMMIT before ever checking Membership equivalence -- the winning Business row was
+    // already durably persisted by the time the mismatch was discovered, too late to undo. Throwing
+    // HERE instead means `PostgresDatabase.transaction()`'s own catch-ROLLBACK-rethrow fires before
+    // any of this transaction's writes become visible outside it: a losing Business insert this
+    // transaction thought it won is rolled back along with everything else, so no half-created
+    // Business-without-a-matching-Membership state is ever observable by another reader.
+    return this.database.transaction(async (tx: DatabaseSession) => {
       await tx.query(
         'INSERT INTO trust_business_authority(business_id, status, authority_epoch, created_at, modified_at) VALUES ($1,$2,$3,$4,$4) ON CONFLICT (business_id) DO NOTHING',
         [result.businessId, 'active', result.authorityEpoch, result.membership.createdAt],
@@ -160,26 +160,21 @@ export class PostgresBusinessBootstrapStore implements BusinessBootstrapStore {
         [result.membership.membershipId, result.businessId, result.membership.actorId, result.membership.status,
           [...result.membership.authorityScope.capabilities], result.membership.authorityEpoch.value, result.membership.createdAt, result.membership.modifiedAt],
       );
-      return this.readPersistedCreation(tx, result.membership.actorId, intentId);
+      const persisted = await this.readPersistedCreation(tx, result.membership.actorId, intentId);
+      if (!persisted) throw new Error('Business creation left an inconsistent row: Business and/or initial Membership missing after write');
+      if (!isEquivalentBusinessAuthority(persisted.businessStatus, persisted.businessAuthorityEpoch, result.authorityEpoch)) {
+        throw new Error('Conflicting business creation: concurrent winner does not match the intended Business state');
+      }
+      assertMembershipMatchesExpectedIdentity(persisted.membershipRow, persisted.businessId, result.membership.actorId);
+      if (!isEquivalentInitialMembership(toMembership(persisted.membershipRow), result.membership)) {
+        throw new Error('Conflicting business creation: concurrent winner does not match the requested initial membership');
+      }
+      const auditEvent: BusinessCreationAuditEvent = {
+        eventId: deriveIntentScopedId([result.membership.actorId, intentId], 'audit'), kind: 'business_authority_created',
+        businessId: identifier(persisted.businessId, 'BusinessId'), actorId: result.membership.actorId, occurredAt: persisted.businessCreatedAt,
+      };
+      return { businessId: identifier(persisted.businessId, 'BusinessId'), membership: toMembership(persisted.membershipRow), authorityEpoch: persisted.businessAuthorityEpoch, auditEvent };
     });
-    // The read above proves what the database actually holds after the writes -- for BOTH the
-    // Business (status, authority epoch) and the initial Membership (actor, status, epoch, scope) --
-    // before ever returning success. A failed equivalence check below does NOT undo the already
-    // committed writes (they are legitimately persisted; the conflict is a real one to surface, not
-    // an artifact to roll back), but it does mean this CALL never returns or is treated as success.
-    if (!persisted) throw new Error('Business creation left an inconsistent row: Business and/or initial Membership missing after write');
-    if (!isEquivalentBusinessAuthority(persisted.businessStatus, persisted.businessAuthorityEpoch, result.authorityEpoch)) {
-      throw new Error('Conflicting business creation: concurrent winner does not match the intended Business state');
-    }
-    assertMembershipMatchesExpectedIdentity(persisted.membershipRow, persisted.businessId, result.membership.actorId);
-    if (!isEquivalentInitialMembership(toMembership(persisted.membershipRow), result.membership)) {
-      throw new Error('Conflicting business creation: concurrent winner does not match the requested initial membership');
-    }
-    const auditEvent: BusinessCreationAuditEvent = {
-      eventId: deriveIntentScopedId([result.membership.actorId, intentId], 'audit'), kind: 'business_authority_created',
-      businessId: identifier(persisted.businessId, 'BusinessId'), actorId: result.membership.actorId, occurredAt: persisted.businessCreatedAt,
-    };
-    return { businessId: identifier(persisted.businessId, 'BusinessId'), membership: toMembership(persisted.membershipRow), authorityEpoch: persisted.businessAuthorityEpoch, auditEvent };
   }
 }
 

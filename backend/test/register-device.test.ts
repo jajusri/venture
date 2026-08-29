@@ -27,4 +27,20 @@ describe('business device registration', () => {
     await expect(service.execute({ ...input, principal: { ...input.principal, actorId: identifier('other', 'ActorId') } })).rejects.toThrow('membership');
     await expect(service.execute({ ...input, publicKeyFingerprint: 'false' })).rejects.toThrow('fingerprint');
   });
+  it("rejects a non-active existing registration that is otherwise identical (Codex round 4: EXISTENCE IS NOT AUTHORITY applies to status too -- a previously revoked row must not be handed back as idempotent active authority)", async () => {
+    const store = new Store();
+    store.value = { businessId: membership.businessId, actorId, membershipId: membership.membershipId, deviceId: input.deviceId,
+      deviceKeyId: input.deviceKeyId, deviceKeyVersion: input.deviceKeyVersion, publicKey, publicKeyFingerprint: input.publicKeyFingerprint,
+      status: 'revoked', authorityEpoch: membership.authorityEpoch, createdAt: new Date(1) };
+    const service = new RegisterBusinessDevice(store);
+    await expect(service.execute(input)).rejects.toThrow('Conflicting device key registration');
+  });
+  it('rejects an existing registration whose authorityEpoch does not match the intended one, even when every other field is identical', async () => {
+    const store = new Store();
+    store.value = { businessId: membership.businessId, actorId, membershipId: membership.membershipId, deviceId: input.deviceId,
+      deviceKeyId: input.deviceKeyId, deviceKeyVersion: input.deviceKeyVersion, publicKey, publicKeyFingerprint: input.publicKeyFingerprint,
+      status: 'active', authorityEpoch: { value: 99 }, createdAt: new Date(1) };
+    const service = new RegisterBusinessDevice(store);
+    await expect(service.execute(input)).rejects.toThrow('Conflicting device key registration');
+  });
 });

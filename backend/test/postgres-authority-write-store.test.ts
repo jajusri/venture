@@ -531,23 +531,27 @@ describe('BusinessBootstrapStore concurrent-winner equivalence (Codex re-certifi
     expect(db.storedMembershipCount).toBe(0);
   });
 
-  it("13 (direct reproduction of Codex's identified gap): Business INSERT wins while a conflicting Membership already exists -- the persisted Membership must be reread and validated, not assumed from the in-flight result", async () => {
+  it("13 (direct reproduction of Codex's identified gap): Business INSERT wins while a conflicting Membership already exists -- the whole transaction must roll back, leaving ZERO new Business rows from this attempt", async () => {
     const db = new StatefulBusinessDatabase();
-    // No Business row exists yet -- THIS call's Business insert will win (rowCount > 0). But a
-    // Membership already exists at the same deterministic membership id, bound to a DIFFERENT actor
-    // than this call intends -- e.g. a prior, unrelated write, or a race this call's own
-    // `findByCreationIntent` pre-check (in `CreateBusiness.execute()`) did not observe. Under the
-    // PREVIOUS (defective) implementation, `businessInsert.rowCount > 0` alone would have returned
-    // the in-flight `result` as success, never noticing the Membership insert's own independent
-    // `ON CONFLICT DO NOTHING` had silently done nothing against a DIFFERENT persisted row. This
-    // seeded row matches identity (businessId/actorId) so it passes the identity-match check (unlike
-    // test 11 above) but differs in scope -- an authority-significant field -- so it must still fail
-    // the full equivalence check.
+    // No Business row exists yet -- THIS call's Business insert would win (rowCount > 0) in
+    // isolation. But a Membership already exists at the same deterministic membership id -- e.g. a
+    // prior, unrelated write, or a race this call's own `findByCreationIntent` pre-check (in
+    // `CreateBusiness.execute()`) did not observe. It matches identity (businessId/actorId) so it
+    // passes the identity-match check (unlike test 11 above) but differs in scope -- an
+    // authority-significant field -- so it must still fail the full equivalence check.
     db.seedMembership({ membershipId: RACE_MEMBERSHIP_ID, businessId: RACE_BUSINESS_ID, actorId: 'actor-1', status: 'active', authorityScope: ['receive_orders'], authorityEpoch: 1, createdAt: new Date(1000), modifiedAt: new Date(1000) });
+    expect(db.storedBusinessCount).toBe(0); // nothing exists yet -- establishes the baseline this attempt could only add to
     const store = new PostgresBusinessBootstrapStore(db);
     await expect(store.createAtomically('intent-1', baseCreation())).rejects.toThrow('Conflicting business creation: concurrent winner does not match the requested initial membership');
-    // The Business insert DID win and IS persisted -- proving this is genuinely the
-    // "Business wins, Membership conflicts" case, not merely "both conflict".
-    expect(db.storedBusinessCount).toBe(1);
+    // Codex round 4's exact point: under the round-3 shape, the equivalence check ran AFTER
+    // `database.transaction(...)` had already returned/committed, so the Business insert's own
+    // win -- genuinely persisted at that point -- survived even though the overall creation failed.
+    // The fix moves the throw INSIDE the transaction callback, so the same failure now rolls back
+    // the Business insert too: zero NEW Business rows survive from this attempt (not merely "a
+    // business row happens to exist" -- there must be none at all, since none existed before either).
+    expect(db.storedBusinessCount).toBe(0);
+    // The Membership seeded before the call is untouched by the rollback (it was never part of
+    // this transaction's own writes -- only read).
+    expect(db.storedMembershipCount).toBe(1);
   });
 });
