@@ -366,7 +366,13 @@ function Invoke-AndroidBuild {
         versionCode = $apk.VersionCode
         versionName = $apk.VersionName
         apkPath = $Config.ApkPath
-        builtAt = (Get-Date).ToString('o')
+        # The APK's OWN mtime, not "now": when Gradle correctly finds the assemble task already
+        # UP-TO-DATE (nothing Android-relevant changed since the last build), the output file's mtime
+        # is genuinely older than this moment -- recording "now" here would make
+        # Test-BuildArtifactAuthoritative's staleness check fail for a perfectly valid, current APK
+        # every time a build legitimately no-ops. The git-state guard (HEAD match + clean worktree)
+        # already independently proves the APK's content corresponds to current HEAD.
+        builtAt = $apk.Modified.ToUniversalTime().ToString('o')
     } | ConvertTo-Json | Set-Content -Path $metaPath -Encoding UTF8
     Write-Step "  build metadata: $metaPath"
 }
