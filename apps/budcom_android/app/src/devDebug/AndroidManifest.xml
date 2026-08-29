@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DEV-FLAVOR + DEBUG-BUILD-TYPE ONLY. Android Gradle Plugin only merges src/devDebug/** into the
+  devDebug variant (applicationId com.budcom.android.dev.debug); it is structurally absent from
+  every other variant, including prodDebug (com.budcom.android.debug, the pre-existing installation)
+  and every release build. See app/build.gradle.kts's own "DEV isolation" comment for why devDebug
+  is a distinct, coexisting application id that never touches an existing installation's package or
+  data.
+
+  This declares ONE narrowly-scoped, non-exported broadcast receiver that lets a local controlled
+  pilot automation script (scripts/budcom-controlled-pilot.ps1, run over adb from the same machine
+  the developer already controls) trigger a real enrollment attempt without a manual UI tap; see
+  PilotEnrollmentReceiver's own doc comment for exactly what it does and does not do.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name="com.budcom.android.pilotharness.PilotEnrollmentReceiver"
+            android:exported="false" />
+    </application>
+</manifest>
