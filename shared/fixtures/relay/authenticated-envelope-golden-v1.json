@@ -1,0 +1,73 @@
+{
+  "description": "Golden cross-stack contract fixture for the Relay authenticated-envelope wire (relay-authority-repair, 2026-08-29). Expected*Base64 fields are canonical signing bytes computed by the certified backend's own pilot-envelope.ts functions -- Android's independent AuthenticatedTransportEnvelope.kt implementation must reproduce them byte-for-byte. No key material.",
+  "credentialClaims": {
+    "credentialVersion": 1,
+    "credentialId": "golden-credential-1",
+    "businessId": "golden-business-1",
+    "actorId": "golden-actor-1",
+    "membershipId": "golden-membership-1",
+    "deviceId": "golden-device-1",
+    "deviceKeyId": "golden-device-key-1",
+    "deviceKeyVersion": 1,
+    "devicePublicKeyFingerprint": "golden-fingerprint-1",
+    "authorityScope": [
+      "send_orders",
+      "receive_orders"
+    ],
+    "authorityEpoch": 7,
+    "issuedAt": "2026-08-01T00:00:00.000Z",
+    "notBefore": "2026-08-01T00:00:00.000Z",
+    "expiresAt": "2026-09-01T00:00:00.000Z",
+    "issuerId": "golden-issuer-1",
+    "issuerKeyId": "golden-issuer-key-1"
+  },
+  "credentialClaimsSigningBytesBase64": "MXxnb2xkZW4tY3JlZGVudGlhbC0xfGdvbGRlbi1idXNpbmVzcy0xfGdvbGRlbi1hY3Rvci0xfGdvbGRlbi1tZW1iZXJzaGlwLTF8Z29sZGVuLWRldmljZS0xfGdvbGRlbi1kZXZpY2Uta2V5LTF8MXxnb2xkZW4tZmluZ2VycHJpbnQtMXxyZWNlaXZlX29yZGVycyxzZW5kX29yZGVyc3w3fDE3ODU1NDI0MDAwMDB8MTc4NTU0MjQwMDAwMHwxNzg4MjIwODAwMDAwfGdvbGRlbi1pc3N1ZXItMXxnb2xkZW4taXNzdWVyLWtleS0x",
+  "submitBinding": {
+    "envelopeId": "golden-envelope-1",
+    "objectType": "CANONICAL_ORDER",
+    "objectId": "golden-order-1",
+    "objectVersion": 2,
+    "senderBusinessId": "golden-business-1",
+    "senderActorId": "golden-actor-1",
+    "senderDeviceId": "golden-device-1",
+    "recipientBusinessId": "golden-business-2",
+    "recipientMailboxId": "orders",
+    "commercialContent": "{\"golden\":true,\"pipe\":\"a|b\",\"backslash\":\"c\\\\d\"}",
+    "commercialContentType": "application/vnd.budcom.order-snapshot+json",
+    "commercialContentVersion": 3
+  },
+  "submitBindingSigningBytesBase64": "Z29sZGVuLWVudmVsb3BlLTF8Q0FOT05JQ0FMX09SREVSfGdvbGRlbi1vcmRlci0xfDJ8Z29sZGVuLWJ1c2luZXNzLTF8Z29sZGVuLWFjdG9yLTF8Z29sZGVuLWRldmljZS0xfGdvbGRlbi1idXNpbmVzcy0yfG9yZGVyc3x7ImdvbGRlbiI6dHJ1ZSwicGlwZSI6ImFcfGIiLCJiYWNrc2xhc2giOiJjXFxcXGQifXxhcHBsaWNhdGlvbi92bmQuYnVkY29tLm9yZGVyLXNuYXBzaG90K2pzb258Mw==",
+  "fetchBinding": {
+    "action": "mailbox_fetch",
+    "businessId": "golden-business-1",
+    "actorId": "golden-actor-1",
+    "membershipId": "golden-membership-1",
+    "deviceId": "golden-device-1",
+    "deviceKeyId": "golden-device-key-1",
+    "deviceKeyVersion": 1,
+    "requestId": "golden-request-1",
+    "timestamp": "2026-08-29T12:00:00.000Z",
+    "target": "orders",
+    "parameters": [
+      "golden-cursor-1",
+      25
+    ]
+  },
+  "fetchBindingSigningBytesBase64": "MXxtYWlsYm94X2ZldGNofGdvbGRlbi1idXNpbmVzcy0xfGdvbGRlbi1hY3Rvci0xfGdvbGRlbi1tZW1iZXJzaGlwLTF8Z29sZGVuLWRldmljZS0xfGdvbGRlbi1kZXZpY2Uta2V5LTF8MXxnb2xkZW4tcmVxdWVzdC0xfDIwMjYtMDgtMjlUMTI6MDA6MDAuMDAwWnxvcmRlcnN8Z29sZGVuLWN1cnNvci0xfDI1",
+  "ackBinding": {
+    "action": "acknowledge",
+    "businessId": "golden-business-1",
+    "actorId": "golden-actor-1",
+    "membershipId": "golden-membership-1",
+    "deviceId": "golden-device-1",
+    "deviceKeyId": "golden-device-key-1",
+    "deviceKeyVersion": 1,
+    "requestId": "golden-request-2",
+    "timestamp": "2026-08-29T12:00:01.000Z",
+    "target": "golden-envelope-1",
+    "parameters": [
+      "2026-08-29T12:00:02.000Z"
+    ]
+  },
+  "ackBindingSigningBytesBase64": "MXxhY2tub3dsZWRnZXxnb2xkZW4tYnVzaW5lc3MtMXxnb2xkZW4tYWN0b3ItMXxnb2xkZW4tbWVtYmVyc2hpcC0xfGdvbGRlbi1kZXZpY2UtMXxnb2xkZW4tZGV2aWNlLWtleS0xfDF8Z29sZGVuLXJlcXVlc3QtMnwyMDI2LTA4LTI5VDEyOjAwOjAxLjAwMFp8Z29sZGVuLWVudmVsb3BlLTF8MjAyNi0wOC0yOVQxMjowMDowMi4wMDBa"
+}

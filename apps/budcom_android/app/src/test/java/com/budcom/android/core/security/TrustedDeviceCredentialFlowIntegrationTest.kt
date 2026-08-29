@@ -35,8 +35,9 @@ class TrustedDeviceCredentialFlowIntegrationTest {
             initSign(deviceKeys.private); update(bytes)
         }.sign() }
         val envelope = EnvelopeSubmission(1, "envelope-1", "intent-1", "ORDER", "order-1", 2, "business-1", "device-1", "party-2", "business-2", 2_000)
-        val transportCredential = BusinessDeviceCredential(1, authority.businessId, authority.actorId, authority.deviceId, "ORDER_SEND", 1, 61_000, authority.authorityEpoch, "issuer-1", "credential-1")
-        assertNotNull(AuthenticatedEnvelopeBinder(keyStore).bind(envelope, identity, transportCredential, recipient))
+        // The SAME already Trust-verified credential flows into the Relay envelope binder -- no
+        // lossy reconstruction into a summarized transport type (relay-authority-repair, 2026-08-29).
+        assertNotNull(AuthenticatedEnvelopeBinder(keyStore).bind(envelope, identity, credential, recipient))
 
         val staleVerifier = CachedTransportCredentialVerifier(
             { _, _ -> CachedIssuerVerificationKey("issuer-1", "issuer-key-1", "P256-SHA256-v1", issuerKeys.public.encoded, false) },
@@ -44,6 +45,6 @@ class TrustedDeviceCredentialFlowIntegrationTest {
         )
         assertEquals(CredentialVerificationOutcome.Revoked, staleVerifier.verify(request))
         assertEquals(CredentialVerificationOutcome.WrongRecipient, verifier.verify(request.copy(actualRecipient = recipient.copy(mailboxReference = "changed"))))
-        assertNull(AuthenticatedEnvelopeBinder(keyStore).bind(envelope.copy(senderBusinessId = "business-x"), identity, transportCredential, recipient))
+        assertNull(AuthenticatedEnvelopeBinder(keyStore).bind(envelope.copy(senderBusinessId = "business-x"), identity, credential, recipient))
     }
 }

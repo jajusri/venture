@@ -3,10 +3,9 @@ package com.budcom.android.feature.transaction.data.relay
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.transaction.domain.model.StructuredRecipientInboxValidation
 import com.budcom.android.feature.transaction.domain.model.TransactionClock
-import com.budcom.android.feature.transaction.domain.port.RelayCredentialSource
 import com.budcom.android.feature.transaction.domain.port.RelayEndpointProvider
+import com.budcom.android.feature.transaction.domain.port.RelayEnvelopeAuthenticator
 import com.budcom.android.feature.transaction.domain.port.RelayRecipientInboxIngester
-import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
 import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_TYPE
 import com.budcom.android.feature.transaction.domain.port.ORDER_SNAPSHOT_CONTENT_VERSION
 import com.budcom.android.feature.transaction.domain.repository.StructuredRecipientInboxRepository
@@ -25,24 +24,23 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
     private val endpoint: RelayEndpointProvider,
     private val inbox: StructuredRecipientInboxRepository,
     private val orders: TransactionRepository,
-    private val keyStore: VartalapDeviceKeyStore,
-    private val credentials: RelayCredentialSource,
+    private val authenticator: RelayEnvelopeAuthenticator,
     private val clock: TransactionClock,
     private val dispatchers: DispatcherProvider,
 ) : RelayRecipientInboxIngester {
     override suspend fun ingestPending(companyId: String) = withContext(dispatchers.io) {
         if (endpoint.snapshot() == null) return@withContext
-        val identity = keyStore.getCurrentIdentity() ?: return@withContext
-        val credential = credentials.credentialFor(companyId, identity.deviceId) ?: return@withContext
         var cursor = inbox.loadMailboxCursor(companyId, DEFAULT_MAILBOX)
         var pages = 0
         while (pages < MAX_MAILBOX_PAGES_PER_INGEST) {
+            val fetchAuth = authenticator.authenticateMailboxFetch(companyId, DEFAULT_MAILBOX, cursor, DEFAULT_PAGE_SIZE)
+                ?: return@withContext
             val page = client.fetchMailbox(
+                authenticated = fetchAuth,
                 recipientBusinessId = companyId,
-                recipientActorId = credential.actorId,
-                recipientDeviceId = identity.deviceId,
                 mailboxId = DEFAULT_MAILBOX,
                 cursor = cursor,
+                limit = DEFAULT_PAGE_SIZE,
             ) ?: break
             for (item in page.items) {
                 if (!StructuredRecipientInboxValidation.validate(item, companyId)) return@withContext
@@ -61,11 +59,12 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
                     else -> return@withContext
                 }
                 if (!committed) return@withContext
+                val ackAuth = authenticator.authenticateAcknowledgement(companyId, item.envelopeId, ingestedAt.epochMillis)
+                    ?: return@withContext
                 val acknowledged = client.acknowledgeDelivery(
+                    authenticated = ackAuth,
                     envelopeId = item.envelopeId,
                     recipientBusinessId = companyId,
-                    recipientActorId = credential.actorId,
-                    recipientDeviceId = identity.deviceId,
                     receivedAtEpochMillis = ingestedAt.epochMillis,
                 )
                 if (!acknowledged) return@withContext
@@ -80,5 +79,6 @@ class DefaultRelayRecipientInboxIngester @Inject constructor(
     private companion object {
         const val DEFAULT_MAILBOX = "orders"
         const val MAX_MAILBOX_PAGES_PER_INGEST = 5
+        const val DEFAULT_PAGE_SIZE = 25
     }
 }

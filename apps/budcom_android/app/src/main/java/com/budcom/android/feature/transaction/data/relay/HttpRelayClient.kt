@@ -4,10 +4,12 @@ import com.budcom.android.core.network.RetryPolicy
 import com.budcom.android.core.util.DispatcherProvider
 import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
 import com.budcom.android.feature.transaction.domain.model.RelayAcceptanceEvidence
+import com.budcom.android.feature.transaction.domain.port.AuthenticatedRelayRequest
 import com.budcom.android.feature.transaction.domain.port.AuthenticatedTransportEnvelope
 import com.budcom.android.feature.transaction.domain.port.RelayEndpointProvider
 import com.budcom.android.feature.transaction.domain.port.RelayEnvelopeAuthenticator
 import com.budcom.android.feature.transaction.domain.port.StructuredBusinessTransport
+import com.budcom.android.feature.transaction.domain.port.TrustedBusinessDeviceCredential
 import com.budcom.android.feature.transaction.domain.port.StructuredBusinessTransportRouter
 import com.budcom.android.feature.transaction.domain.port.TransportEvidence
 import com.budcom.android.feature.transaction.domain.port.TransportResult
@@ -33,6 +35,62 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.random.Random
+
+/**
+ * Exact field-for-field mirror of the certified backend's `PilotCredentialClaimsWire`
+ * (`backend/services/relay/src/devtools/pilot-envelope.ts`) -- same field names (kotlinx.serialization
+ * defaults to matching JSON keys), same types except epoch-millis-vs-ISO-string for the three
+ * timestamps, converted at the boundary in [TrustedBusinessDeviceCredential.toClaimsJson]. This is
+ * the wire encoding of the credential's own signed claims, transmitted essentially verbatim -- never
+ * reconstructed or re-derived.
+ */
+@Serializable
+internal data class PilotCredentialClaimsJson(
+    val credentialVersion: Int,
+    val credentialId: String,
+    val businessId: String,
+    val actorId: String,
+    val membershipId: String,
+    val deviceId: String,
+    val deviceKeyId: String,
+    val deviceKeyVersion: Int,
+    val devicePublicKeyFingerprint: String,
+    val authorityScope: List<String>,
+    val authorityEpoch: Long,
+    val issuedAt: String,
+    val notBefore: String,
+    val expiresAt: String,
+    val issuerId: String,
+    val issuerKeyId: String,
+)
+
+/** Mirrors `PilotEnvelopeWire` (Submit). */
+@Serializable
+internal data class PilotEnvelopeWireJson(
+    val credentialClaims: PilotCredentialClaimsJson,
+    val credentialSignature: String,
+    val deviceSignature: String,
+)
+
+/** Mirrors `AuthenticatedRelayRequestWire` (Fetch/Acknowledge). */
+@Serializable
+internal data class AuthenticatedRequestWireJson(
+    val credentialClaims: PilotCredentialClaimsJson,
+    val credentialSignature: String,
+    val requestId: String,
+    val timestamp: String,
+    val requestSignature: String,
+)
+
+internal fun TrustedBusinessDeviceCredential.toClaimsJson(): PilotCredentialClaimsJson = PilotCredentialClaimsJson(
+    credentialVersion = credentialVersion, credentialId = credentialId, businessId = businessId, actorId = actorId,
+    membershipId = membershipId, deviceId = deviceId, deviceKeyId = deviceKeyId, deviceKeyVersion = deviceKeyVersion,
+    devicePublicKeyFingerprint = devicePublicKeyFingerprint, authorityScope = authorityScope.toList(), authorityEpoch = authorityEpoch,
+    issuedAt = java.time.Instant.ofEpochMilli(issuedAtEpochMillis).toString(),
+    notBefore = java.time.Instant.ofEpochMilli(notBeforeEpochMillis).toString(),
+    expiresAt = java.time.Instant.ofEpochMilli(expiresAtEpochMillis).toString(),
+    issuerId = issuerId, issuerKeyId = issuerKeyId,
+)
 
 @Serializable
 internal data class RelaySubmissionJson(
@@ -73,6 +131,7 @@ internal data class RelayMailboxFetchJson(
     val mailboxId: String,
     val recipientActorId: String,
     val recipientDeviceId: String,
+    val authenticatedRequest: String,
     val cursor: String? = null,
     val limit: Int = 25,
 )
@@ -110,6 +169,7 @@ internal data class RelayAcknowledgementJson(
     val recipientBusinessId: String,
     val recipientActorId: String,
     val recipientDeviceId: String,
+    val authenticatedRequest: String,
     val receivedAt: String,
 )
 
@@ -143,6 +203,14 @@ class HttpRelayClient(
             ?: return TransportResult.PermanentRejection("recipient mailbox is required")
         val recipientBusiness = authenticated.recipient.businessId
             ?: return TransportResult.PermanentRejection("recipient business is required")
+        val wireEnvelope = json.encodeToString(
+            PilotEnvelopeWireJson.serializer(),
+            PilotEnvelopeWireJson(
+                credentialClaims = authenticated.credential.toClaimsJson(),
+                credentialSignature = Base64.getEncoder().encodeToString(authenticated.credential.signature),
+                deviceSignature = Base64.getEncoder().encodeToString(authenticated.deviceSignature),
+            ),
+        )
         val payload = json.encodeToString(
             RelaySubmissionJson.serializer(),
             RelaySubmissionJson(
@@ -153,11 +221,11 @@ class HttpRelayClient(
                 objectId = authenticated.envelope.objectId,
                 objectVersion = authenticated.envelope.objectVersion,
                 senderBusinessId = authenticated.envelope.senderBusinessId,
-                senderActorId = authenticated.senderActorId,
+                senderActorId = authenticated.credential.actorId,
                 senderDeviceId = authenticated.envelope.senderDeviceId,
                 recipientBusinessId = recipientBusiness,
                 mailboxId = mailbox,
-                authenticatedEnvelope = Base64.getEncoder().encodeToString(authenticated.signingBytes() + authenticated.signature),
+                authenticatedEnvelope = Base64.getEncoder().encodeToString(wireEnvelope.toByteArray(Charsets.UTF_8)),
                 commercialContent = authenticated.commercialSnapshotCanonical,
                 commercialContentType = authenticated.commercialContentType,
                 commercialContentVersion = authenticated.commercialContentVersion,
@@ -179,17 +247,29 @@ class HttpRelayClient(
     }
 
     suspend fun fetchMailbox(
+        authenticated: AuthenticatedRelayRequest,
         recipientBusinessId: String,
-        recipientActorId: String,
-        recipientDeviceId: String,
         mailboxId: String,
         cursor: String?,
         limit: Int = 25,
     ): RelayMailboxPage? {
         val baseUrl = endpoint.snapshot() ?: return null
+        val wireRequest = json.encodeToString(
+            AuthenticatedRequestWireJson.serializer(),
+            AuthenticatedRequestWireJson(
+                credentialClaims = authenticated.credential.toClaimsJson(),
+                credentialSignature = Base64.getEncoder().encodeToString(authenticated.credential.signature),
+                requestId = authenticated.requestId,
+                timestamp = authenticated.timestampIso,
+                requestSignature = Base64.getEncoder().encodeToString(authenticated.requestSignature),
+            ),
+        )
         val payload = json.encodeToString(
             RelayMailboxFetchJson.serializer(),
-            RelayMailboxFetchJson(recipientBusinessId, mailboxId, recipientActorId, recipientDeviceId, cursor, limit),
+            RelayMailboxFetchJson(
+                recipientBusinessId, mailboxId, authenticated.credential.actorId, authenticated.credential.deviceId,
+                Base64.getEncoder().encodeToString(wireRequest.toByteArray(Charsets.UTF_8)), cursor, limit,
+            ),
         )
         val request = Request.Builder()
             .url(baseUrl.trimEnd('/') + MAILBOX_FETCH_PATH)
@@ -232,20 +312,30 @@ class HttpRelayClient(
     }
 
     suspend fun acknowledgeDelivery(
+        authenticated: AuthenticatedRelayRequest,
         envelopeId: String,
         recipientBusinessId: String,
-        recipientActorId: String,
-        recipientDeviceId: String,
         receivedAtEpochMillis: Long,
     ): Boolean {
         val baseUrl = endpoint.snapshot() ?: return false
+        val wireRequest = json.encodeToString(
+            AuthenticatedRequestWireJson.serializer(),
+            AuthenticatedRequestWireJson(
+                credentialClaims = authenticated.credential.toClaimsJson(),
+                credentialSignature = Base64.getEncoder().encodeToString(authenticated.credential.signature),
+                requestId = authenticated.requestId,
+                timestamp = authenticated.timestampIso,
+                requestSignature = Base64.getEncoder().encodeToString(authenticated.requestSignature),
+            ),
+        )
         val payload = json.encodeToString(
             RelayAcknowledgementJson.serializer(),
             RelayAcknowledgementJson(
                 envelopeId = envelopeId,
                 recipientBusinessId = recipientBusinessId,
-                recipientActorId = recipientActorId,
-                recipientDeviceId = recipientDeviceId,
+                recipientActorId = authenticated.credential.actorId,
+                recipientDeviceId = authenticated.credential.deviceId,
+                authenticatedRequest = Base64.getEncoder().encodeToString(wireRequest.toByteArray(Charsets.UTF_8)),
                 receivedAt = java.time.Instant.ofEpochMilli(receivedAtEpochMillis).toString(),
             ),
         )

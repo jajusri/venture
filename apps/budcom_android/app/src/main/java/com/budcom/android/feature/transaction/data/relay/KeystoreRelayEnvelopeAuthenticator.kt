@@ -2,12 +2,15 @@ package com.budcom.android.feature.transaction.data.relay
 
 import com.budcom.android.feature.transaction.domain.model.OrderDeliveryEnvelope
 import com.budcom.android.feature.transaction.domain.port.AuthenticatedEnvelopeBinder
+import com.budcom.android.feature.transaction.domain.port.AuthenticatedRelayRequest
 import com.budcom.android.feature.transaction.domain.port.AuthenticatedTransportEnvelope
 import com.budcom.android.feature.transaction.domain.port.EnvelopeSubmission
 import com.budcom.android.feature.transaction.domain.port.RecipientBinding
 import com.budcom.android.feature.transaction.domain.port.RelayCredentialSource
 import com.budcom.android.feature.transaction.domain.port.RelayEnvelopeAuthenticator
 import com.budcom.android.feature.transaction.domain.port.VartalapDeviceKeyStore
+import java.time.Instant
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,7 +38,38 @@ class KeystoreRelayEnvelopeAuthenticator @Inject constructor(
         return binder.bind(submission, identity, credential, recipient, canonical, contentType, contentVersion)
     }
 
+    override suspend fun authenticateMailboxFetch(
+        businessId: String,
+        mailboxId: String,
+        cursor: String?,
+        limit: Int,
+    ): AuthenticatedRelayRequest? {
+        val identity = keyStore.getCurrentIdentity() ?: return null
+        val credential = credentials.credentialFor(businessId, identity.deviceId) ?: return null
+        return binder.bindRequest(
+            identity, credential, action = ACTION_MAILBOX_FETCH, target = mailboxId,
+            parameters = listOf(cursor.orEmpty(), limit.toString()),
+            requestId = UUID.randomUUID().toString(), timestampIso = Instant.now().toString(),
+        )
+    }
+
+    override suspend fun authenticateAcknowledgement(
+        businessId: String,
+        envelopeId: String,
+        receivedAtEpochMillis: Long,
+    ): AuthenticatedRelayRequest? {
+        val identity = keyStore.getCurrentIdentity() ?: return null
+        val credential = credentials.credentialFor(businessId, identity.deviceId) ?: return null
+        return binder.bindRequest(
+            identity, credential, action = ACTION_ACKNOWLEDGE, target = envelopeId,
+            parameters = listOf(Instant.ofEpochMilli(receivedAtEpochMillis).toString()),
+            requestId = UUID.randomUUID().toString(), timestampIso = Instant.now().toString(),
+        )
+    }
+
     private companion object {
         const val DEFAULT_MAILBOX = "orders"
+        const val ACTION_MAILBOX_FETCH = "mailbox_fetch"
+        const val ACTION_ACKNOWLEDGE = "acknowledge"
     }
 }

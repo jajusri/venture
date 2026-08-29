@@ -8,12 +8,15 @@ import com.budcom.android.feature.transaction.domain.model.TransactionTimestamp
 import com.budcom.android.feature.transaction.domain.model.TransactionTimestampSource
 import com.budcom.android.feature.transaction.domain.model.CommercialReturnEvent
 import com.budcom.android.feature.transaction.domain.model.COMMERCIAL_EVENT_CONTENT_TYPE
+import com.budcom.android.feature.transaction.domain.port.AuthenticatedRelayRequest
 import com.budcom.android.feature.transaction.domain.port.AuthenticatedTransportEnvelope
 import com.budcom.android.feature.transaction.domain.port.ConfiguredRelayEndpointProvider
 import com.budcom.android.feature.transaction.domain.port.EmptyRelayEndpointProvider
 import com.budcom.android.feature.transaction.domain.port.EnvelopeSubmission
 import com.budcom.android.feature.transaction.domain.port.RecipientBinding
+import com.budcom.android.feature.transaction.domain.port.RelayEnvelopeAuthenticator
 import com.budcom.android.feature.transaction.domain.port.TransportResult
+import com.budcom.android.feature.transaction.domain.port.TrustedBusinessDeviceCredential
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -125,7 +128,7 @@ class HttpRelayClientTest {
         server.enqueue(MockResponse().setBody(acceptedJson()).setResponseCode(200))
         server.start()
         try {
-            val transport = HttpRelayStructuredTransport(testClient(server), { authenticated() }, dispatchers)
+            val transport = HttpRelayStructuredTransport(testClient(server), FakeSubmitOnlyAuthenticator { authenticated() }, dispatchers)
             val result = transport.submit(envelope())
             assertTrue(result is TransportResult.Accepted)
         } finally {
@@ -143,13 +146,66 @@ class HttpRelayClientTest {
         )
         server.start()
         try {
-            val page = testClient(server).fetchMailbox("co-1", "actor-b", "device-b", "orders", null)
+            val page = testClient(server).fetchMailbox(authenticatedRequest(), "co-1", "orders", null)
             assertEquals(1, page?.items?.size)
             assertEquals("relay_accepted", page?.items?.single()?.status)
             assertEquals(canonicalContent, page?.items?.single()?.commercialSnapshotCanonical)
             assertEquals("application/vnd.budcom.order-snapshot+json", page?.items?.single()?.commercialContentType)
             assertEquals(2, page?.items?.single()?.commercialContentVersion)
-            assertEquals("/v1/relay/mailboxes/fetch", server.takeRequest().path)
+            val request = server.takeRequest()
+            assertEquals("/v1/relay/mailboxes/fetch", request.path)
+            val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+            assertEquals("actor-1", body.getValue("recipientActorId").jsonPrimitive.content)
+            assertEquals("device-1", body.getValue("recipientDeviceId").jsonPrimitive.content)
+            val wire = Json.parseToJsonElement(
+                String(java.util.Base64.getDecoder().decode(body.getValue("authenticatedRequest").jsonPrimitive.content)),
+            ).jsonObject
+            assertEquals("req-1", wire.getValue("requestId").jsonPrimitive.content)
+            assertEquals("co-1", wire.getValue("credentialClaims").jsonObject.getValue("businessId").jsonPrimitive.content)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `acknowledgement request carries the authenticated request wire and recipient identity from the credential`() = runTest(dispatcher) {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(200))
+        server.start()
+        try {
+            val accepted = testClient(server).acknowledgeDelivery(authenticatedRequest(), "envelope-1", "co-1", 10L)
+            assertTrue(accepted)
+            val request = server.takeRequest()
+            assertEquals("/v1/relay/acknowledgements", request.path)
+            val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+            assertEquals("actor-1", body.getValue("recipientActorId").jsonPrimitive.content)
+            assertEquals("device-1", body.getValue("recipientDeviceId").jsonPrimitive.content)
+            val wire = Json.parseToJsonElement(
+                String(java.util.Base64.getDecoder().decode(body.getValue("authenticatedRequest").jsonPrimitive.content)),
+            ).jsonObject
+            assertEquals("req-1", wire.getValue("requestId").jsonPrimitive.content)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `submit request wire carries credential claims, Trust signature and device signature verbatim`() = runTest(dispatcher) {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody(acceptedJson()).setResponseCode(200))
+        server.start()
+        try {
+            testClient(server).submit(authenticated())
+            val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+            assertEquals("actor-1", body.getValue("senderActorId").jsonPrimitive.content)
+            val wire = Json.parseToJsonElement(
+                String(java.util.Base64.getDecoder().decode(body.getValue("authenticatedEnvelope").jsonPrimitive.content)),
+            ).jsonObject
+            val claims = wire.getValue("credentialClaims").jsonObject
+            assertEquals("co-1", claims.getValue("businessId").jsonPrimitive.content)
+            assertEquals("membership-1", claims.getValue("membershipId").jsonPrimitive.content)
+            assertEquals(java.util.Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3)), wire.getValue("credentialSignature").jsonPrimitive.content)
+            assertEquals(java.util.Base64.getEncoder().encodeToString(byteArrayOf(7)), wire.getValue("deviceSignature").jsonPrimitive.content)
         } finally {
             server.shutdown()
         }
@@ -171,19 +227,27 @@ class HttpRelayClientTest {
         state = OrderTransportState.Queued, attemptCount = 0, lastAttemptAt = null, lastError = null,
     )
 
+    private fun credential() = TrustedBusinessDeviceCredential(
+        credentialVersion = 1, credentialId = "cred-1", businessId = "co-1", actorId = "actor-1", membershipId = "membership-1",
+        deviceId = "device-1", deviceKeyId = "key-1", deviceKeyVersion = 1, devicePublicKeyFingerprint = "fp",
+        authorityScope = setOf("send_orders", "receive_orders"), authorityEpoch = 1L, issuedAtEpochMillis = 1L, notBeforeEpochMillis = 1L,
+        expiresAtEpochMillis = 999_999_999_999L, issuerId = "issuer-1", issuerKeyId = "issuer-key-1", signatureProfile = "P256-SHA256-v1",
+        signature = byteArrayOf(1, 2, 3),
+    )
+
     private fun authenticated() = AuthenticatedTransportEnvelope(
         envelope = EnvelopeSubmission.fromEnvelope(envelope(), "device-1", "buyer-1"),
-        senderActorId = "actor-1",
-        deviceKeyId = "key-1",
-        deviceKeyVersion = 1,
-        deviceFingerprint = "fp",
-        credentialId = "cred-1",
-        credentialVersion = 1,
-        credentialEpoch = 1,
         recipient = RecipientBinding("buyer-1", "buyer-1", "orders"),
-        signatureAlgorithm = "SHA256withECDSA",
-        signature = byteArrayOf(7),
+        credential = credential(),
+        deviceSignature = byteArrayOf(7),
         commercialSnapshotCanonical = canonicalContent,
+    )
+
+    private fun authenticatedRequest() = AuthenticatedRelayRequest(
+        credential = credential(),
+        requestId = "req-1",
+        timestampIso = "2026-08-29T00:00:00Z",
+        requestSignature = byteArrayOf(8),
     )
 
     private fun acceptedJson() =
@@ -228,4 +292,14 @@ class HttpRelayClientTest {
             server.shutdown()
         }
     }
+}
+
+/** Submit-only fake: [RelayEnvelopeAuthenticator] is no longer a fun interface (it now covers
+ * Fetch/Acknowledge too), so a plain SAM lambda can't stand in for it here. */
+private class FakeSubmitOnlyAuthenticator(private val submitResult: () -> AuthenticatedTransportEnvelope?) : RelayEnvelopeAuthenticator {
+    override suspend fun authenticate(envelope: OrderDeliveryEnvelope) = submitResult()
+    override suspend fun authenticateMailboxFetch(businessId: String, mailboxId: String, cursor: String?, limit: Int): AuthenticatedRelayRequest? =
+        throw UnsupportedOperationException("not used by this test")
+    override suspend fun authenticateAcknowledgement(businessId: String, envelopeId: String, receivedAtEpochMillis: Long): AuthenticatedRelayRequest? =
+        throw UnsupportedOperationException("not used by this test")
 }

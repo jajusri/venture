@@ -1,42 +1,45 @@
 package com.budcom.android.core.trust.data
 
 import com.budcom.android.core.trust.domain.TrustCredentialStore
-import com.budcom.android.feature.transaction.domain.port.BusinessDeviceCredential
 import com.budcom.android.feature.transaction.domain.port.RelayCredentialSource
+import com.budcom.android.feature.transaction.domain.port.TrustedBusinessDeviceCredential
+import java.util.Base64
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The real [RelayCredentialSource] this app should use once wired in -- see the final report's
- * Gate 5 finding: `feature/transaction/data/di/TransactionModule.kt` currently binds
- * `RelayCredentialSource { _, _ -> null }` (an explicit stub), and swapping that one line for this
- * class is a change to a file inside this round's STRICT DO-NOT-TOUCH `feature/transaction` area,
- * so it has NOT been made here pending explicit sign-off. `KeystoreRelayEnvelopeAuthenticator`
- * (the only consumer of this port) already handles the current stub's `null` correctly -- fail
- * closed, no envelope is ever authenticated -- so leaving the stub in place is safe, just inert.
+ * Real [RelayCredentialSource] -- bound to [com.budcom.android.feature.transaction.domain.port.RelayEnvelopeAuthenticator]'s
+ * dependency in `core/trust/di/TrustModule.kt`. Returns the FULL Trust-issued signed credential
+ * (claims + Trust signature, [TrustedBusinessDeviceCredential]) so the Relay wire envelope can carry
+ * the exact proof the certified Relay verifier requires -- never a summarized/reconstructed
+ * credential (relay-authority-repair, 2026-08-29: this was the transport wire contract gap).
+ *
+ * Deliberately DOES check expiry here (contrast with [com.budcom.android.core.trust.data.TrustBackedCommercialCredentialSource],
+ * which does not): the wire-transmission path this feeds, `AuthenticatedEnvelopeBinder.bind()`/
+ * `bindRequest()`, never checks expiry itself, so an expired credential must fail closed at the
+ * source, not silently ride along into a signed envelope the certified verifier will reject anyway.
  */
 @Singleton
 class TrustBackedRelayCredentialSource @Inject constructor(
     private val credentialStore: TrustCredentialStore,
 ) : RelayCredentialSource {
-    override suspend fun credentialFor(businessId: String, deviceId: String): BusinessDeviceCredential? {
+    override suspend fun credentialFor(businessId: String, deviceId: String): TrustedBusinessDeviceCredential? {
         val stored = credentialStore.current() ?: return null
         // Business binding (Gate 3D): the comparison against the REQUESTED businessId/deviceId is
         // always explicit here, never inferred from Tally company name, Party name, or assumed
         // because only one credential happens to be on file.
         if (stored.businessId != businessId || stored.deviceId != deviceId) return null
         if (System.currentTimeMillis() >= stored.expiresAtEpochMillis) return null
-        return BusinessDeviceCredential(
-            credentialVersion = stored.credentialVersion,
-            businessId = stored.businessId,
-            actorId = stored.actorId,
-            deviceId = stored.deviceId,
-            authority = stored.signatureBase64,
-            issuedAtEpochMillis = stored.issuedAtEpochMillis,
-            expiresAtEpochMillis = stored.expiresAtEpochMillis,
-            credentialEpoch = stored.authorityEpoch,
-            issuerReference = "${stored.issuerId}:${stored.issuerKeyId}",
-            verificationReference = stored.credentialId,
+        return TrustedBusinessDeviceCredential(
+            credentialVersion = stored.credentialVersion, credentialId = stored.credentialId, businessId = stored.businessId,
+            actorId = stored.actorId, membershipId = stored.membershipId, deviceId = stored.deviceId, deviceKeyId = stored.deviceKeyId,
+            deviceKeyVersion = stored.deviceKeyVersion, devicePublicKeyFingerprint = stored.devicePublicKeyFingerprint,
+            authorityScope = stored.authorityScope.toSet(), authorityEpoch = stored.authorityEpoch,
+            issuedAtEpochMillis = stored.issuedAtEpochMillis, notBeforeEpochMillis = stored.notBeforeEpochMillis,
+            expiresAtEpochMillis = stored.expiresAtEpochMillis, issuerId = stored.issuerId, issuerKeyId = stored.issuerKeyId,
+            signatureProfile = SIGNATURE_PROFILE, signature = Base64.getDecoder().decode(stored.signatureBase64),
         )
     }
+
+    private companion object { const val SIGNATURE_PROFILE = "P256-SHA256-v1" }
 }
