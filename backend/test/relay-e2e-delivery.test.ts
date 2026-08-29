@@ -9,7 +9,7 @@ import type { RelayAcknowledgementSubmission } from '../services/relay/src/appli
 import { relayIdentifier, type RecipientRoutingKey, type RelayAcceptance, type RelayAcknowledgement, type RelayMailboxEntry, type RelaySubmission } from '../services/relay/src/domain/relay.js';
 import type { RelayRepository, StoredRelayEnvelope } from '../services/relay/src/persistence/relay-repository.js';
 
-const canonicalFixture = readFileSync(new URL('../../shared/fixtures/relay/canonical-order-snapshot-v2.json', import.meta.url), 'utf8').replace(/\r?\n$/, '');
+const canonicalFixture = readFileSync(new URL('../../shared/fixtures/relay/canonical-order-snapshot-v3.json', import.meta.url), 'utf8').replace(/\r?\n$/, '');
 
 class E2ERepository implements RelayRepository {
   writes = 0;
@@ -72,7 +72,7 @@ const mailboxVerifier: RelayMailboxVerifier = { verify: (value) => Promise.resol
   credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
 const acknowledgementVerifier: RelayAcknowledgementVerifier = { verify: (value) => Promise.resolve({
   recipientBusinessId: value.recipientBusinessId, recipientActorId: value.recipientActorId,
-  recipientDeviceId: value.recipientDeviceId, credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
+  recipientDeviceId: value.recipientDeviceId, envelopeId: value.envelopeId, credentialValid: true, authorityScope: new Set(['receive_orders']) }) };
 const apps: ReturnType<typeof buildRelayService>[] = [];
 afterEach(async () => Promise.all(apps.splice(0).map((app) => app.close())));
 
@@ -85,7 +85,7 @@ describe('relay end to end structured delivery', () => {
       protocolVersion: 1, envelopeId: 'env-e2e-1', idempotencyKey: 'intent-e2e-1', objectType: 'ORDER', objectId: 'order-e2e-1', objectVersion: 2,
       senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
       authenticatedEnvelope: Buffer.from([7, 8]).toString('base64'), commercialContent: canonicalFixture,
-      commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2, submittedAt: new Date(10).toISOString(),
+      commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3, submittedAt: new Date(10).toISOString(),
     };
     const accepted = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: submitBody });
     const acceptedRetry = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: submitBody });
@@ -96,22 +96,22 @@ describe('relay end to end structured delivery', () => {
 
     const mailbox = await app.inject({
       method: 'POST', url: '/v1/relay/mailboxes/fetch',
-      payload: { recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', limit: 25 },
+      payload: { recipientBusinessId: 'business-b', mailboxId: 'orders', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', limit: 25, authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     expect(mailbox.statusCode).toBe(200);
     expect(mailbox.json().items).toHaveLength(1);
     expect(mailbox.json().items[0]).toMatchObject({ envelopeId: 'env-e2e-1', objectId: 'order-e2e-1', status: 'relay_accepted' });
     expect(mailbox.json().items[0].commercialContent).toBe(canonicalFixture);
     expect(mailbox.json().items[0].commercialContentType).toBe('application/vnd.budcom.order-snapshot+json');
-    expect(mailbox.json().items[0].commercialContentVersion).toBe(2);
+    expect(mailbox.json().items[0].commercialContentVersion).toBe(3);
 
     const ack = await app.inject({
       method: 'POST', url: '/v1/relay/acknowledgements',
-      payload: { envelopeId: 'env-e2e-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(200).toISOString() },
+      payload: { envelopeId: 'env-e2e-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(200).toISOString(), authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     const ackRetry = await app.inject({
       method: 'POST', url: '/v1/relay/acknowledgements',
-      payload: { envelopeId: 'env-e2e-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(200).toISOString() },
+      payload: { envelopeId: 'env-e2e-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(200).toISOString(), authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     expect(ack.statusCode).toBe(200);
     expect(ackRetry.statusCode).toBe(200);

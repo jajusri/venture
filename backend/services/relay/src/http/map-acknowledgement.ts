@@ -1,12 +1,14 @@
 import type { RelayAcknowledgementSubmission } from '../application/record-acknowledgement.js';
 import { relayIdentifier } from '../domain/relay.js';
 import { RelayServiceError } from '../errors.js';
+import { decodeBase64Envelope } from './base64-envelope.js';
 
 export interface RelayAcknowledgementBody {
   readonly envelopeId?: unknown;
   readonly recipientBusinessId?: unknown;
   readonly recipientActorId?: unknown;
   readonly recipientDeviceId?: unknown;
+  readonly authenticatedRequest?: unknown;
   readonly receivedAt?: unknown;
 }
 
@@ -23,6 +25,7 @@ export function mapRelayAcknowledgementBody(body: RelayAcknowledgementBody, fall
     recipientBusinessId: requiredString(body.recipientBusinessId, 'recipientBusinessId'),
     recipientActorId: requiredString(body.recipientActorId, 'recipientActorId'),
     recipientDeviceId: requiredString(body.recipientDeviceId, 'recipientDeviceId'),
+    authenticatedRequest: decodeBase64Envelope(body.authenticatedRequest, 'invalid_acknowledgement', 'authenticatedRequest'),
     receivedAt,
   };
 }

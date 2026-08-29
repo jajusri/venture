@@ -6,7 +6,7 @@ const submission = (): RelaySubmission => ({
   objectType: 'ORDER', objectId: 'order-1', objectVersion: 2,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
   recipient: { businessId: 'business-b', mailboxId: relayIdentifier('business-b:orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([1, 2, 3]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+  authenticatedEnvelope: new Uint8Array([1, 2, 3]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
   idempotencyKey: 'send-order-1-v2', submittedAt: new Date(1),
 });
 
@@ -22,6 +22,18 @@ describe('relay domain contract', () => {
     expect(() => validateRelaySubmission({ ...submission(), protocolVersion: 2 })).toThrow('protocol');
     expect(() => validateRelaySubmission({ ...submission(), authenticatedEnvelope: new Uint8Array(256 * 1024 + 1) })).toThrow('bounds');
     expect(() => validateRelaySubmission({ ...submission(), recipient: { ...submission().recipient, businessId: '' } })).toThrow('Recipient');
+  });
+
+  it('accepts current commercial content version 3', () => {
+    expect(() => validateRelaySubmission({ ...submission(), commercialContentVersion: 3 })).not.toThrow();
+  });
+
+  it('rejects the stale v2 commercial content version -- v2 is no longer current production', () => {
+    expect(() => validateRelaySubmission({ ...submission(), commercialContentVersion: 2 })).toThrow('content type and version');
+  });
+
+  it('rejects an unknown/future commercial content version', () => {
+    expect(() => validateRelaySubmission({ ...submission(), commercialContentVersion: 4 })).toThrow('content type and version');
   });
 
   it('encodes mailbox cursors as bounded sequence checkpoints', () => {

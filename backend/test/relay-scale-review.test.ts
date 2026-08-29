@@ -31,7 +31,11 @@ describe('relay SCALE-1M structural review', () => {
     const dispatcher = readFileSync(join(root, '../apps/budcom_android/app/src/main/java/com/budcom/android/feature/transaction/data/relay/RelayOutboxDispatcher.kt'), 'utf8');
     expect(policy).toContain('MAX_DISPATCH_BATCH');
     expect(policy).toContain('MAX_ATTEMPTS');
-    expect(dispatcher).toContain('findPending(companyId)');
+    // Bounded-contract check, not a fragile exact DAO-method-name match: dispatch reads a
+    // per-company batch capped at MAX_DISPATCH_BATCH (never an unbounded scan) and respects the
+    // policy's attempt ceiling before retrying -- see RelayOutboxRetryPolicy.kt for the actual bounds.
+    expect(dispatcher).toMatch(/findPendingBatch\(\s*companyId\s*,\s*RelayOutboxRetryPolicy\.MAX_DISPATCH_BATCH\s*\)/);
+    expect(dispatcher).toContain('RelayOutboxRetryPolicy.attemptsExhausted');
     expect(dispatcher).not.toMatch(/GlobalScope|while\s*\(\s*true\s*\)/);
   });
 });

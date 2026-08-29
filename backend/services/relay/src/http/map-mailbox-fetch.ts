@@ -1,12 +1,14 @@
 import type { RelayMailboxFetch } from '../application/fetch-mailbox.js';
 import { relayIdentifier } from '../domain/relay.js';
 import { RelayServiceError } from '../errors.js';
+import { decodeBase64Envelope } from './base64-envelope.js';
 
 export interface RelayMailboxFetchBody {
   readonly recipientBusinessId?: unknown;
   readonly mailboxId?: unknown;
   readonly recipientActorId?: unknown;
   readonly recipientDeviceId?: unknown;
+  readonly authenticatedRequest?: unknown;
   readonly cursor?: unknown;
   readonly limit?: unknown;
 }
@@ -29,6 +31,7 @@ export function mapRelayMailboxFetchBody(body: RelayMailboxFetchBody): RelayMail
     },
     recipientActorId: requiredString(body.recipientActorId, 'recipientActorId'),
     recipientDeviceId: requiredString(body.recipientDeviceId, 'recipientDeviceId'),
+    authenticatedRequest: decodeBase64Envelope(body.authenticatedRequest, 'invalid_mailbox_fetch', 'authenticatedRequest'),
     cursor,
     limit: limit ?? 25,
   };

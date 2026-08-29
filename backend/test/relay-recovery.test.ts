@@ -14,13 +14,13 @@ const submission = (): RelaySubmission => ({
   envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
   recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
   idempotencyKey: 'intent-1', submittedAt: new Date(1),
 });
 const verified = (): Awaited<ReturnType<RelaySubmissionVerifier['verify']>> => ({
   protocolVersion: 1, envelopeId: 'env-1', senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
   recipientBusinessId: 'business-b', mailboxId: 'orders', envelopeIntegrityValid: true, credentialValid: true, authorityScope: new Set(['send_orders']),
-  commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2,
+  commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
 });
 const mailboxVerified = () => ({
   recipientBusinessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId'), recipientActorId: 'actor-b', recipientDeviceId: 'device-b',
@@ -124,12 +124,14 @@ describe('relay failure and recovery attacks', () => {
     const page = await mailbox.execute({
       recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
       recipientActorId: 'actor-b', recipientDeviceId: 'device-b', cursor: null, limit: 25,
+      authenticatedRequest: new Uint8Array([1]),
     });
     expect(page.items).toHaveLength(1);
     const ack = new RecordRelayAcknowledgement(repository, acknowledgementVerifier);
     const request = {
       envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), recipientBusinessId: 'business-b',
       recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(50),
+      authenticatedRequest: new Uint8Array([1]),
     };
     await ack.execute(request);
     await ack.execute(request);
@@ -147,6 +149,7 @@ describe('relay failure and recovery attacks', () => {
     await expect(new FetchRecipientMailbox(repository, revokedMailbox).execute({
       recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
       recipientActorId: 'actor-b', recipientDeviceId: 'device-b', cursor: null, limit: 25,
+      authenticatedRequest: new Uint8Array([1]),
     })).rejects.toThrow('rejected');
   });
 
@@ -159,7 +162,7 @@ describe('relay failure and recovery attacks', () => {
       protocolVersion: 1, envelopeId: 'env-1', idempotencyKey: 'intent-1', objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
       senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
       authenticatedEnvelope: Buffer.from([1]).toString('base64'), commercialContent: '{}',
-      commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 2, submittedAt: new Date(1).toISOString(),
+      commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3, submittedAt: new Date(1).toISOString(),
     };
     const storm = await Promise.all(Array.from({ length: 5 }, (_, index) => app.inject({
       method: 'POST', url: '/v1/relay/envelopes',
@@ -187,7 +190,7 @@ describe('relay failure and recovery attacks', () => {
     apps.push(app);
     const ack = await app.inject({
       method: 'POST', url: '/v1/relay/acknowledgements',
-      payload: { envelopeId: 'env-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(40).toISOString() },
+      payload: { envelopeId: 'env-1', recipientBusinessId: 'business-b', recipientActorId: 'actor-b', recipientDeviceId: 'device-b', receivedAt: new Date(40).toISOString(), authenticatedRequest: Buffer.from([1]).toString('base64') },
     });
     expect(ack.statusCode).toBe(200);
     expect(ack.json().status).toBe('delivered');

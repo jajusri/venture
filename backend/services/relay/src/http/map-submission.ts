@@ -1,5 +1,6 @@
 import { relayIdentifier, type RelaySubmission } from '../domain/relay.js';
 import { RelayServiceError } from '../errors.js';
+import { decodeBase64Envelope } from './base64-envelope.js';
 
 export interface RelaySubmissionBody {
   readonly protocolVersion?: unknown;
@@ -25,18 +26,6 @@ function requiredString(value: unknown, field: string): string {
   return value;
 }
 
-function decodeEnvelope(value: unknown): Uint8Array {
-  if (typeof value !== 'string' || !value.trim()) throw new RelayServiceError('invalid_submission', 'authenticatedEnvelope is required', 400);
-  try {
-    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) throw new Error('invalid base64');
-    const decoded = Buffer.from(value, 'base64');
-    if (decoded.toString('base64') !== value) throw new Error('non-canonical base64');
-    return Uint8Array.from(decoded);
-  } catch {
-    throw new RelayServiceError('invalid_submission', 'authenticatedEnvelope must be base64', 400);
-  }
-}
-
 export function mapRelaySubmissionBody(body: RelaySubmissionBody, submittedAtFallback: Date): RelaySubmission {
   const submittedAt = typeof body.submittedAt === 'string' ? new Date(body.submittedAt) : submittedAtFallback;
   if (Number.isNaN(submittedAt.getTime())) throw new RelayServiceError('invalid_submission', 'submittedAt is invalid', 400);
@@ -57,7 +46,7 @@ export function mapRelaySubmissionBody(body: RelaySubmissionBody, submittedAtFal
       businessId: requiredString(body.recipientBusinessId, 'recipientBusinessId'),
       mailboxId: relayIdentifier(requiredString(body.mailboxId, 'mailboxId'), 'MailboxId'),
     },
-    authenticatedEnvelope: decodeEnvelope(body.authenticatedEnvelope),
+    authenticatedEnvelope: decodeBase64Envelope(body.authenticatedEnvelope, 'invalid_submission', 'authenticatedEnvelope'),
     commercialContent: requiredString(body.commercialContent, 'commercialContent'),
     commercialContentType: requiredString(body.commercialContentType, 'commercialContentType'),
     commercialContentVersion,

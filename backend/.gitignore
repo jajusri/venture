@@ -1,0 +1,6 @@
+# Local controlled-pilot dev state (signing keys, JSON-file fallback store).
+# Never committed: contains locally-generated key material and dev/test identity data.
+.local/
+
+# Build output.
+dist/

@@ -19,6 +19,11 @@ export interface RelayMailboxFetch {
   readonly recipientDeviceId: string;
   readonly cursor: RelayCursor | null;
   readonly limit: number;
+  /** Canonical authenticated-request bytes (Trust credential + device signature over this fetch's
+   * own security-relevant fields) -- see `devtools/pilot-envelope.ts`'s
+   * `AuthenticatedRelayRequestWire` doc comment. Required: identifier-only fetches carry no
+   * possession proof and must be rejected (Codex STOP 1). */
+  readonly authenticatedRequest: Uint8Array;
 }
 
 export interface VerifiedMailboxAuthority {
@@ -65,6 +70,7 @@ export function relayMailboxFetch(input: {
   mailboxId: string;
   recipientActorId: string;
   recipientDeviceId: string;
+  authenticatedRequest: Uint8Array;
   cursor?: string | null;
   limit?: number;
 }): RelayMailboxFetch {
@@ -75,6 +81,7 @@ export function relayMailboxFetch(input: {
     },
     recipientActorId: input.recipientActorId,
     recipientDeviceId: input.recipientDeviceId,
+    authenticatedRequest: input.authenticatedRequest,
     cursor: input.cursor?.trim() ? relayIdentifier(input.cursor.trim(), 'RelayCursor') : null,
     limit: input.limit ?? DEFAULT_MAILBOX_PAGE_SIZE,
   };
