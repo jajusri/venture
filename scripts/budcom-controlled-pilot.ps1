@@ -224,7 +224,7 @@ function Invoke-PilotEnrollOne {
     Write-Section "Enroll Phone ($Serial) as $($Company.DisplayName)"
 
     $created = Get-OrCreateTestBusiness -Company $Company
-    Set-TestBusinessScope -Company $Company -Created $created
+    Set-TestBusinessScope -Company $Company -Created $created | Out-Null
 
     Write-Host '  building/installing/launching devDebug...'
     & (Join-Path $RepoRoot 'scripts\budcom-android.ps1') -DeviceSerial $Serial -Variant DevDebug -Install -Launch -Verify
@@ -261,7 +261,7 @@ function Invoke-PilotEnrollOne {
         Write-ErrorAndExit "Post-enrollment verification failed: grant $($grant.grantId) does not show as consumed by $($result.deviceId) in Trust's own records."
     }
     Write-Ok "Verified via Trust's own records: grant consumed by device $($result.deviceId), business $($created.businessId) active."
-    return [ordered]@{ Company = $Company.DisplayName; BusinessId = $created.businessId; DeviceId = $result.deviceId; Serial = $Serial }
+    return [PSCustomObject]@{ Company = $Company.DisplayName; BusinessId = $created.businessId; DeviceId = $result.deviceId; Serial = $Serial }
 }
 
 function Invoke-PilotEnroll {
