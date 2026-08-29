@@ -7,10 +7,11 @@
   is a distinct, coexisting application id that never touches an existing installation's package or
   data.
 
-  This declares ONE narrowly-scoped broadcast receiver that lets a local controlled pilot automation
+  This declares narrowly-scoped broadcast receivers that let a local controlled pilot automation
   script (scripts/budcom-controlled-pilot.ps1, run over adb from the same machine the developer
-  already controls) trigger a real enrollment attempt without a manual UI tap; see
-  PilotEnrollmentReceiver's own doc comment for exactly what it does and does not do.
+  already controls) trigger a real enrollment attempt, and separately a real Relay transport /
+  commercial-authority action, without a manual UI tap; see PilotEnrollmentReceiver's and
+  PilotTransportReceiver's own doc comments for exactly what each does and does not do.
 
   exported="true" is deliberate, not an oversight: on current Android (verified against a real
   device, API 36), adb shell am broadcast with an explicit component name cannot reliably reach a
@@ -28,6 +29,9 @@
     <application>
         <receiver
             android:name="com.budcom.android.pilotharness.PilotEnrollmentReceiver"
+            android:exported="true" />
+        <receiver
+            android:name="com.budcom.android.pilotharness.PilotTransportReceiver"
             android:exported="true" />
     </application>
 </manifest>
