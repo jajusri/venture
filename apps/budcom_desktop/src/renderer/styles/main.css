@@ -16,7 +16,12 @@
 
 * { box-sizing: border-box; }
 
-.hidden { display: none; }
+/* !important is deliberate: .hidden is a utility meant to unconditionally hide an
+   element regardless of any other same-specificity display-setting rule that
+   happens to be declared later in this file (see the .storage-gate-overlay.hidden
+   compound-selector workaround below, which this makes unnecessary for new code —
+   left in place as a harmless no-op rather than churning an unrelated component). */
+.hidden { display: none !important; }
 
 body {
   margin: 0;
@@ -542,18 +547,61 @@ body {
 .pairing-session {
   display: grid;
   gap: 0.5rem;
-  margin-top: 1rem;
-  padding: 0.75rem;
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.75rem;
   border: 1px solid var(--border);
   border-radius: 0.4rem;
   background: var(--card);
   justify-items: start;
 }
 
+/* Keep the QR fully visible without scrolling at normal window sizes by
+   placing it beside its short-code/expiry/cancel controls instead of
+   stacking everything vertically below it. Scoped to the active-session
+   layout only so the (simpler) redeemed/ended states are unaffected. */
+.pairing-session-active-layout {
+  display: grid;
+  grid-template-columns: auto minmax(200px, 320px);
+  align-items: start;
+  gap: 0 1.25rem;
+}
+
+.pairing-session-info {
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+}
+
+.pairing-session-info .panel-meta { margin: 0; }
+
+.pairing-scan-instruction {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pairing-hint {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 0.1rem;
+}
+
+.pairing-panel-header {
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+.pairing-panel-subtitle {
+  margin: 0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 #pairing-qr-image {
   border-radius: 0.4rem;
   background: #fff;
-  padding: 0.5rem;
+  padding: 0.4rem;
 }
 
 .pairing-device-list {
