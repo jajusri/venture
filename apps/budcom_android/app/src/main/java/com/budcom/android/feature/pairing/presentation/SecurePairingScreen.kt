@@ -94,7 +94,9 @@ fun SecurePairingScreen(
         modifier = modifier.fillMaxSize().testTag("secure_pairing_screen"),
         topBar = {
             TopAppBar(
-                title = { Text("Secure Pairing") },
+                // "Pair with Desktop" mirrors Desktop's own "Pair your phone" heading -- both name
+                // the action from that platform's point of view, for cross-platform symmetry.
+                title = { Text("Pair with Desktop") },
                 actions = {
                     // Connector pairing is one capability among many -- it must not block access to
                     // unrelated BUDCOM functionality (Trust/Relay status, commercial areas whose own
