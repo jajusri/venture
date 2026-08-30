@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyServerOptions } from 'fastify';
 import { ConsumeDeviceEnrollmentGrant, DeviceEnrollmentRejected, type DeviceEnrollmentRejectionReason, type EnrollmentGrantConsumptionStore } from './application/consume-enrollment-grant.js';
 import type { BusinessDeviceCredentialIssuer } from './application/issue-credential.js';
 import { ReadCurrentAuthorityEpoch } from './application/read-authority-epoch.js';
@@ -17,8 +17,11 @@ export function buildTrustService(options: {
   enrollment?: { store: EnrollmentGrantConsumptionStore; credentialIssuer: BusinessDeviceCredentialIssuer };
   authoritySnapshots?: TrustAuthoritySnapshotReader;
   now?: () => Date;
+  /** Test seam only: lets a test capture log output (e.g. a custom pino stream) to assert on it.
+   * Production callers never set this and get the same `logger: true` as before. */
+  logger?: FastifyServerOptions['logger'];
 } = {}): FastifyInstance {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: options.logger ?? true });
   app.get('/health', () => ({ status: 'ok', service: 'budcom-trust' }));
   if (options.verificationKeys) app.get<{ Params: { issuerId: string } }>('/v1/trust/issuers/:issuerId/verification-keys', async (request, reply) => {
     const keys = await options.verificationKeys!.list(request.params.issuerId, options.now?.() ?? new Date());
@@ -84,21 +87,41 @@ export function buildTrustService(options: {
     }
     const mapped = error instanceof Error ? error : new Error('The Trust Service could not process the request.');
     const status = mapUnknownEnrollmentError(mapped);
-    if (status === 500) request.log.error({ err: redactConnectionStrings(mapped) }, 'unmapped_enrollment_error');
+    if (status === 500) logUnexpectedTrustError(request, mapped);
     const body: ServiceErrorBody = { error: { code: status === 500 ? 'internal_error' : 'enrollment_rejected', message: status === 500 ? 'The Trust Service could not process the request.' : mapped.message, requestId: request.id } };
     void reply.status(status).send(body);
   });
   return app;
 }
 
-/** Defense in depth for the server-side-only 500 log below: strips any embedded `scheme://user:pass@`
- * credential (a connection string leaking into a driver/library error message or stack, e.g. from a
- * misconfigured DSN) before it reaches the log. None of this codebase's own thrown messages embed one
- * today, but this guards against a future/third-party error type that might. */
-function redactConnectionStrings(error: Error): { name: string; message: string; stack?: string | undefined } {
-  const pattern = /:\/\/([^:@/\s]+):([^@/\s]+)@/g;
-  const redact = (value: string): string => value.replace(pattern, '://$1:***@');
-  return { name: error.name, message: redact(error.message), stack: error.stack ? redact(error.stack) : undefined };
+/** Server-side-only log for an error this handler could not map to a specific, known refusal --
+ * i.e. genuinely unexpected: a driver/library failure, a bug, anything not already handled by
+ * `TrustServiceError`/`DeviceEnrollmentRejected`/the recognized-message branches above.
+ *
+ * Deliberately never logs `error.message` or `error.stack`. A regex/blacklist redaction pass
+ * over free-text error content (an earlier version of this function did exactly that, stripping
+ * `scheme://user:pass@` connection strings) can only catch secret shapes someone thought to
+ * anticipate -- an unexpected error is by definition from a code path nobody expected, so it can
+ * carry a bearer token, a raw password, PEM key material, or any other secret-bearing text a
+ * driver/library/future code path chooses to embed in a message or stack frame, in a shape no
+ * fixed pattern list is guaranteed to catch. Only fixed, code-controlled metadata is logged:
+ * the error's class name (a JS identifier the throwing code chose, never attacker/request data),
+ * the matched route PATTERN (`/v1/trust/x/:id`, never the live URL -- which can carry query
+ * values) and method, and the same request ID already returned to the caller in the generic 500
+ * body, so a specific client-reported failure can be correlated to a specific log line without
+ * the log line itself needing to reveal anything the response doesn't already say. */
+function logUnexpectedTrustError(request: FastifyRequest, error: Error): void {
+  request.log.error(
+    {
+      event: 'unexpected_trust_error',
+      errorName: error.name,
+      errorConstructor: error.constructor?.name ?? 'Unknown',
+      route: request.routeOptions?.url ?? 'unmatched-route',
+      method: request.method,
+      requestId: request.id,
+    },
+    'unexpected_trust_error',
+  );
 }
 
 /** Refusals surfaced by the reused, certified `RegisterBusinessDevice`/`BusinessDeviceCredentialIssuer`
