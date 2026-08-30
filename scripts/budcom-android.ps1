@@ -190,11 +190,16 @@ function Get-InstalledPackageInfo {
     param([string]$Serial, [string]$Package)
     $out = & $Adb -s $Serial shell dumpsys package $Package 2>$null
     if (-not $out) { return $null }
-    $versionNameLine = ($out | Select-String '^\s+versionName=' | Select-Object -First 1).Line
-    $versionCodeLine = ($out | Select-String '^\s+versionCode=' | Select-Object -First 1).Line
-    if (-not $versionNameLine) { return $null }
-    $vn = if ($versionNameLine -match 'versionName=([^\s]+)') { $Matches[1] } else { $null }
-    $vc = if ($versionCodeLine -match 'versionCode=(\d+)') { [int]$Matches[1] } else { 0 }
+    # Select-String returns nothing (not a match with an empty .Line) when dumpsys has no
+    # versionName/versionCode for this package yet -- e.g. "Unable to find package" right after
+    # an install, before the OS package manager has fully indexed it on some devices. Under
+    # Set-StrictMode, chaining straight to .Line on that nothing throws PropertyNotFoundException
+    # instead of returning null like a normal caller would expect; guard each lookup explicitly.
+    $versionNameMatch = $out | Select-String '^\s+versionName=' | Select-Object -First 1
+    if (-not $versionNameMatch) { return $null }
+    $versionCodeMatch = $out | Select-String '^\s+versionCode=' | Select-Object -First 1
+    $vn = if ($versionNameMatch.Line -match 'versionName=([^\s]+)') { $Matches[1] } else { $null }
+    $vc = if ($versionCodeMatch -and $versionCodeMatch.Line -match 'versionCode=(\d+)') { [int]$Matches[1] } else { 0 }
     return [ordered]@{
         Package = $Package
         VersionName = $vn
@@ -393,7 +398,17 @@ function Invoke-AndroidInstall {
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "adb install -r failed for $($Config.ApkPath)"
     }
-    $after = Get-InstalledPackageInfo -Serial $Serial -Package $Config.Package
+    # dumpsys package can transiently report "Unable to find package" for a few hundred ms right
+    # after adb install returns, on some devices, before the OS package manager has fully
+    # indexed it -- observed directly on real hardware, not theoretical. Bounded poll instead of
+    # a single immediate query, same pattern as Invoke-AndroidVerify's process-alive wait.
+    $after = $null
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline) {
+        $after = Get-InstalledPackageInfo -Serial $Serial -Package $Config.Package
+        if ($after) { break }
+        Start-Sleep -Milliseconds 500
+    }
     if (-not $after -or $after.VersionCode -ne $apk.VersionCode) {
         Write-Fail "Install verification failed: device reports $($after.VersionCode), expected $($apk.VersionCode)"
     }
