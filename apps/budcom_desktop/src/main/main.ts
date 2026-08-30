@@ -533,6 +533,9 @@ function createLifecycleService(): ConnectorLifecycleService {
     healthChecker: new HttpHealthChecker(config.connectorBaseUrl, undefined, {
       expectedPort: config.connectorPort,
       expectedCorrelationId: config.startupCorrelationId,
+      // Lets Desktop safely adopt a still-alive orphan Connector from an abnormal prior exit --
+      // see the expectedConnectorId doc comment on HttpHealthChecker for the full reasoning.
+      expectedConnectorId: connectorIdentity.connectorId,
     }),
     logService,
     // Trusted-LAN children have no self-restart authority — an unexpected exit or failed health

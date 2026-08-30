@@ -22,11 +22,26 @@ export class HttpHealthChecker implements HealthChecker {
   private readonly client: ConnectorHttpClient;
   private readonly expectedPort?: number;
   private readonly expectedCorrelationId?: string | null;
+  private readonly expectedConnectorId?: string | null;
 
   constructor(
     baseUrl: string,
     fetchImpl?: typeof fetch,
-    ownership?: { readonly expectedPort?: number; readonly expectedCorrelationId?: string | null },
+    ownership?: {
+      readonly expectedPort?: number;
+      readonly expectedCorrelationId?: string | null;
+      /**
+       * Desktop's own stable ConnectorIdentityStore id (see connector-identity-store.ts),
+       * known before any Connector process exists and always injected as BUDCOM_CONNECTOR_ID
+       * into every child this Desktop installation spawns. A connector reporting this id is
+       * provably one this installation spawned at some point -- including a still-alive orphan
+       * from an abnormal prior exit -- even though its per-launch startupCorrelationId (which
+       * only ever matches a child spawned THIS run) cannot match. Matching on either id is
+       * sufficient; neither weakens the other, and evaluateBindIntegrity() still independently
+       * verifies version/network-binding correctness afterward regardless of which id matched.
+       */
+      readonly expectedConnectorId?: string | null;
+    },
   ) {
     this.client = new ConnectorHttpClient({
       baseUrl,
@@ -36,6 +51,7 @@ export class HttpHealthChecker implements HealthChecker {
     });
     this.expectedPort = ownership?.expectedPort;
     this.expectedCorrelationId = ownership?.expectedCorrelationId;
+    this.expectedConnectorId = ownership?.expectedConnectorId;
   }
 
   async checkHealth(): Promise<boolean> {
@@ -68,10 +84,14 @@ export class HttpHealthChecker implements HealthChecker {
     if (this.expectedPort !== undefined && body.bindPort !== this.expectedPort) {
       return false;
     }
-    if (this.expectedCorrelationId) {
-      return body.startupCorrelationId === this.expectedCorrelationId;
+    if (!this.expectedCorrelationId && !this.expectedConnectorId) {
+      return true;
     }
-    return true;
+    const correlationMatches =
+      !!this.expectedCorrelationId && body.startupCorrelationId === this.expectedCorrelationId;
+    const connectorIdMatches =
+      !!this.expectedConnectorId && body.connectorId === this.expectedConnectorId;
+    return correlationMatches || connectorIdMatches;
   }
 }
 
