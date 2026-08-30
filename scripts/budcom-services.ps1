@@ -80,7 +80,10 @@ function Test-TcpReachable {
         $task = $client.ConnectAsync($TargetHost, $Port)
         $completed = $task.Wait($TimeoutMs)
         $client.Close()
-        return $completed -and $task.IsCompletedSuccessfully
+        # Not $task.IsCompletedSuccessfully: that property resolves to an empty string (falsy) under
+        # Windows PowerShell 5.1's reflection on System.Threading.Tasks.Task here, producing a false
+        # "unreachable" even when the connection genuinely succeeded. Status is reliable in both.
+        return $completed -and $task.Status -eq [System.Threading.Tasks.TaskStatus]::RanToCompletion
     } catch { return $false }
 }
 
