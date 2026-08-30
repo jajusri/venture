@@ -21,8 +21,13 @@
 #   .\scripts\budcom-install.ps1 -DesktopOnly -DesktopInstall                          # dry run: reports current vs. installed version
 #   .\scripts\budcom-install.ps1 -DesktopOnly -DesktopInstall -DesktopInstallConfirm   # actually launches the installer (real UAC prompt)
 #   .\scripts\budcom-install.ps1 -DesktopOnly -DesktopInstalledVerify                  # read-only checks against whatever is currently installed
-#   .\scripts\budcom-install.ps1 -AndroidOnly -Build -Install -Launch -Verify -DeviceSerial <SERIAL> -Variant DevDebug
-#   .\scripts\budcom-install.ps1 -Build -Install -Launch -Verify -DeviceSerial <SERIAL>   # both platforms
+#   .\scripts\budcom-install.ps1 -AndroidOnly -Build -Install -Launch -Verify -DeviceSerial <SERIAL> -Variant DevDebug     # development/pilot
+#   .\scripts\budcom-install.ps1 -AndroidOnly -Build -Install -Launch -Verify -DeviceSerial <SERIAL> -Variant ProdRelease  # production/release
+#   .\scripts\budcom-install.ps1 -Build -Install -Launch -Verify -DeviceSerial <SERIAL> -Variant DevDebug   # both platforms
+#
+# -Variant has no default: an install script that can represent a release/final-install workflow
+# must never silently pick a dev/test-capable variant, so any Android action without an explicit
+# -Variant fails fast instead.
 
 [CmdletBinding()]
 param(
@@ -38,8 +43,12 @@ param(
     [switch]$DesktopInstallConfirm,   # opt-in: actually starts the installer (real UAC prompt), only meaningful with -DesktopInstall
     [switch]$DesktopInstalledVerify,  # read-only: inspects whatever is currently installed, does not launch/stop anything
     [string]$DeviceSerial = '',
+    # No default. An install script that can represent a release/final-install workflow must
+    # never silently pick a dev/test-capable variant (DevDebug has the pilot-harness receivers
+    # and android:debuggable=true) merely because the caller forgot -Variant -- see the Android
+    # block below, which fails fast rather than defaulting when Android action is requested.
     [ValidateSet('ProdDebug', 'DevDebug', 'ProdRelease', 'DevRelease')]
-    [string]$Variant = 'DevDebug'
+    [string]$Variant = ''
 )
 
 Set-StrictMode -Version Latest
@@ -241,6 +250,12 @@ else {
 if ($doAndroid) {
     if (-not $DeviceSerial) {
         Add-Result 'Android' 'SKIPPED' 'no -DeviceSerial provided'
+    }
+    elseif (-not $Variant) {
+        # Deliberately no default (see param block). A release/final-install invocation must
+        # never silently end up on DevDebug (pilot-harness receivers, android:debuggable=true)
+        # just because -Variant was left off; the caller must say which they mean.
+        Add-Result "Android (@ $DeviceSerial)" 'FAIL' 'no -Variant provided -- pass -Variant DevDebug (or ProdDebug/DevRelease) for a development/pilot run, or -Variant ProdRelease for a production/release install; this script never assumes one for you'
     }
     else {
         $deviceLocked = if ($Install -or $Launch) { Test-AndroidDeviceLocked -Serial $DeviceSerial } else { $false }
