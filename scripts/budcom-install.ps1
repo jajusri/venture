@@ -92,12 +92,17 @@ if ($doAndroid) {
         Add-Result 'Android' 'SKIPPED' 'no -DeviceSerial provided'
     }
     else {
-        $androidArgs = @('-DeviceSerial', $DeviceSerial, '-Variant', $Variant)
-        if ($Build) { $androidArgs += '-Build' }
-        if ($Install) { $androidArgs += '-Install' }
-        if ($Launch) { $androidArgs += '-Launch' }
-        if ($Verify) { $androidArgs += '-Verify' }
-        if (-not ($Build -or $Install -or $Launch -or $Verify)) { $androidArgs += '-Status' }
+        # Must be a hashtable, not an array: array-splatting (@array) passes each element as a
+        # positional argument, so literal '-DeviceSerial'/'-Variant' marker strings would bind to
+        # budcom-android.ps1's params positionally instead of by name (reproduced live: the device
+        # serial ended up bound to -Variant and failed its ValidateSet). Hashtable splatting (@hash)
+        # correctly maps each key to its named parameter, including switches via boolean values.
+        $androidArgs = @{ DeviceSerial = $DeviceSerial; Variant = $Variant }
+        if ($Build) { $androidArgs['Build'] = $true }
+        if ($Install) { $androidArgs['Install'] = $true }
+        if ($Launch) { $androidArgs['Launch'] = $true }
+        if ($Verify) { $androidArgs['Verify'] = $true }
+        if (-not ($Build -or $Install -or $Launch -or $Verify)) { $androidArgs['Status'] = $true }
         Invoke-Stage "Android ($Variant @ $DeviceSerial)" {
             & (Join-Path $RepoRoot 'scripts\budcom-android.ps1') @androidArgs
         }
