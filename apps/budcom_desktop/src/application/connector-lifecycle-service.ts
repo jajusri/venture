@@ -369,7 +369,15 @@ export class ConnectorLifecycleService {
         void this.handleProcessExit(code, signal);
       });
 
-      const readyDetails = await this.waitForHealth(this.config.startupTimeoutMs);
+      const readyDetails = await this.waitForHealth(this.config.startupTimeoutMs, process);
+      if (this.managedProcess !== process) {
+        // The child already exited (handleProcessExit ran concurrently, cleared
+        // managedProcess, logged the crash, and scheduled its own reconnect) —
+        // that path already owns the state/log narrative. Reporting a second,
+        // contradictory 'failed' transition here would just overwrite the
+        // 'reconnecting' state moments before the real retry fires.
+        return this.getStatus();
+      }
       this.onDiagnostic?.('connector_health_check', { ready: readyDetails !== null });
       if (!readyDetails) {
         this.lastError = mapLifecycleUserMessage('STARTUP_TIMEOUT');
@@ -516,9 +524,18 @@ export class ConnectorLifecycleService {
   }
 
   /** Returns the first `ready && owned` details, or null if the timeout elapses first. */
-  private async waitForHealth(timeoutMs: number): Promise<HealthCheckDetails | null> {
+  private async waitForHealth(
+    timeoutMs: number,
+    expectedProcess?: ManagedProcess,
+  ): Promise<HealthCheckDetails | null> {
     const attempts = Math.max(1, Math.ceil(timeoutMs / 500));
     for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (expectedProcess && this.managedProcess !== expectedProcess) {
+        // Child already exited underneath this wait; stop polling a dead target
+        // instead of holding startupInProgress until the full timeout elapses,
+        // which would otherwise starve the crash handler's own scheduled retry.
+        return null;
+      }
       const details = await this.healthChecker.checkHealthDetails();
       if (details.ready && details.owned) {
         return details;
