@@ -4,7 +4,10 @@ import androidx.compose.ui.graphics.Color
 
 // Aligned with BudCom desktop slate + sky accent for brand continuity.
 val BudcomSky = Color(0xFF38BDF8)
-val BudcomSkyDark = Color(0xFF0EA5E9)
+// Light-theme primary -- matches Desktop's --accent (#2563eb) exactly for cross-platform
+// visual symmetry (white/blue minimalist direction). Desktop has no dark mode, so only this
+// light-theme accent needs to match; BudcomSky (the dark-theme primary, above) is unchanged.
+val BudcomSkyDark = Color(0xFF2563EB)
 val BudcomSlate900 = Color(0xFF0F172A)
 val BudcomSlate800 = Color(0xFF1E293B)
 val BudcomSlate700 = Color(0xFF334155)

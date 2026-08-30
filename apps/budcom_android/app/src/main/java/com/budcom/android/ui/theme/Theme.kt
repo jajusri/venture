@@ -10,7 +10,9 @@ import androidx.compose.ui.graphics.Color
 private val LightColorScheme = lightColorScheme(
     primary = BudcomSkyDark,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFBAE6FD),
+    // blue-100, matching the BudcomSkyDark primary above (was a cyan-sky-200 tint tuned for
+    // the old, lighter/cyaner primary -- kept in the same family, not the old cyan hue).
+    primaryContainer = Color(0xFFDBEAFE),
     onPrimaryContainer = BudcomSlate900,
     secondary = BudcomSlate700,
     onSecondary = Color.White,
