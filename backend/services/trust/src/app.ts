@@ -84,6 +84,7 @@ export function buildTrustService(options: {
     }
     const mapped = error instanceof Error ? error : new Error('The Trust Service could not process the request.');
     const status = mapUnknownEnrollmentError(mapped);
+    if (status === 500) request.log.error({ err: mapped }, 'unmapped_enrollment_error');
     const body: ServiceErrorBody = { error: { code: status === 500 ? 'internal_error' : 'enrollment_rejected', message: status === 500 ? 'The Trust Service could not process the request.' : mapped.message, requestId: request.id } };
     void reply.status(status).send(body);
   });
