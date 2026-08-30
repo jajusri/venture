@@ -120,6 +120,15 @@
             </article>
           </div>
 
+          <button type="button" class="nav-btn dashboard-shortcut-card" data-view="pairing">
+            <span class="dashboard-shortcut-icon" aria-hidden="true">&#128241;</span>
+            <span class="dashboard-shortcut-text">
+              <strong>Mobile Pairing</strong>
+              <span class="dashboard-shortcut-meta">Pair a phone with this Connector</span>
+            </span>
+            <span class="dashboard-shortcut-arrow" aria-hidden="true">&#8250;</span>
+          </button>
+
           <article class="panel company-panel">
             <div class="panel-header">
               <h2>Company Selection</h2>
@@ -272,15 +281,14 @@
 
         <section id="view-pairing" class="view">
           <article class="panel">
-            <h2>Secure Mobile Pairing</h2>
+            <div class="panel-header pairing-panel-header">
+              <h2>Pair your phone</h2>
+              <p class="panel-meta pairing-panel-subtitle">Secure Mobile Pairing</p>
+            </div>
 
             <div id="pairing-state-disabled" class="pairing-state hidden">
-              <p class="panel-meta">
-                Secure mobile pairing is off. A phone cannot be securely paired to this Connector until you
-                turn this on. This does not affect any device that is already connected over the existing
-                connection method.
-              </p>
-              <button id="btn-enable-secure-pairing" class="action-btn" type="button">Enable Secure Mobile Pairing</button>
+              <p class="panel-meta">Turn this on to securely pair a phone with this Connector.</p>
+              <button id="btn-enable-secure-pairing" class="action-btn" type="button">Enable Mobile Pairing</button>
             </div>
 
             <div id="pairing-state-unavailable" class="pairing-state hidden">
@@ -295,14 +303,17 @@
               </p>
               <button id="btn-start-pairing" class="action-btn" type="button">Start Pairing</button>
 
-              <div id="pairing-session-active" class="pairing-session hidden">
-                <img id="pairing-qr-image" alt="Pairing QR code" width="256" height="256" />
-                <p class="panel-meta">
-                  Short code: <strong id="pairing-short-code">—</strong>
-                  (works only once the phone already knows or has selected this Connector)
-                </p>
-                <p class="panel-meta">Expires in: <strong id="pairing-countdown">—</strong></p>
-                <button id="btn-cancel-pairing" class="action-btn secondary" type="button">Cancel</button>
+              <div id="pairing-session-active" class="pairing-session pairing-session-active-layout hidden">
+                <img id="pairing-qr-image" class="pairing-qr-visual" alt="Pairing QR code" width="256" height="256" />
+                <div class="pairing-session-info">
+                  <p class="panel-meta pairing-scan-instruction">Scan this QR with the BUDCOM mobile app to securely pair this computer.</p>
+                  <p class="panel-meta pairing-shortcode-line">
+                    Short code: <strong id="pairing-short-code">—</strong>
+                    <span class="pairing-hint">(only once the phone already knows this Connector)</span>
+                  </p>
+                  <p class="panel-meta pairing-expiry-line">Expires in: <strong id="pairing-countdown">—</strong></p>
+                  <button id="btn-cancel-pairing" class="action-btn secondary" type="button">Cancel</button>
+                </div>
               </div>
 
               <div id="pairing-session-redeemed" class="pairing-session hidden">

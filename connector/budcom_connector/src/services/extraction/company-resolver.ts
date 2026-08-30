@@ -60,6 +60,17 @@ export class CompanyResolver {
     this.cache = null;
   }
 
+  /**
+   * Synchronous, zero-I/O peek at the current cached discovery snapshot, or null if nothing has
+   * been discovered yet (or the cache was invalidated). Never triggers a refresh — safe to call
+   * from hot/synchronous paths like ConnectorSessionServiceImpl.getStatus(), which must stay fast
+   * and cannot await a live Tally round-trip. A null result must be read as "unknown", not "the
+   * selection is invalid" -- there's no evidence either way yet.
+   */
+  peekCachedSnapshot(): CompanyDiscoverySnapshot | null {
+    return this.cache?.snapshot ?? null;
+  }
+
   getCacheAgeMs(): number | null {
     if (!this.cache) {
       return null;

@@ -1,9 +1,9 @@
 {
-  "validatedAt": "2026-07-22T19:20:21.836Z",
+  "validatedAt": "2026-08-30T03:17:03.836Z",
   "connectorVersion": "0.3.1",
   "desktopVersion": "0.4.2",
   "validationPort": 18080,
-  "connectorScript": "D:\\Projects\\Budcom\\connector\\budcom_connector\\dist\\main.js",
+  "connectorScript": "D:\\Projects\\Budcom\\.claude\\worktrees\\stabilize-desktop-connector\\connector\\budcom_connector\\dist\\main.js",
   "results": [
     {
       "scenario": "Connector auto-start",
@@ -18,7 +18,7 @@
     {
       "scenario": "Health monitoring",
       "status": "PASS",
-      "detail": "lastHealth=2026-07-22T19:20:02.841Z"
+      "detail": "lastHealth=2026-08-30T03:16:46.149Z"
     },
     {
       "scenario": "Graceful stop",
