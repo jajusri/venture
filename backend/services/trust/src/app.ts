@@ -87,7 +87,7 @@ export function buildTrustService(options: {
     }
     const mapped = error instanceof Error ? error : new Error('The Trust Service could not process the request.');
     const status = mapUnknownEnrollmentError(mapped);
-    if (status === 500) logUnexpectedTrustError(request, mapped);
+    if (status === 500) logUnexpectedTrustError(request);
     const body: ServiceErrorBody = { error: { code: status === 500 ? 'internal_error' : 'enrollment_rejected', message: status === 500 ? 'The Trust Service could not process the request.' : mapped.message, requestId: request.id } };
     void reply.status(status).send(body);
   });
@@ -98,24 +98,27 @@ export function buildTrustService(options: {
  * i.e. genuinely unexpected: a driver/library failure, a bug, anything not already handled by
  * `TrustServiceError`/`DeviceEnrollmentRejected`/the recognized-message branches above.
  *
- * Deliberately never logs `error.message` or `error.stack`. A regex/blacklist redaction pass
- * over free-text error content (an earlier version of this function did exactly that, stripping
- * `scheme://user:pass@` connection strings) can only catch secret shapes someone thought to
- * anticipate -- an unexpected error is by definition from a code path nobody expected, so it can
- * carry a bearer token, a raw password, PEM key material, or any other secret-bearing text a
- * driver/library/future code path chooses to embed in a message or stack frame, in a shape no
- * fixed pattern list is guaranteed to catch. Only fixed, code-controlled metadata is logged:
- * the error's class name (a JS identifier the throwing code chose, never attacker/request data),
- * the matched route PATTERN (`/v1/trust/x/:id`, never the live URL -- which can carry query
- * values) and method, and the same request ID already returned to the caller in the generic 500
- * body, so a specific client-reported failure can be correlated to a specific log line without
- * the log line itself needing to reveal anything the response doesn't already say. */
-function logUnexpectedTrustError(request: FastifyRequest, error: Error): void {
+ * Deliberately takes no error argument at all -- an earlier version of this function logged
+ * `error.name` and `error.constructor.name`, reasoning that a JS class identifier is "chosen by
+ * the throwing code, never attacker/request data". That reasoning does not hold: the thrown value
+ * must be treated as `unknown`. It can be a custom Error subclass (or a plain object, or a Proxy)
+ * with a hostile/overridden `name` or `constructor` -- nothing stops `class Evil extends Error {
+ * get name() { return arbitrarySecretBearingText; } }` from being thrown by a future code path,
+ * and `error.name`/`error.constructor.name` would then log exactly that text verbatim. Reading
+ * ANY property off an untrusted thrown value for the purpose of choosing what to log reopens the
+ * same "recognize every possible secret shape" problem the message/stack removal already closed.
+ *
+ * Every field logged here is instead a fixed constant or Fastify-owned request metadata this code
+ * already controls: a fixed event name, a fixed error-kind constant, the matched route PATTERN
+ * (`/v1/trust/x/:id`, never the live URL -- which can carry query values), the HTTP method, and
+ * the same request ID already returned to the caller in the generic 500 body -- so a specific
+ * client-reported failure can be correlated to a specific log line without the log line needing
+ * to read, let alone reveal, anything about the thrown value itself. */
+function logUnexpectedTrustError(request: FastifyRequest): void {
   request.log.error(
     {
       event: 'unexpected_trust_error',
-      errorName: error.name,
-      errorConstructor: error.constructor?.name ?? 'Unknown',
+      errorKind: 'unexpected_error',
       route: request.routeOptions?.url ?? 'unmatched-route',
       method: request.method,
       requestId: request.id,

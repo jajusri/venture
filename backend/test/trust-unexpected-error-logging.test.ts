@@ -38,14 +38,14 @@ const NOW = new Date(10_000);
 const SECRET = 'a-genuinely-long-enough-secret-value';
 
 class ThrowingGrantStore implements EnrollmentGrantConsumptionStore {
-  constructor(private readonly errorToThrow: Error) {}
+  constructor(private readonly valueToThrow: unknown) {}
   async consumeAndRegister<T>(): Promise<T> {
-    throw this.errorToThrow;
+    throw this.valueToThrow;
   }
 }
 
-function buildAppThatThrows(errorToThrow: Error, logger: { level: 'error'; stream: Writable }) {
-  const store = new ThrowingGrantStore(errorToThrow);
+function buildAppThatThrows(valueToThrow: unknown, logger: { level: 'error'; stream: Writable }) {
+  const store = new ThrowingGrantStore(valueToThrow);
   const signer: TrustCredentialSigner = { sign: (build) => { const identity = { issuerId: 'issuer-1', issuerKeyId: 'key-1', profile: 'P256-SHA256-v1' }; build(identity); return Promise.resolve({ ...identity, signature: new Uint8Array([1, 2, 3]) }); } };
   const credentialIssuer = new BusinessDeviceCredentialIssuer(new InMemoryCredentialIssuanceStore(), signer, 3_600_000, () => NOW);
   const app = buildTrustService({ enrollment: { store, credentialIssuer }, now: () => NOW, logger });
@@ -87,7 +87,7 @@ describe('Trust unexpected-error logging never leaks secret-bearing content', ()
     });
   }
 
-  it('retains safe diagnostic context: event, error class, route, method, and a correlation id matching the client response', async () => {
+  it('retains safe diagnostic context: event, fixed errorKind, route, method, and a correlation id matching the client response', async () => {
     const { logger, lines } = collectingLogger();
     const app = buildAppThatThrows(new TypeError('connect failed: postgresql://dbuser:supersecret@localhost/trust'), logger);
 
@@ -96,15 +96,121 @@ describe('Trust unexpected-error logging never leaks secret-bearing content', ()
 
     const errorLine = lines().find((l) => l['event'] === 'unexpected_trust_error');
     expect(errorLine).toBeDefined();
-    expect(errorLine?.['errorName']).toBe('TypeError');
-    expect(errorLine?.['errorConstructor']).toBe('TypeError');
+    expect(errorLine?.['errorKind']).toBe('unexpected_error');
     expect(errorLine?.['route']).toBe('/v1/trust/enrollment/consume');
     expect(errorLine?.['method']).toBe('POST');
     expect(errorLine?.['requestId']).toBe(clientRequestId);
-    // And, restated explicitly: the fields that must NOT be present.
+    // And, restated explicitly: the fields that must NOT be present -- including the two fields
+    // this exact suite existed to remove (errorName/errorConstructor read error.name/
+    // error.constructor.name, which are attacker-controllable on a hostile thrown value).
+    expect(errorLine).not.toHaveProperty('errorName');
+    expect(errorLine).not.toHaveProperty('errorConstructor');
     expect(errorLine).not.toHaveProperty('message');
     expect(errorLine).not.toHaveProperty('stack');
     expect(errorLine).not.toHaveProperty('err');
+    expect(errorLine).not.toHaveProperty('name');
+    expect(errorLine).not.toHaveProperty('constructor');
+  });
+
+  describe('adversarial: the thrown value is treated as unknown, not Error', () => {
+    it('does not leak a secret placed in a hostile Error.name override', async () => {
+      const { logger, lines } = collectingLogger();
+      const secret = 'Authorization: Bearer secret-token-should-never-log';
+      const hostile = new Error('boom');
+      Object.defineProperty(hostile, 'name', { get: () => secret });
+
+      const app = buildAppThatThrows(hostile, logger);
+      const response = await app.inject({ method: 'POST', url: '/v1/trust/enrollment/consume', payload: validBody() });
+
+      expect(response.statusCode).toBe(500);
+      expect(response.body).not.toContain(secret);
+      const emittedText = JSON.stringify(lines());
+      expect(emittedText).not.toContain(secret);
+      expect(emittedText).not.toContain('secret-token-should-never-log');
+    });
+
+    it('does not leak arbitrary text from a custom Error subclass / spoofed constructor identity', async () => {
+      const { logger, lines } = collectingLogger();
+      const secretClassName = 'CredentialLeak_apiKey_sk_live_abcdef123456';
+      class CustomTrustDriverError extends Error {}
+      Object.defineProperty(CustomTrustDriverError, 'name', { value: secretClassName });
+      const hostile = new CustomTrustDriverError('boom');
+      // Spoof the instance's own constructor identity too, independent of the class declaration.
+      Object.defineProperty(hostile, 'constructor', { get: () => ({ name: secretClassName }) });
+
+      const app = buildAppThatThrows(hostile, logger);
+      const response = await app.inject({ method: 'POST', url: '/v1/trust/enrollment/consume', payload: validBody() });
+
+      expect(response.statusCode).toBe(500);
+      const emittedText = JSON.stringify(lines());
+      expect(emittedText).not.toContain(secretClassName);
+      expect(emittedText).not.toContain('sk_live_abcdef123456');
+      const errorLine = lines().find((l) => l['event'] === 'unexpected_trust_error');
+      expect(errorLine?.['errorKind']).toBe('unexpected_error');
+    });
+
+    it('does not leak secret-bearing fields from a plain object throw (no Error at all)', async () => {
+      const { logger, lines } = collectingLogger();
+      const plainThrow = {
+        name: 'PlainObjectError',
+        message: 'plain object thrown instead of an Error',
+        stack: 'fake-stack-frame',
+        password: 'plain-object-password-secret',
+        token: 'plain-object-token-secret',
+        credential: 'plain-object-credential-secret',
+      };
+
+      const app = buildAppThatThrows(plainThrow, logger);
+      const response = await app.inject({ method: 'POST', url: '/v1/trust/enrollment/consume', payload: validBody() });
+
+      expect(response.statusCode).toBe(500);
+      const clientBody = response.json<{ error: { message: string } }>();
+      expect(clientBody.error.message).toBe('The Trust Service could not process the request.');
+      const emittedText = JSON.stringify(lines());
+      for (const secretValue of ['plain-object-password-secret', 'plain-object-token-secret', 'plain-object-credential-secret', 'fake-stack-frame']) {
+        expect(emittedText).not.toContain(secretValue);
+      }
+    });
+
+    it('never reads a hostile getter on name/constructor/stack -- proves the logging path needs none of them', async () => {
+      const { logger, lines } = collectingLogger();
+      const accessedProperties: string[] = [];
+      const secret = 'hostile-getter-access-secret-value';
+      // A real Error instance (so `error instanceof Error` is true and this exact object -- not a
+      // fresh synthetic one -- is what the error handler and logger see), with hostile getters on
+      // every property the OLD logging code used to read. `message` stays a plain, static, safe
+      // string on purpose: it IS read by the pre-existing, out-of-scope status-classification
+      // logic (mapUnknownEnrollmentError, unchanged by this task), so tracking it here would
+      // conflate that unrelated, already-accepted behavior with what this test is actually
+      // proving -- that the LOGGING path specifically never touches name/constructor/stack.
+      const hostile = new Error('a plain, safe, non-recognized message');
+      for (const prop of ['name', 'stack'] as const) {
+        Object.defineProperty(hostile, prop, {
+          configurable: true,
+          get() {
+            accessedProperties.push(prop);
+            return secret;
+          },
+        });
+      }
+      Object.defineProperty(hostile, 'constructor', {
+        get() {
+          accessedProperties.push('constructor');
+          return { name: secret };
+        },
+      });
+      expect(hostile).toBeInstanceOf(Error);
+
+      const app = buildAppThatThrows(hostile, logger);
+      const response = await app.inject({ method: 'POST', url: '/v1/trust/enrollment/consume', payload: validBody() });
+
+      expect(response.statusCode).toBe(500);
+      const emittedText = JSON.stringify(lines());
+      expect(emittedText).not.toContain(secret);
+      // The real proof: the logging path never triggers any of these getters at all, on the exact
+      // same object instance the old errorName/errorConstructor code used to read them from.
+      expect(accessedProperties).toEqual([]);
+    });
   });
 });
 
