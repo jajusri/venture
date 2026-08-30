@@ -123,12 +123,18 @@ function Invoke-DesktopInstallStage {
     # install and an Aug-30 rebuild both read "0.4.20"). Cross-check against the installed files'
     # own mtime vs. the installer's -- an installed exe strictly older than the built installer
     # means the installer has not actually been applied yet, version string notwithstanding.
+    # A small tolerance is required even for a genuinely fresh install: electron-builder finalizes the
+    # installer .exe wrapper (blockmap, etc.) a few seconds *after* packing the individual files it
+    # embeds, so the embedded exe's own preserved mtime is always slightly *older* than the installer
+    # file's mtime, even seconds after a perfect install (reproduced live: 8 seconds older on a
+    # confirmed-successful run). 15 minutes comfortably covers that gap without masking a genuinely
+    # stale (hours/days old) install.
     $installedIsCurrent = $false
     if ($installed -and $installerVersion -and $installed.Version -eq $installerVersion -and $installed.InstallLocation) {
         $installedExe = Join-Path $installed.InstallLocation 'Budcom Desktop.exe'
         if (Test-Path $installedExe) {
             $installedMtime = (Get-Item $installedExe).LastWriteTime
-            $installedIsCurrent = $installedMtime -ge $installer.LastWriteTime
+            $installedIsCurrent = $installedMtime -ge $installer.LastWriteTime.AddMinutes(-15)
         }
     }
 
