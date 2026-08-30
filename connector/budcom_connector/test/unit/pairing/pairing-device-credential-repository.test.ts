@@ -26,7 +26,21 @@ describe('PairingDeviceCredentialRepository', () => {
       port: session.port,
     });
     if (redeemed.kind !== 'redeemed') throw new Error('setup: expected redemption to succeed');
-    return { credentials, pairingSessionId: redeemed.pairingSessionId, connectorId: redeemed.connectorId };
+    return { sessions, credentials, pairingSessionId: redeemed.pairingSessionId, connectorId: redeemed.connectorId };
+  }
+
+  /** A second session redeemed against the SAME connector/db as an existing `setup()` result --
+   * the first session is already redeemed (no longer "active"), so this does not hit the
+   * one-active-session-per-connector cancellation. */
+  function redeemAnotherSession(sessions: PairingSessionRepository, connectorId: string) {
+    const session = sessions.create({ connectorId, connectorName: 'VIDHI', host: '10.100.141.231', port: 8080 });
+    const redeemed = sessions.redeemBySessionId(session.pairingSessionId, session.secret, {
+      connectorId: session.connectorId,
+      host: session.host,
+      port: session.port,
+    });
+    if (redeemed.kind !== 'redeemed') throw new Error('redeemAnotherSession: expected redemption to succeed');
+    return redeemed.pairingSessionId;
   }
 
   it('issues a credential and returns a raw token that is not stored', async () => {
@@ -113,6 +127,19 @@ describe('PairingDeviceCredentialRepository', () => {
 
     const record = credentials.listByConnector(connectorId)[0];
     expect(record?.deviceId).toBeNull();
+  });
+
+  it('re-pairing under the same deviceId/deviceLabel issues an independent credential and leaves the prior one active (current, deliberate behavior: the connector has no stable hardware identifier to correlate against by design -- see schema.ts, "never IMEI/serial/Android ID" -- so it cannot distinguish a genuine re-pair of the same physical device from an unrelated device that happens to reuse a label; superseding on the caller-supplied deviceId alone would let an unrelated caller silently revoke someone else\'s credential just by sending the same string)', async () => {
+    const { sessions, credentials, pairingSessionId, connectorId } = await setup();
+    const first = credentials.issue({ pairingSessionId, connectorId, deviceId: 'device-uuid-123', deviceLabel: 'I2407' });
+
+    const secondSessionId = redeemAnotherSession(sessions, connectorId);
+    const second = credentials.issue({ pairingSessionId: secondSessionId, connectorId, deviceId: 'device-uuid-456', deviceLabel: 'I2407' });
+
+    expect(credentials.validateToken(first.rawToken)?.credentialId).toBe(first.credentialId);
+    expect(credentials.validateToken(second.rawToken)?.credentialId).toBe(second.credentialId);
+    const records = credentials.listByConnector(connectorId);
+    expect(records.filter((r) => r.deviceLabel === 'I2407' && r.revokedAt === null)).toHaveLength(2);
   });
 
   describe('findByToken (read-only, includes revoked rows, never mutates)', () => {
