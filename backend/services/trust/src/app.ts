@@ -84,11 +84,21 @@ export function buildTrustService(options: {
     }
     const mapped = error instanceof Error ? error : new Error('The Trust Service could not process the request.');
     const status = mapUnknownEnrollmentError(mapped);
-    if (status === 500) request.log.error({ err: mapped }, 'unmapped_enrollment_error');
+    if (status === 500) request.log.error({ err: redactConnectionStrings(mapped) }, 'unmapped_enrollment_error');
     const body: ServiceErrorBody = { error: { code: status === 500 ? 'internal_error' : 'enrollment_rejected', message: status === 500 ? 'The Trust Service could not process the request.' : mapped.message, requestId: request.id } };
     void reply.status(status).send(body);
   });
   return app;
+}
+
+/** Defense in depth for the server-side-only 500 log below: strips any embedded `scheme://user:pass@`
+ * credential (a connection string leaking into a driver/library error message or stack, e.g. from a
+ * misconfigured DSN) before it reaches the log. None of this codebase's own thrown messages embed one
+ * today, but this guards against a future/third-party error type that might. */
+function redactConnectionStrings(error: Error): { name: string; message: string; stack?: string | undefined } {
+  const pattern = /:\/\/([^:@/\s]+):([^@/\s]+)@/g;
+  const redact = (value: string): string => value.replace(pattern, '://$1:***@');
+  return { name: error.name, message: redact(error.message), stack: error.stack ? redact(error.stack) : undefined };
 }
 
 /** Refusals surfaced by the reused, certified `RegisterBusinessDevice`/`BusinessDeviceCredentialIssuer`
