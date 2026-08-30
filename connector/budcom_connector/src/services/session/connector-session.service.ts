@@ -134,15 +134,37 @@ export class ConnectorSessionServiceImpl implements ConnectorSessionService {
   }
 
   getStatus(): ServiceStatus {
+    if (!this.running) {
+      return { name: 'ConnectorSession', running: false, ready: false, message: 'Stopped' };
+    }
+    if (!this.session.selectedCompany) {
+      return { name: 'ConnectorSession', running: true, ready: true, message: 'No company selected' };
+    }
+
+    // Zero-I/O staleness check: if a fresh discovery snapshot is already cached (from a recent
+    // /companies call, sync, or session validation) and the persisted selection is confidently
+    // absent from it, don't report a stale company as a trustworthy "ready" state -- an actual
+    // operation against it already fails closed (see session-validator.ts's SESSION_EXPIRED
+    // path); this only makes the status line honest about that, not a new safety mechanism.
+    // No cached snapshot yet means no evidence either way, so the selection is reported normally.
+    const cached = this.companyResolver.peekCachedSnapshot();
+    if (cached && cached.companies.length > 0) {
+      const stillPresent = cached.companies.some((company) => company.id === this.session.selectedCompany!.id);
+      if (!stillPresent) {
+        return {
+          name: 'ConnectorSession',
+          running: true,
+          ready: false,
+          message: `Selected company no longer found in Tally: ${this.session.selectedCompany.name}. Please reselect a company.`,
+        };
+      }
+    }
+
     return {
       name: 'ConnectorSession',
-      running: this.running,
-      ready: this.running,
-      message: this.running
-        ? this.session.selectedCompany
-          ? `Selected company: ${this.session.selectedCompany.name}`
-          : 'No company selected'
-        : 'Stopped',
+      running: true,
+      ready: true,
+      message: `Selected company: ${this.session.selectedCompany.name}`,
     };
   }
 
