@@ -1,7 +1,17 @@
 package com.budcom.android.feature.voucher.domain.model
 
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
+
 /**
  * Inclusive voucher date range matching Connector `from` / `to` (`YYYY-MM-DD`).
+ *
+ * TD-022: the automatic background reconciliation path (`VoucherWindowPlanner`) already bounds
+ * every individual window to `windowSizeDays` (30 days). This manual/typed-input path had no
+ * equivalent bound, so a user could request an arbitrarily wide span (years) and
+ * `fetchCompleteWindow` would accumulate full ledger/inventory details for the entire span in
+ * memory before a single Room commit. [MAX_SPAN_DAYS] closes that gap with the same one-year
+ * ceiling used elsewhere as a reasonable ad-hoc lookup bound.
  */
 data class VoucherDateRange(
     val from: String,
@@ -11,10 +21,17 @@ data class VoucherDateRange(
         require(ISO_DATE.matches(from)) { "from must be YYYY-MM-DD" }
         require(ISO_DATE.matches(to)) { "to must be YYYY-MM-DD" }
         require(from <= to) { "to must not precede from" }
+        val spanDays = ChronoUnit.DAYS.between(LocalDate.parse(from), LocalDate.parse(to))
+        require(spanDays <= MAX_SPAN_DAYS) {
+            "Date range cannot exceed $MAX_SPAN_DAYS days (requested $spanDays days)"
+        }
     }
 
     companion object {
         private val ISO_DATE = Regex("""^\d{4}-\d{2}-\d{2}$""")
+
+        /** One year, inclusive of leap years — TD-022's manual-refresh span bound. */
+        const val MAX_SPAN_DAYS = 366L
     }
 }
 

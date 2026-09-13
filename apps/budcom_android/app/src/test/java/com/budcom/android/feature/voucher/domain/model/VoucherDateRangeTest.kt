@@ -21,6 +21,19 @@ class VoucherDateRangeTest {
     }
 
     @Test
+    fun `rejects a manual range wider than one year (TD-022)`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            VoucherDateRange(from = "2020-01-01", to = "2026-07-28")
+        }
+    }
+
+    @Test
+    fun `accepts a manual range exactly at the one-year bound`() {
+        // 2025-07-29..2026-07-29 spans exactly 365 days (no leap day in range) -- must not throw.
+        VoucherDateRange(from = "2025-07-29", to = "2026-07-29")
+    }
+
+    @Test
     fun `default lookback is inclusive IST business-day window`() {
         // Noon UTC is mid-afternoon IST too, so this alone can't distinguish
         // UTC-vs-IST — kept as a baseline sanity check; the boundary case below

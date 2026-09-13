@@ -192,6 +192,17 @@ export function validateDesktopConfig(input: unknown): ConfigValidationResult {
       message: 'Trusted-LAN mode requires connectorHost to be a private IPv4 address.',
     });
   }
+  // TD-009: trusted-LAN bind mode exposes the Connector's business routes to every device on the
+  // same network segment. Per-device authentication (Secure Mobile Pairing) already exists and is
+  // the only mitigation for that exposure — this closes the gap where an operator could previously
+  // enable trusted-LAN bind while leaving pairing off, relying on network trust alone.
+  if (connectorBindMode === 'trusted-lan' && secureMobilePairingEnabled === false) {
+    errors.push({
+      field: 'secureMobilePairingEnabled',
+      message: 'Trusted-LAN mode requires Secure Mobile Pairing to be enabled — connectorBindMode '
+        + '"trusted-lan" without per-device authentication is no longer permitted (TD-009).',
+    });
+  }
 
   if (errors.length > 0) {
     return { ok: false, config: null, errors };

@@ -12,11 +12,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.budcom.android"
+        applicationId = "com.jajusri.venture"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "0.1.1-continuity.28"
+        versionCode = 30
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
