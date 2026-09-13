@@ -1,9 +1,9 @@
 # Desktop Shell Module — Stage Update
 
-**Module:** `@budcom/desktop`  
+**Module:** `@venture/desktop`  
 **Milestone:** 4D  
 **Last updated:** 2026-07-30  
-**Path:** `apps/budcom_desktop/`
+**Path:** `apps/venture_desktop/`
 
 ---
 

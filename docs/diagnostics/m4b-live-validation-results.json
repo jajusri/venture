@@ -3,8 +3,8 @@
   "validatedAt": "2026-07-23T00:16:00+05:30",
   "connectorVersion": "0.3.1",
   "desktopVersion": "0.4.1",
-  "connectorPath": "D:\\Projects\\Budcom\\connector\\budcom_connector",
-  "desktopPath": "D:\\Projects\\Budcom\\apps\\budcom_desktop",
+  "connectorPath": "C:\\Projects\\Venture\\connector\\venture_connector",
+  "desktopPath": "C:\\Projects\\Venture\\apps\\venture_desktop",
   "connectorUrl": "http://localhost:8080",
   "liveCompany": {
     "id": "estimation",
@@ -79,8 +79,8 @@
   "evidenceFiles": [
     "docs/diagnostics/m4b-live-validation-desktop-layer.txt",
     "docs/diagnostics/m4b-live-validation-results.json",
-    "apps/budcom_desktop/screenshots/dashboard-live.png",
-    "apps/budcom_desktop/screenshots/settings.png"
+    "apps/venture_desktop/screenshots/dashboard-live.png",
+    "apps/venture_desktop/screenshots/settings.png"
   ],
   "defectsFound": [],
   "readinessLevel": "L4 — Live Validated"

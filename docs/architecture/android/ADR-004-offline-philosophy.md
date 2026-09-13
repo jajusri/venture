@@ -1,6 +1,6 @@
 # ADR-004: Offline Philosophy
 
-**Series:** Android companion (`apps/budcom_android`)  
+**Series:** Android companion (`apps/venture_android`)  
 **Status:** Accepted  
 **Date:** 2026-07-27  
 **Related:** [`PRODUCT_SOUL.md`](../../PRODUCT_SOUL.md) (Offline Intelligence), Connector reliability rules
@@ -9,7 +9,7 @@
 
 Phones lose network. Connectors go offline. Tally may be unreachable while the Connector process is up. Users still need a useful companion: last-known operational state, saved configuration, and clear explanations. A blank “error only” app violates the product soul.
 
-At the same time, BUDCO is not a second ERP. Live authoritative accounting state and any future write-like operations (if ever approved) remain Connector/ERP concerns.
+At the same time, VENTURE is not a second ERP. Live authoritative accounting state and any future write-like operations (if ever approved) remain Connector/ERP concerns.
 
 ## Decision
 

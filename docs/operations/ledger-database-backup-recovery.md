@@ -6,7 +6,7 @@
 POST /storage/ledgers/backup
 ```
 
-Creates a timestamped copy at `{databasePath}/backups/budcom-ledger-{timestamp}.db`.
+Creates a timestamped copy at `{databasePath}/backups/venture-ledger-{timestamp}.db`.
 
 ## Integrity check
 
@@ -19,7 +19,7 @@ Runs `PRAGMA integrity_check` and returns `{ ok, message }`.
 ## Recovery procedure
 
 1. Stop the connector.
-2. Copy the backup file over `budcom-ledger.db` (keep the failed file renamed for investigation).
+2. Copy the backup file over `venture-ledger.db` (keep the failed file renamed for investigation).
 3. Run integrity check.
 4. Restart connector and verify `/sync/ledgers/statistics`.
 

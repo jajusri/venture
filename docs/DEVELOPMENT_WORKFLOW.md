@@ -1,6 +1,6 @@
 # Development Workflow
 
-**Scope:** Mandatory process for every Android companion feature in `apps/budcom_android`  
+**Scope:** Mandatory process for every Android companion feature in `apps/venture_android`  
 **Status:** Normative for humans and AI agents  
 **Related:** [`PROJECT_CONSTITUTION.md`](./PROJECT_CONSTITUTION.md), [`PRODUCT_SOUL.md`](./PRODUCT_SOUL.md), [`ROADMAP.md`](./ROADMAP.md), [architecture ADRs](./architecture/README.md)
 

@@ -2,7 +2,7 @@
 import { execSync } from 'node:child_process';
 
 export const ALLOWLISTED_GENERATED_PATH_PREFIXES = [
-  'apps/budcom_desktop/dist/',
+  'apps/venture_desktop/dist/',
   'release/controlled-pilot/0.4.3/STALE-DO-NOT-DISTRIBUTE.md',
 ];
 

@@ -9,10 +9,10 @@
 
 ## Prerequisites
 
-- [x] Connector built and running locally (`BUDCOM_TALLY_SAFE_MODE=true`, audit enabled)
+- [x] Connector built and running locally (`VENTURE_TALLY_SAFE_MODE=true`, audit enabled)
 - [x] TallyPrime with test company containing known group hierarchy
 - [x] Safe Mode enabled
-- [x] Audit logging enabled (`BUDCOM_TALLY_REQUEST_AUDIT=true`)
+- [x] Audit logging enabled (`VENTURE_TALLY_REQUEST_AUDIT=true`)
 - [x] No parallel tools on Tally port 9000
 
 ## Approved operation verified

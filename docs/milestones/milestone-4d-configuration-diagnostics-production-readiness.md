@@ -12,8 +12,8 @@ Complete the desktop foundation with production-grade configuration, diagnostics
 
 | Component | Version |
 |-----------|---------|
-| Desktop | `@budcom/desktop` **0.4.3** |
-| Connector | `@budcom/connector` **0.3.1** |
+| Desktop | `@venture/desktop` **0.4.3** |
+| Connector | `@venture/connector` **0.3.1** |
 
 ## Architecture
 
@@ -31,7 +31,7 @@ Main Process
 
 ## Configuration precedence
 
-1. **Environment variables** (`BUDCOM_CONNECTOR_URL`, `BUDCOM_CONNECTOR_PORT`, `BUDCOM_LOG_LEVEL`, etc.)
+1. **Environment variables** (`VENTURE_CONNECTOR_URL`, `VENTURE_CONNECTOR_PORT`, `VENTURE_LOG_LEVEL`, etc.)
 2. **Persisted settings** (`{userData}/desktop-config.json`)
 3. **Defaults** (production or development)
 
@@ -39,9 +39,9 @@ Main Process
 
 | Item | Location |
 |------|----------|
-| Config | `%APPDATA%/budcom-desktop/desktop-config.json` |
+| Config | `%APPDATA%/venture-desktop/desktop-config.json` |
 | Backup | `desktop-config.backup.json` |
-| Logs | `logs/budcom-desktop.log` (5 × 1MB rotation) |
+| Logs | `logs/venture-desktop.log` (5 × 1MB rotation) |
 | Diagnostics exports | `diagnostics-exports/` |
 
 ## IPC contracts (new in 4D)

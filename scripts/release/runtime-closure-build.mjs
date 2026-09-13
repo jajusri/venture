@@ -15,8 +15,8 @@ import { generateManifest, renderChecksumFile, verifyManifest } from './manifest
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
-const desktopRoot = path.join(repoRoot, 'apps/budcom_desktop');
-const connectorRoot = path.join(repoRoot, 'connector/budcom_connector');
+const desktopRoot = path.join(repoRoot, 'apps/venture_desktop');
+const connectorRoot = path.join(repoRoot, 'connector/venture_connector');
 const version = JSON.parse(fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8')).version;
 const outputRoot = path.join(repoRoot, 'release/controlled-pilot', version, 'artifacts-runtime-closure');
 
@@ -68,11 +68,11 @@ async function main() {
   await step('electron-builder', () => {
     run('npx electron-builder --win --config electron-builder.yml --config.directories.output=' + outputRoot, desktopRoot, {
       ...process.env,
-      BUDCOM_RELEASE_MODE: 'controlled_pilot',
+      VENTURE_RELEASE_MODE: 'controlled_pilot',
     });
   });
 
-  const installerName = `BudcomDesktop-${version}-x64-setup.exe`;
+  const installerName = `VentureDesktop-${version}-x64-setup.exe`;
   const installerPath = path.join(outputRoot, installerName);
   if (!fs.existsSync(installerPath)) {
     throw new Error(`Installer not found at ${installerPath}`);

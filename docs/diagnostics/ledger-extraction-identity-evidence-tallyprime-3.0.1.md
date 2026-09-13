@@ -14,7 +14,7 @@
 | Tally release | TallyPrime 3.0.1 |
 | Host OS | Windows 11 |
 | Endpoint | Loopback HTTP/XML (`127.0.0.1:9000`) |
-| Test company label | `[BUDCOM-TEST-01]` (synthetic test company) |
+| Test company label | `[VENTURE-TEST-01]` (synthetic test company) |
 | GST | Disabled |
 | Custom TDL installed | None permanently; embedded read-only FETCH used only in controlled custom-collection probe |
 | Request mode | EXPORT-only |
@@ -100,8 +100,8 @@ Synthetic ledger created and renamed (no other field changes):
 
 | Step | Name |
 |------|------|
-| Initial | `BUDCOM TEST LEDGER A` |
-| Renamed | `BUDCOM TEST LEDGER A RENAMED` |
+| Initial | `VENTURE TEST LEDGER A` |
+| Renamed | `VENTURE TEST LEDGER A RENAMED` |
 
 | Check | Result |
 |-------|--------|
@@ -198,7 +198,7 @@ See milestone stage-update and this audit’s implementation recommendations bef
 | AlterID | Revision/fingerprint metadata only — **never** identity |
 | MasterID | Parsed and stored as nullable source metadata — **not** identity |
 
-Helper: `connector/budcom_connector/src/extraction/core/ledger-identity.ts` (`resolveLedgerStableId`, `LEDGER_IDENTITY_VERSION = 2`).
+Helper: `connector/venture_connector/src/extraction/core/ledger-identity.ts` (`resolveLedgerStableId`, `LEDGER_IDENTITY_VERSION = 2`).
 
 ### Data quality
 
@@ -241,13 +241,13 @@ Focused coverage: embedded FETCH template, shallow detection, identity helper, e
 
 ### Live validation (2026-07-24)
 
-Controlled loopback validation against TallyPrime 3.0.1 / `[BUDCOM-TEST-01]` completed. Evidence: `docs/diagnostics/ledger-guid-identity-live-validation.json`.
+Controlled loopback validation against TallyPrime 3.0.1 / `[VENTURE-TEST-01]` completed. Evidence: `docs/diagnostics/ledger-guid-identity-live-validation.json`.
 
 | Result | Detail |
 |--------|--------|
 | Extraction quality | `complete` (923/923 GUID, 0 name fallback) |
 | Migration | Backup + atomic replace; identity version → 2 |
-| Rename continuity | 1 row for `BUDCOM TEST LEDGER A RENAMED`; no stale slug rows |
+| Rename continuity | 1 row for `VENTURE TEST LEDGER A RENAMED`; no stale slug rows |
 | Repeat sync | 923 skipped; count stable; no second migration backup |
 | Registry gap fixed | `operation-registry.ts` now renders `MasterDataTemplates.ledgers()` (live path was shallow before fix) |
 | Response cap policy | **`RICH_MASTER_COLLECTION_MAX_RESPONSE_BYTES` = 1,048,576** — shared with stock-item rich FETCH; supersedes legacy 524,288 shallow cap |

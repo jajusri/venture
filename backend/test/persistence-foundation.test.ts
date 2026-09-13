@@ -15,7 +15,7 @@ class RecordingDatabase implements Database {
 
 describe('PostgreSQL persistence foundation', () => {
   it('fails closed when the required database URL is absent', () => {
-    expect(() => readTrustServiceConfig({})).toThrow('BUDCOM_TRUST_DATABASE_URL is required');
+    expect(() => readTrustServiceConfig({})).toThrow('VENTURE_TRUST_DATABASE_URL is required');
   });
 
   it('runs additive migrations and parameterizes registry writes', async () => {

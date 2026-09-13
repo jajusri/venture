@@ -17,11 +17,11 @@ import { PostgresBackedTrustCredentialSigner } from '../services/trust/src/persi
 import { AuthorityScope, identifier, type RegisteredBusinessDevice } from '../services/trust/src/domain/authority.js';
 
 /**
- * LIVE PostgreSQL regression suite -- opt-in only, via BUDCOM_TRUST_DATABASE_URL.
+ * LIVE PostgreSQL regression suite -- opt-in only, via VENTURE_TRUST_DATABASE_URL.
  *
  * Run explicitly with:
  *   cd backend
- *   BUDCOM_TRUST_DATABASE_URL=postgres://<user>:<password>@<host>:5432/<db> npm run test:live-postgres
+ *   VENTURE_TRUST_DATABASE_URL=postgres://<user>:<password>@<host>:5432/<db> npm run test:live-postgres
  * (or `set -a; . ./.env; set +a; npm run test:live-postgres` on a shell that sources a local,
  * gitignored `.env` -- see `.env.example`.)
  *
@@ -39,9 +39,9 @@ import { AuthorityScope, identifier, type RegisteredBusinessDevice } from '../se
  * shared/well-known identifier, and never anything resembling real business/pilot data. No test here
  * ever connects as, or requires, a PostgreSQL superuser role.
  */
-const DATABASE_URL = process.env.BUDCOM_TRUST_DATABASE_URL;
+const DATABASE_URL = process.env.VENTURE_TRUST_DATABASE_URL;
 
-describe.skipIf(!DATABASE_URL)('LIVE PostgreSQL regression (BUDCOM_TRUST_DATABASE_URL required)', () => {
+describe.skipIf(!DATABASE_URL)('LIVE PostgreSQL regression (VENTURE_TRUST_DATABASE_URL required)', () => {
   let database: PostgresDatabase;
   const RUN = randomUUID().slice(0, 8);
   const KEY_DIR_BASE = `.local/live-regression-${RUN}`;
@@ -320,7 +320,7 @@ describe.skipIf(!DATABASE_URL)('LIVE PostgreSQL regression (BUDCOM_TRUST_DATABAS
   it('10. issuance fails closed when the database is unreachable', async () => {
     // A deliberately unreachable loopback port -- never touches the real configured database.
     // Deterministic and safe: always refuses the same way (ECONNREFUSED), no timing dependency.
-    const unreachable = new PostgresDatabase('postgres://budcom_dev:wrong@127.0.0.1:59999/budcom_dev', 1);
+    const unreachable = new PostgresDatabase('postgres://venture_dev:wrong@127.0.0.1:59999/venture_dev', 1);
     try {
       const signer = new PostgresBackedTrustCredentialSigner(new PostgresIssuerSigningKeyStore(unreachable), 'any-issuer', '.local/unused-keys');
       await expect(signer.sign((identity) => Buffer.from(`payload:${identity.issuerKeyId}`))).rejects.toThrow(/ECONNREFUSED/);

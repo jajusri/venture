@@ -1,7 +1,7 @@
 # SQLite Backup/Restore Automated Drill Evidence
 
 **Date:** 2026-07-23  
-**Test:** `connector/budcom_connector/test/integration/sqlite-backup-restore.test.ts`
+**Test:** `connector/venture_connector/test/integration/sqlite-backup-restore.test.ts`
 
 ## Procedure automated
 

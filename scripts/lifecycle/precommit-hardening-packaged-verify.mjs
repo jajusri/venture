@@ -22,7 +22,7 @@ export function verifyPackagedAbcControls(unpackedRoot) {
   const nodeExePath = path.join(resourcesPath, 'node', 'node.exe');
   const buildInfoCandidates = [
     path.join(unpackedRoot, 'resources', 'app.asar.unpacked', 'dist', 'main', 'build-info.json'),
-    path.join(repoRoot, 'apps/budcom_desktop/dist/main/build-info.json'),
+    path.join(repoRoot, 'apps/venture_desktop/dist/main/build-info.json'),
   ];
 
   const results = {
@@ -58,46 +58,46 @@ export function verifyPackagedAbcControls(unpackedRoot) {
     },
   };
 
-  const desktopDist = path.join(repoRoot, 'apps/budcom_desktop/dist/application/release/startup-environment.js');
+  const desktopDist = path.join(repoRoot, 'apps/venture_desktop/dist/application/release/startup-environment.js');
   const startupEnvSource = fs.readFileSync(
     fs.existsSync(desktopDist)
       ? desktopDist
-      : path.join(repoRoot, 'apps/budcom_desktop/src/application/release/startup-environment.ts'),
+      : path.join(repoRoot, 'apps/venture_desktop/src/application/release/startup-environment.ts'),
     'utf8',
   );
   results.controlB = {
-    pass: startupEnvSource.includes('BUDCOM_INSTALLED_PROBE_MODE')
+    pass: startupEnvSource.includes('VENTURE_INSTALLED_PROBE_MODE')
       && startupEnvSource.includes('USER_DATA_OVERRIDE_ENV')
       && startupEnvSource.includes('outside_probe_temp_root'),
     details: {
-      probeModeEnvPresent: startupEnvSource.includes('BUDCOM_INSTALLED_PROBE_MODE'),
+      probeModeEnvPresent: startupEnvSource.includes('VENTURE_INSTALLED_PROBE_MODE'),
       userDataGated: startupEnvSource.includes('isInstalledProbeMode'),
     },
   };
 
-  const networkDist = path.join(repoRoot, 'apps/budcom_desktop/dist/application/release/packaged-connector-network.js');
-  const lifecycleDist = path.join(repoRoot, 'apps/budcom_desktop/dist/application/connector-lifecycle-config.js');
+  const networkDist = path.join(repoRoot, 'apps/venture_desktop/dist/application/release/packaged-connector-network.js');
+  const lifecycleDist = path.join(repoRoot, 'apps/venture_desktop/dist/application/connector-lifecycle-config.js');
   const networkSource = fs.readFileSync(
     fs.existsSync(networkDist)
       ? networkDist
-      : path.join(repoRoot, 'apps/budcom_desktop/src/application/release/packaged-connector-network.ts'),
+      : path.join(repoRoot, 'apps/venture_desktop/src/application/release/packaged-connector-network.ts'),
     'utf8',
   );
   const lifecycleSource = fs.readFileSync(
     fs.existsSync(lifecycleDist)
       ? lifecycleDist
-      : path.join(repoRoot, 'apps/budcom_desktop/src/application/connector-lifecycle-config.ts'),
+      : path.join(repoRoot, 'apps/venture_desktop/src/application/connector-lifecycle-config.ts'),
     'utf8',
   );
   results.controlC = {
     pass: networkSource.includes('127.0.0.1')
       && networkSource.includes('resolvePackagedConnectorLoopbackHost')
-      && lifecycleSource.includes('BUDCOM_CONNECTOR_HOST')
+      && lifecycleSource.includes('VENTURE_CONNECTOR_HOST')
       && lifecycleSource.includes('resolvePackagedConnectorLoopbackHost'),
     details: {
       loopbackHostConstant: networkSource.includes('127.0.0.1'),
       lifecycleForcesLoopback: lifecycleSource.includes('resolvePackagedConnectorLoopbackHost'),
-      childEnvHostPropagation: lifecycleSource.includes('BUDCOM_CONNECTOR_HOST'),
+      childEnvHostPropagation: lifecycleSource.includes('VENTURE_CONNECTOR_HOST'),
     },
   };
 

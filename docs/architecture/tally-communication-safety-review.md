@@ -15,7 +15,7 @@
 | 1 | Can a future dev bypass the pipeline? | **YES** | The transport is an injectable singleton that accepts a raw body; `private exchange` is compile-time only; process can open a raw socket. |
 | 2 | Can XML reach Tally skipping stages? | **YES** | Direct `ErpTransport.send()` and the health-probe path both talk to Tally outside the full pipeline. |
 | 3 | Can BUSY/SAP/Zoho/Marg/ERPNext reuse the same engine? | **PARTIALLY** | Pipeline shape is reusable; but XML/ENVELOPE, redaction, "health-before-and-after," and the crash taxonomy are Tally-shaped. No auth/token/pagination/429 abstraction. |
-| 4 | Is every risk config-driven vs hard-coded? | **NO / MIXED** | Registry is data (good), but a single `BUDCOM_TALLY_SAFE_MODE=false` disables the protections and re-enables pool>1 + retries. |
+| 4 | Is every risk config-driven vs hard-coded? | **NO / MIXED** | Registry is data (good), but a single `VENTURE_TALLY_SAFE_MODE=false` disables the protections and re-enables pool>1 + retries. |
 | 5 | Survive future Tally XML changes without arch change? | **MOSTLY** | Request contracts are ours; but registry is **version-blind**, and response parsing is brittle (silent data loss on drift). |
 | 6 | SOLID / loosely coupled / DIP? | **PARTIALLY** | `ErpTransport` DIP is good; `TallyRequestGuard` is a God-object (SRP), core still carries Tally names (OCP). |
 | 7 | Retries/health/timeouts/quarantine/recovery/diagnostics/audit centralized? | **NO (today) / IMPROVED (proposed)** | Today they are spread across 6 modules; per-extractor timeouts are scattered; diagnostics are in-memory only. |

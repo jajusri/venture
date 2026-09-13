@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Budcom follows clean architecture with strict module boundaries aligned to the MVP 1 specification (Section 18).
+Venture follows clean architecture with strict module boundaries aligned to the MVP 1 specification (Section 18).
 
 ## Layered model
 
@@ -63,7 +63,7 @@ flowchart TB
 2. Use case validates **capabilities** before proceeding.
 3. Repository checks local cache freshness; fetches from connector if needed.
 4. Connector **Tally adapter** reads Tally via export/XML/HTTP (implementation in Milestone 1).
-5. **Normalization layer** maps Tally output to stable Budcom entities.
+5. **Normalization layer** maps Tally output to stable Venture entities.
 6. Repository persists normalized data locally and returns domain models.
 7. UI renders from domain models; **freshness timestamp** is always visible.
 8. Use case publishes a **domain event** (e.g. `LedgerViewed`).

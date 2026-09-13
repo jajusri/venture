@@ -2,7 +2,7 @@
 
 **Milestone:** Desktop Connector Shell  
 **Last updated:** 2026-07-22  
-**Package:** `@budcom/desktop` v0.4.0  
+**Package:** `@venture/desktop` v0.4.0  
 **Git commit:** Not committed (working tree)
 
 ---
@@ -41,13 +41,13 @@ Shell implemented and automated tests pass. Live integration with running connec
 
 ## 3. Files Added
 
-See `docs/milestones/milestone-4a-desktop-shell.md` and `apps/budcom_desktop/` package (application layer, main, preload, renderer, tests, screenshots).
+See `docs/milestones/milestone-4a-desktop-shell.md` and `apps/venture_desktop/` package (application layer, main, preload, renderer, tests, screenshots).
 
 ---
 
 ## 4. Files Modified
 
-None outside new `apps/budcom_desktop/` package (isolated desktop app).
+None outside new `apps/venture_desktop/` package (isolated desktop app).
 
 ---
 
@@ -71,7 +71,7 @@ None outside new `apps/budcom_desktop/` package (isolated desktop app).
 | Desktop unit/integration | **12/12 pass** |
 | Connector regression | **244/244 pass** (unchanged) |
 | Desktop build | Pass (`tsc` × 3 + asset copy) |
-| Electron screenshot | `apps/budcom_desktop/screenshots/dashboard.png` |
+| Electron screenshot | `apps/venture_desktop/screenshots/dashboard.png` |
 | Live connector + desktop | Not executed |
 
 ---
@@ -86,7 +86,7 @@ None outside new `apps/budcom_desktop/` package (isolated desktop app).
 
 ## 8. Known Limitations
 
-- Connector must be started separately (`connector/budcom_connector`)
+- Connector must be started separately (`connector/venture_connector`)
 - No company selection UI (displays existing session only)
 - Sync/License show placeholder-derived labels
 - In-memory UI logs only (not connector file logs)

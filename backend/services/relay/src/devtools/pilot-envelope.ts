@@ -5,7 +5,7 @@ import { createPublicKey, sign as cryptoSign, verify as cryptoVerify } from 'nod
  *
  * Relay's own domain (`../domain/relay.ts`) deliberately treats `authenticatedEnvelope` as opaque
  * bytes ("Relay transports the authenticated envelope bytes; it never reconstructs the canonical
- * object") -- the ACTUAL production wire format between a BUDCOM Android client and Relay is not
+ * object") -- the ACTUAL production wire format between a VENTURE Android client and Relay is not
  * defined anywhere in this backend. The only existing concrete definition lives in Android's own
  * `feature/transaction/domain/port/AuthenticatedTransportEnvelope.kt` (out of this package's write
  * scope), and it does not even agree with Relay's own `commercialContentVersion` validation today

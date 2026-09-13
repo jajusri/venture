@@ -11,8 +11,8 @@
 
 ## Obtain the artifact
 
-1. Download the artifact only from the approved controlled distribution source provided by the Budcom operator.
-2. Note the exact filename, for example `BudcomDesktop-0.4.3-x64-portable.zip` or `BudcomDesktop-0.4.3-x64-setup.exe`.
+1. Download the artifact only from the approved controlled distribution source provided by the Venture operator.
+2. Note the exact filename, for example `VentureDesktop-0.4.3-x64-portable.zip` or `VentureDesktop-0.4.3-x64-setup.exe`.
 3. Download the matching `SHA256SUMS.txt` and `artifacts.manifest.json` from the same source.
 
 ## Verify SHA-256 integrity
@@ -20,7 +20,7 @@
 PowerShell:
 
 ```powershell
-Get-FileHash .\BudcomDesktop-0.4.3-x64-portable.zip -Algorithm SHA256
+Get-FileHash .\VentureDesktop-0.4.3-x64-portable.zip -Algorithm SHA256
 ```
 
 Compare the hash to the value in `SHA256SUMS.txt`.
@@ -49,7 +49,7 @@ Portable pilot layout:
 NSIS installer (when produced on Windows):
 
 1. Run the setup executable.
-2. Approve the system-wide installation prompt. Elevation is required for Program Files and the narrowly scoped Budcom Connector firewall rules.
+2. Approve the system-wide installation prompt. Elevation is required for Program Files and the narrowly scoped Venture Connector firewall rules.
 3. Do not expect automatic launch after install (`runAfterFinish: false`).
 
 ### Legacy transport identity during over-install
@@ -70,10 +70,10 @@ pair and its SPKI fingerprint have been verified.
 
 ## First start
 
-1. Application data is created under `%APPDATA%/@budcom/desktop/` (Electron `userData` for package `@budcom/desktop`).
-2. Connector data is stored under `%APPDATA%/@budcom/desktop/connector-data/`.
-3. Connector transport identity is stored under `%APPDATA%/@budcom/desktop/connector-transport-identity/`.
-4. Tally request audit output is stored under `%APPDATA%/@budcom/desktop/connector-diagnostics/`; no mutable Connector file may be written beneath Program Files.
+1. Application data is created under `%APPDATA%/@venture/desktop/` (Electron `userData` for package `@venture/desktop`).
+2. Connector data is stored under `%APPDATA%/@venture/desktop/connector-data/`.
+3. Connector transport identity is stored under `%APPDATA%/@venture/desktop/connector-transport-identity/`.
+4. Tally request audit output is stored under `%APPDATA%/@venture/desktop/connector-diagnostics/`; no mutable Connector file may be written beneath Program Files.
 3. Confirm release mode in startup logs or diagnostics export: `controlled_pilot`.
 4. Confirm desktop and connector versions in diagnostics metadata.
 5. Connector starts on loopback only.
@@ -83,9 +83,9 @@ pair and its SPKI fingerprint have been verified.
 Before upgrading:
 
 1. Export diagnostics if support needs context.
-2. Copy `%APPDATA%/@budcom/desktop/connector-data/` including `budcom-ledger.db` and any `backups/` directory.
-3. Copy `%APPDATA%/@budcom/desktop/desktop-config.json`.
-4. Back up `%APPDATA%/@budcom/desktop/connector-transport-identity/` securely; never share its private key.
+2. Copy `%APPDATA%/@venture/desktop/connector-data/` including `venture-ledger.db` and any `backups/` directory.
+3. Copy `%APPDATA%/@venture/desktop/desktop-config.json`.
+4. Back up `%APPDATA%/@venture/desktop/connector-transport-identity/` securely; never share its private key.
 
 ## Manual upgrade
 
@@ -99,9 +99,9 @@ Automatic update is disabled in controlled pilot.
 ## Uninstall
 
 - Uninstall removes application binaries only.
-- Configuration, SQLite database, logs, diagnostic exports, and backups remain under `%APPDATA%/@budcom/desktop/` unless the operator deletes them manually.
+- Configuration, SQLite database, logs, diagnostic exports, and backups remain under `%APPDATA%/@venture/desktop/` unless the operator deletes them manually.
 - No destructive data-delete option is provided in controlled pilot.
-- Uninstall removes the stable-name Budcom HTTP, HTTPS, and mDNS firewall rules. Upgrade replaces them so they target the current bundled `resources/node/node.exe` path.
+- Uninstall removes the stable-name Venture HTTP, HTTPS, and mDNS firewall rules. Upgrade replaces them so they target the current bundled `resources/node/node.exe` path.
 
 ## Diagnostics and privacy
 
@@ -136,10 +136,10 @@ node scripts/lifecycle/lifecycle-gate-runner.mjs --execute-windows
 Real pre-launch identity over-install gate (isolated disposable Windows profile only):
 
 ```powershell
-$env:BUDCOM_LIFECYCLE_ISOLATED_PROFILE='1'
-$env:BUDCOM_LIFECYCLE_OLD_INSTALLER='<exact old installer path>'
-$env:BUDCOM_LIFECYCLE_LEGACY_IDENTITY_DIR='<complete test identity fixture directory>'
-$env:BUDCOM_LIFECYCLE_OLD_INSTALL_SCOPE='allusers' # or currentuser
+$env:VENTURE_LIFECYCLE_ISOLATED_PROFILE='1'
+$env:VENTURE_LIFECYCLE_OLD_INSTALLER='<exact old installer path>'
+$env:VENTURE_LIFECYCLE_LEGACY_IDENTITY_DIR='<complete test identity fixture directory>'
+$env:VENTURE_LIFECYCLE_OLD_INSTALL_SCOPE='allusers' # or currentuser
 node scripts/lifecycle/lifecycle-gate-runner.mjs --execute-windows-identity-overinstall
 ```
 
@@ -159,7 +159,7 @@ Report output: `release/controlled-pilot/<version>/reports/lifecycle-gate-report
 
 ## Escalation
 
-Escalate through the operator's approved Budcom support channel with:
+Escalate through the operator's approved Venture support channel with:
 
 - artifact filename
 - verified commit hash from diagnostics

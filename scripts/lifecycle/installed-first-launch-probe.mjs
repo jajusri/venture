@@ -55,16 +55,16 @@ function buildProbeChildEnvironment(userDataDir, connectorPort, correlationId, o
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   if (options.skipSingleInstance) {
-    env.BUDCOM_SKIP_SINGLE_INSTANCE = '1';
+    env.VENTURE_SKIP_SINGLE_INSTANCE = '1';
   } else {
-    delete env.BUDCOM_SKIP_SINGLE_INSTANCE;
+    delete env.VENTURE_SKIP_SINGLE_INSTANCE;
   }
-  env.BUDCOM_INSTALLED_PROBE_MODE = '1';
-  env.BUDCOM_USER_DATA_DIR = userDataDir;
-  env.BUDCOM_CONNECTOR_URL = `http://127.0.0.1:${connectorPort}`;
-  env.BUDCOM_CONNECTOR_PORT = String(connectorPort);
-  env.BUDCOM_CONNECTOR_HOST = '127.0.0.1';
-  env.BUDCOM_STARTUP_CORRELATION_ID = correlationId;
+  env.VENTURE_INSTALLED_PROBE_MODE = '1';
+  env.VENTURE_USER_DATA_DIR = userDataDir;
+  env.VENTURE_CONNECTOR_URL = `http://127.0.0.1:${connectorPort}`;
+  env.VENTURE_CONNECTOR_PORT = String(connectorPort);
+  env.VENTURE_CONNECTOR_HOST = '127.0.0.1';
+  env.VENTURE_STARTUP_CORRELATION_ID = correlationId;
   return env;
 }
 
@@ -102,10 +102,10 @@ function queryProcesses(filterCommand) {
   }
 }
 
-function listBudcomDesktopProcesses() {
+function listVentureDesktopProcesses() {
   return queryProcesses(`@(
     Get-CimInstance Win32_Process |
-    Where-Object { $_.Name -eq 'Budcom Desktop.exe' } |
+    Where-Object { $_.Name -eq 'Venture Desktop.exe' } |
     Select-Object ProcessId, ParentProcessId, Name, CommandLine
   ) | ConvertTo-Json -Compress`);
 }
@@ -233,13 +233,13 @@ async function runSecondInstanceCheck(appExe, userDataDir, connectorPort, correl
 
 export async function runInstalledFirstLaunchProbe(options = {}) {
   const installerPath = options.installerPath
-    ?? path.join(repoRoot, 'release/controlled-pilot/0.4.3/artifacts-runtime-closure-v2/BudcomDesktop-0.4.3-x64-setup.exe');
+    ?? path.join(repoRoot, 'release/controlled-pilot/0.4.3/artifacts-runtime-closure-v2/VentureDesktop-0.4.3-x64-setup.exe');
   if (!fs.existsSync(installerPath)) {
     throw new Error(`Installer not found: ${installerPath}`);
   }
 
-  const preExistingDesktop = listBudcomDesktopProcesses();
-  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-probe-profile-'));
+  const preExistingDesktop = listVentureDesktopProcesses();
+  const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'venture-probe-profile-'));
   const userDataDir = path.join(profileRoot, 'user-data');
   const installRoot = path.join(profileRoot, 'install');
   fs.mkdirSync(installRoot, { recursive: true });
@@ -249,7 +249,7 @@ export async function runInstalledFirstLaunchProbe(options = {}) {
   const trackedPids = [];
 
   const install = spawnSync(installerPath, ['/S', `/D=${installRoot}`], { encoding: 'utf8' });
-  const appExe = path.join(installRoot, 'Budcom Desktop.exe');
+  const appExe = path.join(installRoot, 'Venture Desktop.exe');
   if ((install.status ?? 1) !== 0 || !fs.existsSync(appExe)) {
     throw new Error(`Installation failed with exit code ${install.status ?? 1}`);
   }
@@ -307,7 +307,7 @@ export async function runInstalledFirstLaunchProbe(options = {}) {
   killProcessTree(desktopPid, trackedPids);
   await sleep(3000);
 
-  const postDesktop = listBudcomDesktopProcesses().filter((proc) => !preExistingDesktop.some((existing) => existing.ProcessId === proc.ProcessId));
+  const postDesktop = listVentureDesktopProcesses().filter((proc) => !preExistingDesktop.some((existing) => existing.ProcessId === proc.ProcessId));
   const orphanDesktopCount = postDesktop.length;
 
   const verdict = (

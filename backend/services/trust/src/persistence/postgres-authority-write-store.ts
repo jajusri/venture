@@ -20,7 +20,7 @@ import { deriveIntentScopedId } from './file-backed-authority-store.js';
  * `authority-persistence.test.ts`/`relay-persistence.test.ts` convention of recording parameterized
  * calls rather than executing them), AND behaviorally verified end-to-end against a real, live
  * PostgreSQL 18 database via `backend/test/live-postgres.integration.test.ts` (opt-in, gated on
- * `BUDCOM_TRUST_DATABASE_URL` -- see that file's own doc comment and `CONTROLLED-PILOT-RUNBOOK.md`
+ * `VENTURE_TRUST_DATABASE_URL` -- see that file's own doc comment and `CONTROLLED-PILOT-RUNBOOK.md`
  * section F.1 for how to run it). The pre-existing `test/controlled-pilot-integration.test.ts`
  * end-to-end proof still runs against `FileBackedAuthorityStore` instead of these classes -- see that
  * file and `CONTROLLED-PILOT-RUNBOOK.md` section E/E.1 for the real-pilot-provisioning path that does

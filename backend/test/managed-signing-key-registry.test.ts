@@ -66,7 +66,7 @@ const ISSUER_ID = 'issuer-1';
 
 describe('ManagedSigningKeyRegistry', () => {
   let workDir: string;
-  beforeEach(() => { workDir = mkdtempSync(join(tmpdir(), 'budcom-signing-key-registry-')); });
+  beforeEach(() => { workDir = mkdtempSync(join(tmpdir(), 'venture-signing-key-registry-')); });
   afterEach(() => { rmSync(workDir, { recursive: true, force: true }); });
 
   it('bootstrap() generates a real local key and records it in Postgres as the sole active key', async () => {

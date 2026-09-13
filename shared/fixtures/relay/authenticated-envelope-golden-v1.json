@@ -33,7 +33,7 @@
     "recipientBusinessId": "golden-business-2",
     "recipientMailboxId": "orders",
     "commercialContent": "{\"golden\":true,\"pipe\":\"a|b\",\"backslash\":\"c\\\\d\"}",
-    "commercialContentType": "application/vnd.budcom.order-snapshot+json",
+    "commercialContentType": "application/vnd.venture.order-snapshot+json",
     "commercialContentVersion": 3
   },
   "submitBindingSigningBytesBase64": "Z29sZGVuLWVudmVsb3BlLTF8Q0FOT05JQ0FMX09SREVSfGdvbGRlbi1vcmRlci0xfDJ8Z29sZGVuLWJ1c2luZXNzLTF8Z29sZGVuLWFjdG9yLTF8Z29sZGVuLWRldmljZS0xfGdvbGRlbi1idXNpbmVzcy0yfG9yZGVyc3x7ImdvbGRlbiI6dHJ1ZSwicGlwZSI6ImFcfGIiLCJiYWNrc2xhc2giOiJjXFxcXGQifXxhcHBsaWNhdGlvbi92bmQuYnVkY29tLm9yZGVyLXNuYXBzaG90K2pzb258Mw==",

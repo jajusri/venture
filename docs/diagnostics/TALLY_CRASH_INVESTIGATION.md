@@ -2,16 +2,16 @@
 
 **Date:** 2026-07-22  
 **Incident:** TallyPrime `Software Exception c0000005` (Memory Access Violation)  
-**Scope:** Budcom connector → Tally HTTP/XML connection path only  
+**Scope:** Venture connector → Tally HTTP/XML connection path only  
 **Status:** Investigation complete — **awaiting approval before any M3 commit**
 
 ---
 
 ## Executive Summary
 
-TallyPrime crashed during Milestone 3 live testing. The crash was **not caused by malformed XML** from the Budcom connector. Evidence points to **Tally process instability from cumulative load**: a long sequential probe of 12 heavy collection exports, **two parallel duplicate collection requests** while Tally was already busy, followed by connector API smoke tests and a **retry/reconnect storm** (6× 2s backoffs) against an already-dead Tally HTTP server.
+TallyPrime crashed during Milestone 3 live testing. The crash was **not caused by malformed XML** from the Venture connector. Evidence points to **Tally process instability from cumulative load**: a long sequential probe of 12 heavy collection exports, **two parallel duplicate collection requests** while Tally was already busy, followed by connector API smoke tests and a **retry/reconnect storm** (6× 2s backoffs) against an already-dead Tally HTTP server.
 
-The last Budcom-originated request before connector failure was **`List of Groups`** (ledger-groups endpoint). The most probable crash trigger occurred **earlier**, during the overlapping probe/parallel fetch window (~10:26–10:30 UTC), after Tally had already returned 260KB–434KB collection responses and began timing out on subsequent requests.
+The last Venture-originated request before connector failure was **`List of Groups`** (ledger-groups endpoint). The most probable crash trigger occurred **earlier**, during the overlapping probe/parallel fetch window (~10:26–10:30 UTC), after Tally had already returned 260KB–434KB collection responses and began timing out on subsequent requests.
 
 Safety controls have been added to the **connection layer only** (no new extraction features). Milestone 3 code remains uncommitted and should **not be committed** until live re-validation with safe mode confirms Tally stability.
 
@@ -57,7 +57,7 @@ Redacted payload saved to: [`docs/diagnostics/tally-crash-investigation-payloads
 
 ## 2. XML Validity Assessment
 
-All Budcom-generated requests were inspected against TallyPrime conventions:
+All Venture-generated requests were inspected against TallyPrime conventions:
 
 | Check | Result |
 |-------|--------|
@@ -70,7 +70,7 @@ All Budcom-generated requests were inspected against TallyPrime conventions:
 | Recursive/nested collection definitions | ✓ None |
 | Oversized **request** bodies | ✓ All requests < 1KB |
 
-**Invalid probe ID:** `Company Features` (manual probe script only) — not in Budcom templates; timed out but unlikely sole crash cause.
+**Invalid probe ID:** `Company Features` (manual probe script only) — not in Venture templates; timed out but unlikely sole crash cause.
 
 **Conclusion:** XML structure is valid. Crash is consistent with **Tally internal memory fault under concurrent/heavy export load**, not invalid request syntax.
 
@@ -92,7 +92,7 @@ All Budcom-generated requests were inspected against TallyPrime conventions:
 
 ### Low confidence / ruled out
 
-- Malformed Budcom XML
+- Malformed Venture XML
 - Unicode/control character injection
 - Oversized request payloads
 
@@ -148,7 +148,7 @@ Updated:
 | XML validation | Before every send |
 | Redacted audit file | `./diagnostics/tally-request-audit.jsonl` |
 
-Environment overrides: `BUDCOM_TALLY_SAFE_MODE`, `BUDCOM_TALLY_POOL_MAX`, `BUDCOM_TALLY_RETRY_MAX`, `BUDCOM_TALLY_CIRCUIT_BREAKER*`, etc.
+Environment overrides: `VENTURE_TALLY_SAFE_MODE`, `VENTURE_TALLY_POOL_MAX`, `VENTURE_TALLY_RETRY_MAX`, `VENTURE_TALLY_CIRCUIT_BREAKER*`, etc.
 
 ---
 
@@ -226,7 +226,7 @@ Reasons:
 | Probe terminal log | terminals/708399.txt |
 | Parallel fetch logs | terminals/708400.txt, 708401.txt |
 | Connector smoke log | terminals/708402.txt |
-| Runtime audit (after fix) | `connector/budcom_connector/diagnostics/tally-request-audit.jsonl` |
+| Runtime audit (after fix) | `connector/venture_connector/diagnostics/tally-request-audit.jsonl` |
 
 ---
 

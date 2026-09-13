@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- DEV-flavor-only override of app/src/main/res/values/strings.xml's app_name — makes the
+         launcher/recents/settings label read "VENTURE DEV" instead of "Venture", visibly
+         distinguishing it from the production/testing install alongside which it coexists. -->
+    <string name="app_name">VENTURE DEV</string>
+</resources>

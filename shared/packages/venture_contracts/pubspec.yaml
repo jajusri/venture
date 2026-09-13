@@ -1,0 +1,16 @@
+name: venture_contracts
+description: Venture connector API DTOs aligned with the OpenAPI contract.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  venture_core:
+    path: ../venture_core
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^4.0.0

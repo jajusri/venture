@@ -2,7 +2,7 @@
 
 **Milestone:** Live Company Selection & Dashboard Integration  
 **Last updated:** 2026-07-23T00:16:00+05:30  
-**Package:** `@budcom/desktop` v0.4.1 + `@budcom/connector` v0.3.1  
+**Package:** `@venture/desktop` v0.4.1 + `@venture/connector` v0.3.1  
 **Git commit:** Not committed (working tree)
 
 ---

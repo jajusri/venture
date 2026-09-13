@@ -122,11 +122,11 @@ function listNodeProcessesUnder(installRootMarker) {
   ) | ConvertTo-Json -Compress`);
 }
 
-function listBudcomDesktopForCopy(copyRootMarker) {
+function listVentureDesktopForCopy(copyRootMarker) {
   const marker = copyRootMarker.replace(/\\/g, '\\\\').replace(/'/g, "''");
   return queryProcesses(`@(
     Get-CimInstance Win32_Process |
-    Where-Object { $_.Name -eq 'Budcom Desktop.exe' -and $_.CommandLine -like '*${marker}*' } |
+    Where-Object { $_.Name -eq 'Venture Desktop.exe' -and $_.CommandLine -like '*${marker}*' } |
     Select-Object ProcessId, ParentProcessId, Name, CommandLine
   ) | ConvertTo-Json -Compress`);
 }
@@ -153,15 +153,15 @@ function countStage(entries, stage) {
 function buildBaseEnv(userDataDir, connectorPort, correlationId, extra = {}) {
   const env = { ...process.env, ...extra };
   delete env.ELECTRON_RUN_AS_NODE;
-  env.BUDCOM_SKIP_SINGLE_INSTANCE = '1';
-  env.BUDCOM_CONNECTOR_URL = `http://127.0.0.1:${connectorPort}`;
-  env.BUDCOM_CONNECTOR_PORT = String(connectorPort);
-  env.BUDCOM_CONNECTOR_HOST = '127.0.0.1';
-  env.BUDCOM_STARTUP_CORRELATION_ID = correlationId;
+  env.VENTURE_SKIP_SINGLE_INSTANCE = '1';
+  env.VENTURE_CONNECTOR_URL = `http://127.0.0.1:${connectorPort}`;
+  env.VENTURE_CONNECTOR_PORT = String(connectorPort);
+  env.VENTURE_CONNECTOR_HOST = '127.0.0.1';
+  env.VENTURE_STARTUP_CORRELATION_ID = correlationId;
   if (userDataDir) {
-    env.BUDCOM_USER_DATA_DIR = userDataDir;
+    env.VENTURE_USER_DATA_DIR = userDataDir;
   } else {
-    delete env.BUDCOM_USER_DATA_DIR;
+    delete env.VENTURE_USER_DATA_DIR;
   }
   return env;
 }
@@ -169,10 +169,10 @@ function buildBaseEnv(userDataDir, connectorPort, correlationId, extra = {}) {
 function findRecentStartupLog(sinceMs) {
   const roots = [
     os.tmpdir(),
-    path.join(process.env.APPDATA ?? '', 'budcom-desktop'),
-    path.join(process.env.APPDATA ?? '', 'Budcom Desktop'),
-    path.join(process.env.APPDATA ?? '', '@budcom', 'desktop'),
-    path.join(process.env.LOCALAPPDATA ?? '', 'budcom-desktop'),
+    path.join(process.env.APPDATA ?? '', 'venture-desktop'),
+    path.join(process.env.APPDATA ?? '', 'Venture Desktop'),
+    path.join(process.env.APPDATA ?? '', '@venture', 'desktop'),
+    path.join(process.env.LOCALAPPDATA ?? '', 'venture-desktop'),
   ].filter(Boolean);
   let newest = null;
   for (const root of roots) {
@@ -268,7 +268,7 @@ async function launchPackagedDesktop(appExe, env, options = {}) {
   const spawnEvents = countStage(entries, 'connector_spawned');
 
   let healthBody = null;
-  const connectorPort = Number(env.BUDCOM_CONNECTOR_PORT ?? 0);
+  const connectorPort = Number(env.VENTURE_CONNECTOR_PORT ?? 0);
   if (spawnEvents > 0 && connectorPort > 0) {
     try {
       const response = await fetch(`http://127.0.0.1:${connectorPort}/health`, { signal: AbortSignal.timeout(5000) });
@@ -309,11 +309,11 @@ async function launchPackagedDesktop(appExe, env, options = {}) {
 }
 
 async function proveTamperedRuntime() {
-  const proofRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-neg-tamper-'));
+  const proofRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'venture-neg-tamper-'));
   const copyRoot = path.join(proofRoot, 'app-copy');
   copyDirRecursive(EVIDENCE_UNPACKED, copyRoot);
 
-  const appExe = path.join(copyRoot, 'Budcom Desktop.exe');
+  const appExe = path.join(copyRoot, 'Venture Desktop.exe');
   const nodeExe = path.join(copyRoot, 'resources', 'node', 'node.exe');
   const manifestPath = path.join(copyRoot, 'resources', 'node', 'node-runtime.manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -330,7 +330,7 @@ async function proveTamperedRuntime() {
   const connectorPort = await pickEphemeralPort();
   const correlationId = randomUUID();
   const env = buildBaseEnv(userDataDir, connectorPort, correlationId, {
-    BUDCOM_INSTALLED_PROBE_MODE: '1',
+    VENTURE_INSTALLED_PROBE_MODE: '1',
   });
 
   const observation = await launchPackagedDesktop(appExe, env, {
@@ -382,10 +382,10 @@ async function proveTamperedRuntime() {
 }
 
 async function proveUserDataScenario(label, envOverrides, rejectedPath, expectedCategory = null) {
-  const proofRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-neg-userdata-'));
+  const proofRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'venture-neg-userdata-'));
   const copyRoot = path.join(proofRoot, 'app-copy');
   copyDirRecursive(EVIDENCE_UNPACKED, copyRoot);
-  const appExe = path.join(copyRoot, 'Budcom Desktop.exe');
+  const appExe = path.join(copyRoot, 'Venture Desktop.exe');
 
   const dedicatedUserData = path.join(proofRoot, 'probe-user-data');
   fs.mkdirSync(dedicatedUserData, { recursive: true });
@@ -394,7 +394,7 @@ async function proveUserDataScenario(label, envOverrides, rejectedPath, expected
 
   const env = buildBaseEnv(dedicatedUserData, connectorPort, correlationId, envOverrides);
   if (rejectedPath) {
-    env.BUDCOM_USER_DATA_DIR = rejectedPath;
+    env.VENTURE_USER_DATA_DIR = rejectedPath;
   }
 
   const observation = await launchPackagedDesktop(appExe, env, {
@@ -410,7 +410,7 @@ async function proveUserDataScenario(label, envOverrides, rejectedPath, expected
     ? (overrideApplied === null && actualUserData !== rejectedPathNormalized)
     : overrideApplied === null;
 
-  const budcomDiagnosticsInRejectedPath = rejectedPath
+  const ventureDiagnosticsInRejectedPath = rejectedPath
     ? fs.existsSync(path.join(path.resolve(rejectedPath), 'logs', 'startup-diagnostics.jsonl'))
     : false;
 
@@ -425,12 +425,12 @@ async function proveUserDataScenario(label, envOverrides, rejectedPath, expected
     pass: observation.desktopAliveAtEnd
       && observation.rendererAvailable
       && overrideIgnored
-      && !budcomDiagnosticsInRejectedPath,
+      && !ventureDiagnosticsInRejectedPath,
     expectedRejectionCategory: expectedCategory,
     overrideApplied,
     userDataPathSelected: actualUserData,
     overrideIgnored,
-    budcomDiagnosticsInRejectedPath,
+    ventureDiagnosticsInRejectedPath,
     desktopAlive: observation.desktopAliveAtEnd,
     rendererAvailable: observation.rendererAvailable,
   };
@@ -438,7 +438,7 @@ async function proveUserDataScenario(label, envOverrides, rejectedPath, expected
 
 async function classifyRejectedPath(candidatePath, installRoot, resourcesPath) {
   const { validateInstalledProbeUserDataDir, UserDataOverrideRejectedError } = await import(
-    '../../apps/budcom_desktop/dist/application/release/startup-environment.js'
+    '../../apps/venture_desktop/dist/application/release/startup-environment.js'
   );
   try {
     validateInstalledProbeUserDataDir(candidatePath, { installRoot, resourcesPath });
@@ -454,14 +454,14 @@ async function classifyRejectedPath(candidatePath, installRoot, resourcesPath) {
 async function proveUserDataNegativeProofs() {
   const installRoot = EVIDENCE_UNPACKED;
   const resourcesPath = path.join(EVIDENCE_UNPACKED, 'resources');
-  const tempDedicated = path.join(os.tmpdir(), `budcom-probe-valid-${Date.now()}`);
+  const tempDedicated = path.join(os.tmpdir(), `venture-probe-valid-${Date.now()}`);
   const tempRoot = path.resolve(os.tmpdir());
   const fsRoot = path.parse(tempRoot).root;
-  const outsideTemp = path.join(fsRoot, 'budcom-outside-temp-negative-proof');
+  const outsideTemp = path.join(fsRoot, 'venture-outside-temp-negative-proof');
 
   const scenarioA = await proveUserDataScenario(
     'marker_absent',
-    { BUDCOM_INSTALLED_PROBE_MODE: undefined },
+    { VENTURE_INSTALLED_PROBE_MODE: undefined },
     tempDedicated,
     'probe_mode_required',
   );
@@ -480,7 +480,7 @@ async function proveUserDataNegativeProofs() {
     const classification = await classifyRejectedPath(testCase.path, installRoot, resourcesPath);
     const observed = await proveUserDataScenario(
       `invalid_probe_path_${testCase.label}`,
-      { BUDCOM_INSTALLED_PROBE_MODE: '1' },
+      { VENTURE_INSTALLED_PROBE_MODE: '1' },
       testCase.path,
       testCase.expected ?? classification.category,
     );
@@ -504,23 +504,23 @@ async function proveUserDataNegativeProofs() {
 }
 
 async function proveHostileNetwork() {
-  const proofRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'budcom-neg-network-'));
+  const proofRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'venture-neg-network-'));
   const copyRoot = path.join(proofRoot, 'app-copy');
   copyDirRecursive(EVIDENCE_UNPACKED, copyRoot);
-  const appExe = path.join(copyRoot, 'Budcom Desktop.exe');
+  const appExe = path.join(copyRoot, 'Venture Desktop.exe');
   const userDataDir = path.join(proofRoot, 'user-data');
   fs.mkdirSync(userDataDir, { recursive: true });
   const connectorPort = await pickEphemeralPort();
   const correlationId = randomUUID();
 
   const env = buildBaseEnv(userDataDir, connectorPort, correlationId, {
-    BUDCOM_INSTALLED_PROBE_MODE: '1',
-    BUDCOM_CONNECTOR_HOST: '0.0.0.0',
-    BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED: '1',
+    VENTURE_INSTALLED_PROBE_MODE: '1',
+    VENTURE_CONNECTOR_HOST: '0.0.0.0',
+    VENTURE_CONNECTOR_LAN_MODE_ACKNOWLEDGED: '1',
     HOST: '192.168.1.20',
     BIND_HOST: 'example.com',
     LISTEN_HOST: '::',
-    BUDCOM_CONNECTOR_URL: `http://192.168.1.20:${connectorPort}`,
+    VENTURE_CONNECTOR_URL: `http://192.168.1.20:${connectorPort}`,
   });
 
   const observation = await launchPackagedDesktop(appExe, env, {
@@ -549,12 +549,12 @@ async function proveHostileNetwork() {
   return {
     pass,
     hostileEnv: {
-      BUDCOM_CONNECTOR_HOST: '0.0.0.0',
-      BUDCOM_CONNECTOR_LAN_MODE_ACKNOWLEDGED: '1',
+      VENTURE_CONNECTOR_HOST: '0.0.0.0',
+      VENTURE_CONNECTOR_LAN_MODE_ACKNOWLEDGED: '1',
       HOST: '192.168.1.20',
       BIND_HOST: 'example.com',
       LISTEN_HOST: '::',
-      BUDCOM_CONNECTOR_URL: 'http://192.168.1.20:9099',
+      VENTURE_CONNECTOR_URL: 'http://192.168.1.20:9099',
     },
     connectorSpawned: observation.connectorSpawnedCount > 0,
     healthBindHost: bindHost,
@@ -571,7 +571,7 @@ export async function runNegativeProofs(options = {}) {
   desktopLaunchCount = 0;
   trackedDesktopPids.clear();
 
-  if (!fs.existsSync(path.join(EVIDENCE_UNPACKED, 'Budcom Desktop.exe'))) {
+  if (!fs.existsSync(path.join(EVIDENCE_UNPACKED, 'Venture Desktop.exe'))) {
     throw new Error(`Evidence unpacked app missing: ${EVIDENCE_UNPACKED}`);
   }
 

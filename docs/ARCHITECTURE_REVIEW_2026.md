@@ -28,11 +28,11 @@ Related earlier Android-only review: [ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIE
 
 | Path | Role |
 | --- | --- |
-| `apps/budcom_android/` | Primary BUDCO companion (Kotlin, Compose, Clean Architecture) |
-| `apps/budcom_desktop/` | Electron shell: Connector lifecycle + operational UI |
-| `apps/budcom_mobile/` | Flutter track (early; Melos workspace) |
-| `connector/budcom_connector/` | Local read-only Tally companion service (Node) |
-| `shared/packages/budcom_core`, `budcom_contracts` | Dart domain/contracts — **not** consumed by Android/Desktop |
+| `apps/venture_android/` | Primary VENTURE companion (Kotlin, Compose, Clean Architecture) |
+| `apps/venture_desktop/` | Electron shell: Connector lifecycle + operational UI |
+| `apps/venture_mobile/` | Flutter track (early; Melos workspace) |
+| `connector/venture_connector/` | Local read-only Tally companion service (Node) |
+| `shared/packages/venture_core`, `venture_contracts` | Dart domain/contracts — **not** consumed by Android/Desktop |
 | `docs/` | Product + engineering governance |
 | `tests/` | Cross-cutting contract / architecture tests |
 
@@ -44,7 +44,7 @@ Each module answers the ten review questions against the governing documents.
 
 ---
 
-## 1. Android (`apps/budcom_android`)
+## 1. Android (`apps/venture_android`)
 
 ### Evidence
 
@@ -62,7 +62,7 @@ Each module answers the ten review questions against the governing documents.
 | 3 | Unnecessary complexity? | **Low–medium.** Clean Architecture is appropriate; leftover `*Package.kt` markers and unused Room/WorkManager scaffolding add noise ([ARCHITECTURE_REVIEW.md](ARCHITECTURE_REVIEW.md)). |
 | 4 | Duplicate responsibilities? | **Partial.** Per-feature error mapping and similar remote patterns; Connector HTTP clients duplicated vs Desktop/TS (monorepo-wide). |
 | 5 | Separate better? | Dashboard already narrowed to ports; further extract shared UI error mapping and optional Gradle feature modules **after** ports stabilize ([REPOSITORY_EVOLUTION.md](REPOSITORY_EVOLUTION.md)). |
-| 6 | Naming reflects domain? | **Mostly.** Domain language (ledger, voucher, session, sync) is clear; product brand dual-spellings (BUDCO / Budcom / BudCom) remain. |
+| 6 | Naming reflects domain? | **Mostly.** Domain language (ledger, voucher, session, sync) is clear; product brand dual-spellings (VENTURE / Venture / Venture) remain. |
 | 7 | Solo → SME → enterprise? | **Solo/SME yes** (URL config, company session, browsers). **Enterprise partial** — no multi-user auth story on device; depends on Connector LAN/auth maturity. |
 | 8 | ERP as SoR? | **Yes.** Read/browse/sync-from-Connector; no Tally write path in Android. |
 | 9 | Future AI? | **Structurally ready** for assistant features over existing search/diagnostics ports; no AI SDK coupling yet (good). |
@@ -70,11 +70,11 @@ Each module answers the ten review questions against the governing documents.
 
 ---
 
-## 2. Connector (`connector/budcom_connector`)
+## 2. Connector (`connector/venture_connector`)
 
 ### Evidence
 
-- Layering: `api/` → `services/` → `erp/` ports → `tally/` adapter → `storage/sqlite/` ([register-services.ts](../connector/budcom_connector/src/bootstrap/register-services.ts), architecture boundary tests).
+- Layering: `api/` → `services/` → `erp/` ports → `tally/` adapter → `storage/sqlite/` ([register-services.ts](../connector/venture_connector/src/bootstrap/register-services.ts), architecture boundary tests).
 - Multi-layer read-only toward Tally: capabilities, forbidden mutation XML, approved EXPORT-only gateway, `HealthReport.readOnly: true`.
 - Company isolation via `company_id` on domain tables; WAL + `BEGIN IMMEDIATE` transactions.
 - Voucher: extraction + snapshot repository + `GET /api/v1/vouchers*` present; public voucher sync not customer-operational (`voucher-foundation` flags); stub `/companies/.../vouchers` still 501.
@@ -90,7 +90,7 @@ Each module answers the ten review questions against the governing documents.
 | 3 | Unnecessary complexity? | **Mostly necessary** for reliability/safety. Accidental: parallel ledger/stock sync shapes; placeholder stubs (licensing/scheduler) alongside real sync. |
 | 4 | Duplicate responsibilities? | Live masters vs synced caches; dual voucher HTTP surfaces (real `/api/v1` vs stub company path). |
 | 5 | Separate better? | Keep ERP ports; collapse duplicate sync engines into shared sync kernel over time; remove or finish stubs deliberately. |
-| 6 | Naming reflects domain? | **Yes** (Budcom, ERP-neutral ports, Tally confined to adapter). |
+| 6 | Naming reflects domain? | **Yes** (Venture, ERP-neutral ports, Tally confined to adapter). |
 | 7 | Solo → SME → enterprise? | **Solo excellent; SME good** on one box; **enterprise weak** today (no auth, single-writer SQLite, in-memory voucher paging, loopback-first networking). |
 | 8 | ERP as SoR? | **Yes — hard guarantee.** |
 | 9 | Future AI? | Local structured APIs + diagnostics are good AI *data* substrates; no AI runtime in Connector (correct separation). |
@@ -98,15 +98,15 @@ Each module answers the ten review questions against the governing documents.
 
 ---
 
-## 3. Desktop (`apps/budcom_desktop`)
+## 3. Desktop (`apps/venture_desktop`)
 
 ### Evidence
 
-- Electron layering: renderer → allowlisted preload IPC → main → application HTTP/lifecycle ([ipc-allowlist.ts](../apps/budcom_desktop/src/application/ipc-allowlist.ts)).
+- Electron layering: renderer → allowlisted preload IPC → main → application HTTP/lifecycle ([ipc-allowlist.ts](../apps/venture_desktop/src/application/ipc-allowlist.ts)).
 - Security posture: context isolation, no Node in renderer, CSP — aligns with production-hardening rules.
 - Owns Connector process lifecycle (spawn/manage) — role Android does not play.
 - Feature parity gap vs Android: no voucher browser/details IPC/UI observed; Android already consumes vouchers.
-- `apps/budcom_desktop/dist/` gitignored yet historically tracked (~69 files) — maintainability hazard.
+- `apps/venture_desktop/dist/` gitignored yet historically tracked (~69 files) — maintainability hazard.
 - Root README layout historically under-emphasized Desktop (table focuses Android/Flutter).
 
 ### Answers
@@ -118,7 +118,7 @@ Each module answers the ten review questions against the governing documents.
 | 3 | Unnecessary complexity? | Electron + IPC allowlist is justified; large renderer `app.ts` growth is a maintainability risk. |
 | 4 | Duplicate responsibilities? | HTTP client/DTO duplication vs Android; screenshots/validation scripts adjacent to product code. |
 | 5 | Separate better? | Extract renderer modules; consider shared OpenAPI-generated TS client later. |
-| 6 | Naming? | Budcom / BUDCO dual branding; no Tradon. |
+| 6 | Naming? | Venture / VENTURE dual branding; no Tradon. |
 | 7 | Scale? | Fits solo/SME on Windows next to Tally; not a multi-tenant enterprise console yet. |
 | 8 | ERP as SoR? | **Yes** (talks to Connector, does not write Tally). |
 | 9 | Future AI? | Could host AI UX later; keep AI out of main-process privileges. |
@@ -130,7 +130,7 @@ Each module answers the ten review questions against the governing documents.
 
 ### Evidence
 
-- `shared/packages/budcom_core` and `budcom_contracts` are **Dart**, Melos-tied to Flutter (`apps/budcom_mobile`).
+- `shared/packages/venture_core` and `venture_contracts` are **Dart**, Melos-tied to Flutter (`apps/venture_mobile`).
 - Android/Desktop **do not** consume these packages; they re-implement DTOs/clients in Kotlin/TS.
 - Flutter remote path remains early (health-oriented) while Android is the production companion track ([README.md](../README.md), [ROADMAP.md](ROADMAP.md)).
 
@@ -143,7 +143,7 @@ Each module answers the ten review questions against the governing documents.
 | 3 | Unnecessary complexity? | **Yes, today** — two mobile strategies without a published multi-platform milestone. |
 | 4 | Duplicate responsibilities? | Domain concepts duplicated across Dart core and Kotlin domain models. |
 | 5 | Separate better? | Decide: (A) Flutter becomes experimental/archive until scheduled, or (B) generate contracts from OpenAPI into all languages. |
-| 6 | Naming? | Budcom packages clear. |
+| 6 | Naming? | Venture packages clear. |
 | 7 | Scale? | N/A until adopted; does not help Android enterprise scale today. |
 | 8 | ERP as SoR? | Contracts assume companion model — fine. |
 | 9 | Future AI? | Shared domain events could help later — unused by primary app. |
@@ -168,7 +168,7 @@ Each module answers the ten review questions against the governing documents.
 | 2 | Violations? | None in governing set. |
 | 3 | Complexity? | Appropriate for AI-assisted development; volume is high but navigable via README index. |
 | 4–5 | Duplication / separation? | Some overlap soul ↔ non-negotiables ↔ vision (intentional reinforcement). Android vs platform ROADMAP scopes should stay explicit. |
-| 6 | Naming? | BUDCO consistent in governing docs. |
+| 6 | Naming? | VENTURE consistent in governing docs. |
 | 7–10 | Scale / SoR / AI / multi-device? | Vision documents explicitly cover these; constitution correctly fences current Android stack. |
 
 ---
@@ -201,7 +201,7 @@ Each module answers the ten review questions against the governing documents.
 # Immediate improvements
 
 1. Align [ROADMAP.md](ROADMAP.md) and [PRODUCTION_VALIDATION.md](PRODUCTION_VALIDATION.md) with completed Android validation reality (docs-only).
-2. Stop tracking `apps/budcom_desktop/dist/` (`git rm -r --cached`) while keeping ignore rules.
+2. Stop tracking `apps/venture_desktop/dist/` (`git rm -r --cached`) while keeping ignore rules.
 3. Publish or shelve Flutter/`shared` Dart packages explicitly in README (active vs experimental).
 4. Finish or remove Connector stub voucher routes to one public story.
 5. Prefer OpenAPI (`docs/openapi/connector-v1.yaml`) as the cross-client contract gate in CI.

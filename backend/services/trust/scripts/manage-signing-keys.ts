@@ -1,11 +1,11 @@
 #!/usr/bin/env -S node --experimental-strip-types
 /**
- * BUDCOM Trust -- issuer signing-key lifecycle operator CLI (round 6, key-lifecycle Gate 2).
+ * VENTURE Trust -- issuer signing-key lifecycle operator CLI (round 6, key-lifecycle Gate 2).
  *
  * LOCAL OPERATOR TOOL, not a public API -- there is no HTTP route anywhere in this backend for
  * rotating, retiring, revoking, or activating a signing key (key-lifecycle invariant 8). Whoever
  * runs this already holds the same Postgres connection string Trust's own server process uses
- * (`BUDCOM_TRUST_DATABASE_URL`), the same trust boundary as any other database administration tool.
+ * (`VENTURE_TRUST_DATABASE_URL`), the same trust boundary as any other database administration tool.
  *
  * Unlike `dev-provision.ts`, this script is NOT gated to development/test runtime: key rotation and
  * revocation are legitimate PRODUCTION/PILOT operational needs (e.g. responding to a real

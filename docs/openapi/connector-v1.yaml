@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: Budcom Connector API
+  title: Venture Connector API
   version: 1.0.0
   description: |
-    Read-only local connector API between the Budcom mobile app and Tally.
+    Read-only local connector API between the Venture mobile app and Tally.
     All write operations to Tally are prohibited in MVP 1.
 servers:
   - url: http://{host}:{port}

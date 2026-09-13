@@ -2,7 +2,7 @@
 # Read-only operator helpers — does not modify app data, security settings, or business records.
 
 param(
-    [string]$PackageName = "com.budcom.android.debug",
+    [string]$PackageName = "com.jajusri.venture.debug",
     [string]$EvidenceRoot = "evidence/physical-buying-cycle-$(Get-Date -Format 'yyyy-MM-dd')",
     [string]$DeviceSerial = "",
     [switch]$Install,
@@ -38,7 +38,7 @@ function Get-ConnectedDevices {
     }
 }
 
-Write-Host "=== BUDCOM Android physical validation harness ==="
+Write-Host "=== VENTURE Android physical validation harness ==="
 Write-Host "Repo: $RepoRoot"
 Write-Host "ADB:  $Adb"
 Write-Host ""
@@ -73,7 +73,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $RepoRoot $EvidenceRoot) | 
 
 if ($Install) {
     Write-Host "Installing devDebug APK (no data wipe)..."
-    Push-Location (Join-Path $RepoRoot "apps\budcom_android")
+    Push-Location (Join-Path $RepoRoot "apps\venture_android")
     $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
     .\gradlew.bat :app:installDevDebug
     if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Gradle install failed" }
@@ -87,7 +87,7 @@ if ($Launch) {
 
 if ($Screenshot) {
     if (-not $ScreenshotName) { $ScreenshotName = (Get-Date -Format "HHmmss") }
-    $remote = "/sdcard/budcom-evidence-$ScreenshotName.png"
+    $remote = "/sdcard/venture-evidence-$ScreenshotName.png"
     $local = Join-Path $RepoRoot (Join-Path $EvidenceRoot "$ScreenshotName.png")
     Invoke-Adb shell screencap -p $remote
     Invoke-Adb pull $remote $local | Out-Null

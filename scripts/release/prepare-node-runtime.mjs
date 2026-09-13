@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
-const desktopRoot = path.join(repoRoot, 'apps/budcom_desktop');
+const desktopRoot = path.join(repoRoot, 'apps/venture_desktop');
 const outputRoot = path.join(desktopRoot, '.packaged-node');
 
 export const NODE_RUNTIME_VERSION = '22.16.0';

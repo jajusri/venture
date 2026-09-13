@@ -42,17 +42,17 @@ Implementation and automated tests complete. Live Tally validation not yet perfo
 
 ## 3. Files Added
 
-- `connector/budcom_connector/src/erp/session/session-constants.ts`
-- `connector/budcom_connector/src/erp/session/connector-session.ts`
-- `connector/budcom_connector/src/erp/session/session-results.ts`
-- `connector/budcom_connector/src/services/interfaces/connector-session.ts`
-- `connector/budcom_connector/src/services/session/session-validator.ts`
-- `connector/budcom_connector/src/services/session/connector-session.service.ts`
-- `connector/budcom_connector/src/services/session/session-error-mapper.ts`
-- `connector/budcom_connector/src/api/routes/session.ts`
-- `connector/budcom_connector/test/unit/session/session-validator.test.ts`
-- `connector/budcom_connector/test/integration/connector-session.test.ts`
-- `connector/budcom_connector/test/helpers/session-mock.ts`
+- `connector/venture_connector/src/erp/session/session-constants.ts`
+- `connector/venture_connector/src/erp/session/connector-session.ts`
+- `connector/venture_connector/src/erp/session/session-results.ts`
+- `connector/venture_connector/src/services/interfaces/connector-session.ts`
+- `connector/venture_connector/src/services/session/session-validator.ts`
+- `connector/venture_connector/src/services/session/connector-session.service.ts`
+- `connector/venture_connector/src/services/session/session-error-mapper.ts`
+- `connector/venture_connector/src/api/routes/session.ts`
+- `connector/venture_connector/test/unit/session/session-validator.test.ts`
+- `connector/venture_connector/test/integration/connector-session.test.ts`
+- `connector/venture_connector/test/helpers/session-mock.ts`
 - `docs/milestones/milestone-3d-company-selection.md`
 - `docs/stage-updates/milestone-3d-stage-update.md`
 
@@ -60,20 +60,20 @@ Implementation and automated tests complete. Live Tally validation not yet perfo
 
 ## 4. Files Modified
 
-- `connector/budcom_connector/src/core/tokens.ts`
-- `connector/budcom_connector/src/config/defaults.ts`
-- `connector/budcom_connector/src/config/index.ts`
-- `connector/budcom_connector/src/bootstrap/register-services.ts`
-- `connector/budcom_connector/src/api/server.ts`
-- `connector/budcom_connector/src/api/middleware/read-only.ts`
-- `connector/budcom_connector/src/services/extraction/company-resolver.ts`
-- `connector/budcom_connector/src/services/extraction/master-data.service.ts`
-- `connector/budcom_connector/src/services/health/health-service.ts`
-- `connector/budcom_connector/src/services/placeholders/api-server.stub.ts`
-- `connector/budcom_connector/test/helpers/test-context.ts`
-- `connector/budcom_connector/test/integration/groups.test.ts`
-- `connector/budcom_connector/test/integration/master-data.test.ts`
-- `connector/budcom_connector/test/unit/tally/groups-adapter.test.ts`
+- `connector/venture_connector/src/core/tokens.ts`
+- `connector/venture_connector/src/config/defaults.ts`
+- `connector/venture_connector/src/config/index.ts`
+- `connector/venture_connector/src/bootstrap/register-services.ts`
+- `connector/venture_connector/src/api/server.ts`
+- `connector/venture_connector/src/api/middleware/read-only.ts`
+- `connector/venture_connector/src/services/extraction/company-resolver.ts`
+- `connector/venture_connector/src/services/extraction/master-data.service.ts`
+- `connector/venture_connector/src/services/health/health-service.ts`
+- `connector/venture_connector/src/services/placeholders/api-server.stub.ts`
+- `connector/venture_connector/test/helpers/test-context.ts`
+- `connector/venture_connector/test/integration/groups.test.ts`
+- `connector/venture_connector/test/integration/master-data.test.ts`
+- `connector/venture_connector/test/unit/tally/groups-adapter.test.ts`
 
 ---
 
@@ -86,7 +86,7 @@ Implementation and automated tests complete. Live Tally validation not yet perfo
 - Pre-flight session validation before every master-data ERP request
 - Typed statuses: `NO_COMPANY_SELECTED`, `COMPANY_NOT_FOUND`, `COMPANY_NOT_ACCESSIBLE`, `SESSION_INVALID`, `SESSION_EXPIRED`, `SUCCESS`
 - Selection statuses: `EMPTY_SELECTION`, `DUPLICATE_SELECTION`, `INVALID_COMPANY`, etc.
-- Session TTL configurable via `BUDCOM_SESSION_TTL_MS` (default 8 hours)
+- Session TTL configurable via `VENTURE_SESSION_TTL_MS` (default 8 hours)
 
 ---
 

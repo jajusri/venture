@@ -1,4 +1,4 @@
-# BUDCOM Post-MVP-1 Development Modus Operandi
+# VENTURE Post-MVP-1 Development Modus Operandi
 
 **Status:** LOCKED project governance\
 **Applies from:** MVP-1.1 onward\
@@ -9,7 +9,7 @@ autonomy inside approved boundaries
 
 ## 1. Purpose
 
-This document defines the permanent BUDCOM development method after
+This document defines the permanent VENTURE development method after
 MVP-1. The objective is to maximize accepted, hardened product outcome
 per unit of time, human involvement, and Claude usage while preventing
 vague implementation, repetitive debugging loops, context waste,
@@ -139,7 +139,7 @@ distinct purpose, unnecessary model escalation, multiple agents
 editing the same uncommitted work, and spending premium Claude capacity on
 open-ended visual/UI exploration. Resolve visual direction and screen
 iteration through ChatGPT and the external design archive first
-(`docs/design/BUDCOM-UI-DESIGN-DECISIONS.md`); Claude implements the
+(`docs/design/VENTURE-UI-DESIGN-DECISIONS.md`); Claude implements the
 accepted presentation layer, it does not generate/iterate the design.
 
 ## 9. Empirical measurement
@@ -187,7 +187,7 @@ mini-hardening, integrated hardening, and release work.
 
 ## 11. Cost-versus-time model
 
-After representative real BUDCOM runs compare Pro, Max 5x, Max 20x,
+After representative real VENTURE runs compare Pro, Max 5x, Max 20x,
 paid-overflow/hybrid options, and justified single-/multi-agent
 workflows using the same scope and quality bar.
 
@@ -198,7 +198,7 @@ Primary measures:
 2.  **Total monetary cost** --- subscription plus
     API/overflow/tooling/agent costs.
 
-Core question: **How much additional money saves how much real BUDCOM
+Core question: **How much additional money saves how much real VENTURE
 development time?**
 
 Max 5x is the likely practical ceiling initially; higher capacity must
@@ -229,8 +229,8 @@ For every meaningful implementation/hardening/release task, before final
 completion the agent must:
 
 1.  update the relevant specialist status document;
-2.  update `docs/status/BUDCOM-DEVELOPMENT-LEDGER.md`;
-3.  update `docs/status/BUDCOM-CURRENT-DEVELOPMENT-STATUS.md`;
+2.  update `docs/status/VENTURE-DEVELOPMENT-LEDGER.md`;
+3.  update `docs/status/VENTURE-CURRENT-DEVELOPMENT-STATUS.md`;
 4.  update architecture/specification documents if an approved
     architecture decision changed;
 5.  update the technical-debt registry when a TD is opened, changed, or
@@ -263,10 +263,10 @@ not finished, regardless of what was accomplished in the conversation.
 
 ## 14. Two permanent planning documents
 
-This file governs **how BUDCOM is developed**.
+This file governs **how VENTURE is developed**.
 
 After 2--3 successful automated milestones, calibrate and maintain the
-separate `BUDCOM-MASTER-PRODUCT-EXECUTION-PLAN.md`, which governs **what
+separate `VENTURE-MASTER-PRODUCT-EXECUTION-PLAN.md`, which governs **what
 is built, in what sequence, and how Claude capacity/time/cost are
 allocated**.
 
@@ -278,7 +278,7 @@ autonomous, debugging loops are bounded, project context is reused
 efficiently, mini-hardening is normal, releases have evidence, limits
 are planned rather than discovered mid-task, upgrades are justified by
 ROI, and the Product Owner spends substantially more time deciding what
-BUDCOM should become than supervising implementation.
+VENTURE should become than supervising implementation.
 
 ## 16. Correct path by design
 

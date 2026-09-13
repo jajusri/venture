@@ -6,7 +6,7 @@ const submission = (): RelaySubmission => ({
   objectType: 'ORDER', objectId: 'order-1', objectVersion: 2,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a',
   recipient: { businessId: 'business-b', mailboxId: relayIdentifier('business-b:orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([1, 2, 3]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
+  authenticatedEnvelope: new Uint8Array([1, 2, 3]), commercialContent: '{}', commercialContentType: 'application/vnd.venture.order-snapshot+json', commercialContentVersion: 3,
   idempotencyKey: 'send-order-1-v2', submittedAt: new Date(1),
 });
 

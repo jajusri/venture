@@ -1,8 +1,8 @@
 # Confirmed Connector Contracts — Vouchers (Android)
 
 **Date:** 2026-07-27  
-**Source of truth:** `connector/budcom_connector` implementation  
-**Purpose:** Contract discovery for BUDCO Android Voucher Foundation / Voucher Browser
+**Source of truth:** `connector/venture_connector` implementation  
+**Purpose:** Contract discovery for VENTURE Android Voucher Foundation / Voucher Browser
 
 ---
 

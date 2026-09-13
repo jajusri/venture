@@ -5,12 +5,12 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - "apps/budcom_android/**"
+      - "apps/venture_android/**"
       - ".github/workflows/android-mvp-validation.yml"
   pull_request:
     branches: [main, develop]
     paths:
-      - "apps/budcom_android/**"
+      - "apps/venture_android/**"
       - ".github/workflows/android-mvp-validation.yml"
 
 permissions:
@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/budcom_android
+        working-directory: apps/venture_android
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -35,8 +35,8 @@ jobs:
       - name: Upload native Android debug artifact
         uses: actions/upload-artifact@v4
         with:
-          name: budcom-native-android-debug
-          path: apps/budcom_android/app/build/outputs/apk/debug/app-debug.apk
+          name: venture-native-android-debug
+          path: apps/venture_android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 7
 

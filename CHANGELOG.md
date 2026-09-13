@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Budcom monorepo are documented in this file.
+All notable changes to the Venture monorepo are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
@@ -38,7 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 **Tag:** `v0.3.0-secure-foundation`  
 **Date:** 2026-07-22
 
-First stable architectural foundation of the Budcom Tally Connector. Establishes ERP-neutral Clean Architecture, structurally read-only communication, and enforceable security boundaries.
+First stable architectural foundation of the Venture Tally Connector. Establishes ERP-neutral Clean Architecture, structurally read-only communication, and enforceable security boundaries.
 
 ### Added
 

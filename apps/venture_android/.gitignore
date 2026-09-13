@@ -1,0 +1,26 @@
+# Venture Android
+local.properties
+*.iml
+.gradle/
+.idea/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.log
+*.hprof
+.DS_Store
+kotlin-js/
+kotlin-wasm/
+
+# Kotlin incremental / IDE caches under the module
+.kotlin/
+
+# Local Production Validation / emulator scratch output (never commit)
+validation_*
+emulator*.txt

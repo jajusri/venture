@@ -3,7 +3,7 @@
 **Module:** Desktop Configuration  
 **Milestone:** 4D  
 **Last updated:** 2026-07-23  
-**Path:** `apps/budcom_desktop/src/application/desktop-config-*.ts`
+**Path:** `apps/venture_desktop/src/application/desktop-config-*.ts`
 
 ---
 
@@ -16,7 +16,7 @@
 ## Capabilities
 
 - Typed `DesktopConfigV1` schema with validation
-- Environment variable overrides (`BUDCOM_*`)
+- Environment variable overrides (`VENTURE_*`)
 - Persisted settings at `{userData}/desktop-config.json`
 - Atomic writes with backup and corrupt-file recovery
 - Migration-ready `schemaVersion` field
@@ -37,10 +37,10 @@
 
 | Platform | Path |
 |----------|------|
-| Windows | `%APPDATA%/budcom-desktop/` (Electron `userData`) |
+| Windows | `%APPDATA%/venture-desktop/` (Electron `userData`) |
 | Config file | `desktop-config.json` |
 | Backup | `desktop-config.backup.json` |
-| Logs | `logs/budcom-desktop.log` |
+| Logs | `logs/venture-desktop.log` |
 | Exports | `diagnostics-exports/` |
 
 ---

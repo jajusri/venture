@@ -34,13 +34,13 @@ const DB_MARKER_KEY = 'lifecycle_gate_marker';
 const MARKER_ID = 'rc4-lifecycle-gate-20260725';
 
 const paths = {
-  installRoot: path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Budcom Desktop'),
-  appExe: path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Budcom Desktop', 'Budcom Desktop.exe'),
-  userDataRoot: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop'),
-  connectorDataDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-data'),
-  dbPath: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-data', 'budcom-ledger.db'),
-  logsDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'logs'),
-  configPath: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'desktop-config.json'),
+  installRoot: path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Venture Desktop'),
+  appExe: path.join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Venture Desktop', 'Venture Desktop.exe'),
+  userDataRoot: path.join(process.env.APPDATA ?? '', '@venture', 'desktop'),
+  connectorDataDir: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'connector-data'),
+  dbPath: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'connector-data', 'venture-ledger.db'),
+  logsDir: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'logs'),
+  configPath: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'desktop-config.json'),
 };
 
 function sha256File(filePath) {
@@ -54,7 +54,7 @@ function readSchemaVersion(dbPath) {
     return null;
   }
   const result = spawnSync('node', ['-e', `
-    const { nodeSqlite } = require('./connector/budcom_connector/dist/storage/sqlite/node-sqlite.js');
+    const { nodeSqlite } = require('./connector/venture_connector/dist/storage/sqlite/node-sqlite.js');
     const db = new nodeSqlite.DatabaseSync(process.argv[1], { readOnly: true });
     const row = db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get();
     db.close();
@@ -68,7 +68,7 @@ function readDatabaseMarker(dbPath) {
     return null;
   }
   const result = spawnSync('node', ['-e', `
-    const { nodeSqlite } = require('./connector/budcom_connector/dist/storage/sqlite/node-sqlite.js');
+    const { nodeSqlite } = require('./connector/venture_connector/dist/storage/sqlite/node-sqlite.js');
     const db = new nodeSqlite.DatabaseSync(process.argv[1], { readOnly: true });
     const row = db.prepare('SELECT value FROM storage_meta WHERE key = ?').get(process.argv[2]);
     db.close();
@@ -80,15 +80,15 @@ function readDatabaseMarker(dbPath) {
 
 function writeDatabaseMarker(dbPath, markerId) {
   spawnSync('node', ['-e', `
-    const { nodeSqlite } = require('./connector/budcom_connector/dist/storage/sqlite/node-sqlite.js');
+    const { nodeSqlite } = require('./connector/venture_connector/dist/storage/sqlite/node-sqlite.js');
     const db = new nodeSqlite.DatabaseSync(process.argv[1]);
     db.prepare('INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?)').run(process.argv[2], process.argv[3]);
     db.close();
   `, dbPath, DB_MARKER_KEY, markerId], { cwd: repoRoot, encoding: 'utf8' });
 }
 
-function killBudcomProcesses() {
-  spawnSync('taskkill', ['/IM', 'Budcom Desktop.exe', '/F'], { stdio: 'ignore' });
+function killVentureProcesses() {
+  spawnSync('taskkill', ['/IM', 'Venture Desktop.exe', '/F'], { stdio: 'ignore' });
   spawnSync('powershell', [
     '-NoProfile',
     '-Command',
@@ -126,7 +126,7 @@ async function observeRunningDesktop(timeoutMs = 60000) {
   const connectorPort = resolveConnectorPort(paths.configPath);
   const healthUrl = `http://127.0.0.1:${connectorPort}`;
   const health = await waitForConnectorHealth(healthUrl, timeoutMs);
-  const logFile = await waitForLogFile(paths.logsDir, 'budcom-desktop.log', timeoutMs);
+  const logFile = await waitForLogFile(paths.logsDir, 'venture-desktop.log', timeoutMs);
   const logs = readPrivacySafeStartupLogs(logFile);
   const portListening = isPortListening(connectorPort);
   const connectorDiagnostics = connectorProcesses.map((row) => ({
@@ -158,7 +158,7 @@ async function observeRunningDesktop(timeoutMs = 60000) {
 }
 
 async function gracefulShutdown(timeoutMs = 15000) {
-  spawnSync('taskkill', ['/IM', 'Budcom Desktop.exe', '/F'], { stdio: 'ignore' });
+  spawnSync('taskkill', ['/IM', 'Venture Desktop.exe', '/F'], { stdio: 'ignore' });
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const desktop = getDesktopProcesses().length;
@@ -168,7 +168,7 @@ async function gracefulShutdown(timeoutMs = 15000) {
     }
     await sleep(1000);
   }
-  killBudcomProcesses();
+  killVentureProcesses();
   await sleep(2000);
   return {
     desktop: getDesktopProcesses().length,
@@ -178,8 +178,8 @@ async function gracefulShutdown(timeoutMs = 15000) {
 
 function findRuntimeClosureInstaller() {
   const candidates = [
-    path.join(repoRoot, 'release/controlled-pilot/0.4.3/artifacts-runtime-closure/BudcomDesktop-0.4.3-x64-setup.exe'),
-    path.join(repoRoot, 'release/controlled-pilot/0.4.3/artifacts/BudcomDesktop-0.4.3-x64-setup.exe'),
+    path.join(repoRoot, 'release/controlled-pilot/0.4.3/artifacts-runtime-closure/VentureDesktop-0.4.3-x64-setup.exe'),
+    path.join(repoRoot, 'release/controlled-pilot/0.4.3/artifacts/VentureDesktop-0.4.3-x64-setup.exe'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
@@ -191,13 +191,13 @@ function findRuntimeClosureInstaller() {
 
 export async function runFirstLaunchValidation(options = {}) {
   const installerPath = options.installerPath
-    ?? process.env.BUDCOM_LIFECYCLE_INSTALLER
+    ?? process.env.VENTURE_LIFECYCLE_INSTALLER
     ?? findRuntimeClosureInstaller();
   if (!installerPath || !fs.existsSync(installerPath)) {
     throw new Error('Installer path not found. Build runtime-closure candidate first.');
   }
 
-  killBudcomProcesses();
+  killVentureProcesses();
   if (fs.existsSync(paths.installRoot)) {
     throw new Error('Existing installation detected. Remove manually before first-launch validation.');
   }
@@ -216,7 +216,7 @@ export async function runFirstLaunchValidation(options = {}) {
   }
 
   fs.mkdirSync(paths.connectorDataDir, { recursive: true });
-  const v7Fixture = path.join(os.tmpdir(), 'budcom-first-launch-v7.db');
+  const v7Fixture = path.join(os.tmpdir(), 'venture-first-launch-v7.db');
   createSchemaV7Fixture(v7Fixture);
   fs.copyFileSync(v7Fixture, paths.dbPath);
   writeDatabaseMarker(paths.dbPath, MARKER_ID);

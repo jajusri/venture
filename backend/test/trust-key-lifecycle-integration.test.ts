@@ -83,7 +83,7 @@ const device: RegisteredBusinessDevice = {
 
 describe('Trust issuer signing-key lifecycle -- end-to-end (round 6 key-lifecycle Gate 6)', () => {
   let workDir: string;
-  beforeEach(() => { workDir = mkdtempSync(join(tmpdir(), 'budcom-key-lifecycle-')); });
+  beforeEach(() => { workDir = mkdtempSync(join(tmpdir(), 'venture-key-lifecycle-')); });
   afterEach(() => { rmSync(workDir, { recursive: true, force: true }); });
 
   it('A-F: bootstrap, issue, rotate, issue again, old credential still verifies while retired, revoke makes it immediately reported revoked, and a fresh registry (simulated restart) sees the same persisted lifecycle', async () => {

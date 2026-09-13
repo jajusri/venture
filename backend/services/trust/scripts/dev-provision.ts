@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --experimental-strip-types
 /**
- * BUDCOM Trust -- DEV/TEST-ONLY provisioning CLI.
+ * VENTURE Trust -- DEV/TEST-ONLY provisioning CLI.
  *
  * Builds TEST business/device/credential identities by calling Trust's REAL application services
  * (`CreateBusiness`, `RegisterBusinessDevice`, `BusinessDeviceCredentialIssuer`,
@@ -12,12 +12,12 @@
  *
  * PRODUCTION GUARD (relay-authority-repair, 2026-08-29 -- hardened per Codex's audit of fcbc04c):
  * positive allowlist, fail closed. Runs ONLY when every runtime-environment signal that is actually
- * set (NODE_ENV, BUDCOM_RUNTIME_ENV) normalizes to "development" or "test" -- not merely "is not
+ * set (NODE_ENV, VENTURE_RUNTIME_ENV) normalizes to "development" or "test" -- not merely "is not
  * production". Three concrete weaknesses in the prior `=== 'production'` check are fixed by this:
  *   1. Case sensitivity: "Production"/"PRODUCTION" used to slip through a strict `===` check.
  *      Both signals are now trimmed and lowercased before comparison.
- *   2. BUDCOM_RUNTIME_ENV could silently override a stricter NODE_ENV (e.g. a real deployment sets
- *      NODE_ENV=production, but a stray/leftover BUDCOM_RUNTIME_ENV=development in the shell or an
+ *   2. VENTURE_RUNTIME_ENV could silently override a stricter NODE_ENV (e.g. a real deployment sets
+ *      NODE_ENV=production, but a stray/leftover VENTURE_RUNTIME_ENV=development in the shell or an
  *      `.env` file would still let this tool run against production data). Every signal that is set
  *      must independently be in the allowlist -- none can override another into running.
  *   3. An unset environment used to default to "development" (i.e. silently allow). It now refuses:
@@ -88,25 +88,25 @@ const ALLOWED_DEV_PROVISION_RUNTIME_ENVS = new Set(['development', 'test']);
 
 /** Pure decision function -- unit-tested directly in `dev-provision-guard.test.ts` without needing
  * to spawn the CLI. See the module doc comment above for exactly what this fixes and why. */
-export function isDevProvisionRuntimeAllowed(nodeEnv: string | undefined, budcomRuntimeEnv: string | undefined): boolean {
+export function isDevProvisionRuntimeAllowed(nodeEnv: string | undefined, ventureRuntimeEnv: string | undefined): boolean {
   const normalize = (value: string | undefined): string | undefined => value?.trim().toLowerCase();
-  const signals = [normalize(nodeEnv), normalize(budcomRuntimeEnv)].filter((value): value is string => value !== undefined);
+  const signals = [normalize(nodeEnv), normalize(ventureRuntimeEnv)].filter((value): value is string => value !== undefined);
   return signals.length > 0 && signals.every((value) => ALLOWED_DEV_PROVISION_RUNTIME_ENVS.has(value));
 }
 
 function refuseUnlessDevOrTestRuntime(): void {
-  if (!isDevProvisionRuntimeAllowed(process.env.NODE_ENV, process.env.BUDCOM_RUNTIME_ENV)) {
+  if (!isDevProvisionRuntimeAllowed(process.env.NODE_ENV, process.env.VENTURE_RUNTIME_ENV)) {
     console.error(
       `REFUSED: dev-provision.ts is DEV/TEST-ONLY tooling. It runs only when every runtime-environment signal that is set ` +
-      `(NODE_ENV, BUDCOM_RUNTIME_ENV) is explicitly "development" or "test" -- an unset, unrecognized, or conflicting ` +
+      `(NODE_ENV, VENTURE_RUNTIME_ENV) is explicitly "development" or "test" -- an unset, unrecognized, or conflicting ` +
       `environment is refused by design (fail closed), never defaulted to allowed. ` +
-      `NODE_ENV=${process.env.NODE_ENV ?? '<unset>'} BUDCOM_RUNTIME_ENV=${process.env.BUDCOM_RUNTIME_ENV ?? '<unset>'}`,
+      `NODE_ENV=${process.env.NODE_ENV ?? '<unset>'} VENTURE_RUNTIME_ENV=${process.env.VENTURE_RUNTIME_ENV ?? '<unset>'}`,
     );
     process.exit(1);
   }
 }
 
-function statePath(): string { return process.env.BUDCOM_TRUST_DEV_STATE_PATH ?? '.local/trust-dev-state.json'; }
+function statePath(): string { return process.env.VENTURE_TRUST_DEV_STATE_PATH ?? '.local/trust-dev-state.json'; }
 
 function loadOrCreateDeviceKey(keyPath: string): { privateKeyPem: string; publicKey: Buffer; fingerprint: string } {
   let privateKeyPem: string;
@@ -127,7 +127,7 @@ async function main(): Promise<void> {
   refuseUnlessDevOrTestRuntime();
   const [command, ...rest] = process.argv.slice(2);
   const store = new FileBackedAuthorityStore(statePath());
-  const config = readTrustServiceConfig({ ...process.env, BUDCOM_TRUST_DATABASE_URL: process.env.BUDCOM_TRUST_DATABASE_URL ?? 'unused-by-dev-provision' });
+  const config = readTrustServiceConfig({ ...process.env, VENTURE_TRUST_DATABASE_URL: process.env.VENTURE_TRUST_DATABASE_URL ?? 'unused-by-dev-provision' });
 
   switch (command) {
     case 'create-business': {

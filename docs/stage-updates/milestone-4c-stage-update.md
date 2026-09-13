@@ -2,7 +2,7 @@
 
 **Milestone:** Production Connector Lifecycle Manager  
 **Last updated:** 2026-07-23T00:50:00+05:30  
-**Package:** `@budcom/desktop` v0.4.2 + `@budcom/connector` v0.3.1  
+**Package:** `@venture/desktop` v0.4.2 + `@venture/connector` v0.3.1  
 **Git commit:** Not committed (working tree)
 
 ---
@@ -42,16 +42,16 @@
 
 | Path | Purpose |
 |------|---------|
-| `apps/budcom_desktop/src/application/connector-lifecycle-types.ts` | Types, interfaces |
-| `apps/budcom_desktop/src/application/connector-lifecycle-config.ts` | Env-based config resolution |
-| `apps/budcom_desktop/src/application/connector-lifecycle-service.ts` | Core orchestrator |
-| `apps/budcom_desktop/src/application/node-process-spawner.ts` | `child_process` adapter |
-| `apps/budcom_desktop/src/application/lifecycle-error-mapper.ts` | User-friendly errors |
-| `apps/budcom_desktop/src/scripts/live-lifecycle-validation.ts` | Live validation script |
-| `apps/budcom_desktop/test/unit/connector-lifecycle-service.test.ts` | Lifecycle unit tests |
-| `apps/budcom_desktop/test/unit/lifecycle-error-mapper.test.ts` | Error mapper tests |
-| `apps/budcom_desktop/test/unit/connector-lifecycle-config.test.ts` | Config tests |
-| `apps/budcom_desktop/test/helpers/lifecycle-fixtures.ts` | Test helpers |
+| `apps/venture_desktop/src/application/connector-lifecycle-types.ts` | Types, interfaces |
+| `apps/venture_desktop/src/application/connector-lifecycle-config.ts` | Env-based config resolution |
+| `apps/venture_desktop/src/application/connector-lifecycle-service.ts` | Core orchestrator |
+| `apps/venture_desktop/src/application/node-process-spawner.ts` | `child_process` adapter |
+| `apps/venture_desktop/src/application/lifecycle-error-mapper.ts` | User-friendly errors |
+| `apps/venture_desktop/src/scripts/live-lifecycle-validation.ts` | Live validation script |
+| `apps/venture_desktop/test/unit/connector-lifecycle-service.test.ts` | Lifecycle unit tests |
+| `apps/venture_desktop/test/unit/lifecycle-error-mapper.test.ts` | Error mapper tests |
+| `apps/venture_desktop/test/unit/connector-lifecycle-config.test.ts` | Config tests |
+| `apps/venture_desktop/test/helpers/lifecycle-fixtures.ts` | Test helpers |
 | `docs/milestones/milestone-4c-connector-lifecycle.md` | Milestone doc |
 | `docs/diagnostics/m4c-live-lifecycle-validation.json` | Live validation evidence |
 
@@ -61,16 +61,16 @@
 
 | Path | Change |
 |------|--------|
-| `apps/budcom_desktop/src/main/main.ts` | Lifecycle service wiring, IPC, init/shutdown |
-| `apps/budcom_desktop/src/preload/preload.ts` | Lifecycle bridge methods |
-| `apps/budcom_desktop/src/application/types.ts` | Settings: executable, port, autoStart |
-| `apps/budcom_desktop/src/application/dashboard-service.ts` | v0.4.2; extended settings |
-| `apps/budcom_desktop/src/renderer/index.html` | Lifecycle panel + settings fields |
-| `apps/budcom_desktop/src/renderer/scripts/app.ts` | Lifecycle UI rendering |
-| `apps/budcom_desktop/package.json` | Version 0.4.2 |
-| `apps/budcom_desktop/test/unit/main-window.test.ts` | Lifecycle IPC |
-| `apps/budcom_desktop/test/unit/dashboard-service.test.ts` | Version bump |
-| `apps/budcom_desktop/test/renderer/*.test.ts` | Lifecycle bridge mocks |
+| `apps/venture_desktop/src/main/main.ts` | Lifecycle service wiring, IPC, init/shutdown |
+| `apps/venture_desktop/src/preload/preload.ts` | Lifecycle bridge methods |
+| `apps/venture_desktop/src/application/types.ts` | Settings: executable, port, autoStart |
+| `apps/venture_desktop/src/application/dashboard-service.ts` | v0.4.2; extended settings |
+| `apps/venture_desktop/src/renderer/index.html` | Lifecycle panel + settings fields |
+| `apps/venture_desktop/src/renderer/scripts/app.ts` | Lifecycle UI rendering |
+| `apps/venture_desktop/package.json` | Version 0.4.2 |
+| `apps/venture_desktop/test/unit/main-window.test.ts` | Lifecycle IPC |
+| `apps/venture_desktop/test/unit/dashboard-service.test.ts` | Version bump |
+| `apps/venture_desktop/test/renderer/*.test.ts` | Lifecycle bridge mocks |
 | `docs/modules/desktop-shell/stage-update.md` | 4C update |
 | `docs/modules/connector-session/stage-update.md` | Lifecycle consumer note |
 | `docs/technical-debt/registry.md` | TD-003 resolved |

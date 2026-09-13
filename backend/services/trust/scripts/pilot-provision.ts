@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --experimental-strip-types
 /**
- * BUDCOM Trust -- REAL PostgreSQL-backed pilot operator provisioning CLI.
+ * VENTURE Trust -- REAL PostgreSQL-backed pilot operator provisioning CLI.
  *
  * Closes the gap `dev-provision.ts` and `CONTROLLED-PILOT-RUNBOOK.md` (section E) both document:
  * `create-business`/`register-device` there write to a local, gitignored JSON file
@@ -16,7 +16,7 @@
  * no HTTP route anywhere in this backend for creating a business, a membership, or an enrollment
  * grant (see `app.ts`, which only ever registers `GET /health`, the verification-keys route, the
  * authority-epoch route, and `POST /v1/trust/enrollment/consume`). Whoever runs this already holds
- * the same `BUDCOM_TRUST_DATABASE_URL` Trust's own server process uses.
+ * the same `VENTURE_TRUST_DATABASE_URL` Trust's own server process uses.
  *
  * NOT gated to development/test runtime (unlike `dev-provision.ts`): onboarding a real controlled-
  * pilot business is a legitimate production/pilot operational need, not dev/test data fabrication --

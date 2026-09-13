@@ -23,7 +23,7 @@ Desktop → Connector API → LedgerSyncService
                               └─ Session + concurrent-sync guard (409)
 ```
 
-Database path: `{databasePath}/budcom-ledger.db`  
+Database path: `{databasePath}/venture-ledger.db`  
 Legacy JSON: `{databasePath}/ledgers/*.json` → migrated with backup under `ledgers-backup/`
 
 ## Key deliverables

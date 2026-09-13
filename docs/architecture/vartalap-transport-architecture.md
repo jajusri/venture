@@ -4,7 +4,7 @@ Status: foundation only; concrete transport remains a specialist gate.
 
 ## Purpose
 
-Vartalap is the future transport spine for structured BUDCOM business objects. It references canonical objects by type, stable ID, and version. It is not a second source of truth for Orders, Products, Parties, or payment status.
+Vartalap is the future transport spine for structured VENTURE business objects. It references canonical objects by type, stable ID, and version. It is not a second source of truth for Orders, Products, Parties, or payment status.
 
 ## Delivery path
 
@@ -14,7 +14,7 @@ The recipient may be offline when the sender submits. Presence or a persistent s
 
 ## Identity and routing
 
-- Sender business identity is the existing BUDCOM company identity (`companyId`).
+- Sender business identity is the existing VENTURE company identity (`companyId`).
 - Sender device identity must come from a future approved device-identity credential; it is not inferred from an IP address or Connector host.
 - Recipient identity is the existing Party/business identity where known. Recipient device and mailbox identifiers are future routing concepts and must be bound by an approved authenticated directory or trust authority.
 - Existing Secure Pairing and `TrustedConnectorEndpoint` establish trust for a user's own Connector connection. They do not authenticate a second business or provide cross-business routing.

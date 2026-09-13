@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const desktopDist = path.join(__dirname, '../../apps/budcom_desktop/dist/application/release/packaged-connector-dependency.js');
+const desktopDist = path.join(__dirname, '../../apps/venture_desktop/dist/application/release/packaged-connector-dependency.js');
 
 export async function inspectPackagedConnectorDependencies(unpackedRoot) {
   const moduleUrl = pathToFileURL(desktopDist).href;

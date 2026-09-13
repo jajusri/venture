@@ -31,7 +31,7 @@ function isDirtyTree() {
 }
 
 function loadProvenanceFromEnv() {
-  const raw = process.env.BUDCOM_RELEASE_PROVENANCE;
+  const raw = process.env.VENTURE_RELEASE_PROVENANCE;
   if (!raw) {
     return null;
   }
@@ -43,14 +43,14 @@ function loadProvenanceFromEnv() {
 }
 
 export function generateBuildInfo(options = {}) {
-  const desktopPkg = readJson(path.join(repoRoot, 'apps/budcom_desktop/package.json'));
-  const connectorPkg = readJson(path.join(repoRoot, 'connector/budcom_connector/package.json'));
-  const schemaModulePath = path.join(repoRoot, 'connector/budcom_connector/src/storage/sqlite/schema.ts');
+  const desktopPkg = readJson(path.join(repoRoot, 'apps/venture_desktop/package.json'));
+  const connectorPkg = readJson(path.join(repoRoot, 'connector/venture_connector/package.json'));
+  const schemaModulePath = path.join(repoRoot, 'connector/venture_connector/src/storage/sqlite/schema.ts');
   const schemaSource = fs.readFileSync(schemaModulePath, 'utf8');
   const schemaMatch = schemaSource.match(/export const STORAGE_SCHEMA_VERSION\s*=\s*(\d+)\s*;/);
   const storageSchemaVersionFromSource = schemaMatch ? Number.parseInt(schemaMatch[1], 10) : undefined;
   const provenance = options.provenance ?? loadProvenanceFromEnv();
-  const releaseMode = options.releaseMode ?? process.env.BUDCOM_RELEASE_MODE ?? 'controlled_pilot';
+  const releaseMode = options.releaseMode ?? process.env.VENTURE_RELEASE_MODE ?? 'controlled_pilot';
   const desktopVersion = desktopPkg.version;
   const connectorVersion = connectorPkg.version;
   const gitCommit = options.gitCommit

@@ -1,6 +1,6 @@
 # Accepted Reliability and Production-Hardening Decision
 
-**Project:** Budcom Business OS — Tally Connector  
+**Project:** Venture Business OS — Tally Connector  
 **Status:** Accepted with scope controls  
 **Decision type:** Architectural reliability and production-readiness guidance
 

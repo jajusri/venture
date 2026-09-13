@@ -1,4 +1,4 @@
-# Budcom Connector 0.4.0 Release Notes
+# Venture Connector 0.4.0 Release Notes
 
 Connector 0.4.0 introduces the production, read-only Voucher subsystem. It adds approved Tally
 extraction, atomic SQLite snapshots, controlled synchronization, stable Voucher HTTP contracts,

@@ -1,13 +1,13 @@
 # ADR-002: Dynamic Base URL
 
-**Series:** Android companion (`apps/budcom_android`)  
+**Series:** Android companion (`apps/venture_android`)  
 **Status:** Accepted  
 **Date:** 2026-07-27  
 **Related:** `core.network.ConnectorBaseUrlProvider`, `core.network.DynamicBaseUrlInterceptor`, `feature.serverconfig`
 
 ## Context
 
-The Budcom Connector runs on a host and port chosen by the operator (emulator loopback, LAN IP, or localhost). Users must be able to change the Connector origin from the app. Rebuilding Retrofit/OkHttp for every URL change is brittle: it complicates DI, invalidates call state, and encourages ad-hoc client factories per feature.
+The Venture Connector runs on a host and port chosen by the operator (emulator loopback, LAN IP, or localhost). Users must be able to change the Connector origin from the app. Rebuilding Retrofit/OkHttp for every URL change is brittle: it complicates DI, invalidates call state, and encourages ad-hoc client factories per feature.
 
 ## Decision
 

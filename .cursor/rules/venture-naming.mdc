@@ -1,0 +1,42 @@
+---
+description: Venture monorepo naming — use Venture, not Tradon
+alwaysApply: true
+---
+
+# Venture Naming Convention
+
+The monorepo is **Venture**. Use that name consistently everywhere.
+
+## Use "Venture"
+
+- Folder and package names (e.g. `@venture/shared`, `apps/venture-web`)
+- Namespaces, modules, and identifiers
+- Documentation, README, and branding
+- User-facing copy and comments
+
+## Do not use "Tradon"
+
+"Tradon" is a retired working name. Do not introduce it in:
+
+- Folder names, namespaces, or package names
+- Documentation, branding, or source code
+
+Exception: intentionally preserved historical comments that document the rename.
+
+## Examples
+
+```typescript
+// ❌ BAD
+import { config } from '@tradon/core';
+
+// ✅ GOOD
+import { config } from '@venture/core';
+```
+
+```json
+// ❌ BAD
+{ "name": "tradon-backend" }
+
+// ✅ GOOD
+{ "name": "@venture/backend" }
+```

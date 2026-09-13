@@ -1,0 +1,408 @@
+import type { ParsedXmlDocument, ParsedXmlNode, TallyXmlResponseParser } from '../../tally/xml/response-parser.js';
+import type { XmlParserOptions } from '../../tally/xml/response-parser-limits.js';
+import {
+  collectDirectEntityNodes,
+  findBodyDataCollections,
+  isPlaceholderEntityNode,
+} from '../../tally/contracts/master-data-envelope.js';
+import { resolveLedgerStableId } from '../core/ledger-identity.js';
+import { isCountMetadata, normalizeName, normalizeText, slugify } from '../normalization/strings.js';
+import { normalizeAmount } from '../normalization/amounts.js';
+import { normalizeDate } from '../normalization/dates.js';
+import { normalizeInteger } from '../normalization/numbers.js';
+import type {
+  NormalizedCompanyInfo,
+  NormalizedCostCategory,
+  NormalizedCostCentre,
+  NormalizedGodown,
+  NormalizedGstRegistration,
+  NormalizedLedger,
+  NormalizedLedgerGroup,
+  NormalizedStockCategory,
+  NormalizedStockGroup,
+  NormalizedStockItem,
+  NormalizedUnit,
+  NormalizedVoucherType,
+} from '../core/types.js';
+import { resolveStockItemStableId } from '../core/stock-item-identity.js';
+
+export interface CollectionParseOptions {
+  readonly nodeName: string;
+  readonly skipUnderCmpInfo?: boolean;
+  /** When true, read entity nodes only from ENVELOPE/BODY/DATA/COLLECTION direct children. */
+  readonly scopeToRequestedCollection?: boolean;
+}
+
+export class CollectionEntityParser {
+  constructor(private readonly parser: TallyXmlResponseParser) {}
+
+  parseDocument(rawXml: string, parserOptions?: XmlParserOptions) {
+    return this.parser.parse(rawXml, parserOptions);
+  }
+
+  parseNodes(document: ParsedXmlDocument, options: CollectionParseOptions): ParsedXmlNode[] {
+    const nodes = options.scopeToRequestedCollection
+      ? this.collectScopedEntityNodes(document, options.nodeName)
+      : this.parser.findAll(document, options.nodeName);
+    return this.filterEntityNodes(nodes, options);
+  }
+
+  /** Raw entity nodes under DATA/COLLECTION including placeholders and unnamed candidates. */
+  collectScopedCandidateNodes(document: ParsedXmlDocument, nodeName: string): ParsedXmlNode[] {
+    return this.collectScopedEntityNodes(document, nodeName);
+  }
+
+  private collectScopedEntityNodes(document: ParsedXmlDocument, nodeName: string): ParsedXmlNode[] {
+    const collections = findBodyDataCollections(document);
+    return collectDirectEntityNodes(collections, nodeName);
+  }
+
+  private filterEntityNodes(nodes: readonly ParsedXmlNode[], options: CollectionParseOptions): ParsedXmlNode[] {
+    return nodes.filter((node) => {
+      if (isPlaceholderEntityNode(node, options.nodeName)) {
+        return false;
+      }
+      const name = resolveNodeName(this.parser, node);
+      if (!name || name.toUpperCase() === options.nodeName || isCountMetadata(name)) {
+        return false;
+      }
+      if (options.skipUnderCmpInfo !== false && isCountMetadata(name)) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  getChildText(node: ParsedXmlNode, childName: string): string | undefined {
+    return normalizeText(
+      this.parser.getText(findChild(node, childName)) ??
+        node.attributes[childName.toUpperCase()],
+    );
+  }
+
+  getLogical(node: ParsedXmlNode, childName: string): boolean | undefined {
+    const value = this.getChildText(node, childName)?.toLowerCase();
+    if (!value) return undefined;
+    return value === 'yes' || value === 'true' || value === '1';
+  }
+
+  resolveName(node: ParsedXmlNode): string | undefined {
+    return resolveNodeName(this.parser, node);
+  }
+
+  /**
+   * Text of every leaf element found by walking a nested path of element names in document
+   * order (e.g. `['LANGUAGENAME.LIST', 'NAME.LIST', 'NAME']`). Empty when any step of the path
+   * is absent. Needed because Tally represents a ledger's comma-separated Alias values (entered
+   * as "Name (alias)" in the ledger master) not as a discrete `<ALIAS>` tag but as extra `<NAME>`
+   * siblings alongside the primary name inside `LANGUAGENAME.LIST/NAME.LIST` -- see
+   * `resolveLedgerAlias` below for the full history.
+   */
+  getDescendantTexts(node: ParsedXmlNode, path: readonly string[]): string[] {
+    let current: readonly ParsedXmlNode[] = [node];
+    for (const step of path) {
+      const target = step.toUpperCase();
+      current = current.flatMap((n) => n.children.filter((child) => child.name.toUpperCase() === target));
+    }
+    return current
+      .map((leaf) => normalizeText(this.parser.getText(leaf)))
+      .filter((value): value is string => value !== undefined);
+  }
+}
+
+export function resolveNodeName(
+  parser: TallyXmlResponseParser,
+  node: ParsedXmlNode,
+): string | undefined {
+  return (
+    normalizeText(parser.getText(findChild(node, 'NAME'))) ??
+    normalizeText(node.attributes.NAME) ??
+    normalizeText(node.text)
+  );
+}
+
+export function mapCompanyInfo(
+  parser: CollectionEntityParser,
+  document: ParsedXmlDocument,
+  companyId: string,
+): NormalizedCompanyInfo | undefined {
+  const companyNode =
+    parser.parseNodes(document, { nodeName: 'COMPANY', skipUnderCmpInfo: false })[0] ??
+    document.root;
+  const name = parser.getChildText(companyNode, 'NAME') ?? companyId;
+  if (!name) return undefined;
+
+  return {
+    id: companyId,
+    name,
+    mailingName: parser.getChildText(companyNode, 'MAILINGNAME'),
+    financialYearFrom: normalizeDate(parser.getChildText(companyNode, 'STARTINGFROM')),
+    booksFrom: normalizeDate(parser.getChildText(companyNode, 'BOOKSFROM')),
+    baseCurrency: parser.getChildText(companyNode, 'BASECURRENCY') ?? 'INR',
+    address: parser.getChildText(companyNode, 'ADDRESS'),
+    state: parser.getChildText(companyNode, 'STATENAME'),
+    country: parser.getChildText(companyNode, 'COUNTRYNAME'),
+    pincode: parser.getChildText(companyNode, 'PINCODE'),
+    email: parser.getChildText(companyNode, 'EMAIL'),
+    phone: parser.getChildText(companyNode, 'PHONENUMBER'),
+    gstin: parser.getChildText(companyNode, 'GSTREGISTRATIONNUMBER'),
+  };
+}
+
+export function mapLedgerGroup(
+  parser: CollectionEntityParser,
+  node: ParsedXmlNode,
+): NormalizedLedgerGroup | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  return {
+    id: slugify(name),
+    name,
+    parentName: parser.getChildText(node, 'PARENT'),
+    isRevenue: parser.getLogical(node, 'ISREVENUE'),
+    isDebit: parser.getLogical(node, 'ISDEEMEDPOSITIVE'),
+  };
+}
+
+/** Matches VENTURE Android's PhoneNumberNormalizer.normalizeIndianMobile strict rule (exactly 10
+ * digits, leading digit 6-9) -- kept as a plain shape check here, not a normalization: this
+ * layer picks the right raw candidate string, the Android side is what normalizes/prefixes it. */
+const INDIAN_MOBILE_SHAPE = /^[6-9]\d{9}$/;
+
+/**
+ * 2026-08-23: real ESTIMATION ledgers have Alias values (a 10-digit mobile for ~80% of Debtors,
+ * some also carrying a second, short numeric shortcut alias) that were never surfacing anywhere
+ * downstream -- Connect's Alias-driven phone seeding and search shortcut were fully built and
+ * tested, but only against synthetic fixtures, because the live data was always empty. Root
+ * cause: Tally never emits a flat `<ALIAS>` tag for Ledgers in this export shape at all (proven
+ * directly against the running Tally instance -- zero `<ALIAS>` tags across 949 real ledgers,
+ * including ones with a confirmed real Alias). Instead, a ledger's Name (alias) value(s) are
+ * folded into extra `<NAME>` siblings inside `LANGUAGENAME.LIST/NAME.LIST`, alongside the primary
+ * name as the first entry. This resolves that structure into the single alias string the rest of
+ * the pipeline (Room's `cached_ledgers.alias`, Party phone-seeding, the 1-5 digit search
+ * shortcut) already expects: a flat `<ALIAS>` tag first if Tally ever does emit one (harmless,
+ * forward-compatible, matches StockItems' own working field), then a phone-shaped
+ * LANGUAGENAME.LIST candidate (what Connect's phone seeding directly needs), then simply the
+ * first extra name if no candidate looks like a phone (preserves the short-shortcut case for a
+ * ledger with only one non-phone alias). A ledger with both a phone and a shortcut alias
+ * (observed live, ~19 of 949) can only keep one value in this single-string field -- the phone
+ * wins, since Connect's WhatsApp/Call actions are the concrete, requested need; the shortcut
+ * search convenience is lost for those few ledgers, a deliberate, disclosed trade-off rather than
+ * a wider schema change.
+ */
+function resolveLedgerAlias(parser: CollectionEntityParser, node: ParsedXmlNode): string | undefined {
+  const flatAlias = parser.getChildText(node, 'ALIAS');
+  if (flatAlias) return flatAlias;
+
+  const names = parser.getDescendantTexts(node, ['LANGUAGENAME.LIST', 'NAME.LIST', 'NAME']);
+  const candidates = names.slice(1);
+  if (candidates.length === 0) return undefined;
+  return candidates.find((value) => INDIAN_MOBILE_SHAPE.test(value.trim())) ?? candidates[0];
+}
+
+function resolveLedgerStatus(parser: CollectionEntityParser, node: ParsedXmlNode): NormalizedLedger['status'] {
+  const reserved = parser.getChildText(node, 'RESERVEDNAME');
+  if (reserved) return 'reserved';
+  if (parser.getLogical(node, 'ISDELETED') === true) return 'inactive';
+  if (parser.getLogical(node, 'ISACTIVE') === false) return 'inactive';
+  return 'active';
+}
+
+function resolveLedgerBalanceNature(
+  openingText: string | undefined,
+  closingText: string | undefined,
+  closingSide?: string,
+  openingSide?: string,
+): NormalizedLedger['balanceNature'] {
+  if (closingSide === 'Dr' || openingSide === 'Dr') return 'debit';
+  if (closingSide === 'Cr' || openingSide === 'Cr') return 'credit';
+  const sample = (closingText ?? openingText)?.toLowerCase() ?? '';
+  if (sample.includes(' dr')) return 'debit';
+  if (sample.includes(' cr')) return 'credit';
+  return 'unknown';
+}
+
+export function mapLedger(parser: CollectionEntityParser, node: ParsedXmlNode): NormalizedLedger | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  const openingText = parser.getChildText(node, 'OPENINGBALANCE');
+  const closingText = parser.getChildText(node, 'CLOSINGBALANCE');
+  const openingBalance = normalizeAmount(openingText);
+  const closingBalance = normalizeAmount(closingText);
+  const guid = parser.getChildText(node, 'GUID');
+  const alterId = parser.getChildText(node, 'ALTERID');
+  const masterId = parser.getChildText(node, 'MASTERID');
+  const identity = resolveLedgerStableId({ guid, name });
+  const billWiseRaw = parser.getLogical(node, 'ISBILLWISEON');
+  return {
+    id: identity.id,
+    name,
+    normalizedName: normalizeName(name),
+    alias: resolveLedgerAlias(parser, node),
+    parentGroup: normalizeText(parser.getChildText(node, 'PARENT')),
+    openingBalance,
+    closingBalance,
+    balanceNature: resolveLedgerBalanceNature(
+      openingText,
+      closingText,
+      closingBalance?.side,
+      openingBalance?.side,
+    ),
+    status: resolveLedgerStatus(parser, node),
+    guid: identity.guid ?? guid?.trim(),
+    alterId,
+    masterId: masterId?.trim() || undefined,
+    identitySource: identity.identitySource,
+    isBillWiseOn: billWiseRaw === undefined ? undefined : billWiseRaw,
+    reservedName: parser.getChildText(node, 'RESERVEDNAME'),
+    mailingName: parser.getChildText(node, 'MAILINGNAME'),
+    address: parser.getChildText(node, 'ADDRESS'),
+    state: parser.getChildText(node, 'STATENAME'),
+    country: parser.getChildText(node, 'COUNTRYNAME'),
+    pincode: parser.getChildText(node, 'PINCODE'),
+    email: parser.getChildText(node, 'EMAIL'),
+    phone: parser.getChildText(node, 'PHONENUMBER'),
+    mobile: parser.getChildText(node, 'MOBILENUMBER'),
+    gstin: parser.getChildText(node, 'PARTYGSTIN') ?? parser.getChildText(node, 'GSTIN'),
+    gstRegistrationType: parser.getChildText(node, 'GSTREGISTRATIONTYPE'),
+    gstApplicableFrom: parser.getChildText(node, 'APPLICABLEFROM'),
+  };
+}
+
+export function mapStockGroup(
+  parser: CollectionEntityParser,
+  node: ParsedXmlNode,
+): NormalizedStockGroup | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  return {
+    id: slugify(name),
+    name,
+    parentName: parser.getChildText(node, 'PARENT'),
+  };
+}
+
+export function mapStockCategory(
+  parser: CollectionEntityParser,
+  node: ParsedXmlNode,
+): NormalizedStockCategory | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  return { id: slugify(name), name };
+}
+
+export function mapStockItem(
+  parser: CollectionEntityParser,
+  node: ParsedXmlNode,
+): NormalizedStockItem | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  const guid = parser.getChildText(node, 'GUID');
+  const alterId = parser.getChildText(node, 'ALTERID');
+  const inactive = parser.getLogical(node, 'ISINACTIVE');
+  return {
+    id: resolveStockItemStableId({ guid, alterId, name }),
+    name,
+    normalizedName: normalizeName(name),
+    parentGroup: parser.getChildText(node, 'PARENT'),
+    category: parser.getChildText(node, 'CATEGORY'),
+    baseUnit: parser.getChildText(node, 'BASEUNITS'),
+    openingBalance: normalizeAmount(parser.getChildText(node, 'OPENINGBALANCE')),
+    closingBalance: normalizeAmount(parser.getChildText(node, 'CLOSINGBALANCE')),
+    hsnCode: parser.getChildText(node, 'HSNCODE'),
+    gstRate: parser.getChildText(node, 'GSTAPPLICABLE'),
+    guid,
+    alterId,
+    alias: parser.getChildText(node, 'ALIAS'),
+    partNumber: parser.getChildText(node, 'PARTNUMBER'),
+    status: inactive ? 'inactive' : 'active',
+  };
+}
+
+export function mapUnit(parser: CollectionEntityParser, node: ParsedXmlNode): NormalizedUnit | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  return {
+    id: slugify(name),
+    name,
+    symbol: parser.getChildText(node, 'SYMBOL') ?? parser.getChildText(node, 'FORMALNAME'),
+    decimalPlaces: normalizeInteger(parser.getChildText(node, 'DECIMALPLACES')),
+  };
+}
+
+export function mapGodown(parser: CollectionEntityParser, node: ParsedXmlNode): NormalizedGodown | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  return {
+    id: slugify(name),
+    name,
+    parentName: parser.getChildText(node, 'PARENT'),
+    address: parser.getChildText(node, 'ADDRESS'),
+  };
+}
+
+export function mapCostCategory(
+  parser: CollectionEntityParser,
+  node: ParsedXmlNode,
+): NormalizedCostCategory | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  return {
+    id: slugify(name),
+    name,
+    allocateRevenue: parser.getLogical(node, 'ALLOCATEREVENUE'),
+    allocateNonRevenue: parser.getLogical(node, 'ALLOCATENONREVENUE'),
+  };
+}
+
+export function mapCostCentre(
+  parser: CollectionEntityParser,
+  node: ParsedXmlNode,
+): NormalizedCostCentre | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  return {
+    id: slugify(name),
+    name,
+    parentName: parser.getChildText(node, 'PARENT'),
+    category: parser.getChildText(node, 'CATEGORY'),
+  };
+}
+
+export function mapVoucherType(
+  parser: CollectionEntityParser,
+  node: ParsedXmlNode,
+): NormalizedVoucherType | undefined {
+  const name = parser.resolveName(node);
+  if (!name) return undefined;
+  return {
+    id: slugify(name),
+    name,
+    parentName: parser.getChildText(node, 'PARENT'),
+    numberingMethod: parser.getChildText(node, 'NUMBERINGMETHOD'),
+  };
+}
+
+export function mapGstRegistration(
+  parser: CollectionEntityParser,
+  node: ParsedXmlNode,
+): NormalizedGstRegistration | undefined {
+  const name =
+    parser.resolveName(node) ??
+    parser.getChildText(node, 'GSTREGISTRATIONNUMBER') ??
+    parser.getChildText(node, 'GSTIN');
+  if (!name) return undefined;
+  return {
+    id: slugify(name),
+    name,
+    gstin: parser.getChildText(node, 'GSTREGISTRATIONNUMBER') ?? parser.getChildText(node, 'GSTIN'),
+    state: parser.getChildText(node, 'STATE'),
+    registrationType: parser.getChildText(node, 'GSTREGISTRATIONTYPE'),
+    applicableFrom: normalizeDate(parser.getChildText(node, 'APPLICABLEFROM')),
+  };
+}
+
+function findChild(node: ParsedXmlNode, name: string): ParsedXmlNode | undefined {
+  const target = name.toUpperCase();
+  return node.children.find((child) => child.name.toUpperCase() === target);
+}

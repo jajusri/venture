@@ -1,4 +1,4 @@
-# Budcom Connector — ERP Communication Safety Architecture
+# Venture Connector — ERP Communication Safety Architecture
 
 **Status:** Architecture review (design only — no business logic changed, not committed)
 **Date:** 2026-07-22
@@ -395,7 +395,7 @@ The transport currently collapses everything into 503/504 (G6). Proposed distinc
 
 ## 13. Safe Mode specification
 
-When `BUDCOM_TALLY_SAFE_MODE=true` (default):
+When `VENTURE_TALLY_SAFE_MODE=true` (default):
 
 | Control | Behaviour |
 |---------|-----------|

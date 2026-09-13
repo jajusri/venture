@@ -26,19 +26,19 @@ const DIAG_MARKER_FILE = 'lifecycle-gate-diagnostic-marker.txt';
 const DB_MARKER_KEY = 'lifecycle_gate_marker';
 
 const paths = {
-  installRoot: path.join(process.env.ProgramFiles ?? '', 'Budcom Desktop'),
-  appExe: path.join(process.env.ProgramFiles ?? '', 'Budcom Desktop', 'Budcom Desktop.exe'),
-  uninstallExe: path.join(process.env.ProgramFiles ?? '', 'Budcom Desktop', 'Uninstall Budcom Desktop.exe'),
-  userDataRoot: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop'),
-  connectorDataDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-data'),
-  dbPath: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-data', 'budcom-ledger.db'),
-  releaseMetadataDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'release-metadata'),
-  logsDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'logs'),
-  diagnosticsDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'diagnostics-exports'),
-  connectorDiagnosticsDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-diagnostics'),
-  tallyAuditPath: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-diagnostics', 'tally-request-audit.jsonl'),
-  transportIdentityDir: path.join(process.env.APPDATA ?? '', '@budcom', 'desktop', 'connector-transport-identity'),
-  legacyUserDataRoot: path.join(process.env.APPDATA ?? '', 'budcom-desktop'),
+  installRoot: path.join(process.env.ProgramFiles ?? '', 'Venture Desktop'),
+  appExe: path.join(process.env.ProgramFiles ?? '', 'Venture Desktop', 'Venture Desktop.exe'),
+  uninstallExe: path.join(process.env.ProgramFiles ?? '', 'Venture Desktop', 'Uninstall Venture Desktop.exe'),
+  userDataRoot: path.join(process.env.APPDATA ?? '', '@venture', 'desktop'),
+  connectorDataDir: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'connector-data'),
+  dbPath: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'connector-data', 'venture-ledger.db'),
+  releaseMetadataDir: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'release-metadata'),
+  logsDir: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'logs'),
+  diagnosticsDir: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'diagnostics-exports'),
+  connectorDiagnosticsDir: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'connector-diagnostics'),
+  tallyAuditPath: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'connector-diagnostics', 'tally-request-audit.jsonl'),
+  transportIdentityDir: path.join(process.env.APPDATA ?? '', '@venture', 'desktop', 'connector-transport-identity'),
+  legacyUserDataRoot: path.join(process.env.APPDATA ?? '', 'venture-desktop'),
 };
 
 function readIdentityEvidence(identityDir) {
@@ -90,9 +90,9 @@ function readFirewallContract() {
   const text = String(result.stdout ?? '').toLowerCase();
   return {
     bundledNode,
-    http: text.includes('budcom connector http') && text.includes(bundledNode) && text.includes('8080'),
-    https: text.includes('budcom connector https') && text.includes(bundledNode) && text.includes('8443'),
-    mdns: text.includes('budcom connector mdns') && text.includes(bundledNode) && text.includes('5353'),
+    http: text.includes('venture connector http') && text.includes(bundledNode) && text.includes('8080'),
+    https: text.includes('venture connector https') && text.includes(bundledNode) && text.includes('8443'),
+    mdns: text.includes('venture connector mdns') && text.includes(bundledNode) && text.includes('5353'),
   };
 }
 
@@ -113,13 +113,13 @@ function countProcesses(namePattern) {
   const ps = spawnSync('powershell', [
     '-NoProfile',
     '-Command',
-    `(Get-CimInstance Win32_Process | Where-Object { $_.Name -like '${namePattern}' -or $_.CommandLine -like '*budcom*' }).Count`,
+    `(Get-CimInstance Win32_Process | Where-Object { $_.Name -like '${namePattern}' -or $_.CommandLine -like '*venture*' }).Count`,
   ], { encoding: 'utf8' });
   const count = Number.parseInt(String(ps.stdout).trim(), 10);
   return Number.isFinite(count) ? count : 0;
 }
 
-function getBudcomProcesses() {
+function getVentureProcesses() {
   if (process.platform !== 'win32') {
     return { desktop: 0, connector: 0 };
   }
@@ -129,7 +129,7 @@ function getBudcomProcesses() {
     `@(
       Get-CimInstance Win32_Process |
       Where-Object {
-        $_.Name -eq 'Budcom Desktop.exe' -or
+        $_.Name -eq 'Venture Desktop.exe' -or
         ($_.CommandLine -like '*connector*dist*main.js*')
       } |
       Select-Object Name, CommandLine
@@ -203,7 +203,7 @@ function createSyntheticMarkers() {
   let schemaVersion = null;
   if (fs.existsSync(paths.dbPath)) {
     const sqlite = spawnSync('node', ['-e', `
-      const { nodeSqlite } = require('./connector/budcom_connector/dist/storage/sqlite/node-sqlite.js');
+      const { nodeSqlite } = require('./connector/venture_connector/dist/storage/sqlite/node-sqlite.js');
       const db = new nodeSqlite.DatabaseSync(process.argv[1]);
       const row = db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get();
       db.prepare('INSERT OR REPLACE INTO storage_meta (key, value) VALUES (?, ?)').run('${DB_MARKER_KEY}', '${MARKER_ID}');
@@ -244,7 +244,7 @@ function readRetentionMarkers() {
   }
   if (fs.existsSync(paths.dbPath)) {
     const sqlite = spawnSync('node', ['-e', `
-      const { nodeSqlite } = require('./connector/budcom_connector/dist/storage/sqlite/node-sqlite.js');
+      const { nodeSqlite } = require('./connector/venture_connector/dist/storage/sqlite/node-sqlite.js');
       const db = new nodeSqlite.DatabaseSync(process.argv[1], { readOnly: true });
       const row = db.prepare('SELECT value FROM storage_meta WHERE key = ?').get('${DB_MARKER_KEY}');
       const version = db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get();
@@ -300,7 +300,7 @@ function readRegisteredInstallRoot(scope) {
     '-Command',
     `$entry = Get-ChildItem '${hive}:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall' -ErrorAction SilentlyContinue |
       ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } |
-      Where-Object { $_.DisplayName -like 'Budcom Desktop*' } |
+      Where-Object { $_.DisplayName -like 'Venture Desktop*' } |
       Select-Object -First 1; $entry.InstallLocation`,
   ], { encoding: 'utf8' });
   const value = String(ps.stdout ?? '').trim();
@@ -341,7 +341,7 @@ async function readSchemaVersion() {
     return null;
   }
   const sqlite = spawnSync('node', ['-e', `
-    const { nodeSqlite } = require('./connector/budcom_connector/dist/storage/sqlite/node-sqlite.js');
+    const { nodeSqlite } = require('./connector/venture_connector/dist/storage/sqlite/node-sqlite.js');
     const db = new nodeSqlite.DatabaseSync(process.argv[1], { readOnly: true });
     const version = db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get();
     db.close();
@@ -363,8 +363,8 @@ async function launchDesktop(timeoutMs = 20000) {
   const healthReady = await waitForConnectorHealth(timeoutMs);
   const companies = healthReady ? await readPackagedCompanies() : null;
   await sleep(healthReady ? 3000 : Math.min(timeoutMs, 10000));
-  const processes = getBudcomProcesses();
-  spawnSync('taskkill', ['/IM', 'Budcom Desktop.exe', '/F'], { stdio: 'ignore' });
+  const processes = getVentureProcesses();
+  spawnSync('taskkill', ['/IM', 'Venture Desktop.exe', '/F'], { stdio: 'ignore' });
   await sleep(3000);
   killOwnedConnectorProcesses();
   await sleep(2000);
@@ -407,8 +407,8 @@ function detectStartupEntries() {
     '-NoProfile',
     '-Command',
     `$run = Get-ItemProperty 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -ErrorAction SilentlyContinue;
-     $tasks = Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like '*Budcom*' };
-     [pscustomobject]@{ RunKeys = @($run.PSObject.Properties.Name | Where-Object { $_ -like '*Budcom*' }); Tasks = @($tasks.TaskName) } | ConvertTo-Json -Compress`,
+     $tasks = Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like '*Venture*' };
+     [pscustomobject]@{ RunKeys = @($run.PSObject.Properties.Name | Where-Object { $_ -like '*Venture*' }); Tasks = @($tasks.TaskName) } | ConvertTo-Json -Compress`,
   ], { encoding: 'utf8' });
   try {
     const parsed = JSON.parse(ps.stdout.trim() || '{}');
@@ -464,7 +464,7 @@ function initialReport() {
   return {
     gateVersion: 1,
     platform: process.platform,
-    isolationMethod: 'first-install gate session — no pre-existing Budcom AppData on host profile',
+    isolationMethod: 'first-install gate session — no pre-existing Venture AppData on host profile',
     candidateVerified: false,
     installationCompleted: false,
     uninstallRetentionVerified: false,
@@ -487,7 +487,7 @@ async function runExecuteWindows(report) {
   };
 
   if (hasBusinessAppData(paths.userDataRoot) || hasBusinessAppData(paths.legacyUserDataRoot) || fs.existsSync(paths.installRoot)) {
-    throw new Error('Pre-existing Budcom install or business AppData detected — aborting to protect host profile');
+    throw new Error('Pre-existing Venture install or business AppData detected — aborting to protect host profile');
   }
 
   const install = runInstaller(candidate.installerPath, true);
@@ -503,7 +503,7 @@ async function runExecuteWindows(report) {
   }
   report.installationCompleted = true;
 
-  const v7Fixture = path.join(os.tmpdir(), 'budcom-lifecycle-v7-fixture.db');
+  const v7Fixture = path.join(os.tmpdir(), 'venture-lifecycle-v7-fixture.db');
   createSchemaV7Fixture(v7Fixture);
   fs.mkdirSync(paths.connectorDataDir, { recursive: true });
   fs.copyFileSync(v7Fixture, paths.dbPath);
@@ -566,7 +566,7 @@ async function runExecuteWindows(report) {
     method: 'pre-seeded schema v7 fixture before first launch; migration validated on connector startup',
   };
 
-  spawnSync('taskkill', ['/IM', 'Budcom Desktop.exe', '/F'], { stdio: 'ignore' });
+  spawnSync('taskkill', ['/IM', 'Venture Desktop.exe', '/F'], { stdio: 'ignore' });
   await sleep(3000);
   killOwnedConnectorProcesses();
   await sleep(2000);
@@ -626,23 +626,23 @@ async function runExecuteWindows(report) {
 }
 
 function runIdentityOverinstallPreLaunchGate(report) {
-  if (process.env.BUDCOM_LIFECYCLE_ISOLATED_PROFILE !== '1') {
-    throw new Error('Identity over-install gate requires BUDCOM_LIFECYCLE_ISOLATED_PROFILE=1');
+  if (process.env.VENTURE_LIFECYCLE_ISOLATED_PROFILE !== '1') {
+    throw new Error('Identity over-install gate requires VENTURE_LIFECYCLE_ISOLATED_PROFILE=1');
   }
-  const oldInstaller = process.env.BUDCOM_LIFECYCLE_OLD_INSTALLER;
-  const fixtureDir = process.env.BUDCOM_LIFECYCLE_LEGACY_IDENTITY_DIR;
-  const oldScope = process.env.BUDCOM_LIFECYCLE_OLD_INSTALL_SCOPE === 'currentuser'
+  const oldInstaller = process.env.VENTURE_LIFECYCLE_OLD_INSTALLER;
+  const fixtureDir = process.env.VENTURE_LIFECYCLE_LEGACY_IDENTITY_DIR;
+  const oldScope = process.env.VENTURE_LIFECYCLE_OLD_INSTALL_SCOPE === 'currentuser'
     ? 'currentuser'
     : 'allusers';
   if (!oldInstaller || !fs.existsSync(oldInstaller)) {
-    throw new Error('BUDCOM_LIFECYCLE_OLD_INSTALLER must name the exact old installer');
+    throw new Error('VENTURE_LIFECYCLE_OLD_INSTALLER must name the exact old installer');
   }
   if (!fixtureDir || !fs.existsSync(fixtureDir)) {
-    throw new Error('BUDCOM_LIFECYCLE_LEGACY_IDENTITY_DIR must name a complete identity fixture');
+    throw new Error('VENTURE_LIFECYCLE_LEGACY_IDENTITY_DIR must name a complete identity fixture');
   }
   if (hasBusinessAppData(paths.userDataRoot) || hasBusinessAppData(paths.legacyUserDataRoot)
     || fs.existsSync(paths.installRoot)) {
-    throw new Error('Identity over-install gate requires an isolated profile with no existing Budcom state');
+    throw new Error('Identity over-install gate requires an isolated profile with no existing Venture state');
   }
 
   const candidate = verifyControlledPilotCandidate();
@@ -655,8 +655,8 @@ function runIdentityOverinstallPreLaunchGate(report) {
   if (!oldInstallRoot || !fs.existsSync(oldInstallRoot)) {
     throw new Error(`Unable to resolve registered ${oldScope} old installation root`);
   }
-  if (getBudcomProcesses().desktop !== 0 || getBudcomProcesses().connector !== 0) {
-    throw new Error('Old installer unexpectedly launched Budcom before identity fixture setup');
+  if (getVentureProcesses().desktop !== 0 || getVentureProcesses().connector !== 0) {
+    throw new Error('Old installer unexpectedly launched Venture before identity fixture setup');
   }
 
   const before = seedLegacyIdentityForIsolatedLifecycle(oldInstallRoot, fixtureDir);
@@ -669,9 +669,9 @@ function runIdentityOverinstallPreLaunchGate(report) {
   }
 
   // Mandatory boundary: inspect the migrated pair before any Desktop/Connector launch.
-  const processesBeforeAssertion = getBudcomProcesses();
+  const processesBeforeAssertion = getVentureProcesses();
   if (processesBeforeAssertion.desktop !== 0 || processesBeforeAssertion.connector !== 0) {
-    throw new Error('Candidate unexpectedly launched Budcom before the pre-launch identity assertion');
+    throw new Error('Candidate unexpectedly launched Venture before the pre-launch identity assertion');
   }
   const after = readIdentityEvidence(paths.transportIdentityDir);
   assertPreLaunchIdentityPreserved(before, after);
@@ -755,7 +755,7 @@ export {
   paths,
   readRetentionMarkers,
   boundedCleanup,
-  getBudcomProcesses,
+  getVentureProcesses,
   readIdentityEvidence,
   assertPreLaunchIdentityPreserved,
 };

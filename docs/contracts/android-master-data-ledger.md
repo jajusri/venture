@@ -1,8 +1,8 @@
 # Confirmed Connector Contracts — Master Data (Android Milestone)
 
 **Date:** 2026-07-27 (updated for Stock Item Browser)  
-**Source of truth:** Connector implementation under `connector/budcom_connector`  
-**Purpose:** Contract discovery for BUDCO Android Master Data browsers
+**Source of truth:** Connector implementation under `connector/venture_connector`  
+**Purpose:** Contract discovery for VENTURE Android Master Data browsers
 
 ---
 

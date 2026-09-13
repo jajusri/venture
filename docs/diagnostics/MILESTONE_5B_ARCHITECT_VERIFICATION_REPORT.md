@@ -36,7 +36,7 @@ Prior **MAJOR REMEDIATION REQUIRED** (pre-gate) and Red Team “approve for comm
 | Runtime DB/WAL/SHM in tree | None found |
 | `.only` / `.skip` / `@ts-ignore` | None found |
 
-**Hygiene note:** `apps/budcom_desktop/dist/**` is modified (build artifacts). These must **not** be committed with 5B source.
+**Hygiene note:** `apps/venture_desktop/dist/**` is modified (build artifacts). These must **not** be committed with 5B source.
 
 ---
 
@@ -82,7 +82,7 @@ Prior **MAJOR REMEDIATION REQUIRED** (pre-gate) and Red Team “approve for comm
 - `docs/diagnostics/m5b-stock-item-sync-benchmark.json`
 
 ### Generated artifacts (exclude from commit)
-- `apps/budcom_desktop/dist/**`
+- `apps/venture_desktop/dist/**`
 - Benchmark JSON is evidence artifact (may commit under `docs/diagnostics/`)
 
 ---
@@ -340,7 +340,7 @@ Storage routes mirror 5A ledger pattern (shared SQLite file).
 5. No opening qty/rate/value decomposition
 6. Partial extraction not detected at ErpReadPort
 7. Backup/restore integration not extended for stock_items
-8. `apps/budcom_desktop/dist/**` dirty — must exclude from commit
+8. `apps/venture_desktop/dist/**` dirty — must exclude from commit
 
 ---
 
@@ -409,7 +409,7 @@ explicit deletion-reconciliation disabled policy, desktop Stock Items view, and 
 ## 40. Recommended Next Action
 
 1. Operator review of this remediation gate report
-2. Authorized commit of 5B source (exclude `apps/budcom_desktop/dist/**`)
+2. Authorized commit of 5B source (exclude `apps/venture_desktop/dist/**`)
 3. Optional: operator-executed Scenario F (Tally stop/start) and 5A.1 fault scenarios 12–13
 4. Future milestone: richer Tally field export if Tally supports safe collection field expansion
 

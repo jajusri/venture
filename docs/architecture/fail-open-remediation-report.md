@@ -1,4 +1,4 @@
-# Fail-Open Remediation Report — Budcom Tally Connector
+# Fail-Open Remediation Report — Venture Tally Connector
 
 > **Superseded in part by:** [`architecture-defect-remediation-report.md`](./architecture-defect-remediation-report.md) (2026-07-22) — corrects gateway bypass, ERP-neutral policy core, raw-XML leakage, and dead architecture identified in the independent architecture review.
 
@@ -244,35 +244,35 @@ Plus every unregistered `(kind, id)` → `UNKNOWN` → `DENY`.
 
 **Do not claim "impossible to bypass" beyond the in-process guarantee.** External
 truth: a sufficiently privileged local process can open its own socket to Tally on
-`localhost:9000`. This connector guarantees that **Budcom's supported production
+`localhost:9000`. This connector guarantees that **Venture's supported production
 code path** cannot issue a write/execute/unapproved request — not that the OS
 prevents all external access.
 
 ## 13. Exact list of changed files
 
 **New (source):**
-- `connector/budcom_connector/src/tally/security/capabilities.ts`
-- `connector/budcom_connector/src/tally/registry/operation-registry.ts`
-- `connector/budcom_connector/src/tally/registry/forbidden-registry.ts`
-- `connector/budcom_connector/src/tally/policy/policy-engine.ts`
-- `connector/budcom_connector/src/tally/gateway/tally-read-gateway.ts`
-- `connector/budcom_connector/src/tally/contracts/response-contract.ts`
-- `connector/budcom_connector/src/ingestion/offline-xml-ingestion.service.ts`
+- `connector/venture_connector/src/tally/security/capabilities.ts`
+- `connector/venture_connector/src/tally/registry/operation-registry.ts`
+- `connector/venture_connector/src/tally/registry/forbidden-registry.ts`
+- `connector/venture_connector/src/tally/policy/policy-engine.ts`
+- `connector/venture_connector/src/tally/gateway/tally-read-gateway.ts`
+- `connector/venture_connector/src/tally/contracts/response-contract.ts`
+- `connector/venture_connector/src/ingestion/offline-xml-ingestion.service.ts`
 
 **Modified (source):**
-- `connector/budcom_connector/src/tally/safety/xml-request-validator.ts`
-- `connector/budcom_connector/src/tally/safety/tally-request-guard.ts`
-- `connector/budcom_connector/src/tally/safety/tally-request-auditor.ts`
-- `connector/budcom_connector/src/tally/tally-module.ts`
-- `connector/budcom_connector/src/bootstrap/register-services.ts`
-- `connector/budcom_connector/src/services/tally/company-discovery.service.ts`
-- `connector/budcom_connector/src/services/extraction/master-data.service.ts`
-- `connector/budcom_connector/src/extraction/extractors/master-data-extractor.ts`
-- `connector/budcom_connector/src/extraction/extractors/extractor-registry.ts`
-- `connector/budcom_connector/src/extraction/core/types.ts`
+- `connector/venture_connector/src/tally/safety/xml-request-validator.ts`
+- `connector/venture_connector/src/tally/safety/tally-request-guard.ts`
+- `connector/venture_connector/src/tally/safety/tally-request-auditor.ts`
+- `connector/venture_connector/src/tally/tally-module.ts`
+- `connector/venture_connector/src/bootstrap/register-services.ts`
+- `connector/venture_connector/src/services/tally/company-discovery.service.ts`
+- `connector/venture_connector/src/services/extraction/master-data.service.ts`
+- `connector/venture_connector/src/extraction/extractors/master-data-extractor.ts`
+- `connector/venture_connector/src/extraction/extractors/extractor-registry.ts`
+- `connector/venture_connector/src/extraction/core/types.ts`
 
 **Removed (source):**
-- `connector/budcom_connector/src/services/tally/xml-import.service.ts`
+- `connector/venture_connector/src/services/tally/xml-import.service.ts`
   (relocated to `src/ingestion/offline-xml-ingestion.service.ts`)
 
 **New (tests):**

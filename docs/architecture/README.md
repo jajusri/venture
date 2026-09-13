@@ -1,6 +1,6 @@
-# Budcom Architecture
+# Venture Architecture
 
-Authoritative architecture notes for the Budcom monorepo.
+Authoritative architecture notes for the Venture monorepo.
 
 Product vision for the Android companion: [`../PRODUCT_SOUL.md`](../PRODUCT_SOUL.md)  
 Normative Android rules: [`../PROJECT_CONSTITUTION.md`](../PROJECT_CONSTITUTION.md)  
@@ -37,7 +37,7 @@ Each ADR should state context, decision, consequences, and status. Prefer append
 
 ## Android companion ADRs
 
-These ADRs govern `apps/budcom_android`. Numbering is **local to the Android companion series** and does not replace Connector ADRs.
+These ADRs govern `apps/venture_android`. Numbering is **local to the Android companion series** and does not replace Connector ADRs.
 
 | ADR | Title |
 |-----|-------|
@@ -57,7 +57,7 @@ Related Android governance:
 
 ## Connector ADRs
 
-These ADRs govern `connector/budcom_connector` and related ERP boundary work.
+These ADRs govern `connector/venture_connector` and related ERP boundary work.
 
 | ADR | Title |
 |-----|-------|
@@ -85,12 +85,12 @@ When citing an ADR, always qualify the series (**Android** vs **Connector**) bec
 ## Repository map
 
 ```text
-apps/budcom_android/         Native Android companion (Kotlin, Compose)
-apps/budcom_mobile/          Flutter presentation + application layers
+apps/venture_android/         Native Android companion (Kotlin, Compose)
+apps/venture_mobile/          Flutter presentation + application layers
 shared/packages/
-  budcom_core/               Domain entities, value objects, events
-  budcom_contracts/          Connector API DTOs
-connector/budcom_connector/  Local Node.js connector service
+  venture_core/               Domain entities, value objects, events
+  venture_contracts/          Connector API DTOs
+connector/venture_connector/  Local Node.js connector service
 docs/                        Constitution, soul, roadmap, decisions, ADRs
 docs/openapi/                Connector contract snapshots (may lag implementation)
 backend/                     Reserved for optional future cloud

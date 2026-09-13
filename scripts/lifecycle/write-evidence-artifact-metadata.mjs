@@ -9,7 +9,7 @@ import { generateManifest, renderChecksumFile, verifyManifest } from '../release
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
 const out = path.join(repoRoot, process.argv[2] ?? '');
-const installer = 'BudcomDesktop-0.4.3-x64-setup.exe';
+const installer = 'VentureDesktop-0.4.3-x64-setup.exe';
 
 const installerPath = path.join(out, installer);
 const sha256 = crypto.createHash('sha256').update(fs.readFileSync(installerPath)).digest('hex');
@@ -23,7 +23,7 @@ fs.writeFileSync(path.join(out, 'SHA256SUMS.txt'), renderChecksumFile(manifest))
 verifyManifest(manifest, out);
 
 const sourceBuildInfo = JSON.parse(fs.readFileSync(
-  path.join(repoRoot, 'apps/budcom_desktop/dist/main/build-info.json'),
+  path.join(repoRoot, 'apps/venture_desktop/dist/main/build-info.json'),
   'utf8',
 ));
 const buildInfo = {

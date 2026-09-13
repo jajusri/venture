@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
-      - 'apps/budcom_desktop/**'
-      - 'connector/budcom_connector/**'
+      - 'apps/venture_desktop/**'
+      - 'connector/venture_connector/**'
       - 'scripts/release/**'
       - '.github/workflows/release-validation.yml'
 
@@ -23,20 +23,20 @@ jobs:
           node-version: "20"
           cache: npm
           cache-dependency-path: |
-            connector/budcom_connector/package-lock.json
-            apps/budcom_desktop/package-lock.json
+            connector/venture_connector/package-lock.json
+            apps/venture_desktop/package-lock.json
             tests/contract/package-lock.json
       - name: Install connector dependencies
-        working-directory: connector/budcom_connector
+        working-directory: connector/venture_connector
         run: npm ci
       - name: Install desktop dependencies
-        working-directory: apps/budcom_desktop
+        working-directory: apps/venture_desktop
         run: npm ci
       - name: Install contract test dependencies
         working-directory: tests/contract
         run: npm ci
       - name: Run controlled-pilot release command
-        working-directory: apps/budcom_desktop
+        working-directory: apps/venture_desktop
         env:
-          BUDCOM_RELEASE_MODE: controlled_pilot
+          VENTURE_RELEASE_MODE: controlled_pilot
         run: npm run release:controlled-pilot

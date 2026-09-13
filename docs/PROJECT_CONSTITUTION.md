@@ -1,8 +1,8 @@
 ﻿# Project Constitution
 
 **Status:** Normative — future AI assistants must read this before implementation  
-**Scope:** BUDCO native Android companion (`apps/budcom_android`)  
-**Working name:** BUDCO
+**Scope:** VENTURE native Android companion (`apps/venture_android`)  
+**Working name:** VENTURE
 
 Supporting ADRs explain individual decisions; they do not replace this document.
 
@@ -10,7 +10,7 @@ Supporting ADRs explain individual decisions; they do not replace this document.
 
 ## Product identity and purpose
 
-BUDCO is an intelligent Android business companion for the BudCom Connector. The ERP remains the system of record. The Connector implementation is the source of truth for routes, DTOs, behavior, and contracts. Never invent Connector endpoints or DTOs.
+VENTURE is an intelligent Android business companion for the Venture Connector. The ERP remains the system of record. The Connector implementation is the source of truth for routes, DTOs, behavior, and contracts. Never invent Connector endpoints or DTOs.
 
 Product soul and audience: [PRODUCT_SOUL.md](PRODUCT_SOUL.md) (including Who We Serve and Design Philosophy).  
 Permanent principles: [NON_NEGOTIABLES.md](NON_NEGOTIABLES.md).  

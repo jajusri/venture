@@ -2,7 +2,7 @@
 
 **Milestone:** Configuration, Diagnostics & Production Readiness  
 **Last updated:** 2026-07-23  
-**Package:** `@budcom/desktop` v0.4.3  
+**Package:** `@venture/desktop` v0.4.3  
 **Git commit:** Not committed
 
 ---

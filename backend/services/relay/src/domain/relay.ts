@@ -119,7 +119,7 @@ export function validateRelaySubmission(value: RelaySubmission): void {
   if (contentBytes > MAX_COMMERCIAL_CONTENT_BYTES) throw new Error('Commercial content exceeds relay bounds');
 }
 
-export const ORDER_SNAPSHOT_CONTENT_TYPE = 'application/vnd.budcom.order-snapshot+json';
+export const ORDER_SNAPSHOT_CONTENT_TYPE = 'application/vnd.venture.order-snapshot+json';
 /** Current production commercial wire version (Codex-confirmed 2026-08-29): Android's
  * `OrderVersionSnapshot.CURRENT_CONTRACT_VERSION` is 3 and carries explicit `buyerBusinessId`/
  * `sellerBusinessId` fields absent from v2. Relay treats this content as opaque bytes-plus-metadata

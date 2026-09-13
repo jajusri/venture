@@ -28,7 +28,7 @@ export function resolveConnectorPort(configPath, fallbackPort = DEFAULT_CONNECTO
   return fallbackPort;
 }
 
-export async function waitForLogFile(logsDir, fileName = 'budcom-desktop.log', timeoutMs = 45000) {
+export async function waitForLogFile(logsDir, fileName = 'venture-desktop.log', timeoutMs = 45000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const logPath = path.join(logsDir, fileName);
@@ -53,7 +53,7 @@ export function readPrivacySafeStartupLogs(logPath, maxLines = 80) {
   }
   const lines = fs.readFileSync(logPath, 'utf8').split(/\r?\n/).slice(-maxLines).map(redactLine);
   const mainProcessException = lines.find((line) =>
-    /SyntaxError|Cannot use import statement outside a module|uncaughtException|\[budcom-desktop:startup\] uncaughtException/i.test(line),
+    /SyntaxError|Cannot use import statement outside a module|uncaughtException|\[venture-desktop:startup\] uncaughtException/i.test(line),
   ) ?? null;
   const connectorStartupFailure = lines.find((line) =>
     /\[lifecycle:startup_failure\]|Fatal bootstrap error|connector process exited/i.test(line),
@@ -125,7 +125,7 @@ export function getDesktopProcesses() {
     '-Command',
     `@(
       Get-CimInstance Win32_Process |
-      Where-Object { $_.Name -eq 'Budcom Desktop.exe' } |
+      Where-Object { $_.Name -eq 'Venture Desktop.exe' } |
       Select-Object ProcessId, Name, CommandLine
     ) | ConvertTo-Json -Compress`,
   ], { encoding: 'utf8' });
@@ -141,9 +141,9 @@ export function classifyConnectorCommandLine(commandLine) {
   const line = String(commandLine ?? '');
   return {
     usesPackagedConnectorScript: /connector[\\/]+dist[\\/]+main\.js/i.test(line) || /resources[\\/]+connector/i.test(line),
-    usesElectronRunAsNode: /ELECTRON_RUN_AS_NODE=1/i.test(line) || (!/node\.exe/i.test(line) && /Budcom Desktop\.exe/i.test(line)),
-    usesRepositoryPath: /Projects[\\/]+Budcom/i.test(line),
-    spawnViaElectronExe: /Budcom Desktop\.exe/i.test(line),
+    usesElectronRunAsNode: /ELECTRON_RUN_AS_NODE=1/i.test(line) || (!/node\.exe/i.test(line) && /Venture Desktop\.exe/i.test(line)),
+    usesRepositoryPath: /Projects[\\/]+Venture/i.test(line),
+    spawnViaElectronExe: /Venture Desktop\.exe/i.test(line),
   };
 }
 

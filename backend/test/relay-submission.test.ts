@@ -7,7 +7,7 @@ import { SignedRelayAcceptanceIssuer } from '../services/relay/src/application/a
 
 const submission = (): RelaySubmission => ({ envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 3,
   senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipient: { businessId: 'business-b', mailboxId: relayIdentifier('orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([4, 5]), commercialContent: '{}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
+  authenticatedEnvelope: new Uint8Array([4, 5]), commercialContent: '{}', commercialContentType: 'application/vnd.venture.order-snapshot+json', commercialContentVersion: 3,
   idempotencyKey: 'intent-1', submittedAt: new Date(1) });
 const verified = (value = submission()): VerifiedRelayAuthority => ({ protocolVersion: 1, envelopeId: value.envelopeId, senderBusinessId: value.senderBusinessId,
   senderActorId: value.senderActorId, senderDeviceId: value.senderDeviceId, recipientBusinessId: value.recipient.businessId,

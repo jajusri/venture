@@ -1,6 +1,6 @@
 # Desktop Security Review
 
-**Component:** `@budcom/desktop` v0.4.3  
+**Component:** `@venture/desktop` v0.4.3  
 **Date:** 2026-07-23  
 **Milestone:** 4D
 
@@ -39,7 +39,7 @@
 
 ## IPC contract summary
 
-All renderer access goes through `window.budcomDesktop` with typed invoke handlers. No generic `invoke(channel, payload)` escape hatch.
+All renderer access goes through `window.ventureDesktop` with typed invoke handlers. No generic `invoke(channel, payload)` escape hatch.
 
 Settings payloads are validated against `DesktopConfigV1` schema in main before persistence.
 

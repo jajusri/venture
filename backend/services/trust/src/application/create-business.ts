@@ -12,7 +12,7 @@ export interface CreateBusinessInput { readonly principal: VerifiedUserPrincipal
 export class CreateBusiness {
   constructor(private readonly store: BusinessBootstrapStore, private readonly now: () => Date = () => new Date(), private readonly newId: () => string = randomUUID) {}
   async execute(input: CreateBusinessInput): Promise<CreatedBusinessAuthority> {
-    if (!input.principal.verificationId.trim() || input.principal.verifiedAt > this.now()) throw new Error('A verified BUDCOM user principal is required');
+    if (!input.principal.verificationId.trim() || input.principal.verifiedAt > this.now()) throw new Error('A verified VENTURE user principal is required');
     if (!input.intentId.trim() || input.intentId.length > 128) throw new Error('Explicit bounded creation intent is required');
     if (!input.authorityDisplayName.trim() || input.authorityDisplayName.length > 160) throw new Error('Authority display name is required');
     const existing = await this.store.findByCreationIntent(input.principal.actorId, input.intentId);

@@ -1,15 +1,15 @@
-# Budcom Coding Standards
+# Venture Coding Standards
 
 Version: 1.0  
 Status: Permanent  
 Priority: High  
-Applies to: All Budcom repositories, modules, services, connectors, apps, scripts, tests, and documentation
+Applies to: All Venture repositories, modules, services, connectors, apps, scripts, tests, and documentation
 
 ---
 
 ## 1. Purpose
 
-These standards exist to keep Budcom:
+These standards exist to keep Venture:
 
 - Reliable
 - Secure

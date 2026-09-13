@@ -10,7 +10,7 @@ that is stated explicitly rather than implied.
 - A reachable PostgreSQL instance. Not bundled, not automated by this runbook — bring your own
   (local install, or any reachable instance). Nothing in this repository starts PostgreSQL for you.
 - `backend/` dependencies installed: `npm install` inside `backend/`.
-- Run `.\scripts\budcom-services.ps1 -Doctor` first, always. It reports exactly what is missing —
+- Run `.\scripts\venture-services.ps1 -Doctor` first, always. It reports exactly what is missing —
   missing database, missing dependencies, occupied ports — rather than a generic failure once you
   try to start something.
 
@@ -19,8 +19,8 @@ that is stated explicitly rather than implied.
 PostgreSQL itself is outside this runbook's scope — start whatever local Postgres you have, then:
 
 ```
-copy backend\.env.example backend\.env    # then edit BUDCOM_TRUST_DATABASE_URL for real
-.\scripts\budcom-services.ps1 -Start -Verify
+copy backend\.env.example backend\.env    # then edit VENTURE_TRUST_DATABASE_URL for real
+.\scripts\venture-services.ps1 -Start -Verify
 ```
 
 This starts Trust (`npm run dev`, port 8080 by default) and Relay (`npm run dev:relay`, port 8082 by
@@ -34,7 +34,7 @@ listener or killing whatever is there.
 
 ## C. Verify Trust
 
-`.\scripts\budcom-services.ps1 -Verify` checks `GET http://<host>:<port>/health` on both services.
+`.\scripts\venture-services.ps1 -Verify` checks `GET http://<host>:<port>/health` on both services.
 Trust's health check today only confirms the HTTP server itself is answering — it does not ping the
 database. A Trust process can report healthy while genuinely unable to reach Postgres for anything
 beyond its own boot-time migration run (which would already have crashed the process if it failed —
@@ -44,7 +44,7 @@ so a running Trust process **has** proven database connectivity at least once, a
 
 Same `/health` shape. Relay's own real authority verification (`PilotAuthorityVerifier`) depends on
 reaching Trust's `/v1/trust/issuers/:issuerId/verification-keys` route — if Trust is down or
-`BUDCOM_TRUST_BASE_URL` is misconfigured, Relay's `/health` still reports OK (it only checks its own
+`VENTURE_TRUST_BASE_URL` is misconfigured, Relay's `/health` still reports OK (it only checks its own
 process), but every real submission/mailbox/ack call will fail closed (see the automated test
 `backend/test/controlled-pilot-integration.test.ts`'s own "Trust unavailable" case — it fails
 closed with a 500, not a graceful 503; distinguishing "Trust is down" from "credential is invalid" at
@@ -66,10 +66,10 @@ its role). This tool:
 - calls Trust's real application services in-process (no HTTP provisioning route exists anywhere in
   this backend — see `backend/services/trust/src/app.ts`, which only ever registers `GET /health`
   and the verification-keys route);
-- refuses to run unless every runtime-environment signal that is actually set (`BUDCOM_RUNTIME_ENV`,
+- refuses to run unless every runtime-environment signal that is actually set (`VENTURE_RUNTIME_ENV`,
   `NODE_ENV`) explicitly normalizes to `development` or `test` — a positive allowlist, not merely
   "is not production" (hardened 2026-08-29; see section K). **An unset environment is now refused,
-  not silently allowed** — export `BUDCOM_RUNTIME_ENV=development` (as `.env.example` already shows)
+  not silently allowed** — export `VENTURE_RUNTIME_ENV=development` (as `.env.example` already shows)
   before running this CLI;
 - persists to a local, gitignored JSON file (`.local/trust-dev-state.json` by default) — **not**
   the same Postgres store Trust's own `main.ts` would use in a real deployment. Use `pilot-provision.ts`
@@ -142,13 +142,13 @@ contract, which does not exist in this backend yet).
 
 ```
 cd backend
-copy .env.example .env   # then edit BUDCOM_TRUST_DATABASE_URL for a real, reachable Postgres
-set -a; . ./.env; set +a   # or export BUDCOM_TRUST_DATABASE_URL yourself
+copy .env.example .env   # then edit VENTURE_TRUST_DATABASE_URL for a real, reachable Postgres
+set -a; . ./.env; set +a   # or export VENTURE_TRUST_DATABASE_URL yourself
 npm run test:live-postgres
 ```
 
 Opt-in only — `test/live-postgres.integration.test.ts` skips itself entirely (via
-`describe.skipIf(!process.env.BUDCOM_TRUST_DATABASE_URL)`) when that env var is absent, so `npm test`
+`describe.skipIf(!process.env.VENTURE_TRUST_DATABASE_URL)`) when that env var is absent, so `npm test`
 never attempts a database connection and the ordinary 259-test suite stays independent of PostgreSQL.
 Connect as an ordinary application role, never a superuser. Every row it writes is scoped under a
 fresh `randomUUID()` per run and deleted in a `finally` block even on assertion failure; it never
@@ -168,7 +168,7 @@ TRUST KEY-LIFECYCLE PROOF GATE round; this file is the standing, repeatable form
 This is the honest gap list — see the final report's ANDROID PHONE-A/PHONE-B READINESS section for
 full detail:
 
-1. **No Trust HTTP client exists in Android at all.** Nothing in `apps/budcom_android` calls any
+1. **No Trust HTTP client exists in Android at all.** Nothing in `apps/venture_android` calls any
    `/v1/trust/...` route. Device registration and credential issuance from a real phone are
    architecturally undefined on the Android side today.
 2. **Every credential/verification-key binding in Android is a hardcoded stub returning `null`**
@@ -197,7 +197,7 @@ full detail:
 ## H. Shutdown / recovery
 
 ```
-.\scripts\budcom-services.ps1 -Stop
+.\scripts\venture-services.ps1 -Stop
 ```
 
 Stops only processes this tool itself started and is still tracking (matched by PID **and** the
@@ -207,28 +207,28 @@ way (e.g. directly via `npm run dev`), stop it yourself the same way you started
 
 Crash recovery: both `main.ts` entrypoints handle `SIGINT`/`SIGTERM` for a clean Fastify shutdown
 (closing the database pool via the `onClose` hook). There is no supervisor/auto-restart — if a
-service crashes, `.\scripts\budcom-services.ps1 -Status` will show it as not running; restart with
+service crashes, `.\scripts\venture-services.ps1 -Status` will show it as not running; restart with
 `-StartTrust`/`-StartRelay`.
 
 ## I. Log locations
 
-- Service stdout/stderr: `%TEMP%\budcom-services\trust.log` / `trust.log.err`, and the `relay.*`
+- Service stdout/stderr: `%TEMP%\venture-services\trust.log` / `trust.log.err`, and the `relay.*`
   equivalents. Rewritten on every `-Start*` call (not appended) — copy out anything you need before
   restarting.
 - Fastify's own structured request logs go to each service's stdout log above (pino JSON lines).
 - PID/start-time tracking (used by `-Status`/`-Stop`, not meant for manual reading):
-  `%TEMP%\budcom-services\trust.pid` / `relay.pid`.
+  `%TEMP%\venture-services\trust.pid` / `relay.pid`.
 
 ## J. Common failure explanations
 
 | Symptom | Likely cause | Check |
 |---|---|---|
-| `BUDCOM_TRUST_DATABASE_URL is required` (Trust exits immediately) | Env var not set | `-Doctor` |
+| `VENTURE_TRUST_DATABASE_URL is required` (Trust exits immediately) | Env var not set | `-Doctor` |
 | Trust/Relay exits within ~1-2s of `-Start*` | Database unreachable, or malformed connection string | The printed `--- last error output ---` tail, or the full `.log.err` file |
-| `-StartTrust`/`-StartRelay` refuses immediately with "port already in use" | Something else (often BUDCOM Desktop's own bundled server on 8080) already owns that port | `-Doctor`'s port section; change `BUDCOM_TRUST_PORT`/`BUDCOM_RELAY_PORT` |
+| `-StartTrust`/`-StartRelay` refuses immediately with "port already in use" | Something else (often VENTURE Desktop's own bundled server on 8080) already owns that port | `-Doctor`'s port section; change `VENTURE_TRUST_PORT`/`VENTURE_RELAY_PORT` |
 | Relay accepts everything unconditionally / rejects everything unconditionally | Relay was launched with a verifier other than `PilotAuthorityVerifier` (only `main.ts`'s real wiring uses it — a script that calls `buildRelayService` directly with hand-built fakes, as the pre-existing tests do, will behave however those fakes say) | Confirm you started Relay via `npm run dev:relay` / `-StartRelay`, not a bespoke script |
 | Credential rejected with no obvious reason | Membership scope doesn't include the capability being exercised (`send_orders` to submit, `receive_orders` to fetch/ack) -- `CreateBusiness`'s own default grant does **not** include `receive_orders` | `provision:dev status`, then `grant-scope` if needed |
-| `dev-provision.ts` refuses to run | `BUDCOM_RUNTIME_ENV`/`NODE_ENV` is `production`, **or neither is set at all** | This is intentional (dev-only guard, fail-closed positive allowlist — section K); explicitly `export BUDCOM_RUNTIME_ENV=development`, don't just unset it |
+| `dev-provision.ts` refuses to run | `VENTURE_RUNTIME_ENV`/`NODE_ENV` is `production`, **or neither is set at all** | This is intentional (dev-only guard, fail-closed positive allowlist — section K); explicitly `export VENTURE_RUNTIME_ENV=development`, don't just unset it |
 | Fetch/Ack return 400 `authenticatedRequest is required` | Caller sent only plaintext identifiers (`recipientBusinessId`/`recipientActorId`/`recipientDeviceId`) with no signed possession proof | This is intentional (section K) — every Fetch/Ack call must include a base64 `authenticatedRequest` built per `devtools/pilot-envelope.ts`'s `buildAuthenticatedRelayRequest` |
 | Fetch/Ack return 403 despite a credential that "looks" valid | The credential's claims no longer match CURRENT Trust authority (membership/device authority epoch advanced, device rotated/revoked since issuance) even though the credential's own signature and expiry are still fine | Re-issue a fresh credential against current Trust state (`provision:dev issue-credential`) rather than reusing an old one |
 

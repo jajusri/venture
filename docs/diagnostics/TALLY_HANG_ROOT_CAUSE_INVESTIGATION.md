@@ -23,7 +23,7 @@ The earlier `c0000005` crash narrative (cumulative load / concurrency / retry st
 
 ### E1 — Connector audit trail: only `List of Units` ever genuinely hangs
 
-`connector/budcom_connector/diagnostics/tally-request-audit.jsonl` (231 lines). Every `outcome:"failed"` entry is one of exactly two kinds:
+`connector/venture_connector/diagnostics/tally-request-audit.jsonl` (231 lines). Every `outcome:"failed"` entry is one of exactly two kinds:
 
 | Failure kind | Request ID | Count | Meaning |
 |--------------|-----------|-------|---------|
@@ -173,7 +173,7 @@ No connector, no concurrency, no retries, no load are required. **One request is
 | File | Contents |
 |------|----------|
 | `docs/diagnostics/tally-hang-isolation-payloads.xml` | Exact request XML for every OK and HANG case, with timings/memory/CPU |
-| `connector/budcom_connector/diagnostics/tally-request-audit.jsonl` | Connector audit trail (only `List of Units` timed out) |
+| `connector/venture_connector/diagnostics/tally-request-audit.jsonl` | Connector audit trail (only `List of Units` timed out) |
 | `docs/diagnostics/m3-stock-items-raw-sample.xml` | 434 KB successful stock-items export (size baseline) |
 | `docs/diagnostics/TALLY_CRASH_INVESTIGATION.md` | Prior (load/concurrency) hypothesis — superseded as the deterministic cause by this report |
 

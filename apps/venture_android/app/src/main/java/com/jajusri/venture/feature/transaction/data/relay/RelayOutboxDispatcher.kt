@@ -1,0 +1,108 @@
+package com.jajusri.venture.feature.transaction.data.relay
+
+import com.jajusri.venture.core.util.DispatcherProvider
+import com.jajusri.venture.feature.transaction.data.local.OrderOutboxDao
+import com.jajusri.venture.feature.transaction.domain.model.RelayOutboxRetryPolicy
+import com.jajusri.venture.feature.transaction.domain.model.OrderDeliveryEnvelope
+import com.jajusri.venture.feature.transaction.domain.model.OrderTransportState
+import com.jajusri.venture.feature.transaction.domain.model.TransactionClock
+import com.jajusri.venture.feature.transaction.domain.model.TransactionTimestamp
+import com.jajusri.venture.feature.transaction.domain.port.OrderSentFromRelayEvidence
+import com.jajusri.venture.feature.transaction.domain.port.RelayOutboxDispatcher
+import com.jajusri.venture.feature.transaction.domain.port.TransportResult
+import com.jajusri.venture.feature.transaction.domain.port.TransportRouterResult
+import kotlinx.coroutines.withContext
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class DefaultRelayOutboxDispatcher @Inject constructor(
+    private val orderOutboxDao: OrderOutboxDao,
+    private val router: RelayAwareTransportRouter,
+    private val clock: TransactionClock,
+    private val dispatchers: DispatcherProvider,
+    private val orderSent: OrderSentFromRelayEvidence,
+) : RelayOutboxDispatcher {
+    override suspend fun submitPending(companyId: String) = withContext(dispatchers.io) {
+        val now = clock.now()
+        val pending = orderOutboxDao.findPendingBatch(companyId, RelayOutboxRetryPolicy.MAX_DISPATCH_BATCH)
+            .filter { entity ->
+                !RelayOutboxRetryPolicy.attemptsExhausted(entity.attemptCount) &&
+                    RelayOutboxRetryPolicy.readyForRetry(entity.attemptCount, entity.lastAttemptAt, now.epochMillis)
+            }
+        pending.forEach { entity ->
+            val envelope = entity.toDispatcherEnvelope()
+            val result = router.submit(envelope)
+            val attemptNow = clock.now()
+            when (result) {
+                TransportRouterResult.NoAvailableTransport -> Unit
+                is TransportRouterResult.Submitted -> {
+                    persistAttempt(entity.companyId, entity.envelopeId, entity.attemptCount, attemptNow, result.result)
+                    val accepted = result.result as? TransportResult.Accepted
+                    val evidence = accepted?.relayAcceptance
+                    if (evidence != null && entity.commercialContentType == null) {
+                        orderSent.markOrderSentFromRelayEvidence(entity.companyId, envelope, evidence)
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun persistAttempt(
+        companyId: String,
+        envelopeId: String,
+        previousAttempts: Int,
+        now: TransactionTimestamp,
+        result: TransportResult,
+    ) {
+        val attempts = previousAttempts + 1
+        val exhausted = RelayOutboxRetryPolicy.attemptsExhausted(attempts)
+        val (state, error) = when (result) {
+            is TransportResult.Accepted -> OrderTransportState.RelayAccepted to null
+            is TransportResult.RetryableFailure -> if (exhausted) OrderTransportState.Failed to result.reason else OrderTransportState.Retrying to result.reason
+            is TransportResult.TemporarilyUnavailable -> if (exhausted) OrderTransportState.Failed to result.reason else OrderTransportState.Retrying to result.reason
+            is TransportResult.PermanentRejection -> OrderTransportState.Failed to result.reason
+            is TransportResult.Delivered -> OrderTransportState.Failed to "relay must not claim delivery"
+        }
+        orderOutboxDao.updateTransportAttempt(
+            companyId = companyId,
+            envelopeId = envelopeId,
+            state = state.columnValue,
+            attemptCount = attempts,
+            lastAttemptAt = now.epochMillis,
+            lastAttemptAtSource = now.source.name,
+            lastError = error,
+        )
+    }
+}
+
+private fun com.jajusri.venture.feature.transaction.data.local.OrderDeliveryEnvelopeEntity.toDispatcherEnvelope(): OrderDeliveryEnvelope =
+    OrderDeliveryEnvelope(
+        companyId = companyId,
+        envelopeId = envelopeId,
+        idempotencyKey = idempotencyKey,
+        objectType = objectType,
+        orderId = orderId,
+        orderVersion = orderVersion,
+        senderCompanyId = senderCompanyId,
+        recipientPartyId = recipientPartyId,
+        createdAt = com.jajusri.venture.feature.transaction.domain.model.TransactionTimestamp(
+            createdAt,
+            com.jajusri.venture.feature.transaction.domain.model.TransactionTimestampSource.valueOf(createdAtSource),
+        ),
+        state = OrderTransportState.fromColumn(state),
+        attemptCount = attemptCount,
+        lastAttemptAt = if (lastAttemptAt != null && lastAttemptAtSource != null) {
+            com.jajusri.venture.feature.transaction.domain.model.TransactionTimestamp(
+                lastAttemptAt,
+                com.jajusri.venture.feature.transaction.domain.model.TransactionTimestampSource.valueOf(lastAttemptAtSource),
+            )
+        } else {
+            null
+        },
+        lastError = lastError,
+        recipientBusinessId = recipientBusinessId,
+        commercialContentType = commercialContentType,
+        commercialContentVersion = commercialContentVersion,
+        commercialContentCanonical = commercialContentCanonical,
+    )

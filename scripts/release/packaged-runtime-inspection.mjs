@@ -5,7 +5,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
-const desktopDist = path.join(repoRoot, 'apps/budcom_desktop/dist');
+const desktopDist = path.join(repoRoot, 'apps/venture_desktop/dist');
 
 export function resolveInspectionLayout(unpackedRoot = null) {
   const resolvedUnpacked = unpackedRoot ? path.resolve(unpackedRoot) : null;
@@ -22,9 +22,9 @@ export function resolveInspectionLayout(unpackedRoot = null) {
   return {
     desktopMainEntry: path.join(desktopDist, 'main/main.js'),
     desktopApplicationDir: path.join(desktopDist, 'application'),
-    connectorEntryScript: path.join(repoRoot, 'connector/budcom_connector/dist/main.js'),
-    connectorPackageJson: path.join(repoRoot, 'connector/budcom_connector/package.json'),
-    connectorResourceRoot: path.join(repoRoot, 'connector/budcom_connector'),
+    connectorEntryScript: path.join(repoRoot, 'connector/venture_connector/dist/main.js'),
+    connectorPackageJson: path.join(repoRoot, 'connector/venture_connector/package.json'),
+    connectorResourceRoot: path.join(repoRoot, 'connector/venture_connector'),
   };
 }
 

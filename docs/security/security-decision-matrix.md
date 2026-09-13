@@ -8,7 +8,7 @@ This matrix records unresolved or partially resolved security decisions that req
 
 | Decision | Threat / data addressed | Current state | Risk if unchanged | Options | Recommended direction | Required before |
 |----------|-------------------------|---------------|-------------------|---------|----------------------|-----------------|
-| SQLite encryption at rest | Local database theft exposes ledger metadata | Plaintext SQLite at `{databasePath}/budcom-ledger.db` | High on shared/unattended machines | SQLCipher; OS DPAPI file encryption; accept plaintext with physical-access controls | Defer architecture; document operator responsibility; revisit for commercial pilot expansion | Commercial pilot expansion |
+| SQLite encryption at rest | Local database theft exposes ledger metadata | Plaintext SQLite at `{databasePath}/venture-ledger.db` | High on shared/unattended machines | SQLCipher; OS DPAPI file encryption; accept plaintext with physical-access controls | Defer architecture; document operator responsibility; revisit for commercial pilot expansion | Commercial pilot expansion |
 | Log / audit encryption | File logs and audit JSONL readable locally | Sanitized plaintext logs/audit; bounded rotation (B2a) | Medium — metadata leakage | Encrypt log files; restrict ACLs; remote sink | OS ACL + existing sanitization for controlled pilot | Unrestricted production |
 | OS credential vault for secrets | Token/licence theft from disk | No licence vault in MVP; config schema has no secret fields | Low today (no secrets persisted) | Windows Credential Manager; DPAPI wrapper | Implement when licence/token storage is approved | Licensing milestone |
 | Licence secret storage | Licence key exposure | Not implemented | N/A until licensing ships | Vault vs encrypted file vs online activation | Blocked on licensing spec | Licensing milestone |
@@ -21,7 +21,7 @@ This matrix records unresolved or partially resolved security decisions that req
 | LAN API authentication (TD-009) | Unauthenticated connector on LAN | Loopback default; LAN requires acknowledgement; no authN | High if LAN enabled carelessly | Local token; mTLS; VPN-only | Keep loopback default; document firewall requirement | Commercial pilot if LAN required |
 | Inbound offline XML envelope hardening | Malicious imported XML files | Unified envelope boundary (`InboundXmlEnvelopeService`); import-attempt history; domain upsert deferred | Medium for import modes | Offline domain persistence + desktop import UI | Implemented in RC#4 §30; commercial pilot after domain upsert | Commercial pilot |
 | Controlled-pilot release engineering | Tampered artifacts; packaging leaks; unsafe upgrade | Release mode contract; build metadata; packaging boundary inspection; SHA-256 manifest; NSIS config with `deleteAppDataOnUninstall: false`; manual upgrade only | Medium — unsigned pilot distribution | EV/OV signing; authenticated updater | Checksum-verified manual distribution for controlled pilot | Controlled pilot distribution |
-| Release-mode enforcement | Production capabilities in pilot | Typed `BUDCOM_RELEASE_MODE`; fail-closed unknown values; diagnostics expose mode | Medium if misconfigured | Build-time injection | Implemented §31 | Controlled pilot |
+| Release-mode enforcement | Production capabilities in pilot | Typed `VENTURE_RELEASE_MODE`; fail-closed unknown values; diagnostics expose mode | Medium if misconfigured | Build-time injection | Implemented §31 | Controlled pilot |
 | Controlled-pilot lifecycle gate (§32) | Installer substitution; orphan connector; AppData deletion on uninstall; cleanup path escape | SHA-256 preflight; real Windows install/reinstall/uninstall/reinstall harness; `deleteAppDataOnUninstall: false` proven; marker-guarded cleanup; lifecycle unit tests | Medium — unsigned SmartScreen friction; health timeout on slow hosts | VM/Sandbox isolation; signed installer | Checksum-verified lifecycle gate before pilot handoff | Controlled pilot distribution |
 
 ## Controlled pilot status
@@ -36,7 +36,7 @@ Approved with documented limitations:
 - Local lifecycle documentation without backup auto-deletion
 - **Manual controlled-pilot distribution with SHA-256 checksum verification**
 - **Unsigned installer/portable builds with explicit SmartScreen guidance**
-- **Real Windows uninstall-retention proof (§32)** — NSIS uninstall removes binaries; `%APPDATA%/@budcom/desktop/` retained
+- **Real Windows uninstall-retention proof (§32)** — NSIS uninstall removes binaries; `%APPDATA%/@venture/desktop/` retained
 - **Lifecycle validation harness** — `scripts/lifecycle/*` with fail-closed integrity checks
 
 ## Commercial pilot blockers

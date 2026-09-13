@@ -27,8 +27,8 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
-const desktopRoot = path.join(repoRoot, 'apps/budcom_desktop');
-const connectorRoot = path.join(repoRoot, 'connector/budcom_connector');
+const desktopRoot = path.join(repoRoot, 'apps/venture_desktop');
+const connectorRoot = path.join(repoRoot, 'connector/venture_connector');
 
 function run(command, cwd, env = process.env) {
   console.log(`> ${command}`);
@@ -54,7 +54,7 @@ function sha256File(filePath) {
 }
 
 function findInstallerArtifact(artifactsDir, version) {
-  const expected = `BudcomDesktop-${version}-x64-setup.exe`;
+  const expected = `VentureDesktop-${version}-x64-setup.exe`;
   const expectedPath = path.join(artifactsDir, expected);
   if (fs.existsSync(expectedPath)) {
     return expected;
@@ -91,8 +91,8 @@ function writeNonWindowsValidationReport(releaseRoot, reportsDir, report) {
 }
 
 async function main() {
-  if (process.env.BUDCOM_RELEASE_MODE !== 'controlled_pilot') {
-    console.error('BUDCOM_RELEASE_MODE must be controlled_pilot');
+  if (process.env.VENTURE_RELEASE_MODE !== 'controlled_pilot') {
+    console.error('VENTURE_RELEASE_MODE must be controlled_pilot');
     process.exit(2);
   }
 
@@ -120,7 +120,7 @@ async function main() {
   };
 
   const releaseProvenanceEnv = buildReleaseProvenanceMetadata(startProvenanceSnapshot, []);
-  process.env.BUDCOM_RELEASE_PROVENANCE = JSON.stringify(releaseProvenanceEnv);
+  process.env.VENTURE_RELEASE_PROVENANCE = JSON.stringify(releaseProvenanceEnv);
   report.provenance = {
     sourceTreeCleanAtStart: startProvenanceSnapshot.sourceTreeCleanAtStart,
     gitCommitAtStart: startProvenanceSnapshot.headCommit,
@@ -157,7 +157,7 @@ async function main() {
         desktopRoot,
         {
           ...process.env,
-          BUDCOM_RELEASE_MODE: 'controlled_pilot',
+          VENTURE_RELEASE_MODE: 'controlled_pilot',
         },
       );
     });
@@ -171,7 +171,7 @@ async function main() {
       startProvenanceSnapshot,
       generatedChangesAfterBuild,
     );
-    process.env.BUDCOM_RELEASE_PROVENANCE = JSON.stringify(releaseProvenance);
+    process.env.VENTURE_RELEASE_PROVENANCE = JSON.stringify(releaseProvenance);
     report.provenance.generatedChangesAfterBuild = [...generatedChangesAfterBuild];
 
     const buildInfoPath = path.join(releaseRoot, 'build-info.json');

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Budcom Tally Hang Root-Cause Isolation — Exact Request Payloads
+  Venture Tally Hang Root-Cause Isolation — Exact Request Payloads
   Generated: 2026-07-22 (controlled live isolation session)
   Company: ESTIMATION (open in TallyPrime, localhost:9000)
   Method: single hand-written POST per request, no connector, no concurrency, 5s cooldowns.

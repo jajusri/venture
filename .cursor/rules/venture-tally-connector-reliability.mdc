@@ -1,0 +1,246 @@
+---
+description: Venture Tally Connector reliability, XML safety, diagnostics, and Windows hardening rules
+globs:
+  - "src/**/*"
+  - "test/**/*"
+  - "tests/**/*"
+  - "docs/**/*"
+  - "package.json"
+  - "electron-builder.*"
+  - "vite.config.*"
+  - "tsconfig*.json"
+alwaysApply: true
+---
+
+# Venture Tally Connector — Accepted Reliability and Production-Hardening Rules
+
+## Authority and scope
+
+This file records architectural decisions already approved for the Venture Business OS Tally Connector.
+
+These rules do not create new product scope. Apply them only when required by the current approved milestone, a critical defect, security requirement, reliability requirement, or production-readiness work.
+
+Until MVP-1 is complete:
+
+- Maintain the feature freeze.
+- Do not introduce unrelated features.
+- Do not redesign approved architecture merely to satisfy this file.
+- Do not assume milestone numbers from external reviews.
+- Use repository milestone documents and stage-update files as the source of truth.
+- Keep the connector read-only toward Tally unless an explicitly approved future specification changes this.
+- Preserve ERP-neutral ports and keep Tally-specific behavior inside the Tally adapter/infrastructure boundary.
+
+Before changing code:
+
+1. Inspect the current architecture, milestone documents, tests, and stage-update file.
+2. Identify which accepted requirement is relevant to the present milestone.
+3. Reuse existing ports, contracts, error types, repositories, and test helpers.
+4. Present a small implementation plan.
+5. Do not implement unrelated cleanup or enhancements.
+
+## 1. Capability-based Tally pre-flight checks
+
+Connection readiness must be established through capability probing, not brittle assumptions.
+
+Do not:
+
+- depend only on a Windows process name such as `tally.exe`;
+- hard-code port `9000`;
+- assume one Tally release, one XML shape, or one company state;
+- block synchronization solely because a process-name check fails.
+
+Use configuration and safe probing to determine, where supported:
+
+- whether the configured endpoint is reachable;
+- whether the response is recognizable as Tally;
+- connection latency and timeout classification;
+- whether one or more companies are available;
+- capabilities required by the requested operation;
+- version or release information when reliably obtainable;
+- whether relevant connection configuration has changed.
+
+Requirements:
+
+- Model pre-flight results with explicit typed statuses.
+- Distinguish unavailable, timeout, malformed response, incompatible response, no-company, and capability-unavailable conditions.
+- Do not mutate Tally during a pre-flight check.
+- Do not log raw accounting data.
+- Keep probing bounded by timeouts, payload limits, and retry limits.
+- Add tests for success, timeout, refusal, malformed response, no-company, and configuration-change cases.
+
+## 2. Atomic SQLite synchronization and crash recovery
+
+Synchronization must never leave partially committed domain state.
+
+Requirements:
+
+- Define clear transaction boundaries around each atomic synchronization batch.
+- Commit domain records and the corresponding checkpoint consistently.
+- Roll back the complete atomic batch on failure.
+- Never advance a checkpoint before its associated data is durable.
+- Preserve idempotency across retries and application restarts.
+- Detect interrupted synchronization jobs during startup or before the next run.
+- Recover safely by resuming from a valid checkpoint or replaying an idempotent batch.
+- Record bounded operational metadata needed for recovery without storing unnecessary customer data.
+- Add failure-injection tests before, during, and after writes and checkpoint updates.
+
+SQLite notes:
+
+- WAL mode may be used when appropriate, but it is an implementation choice rather than the recovery strategy itself.
+- Configure SQLite deliberately and document the selected durability trade-offs.
+- Use lightweight startup health checks.
+- Run deeper integrity checks on recovery paths, suspected corruption, maintenance operations, or another documented trigger rather than blindly on every launch.
+- Handle integrity-check failure explicitly.
+- Backup and restoration behavior must preserve company isolation.
+
+Do not impose a database-per-company model unless already approved. Enforce the existing approved company-isolation boundary.
+
+## 3. Strict and conservative XML boundary validation
+
+Treat every XML payload or imported XML file as untrusted input.
+
+Required processing order:
+
+1. Preserve the original payload securely when policy permits, or preserve a safe fingerprint and bounded diagnostic metadata.
+2. Validate byte size and configured limits before parsing.
+3. Validate encoding and reject unsupported or ambiguous encoding.
+4. Reject prohibited, dangerous, or structurally unsafe constructs.
+5. Validate the expected envelope and operation-specific structure.
+6. Apply only deterministic, documented normalization.
+7. Map data through existing adapter contracts and ERP-neutral domain ports.
+8. Fail explicitly when business meaning cannot be guaranteed.
+
+Rules:
+
+- Never silently repair accounting values, identifiers, dates, amounts, quantities, or hierarchy relationships.
+- Do not perform broad automatic sanitization.
+- Quarantine, reject, or report malformed records according to the approved import policy.
+- Retain enough safe evidence to diagnose failure without exposing financial data.
+- Enforce limits for payload size, nesting depth, node count, text length, and processing time where supported.
+- Prevent external entity resolution and unsafe parser behavior.
+- Test malformed envelopes, bad encoding, truncated input, duplicate nodes, excessive depth, oversized payloads, prohibited constructs, and semantically ambiguous values.
+- Preserve deterministic duplicate-prevention and safe reprocessing for desktop and mobile XML import modes.
+
+## 4. Privacy-safe diagnostic bundles
+
+Support diagnostics without collecting identifiable accounting or customer data.
+
+Diagnostics may include, when relevant:
+
+- connector version and build identifier;
+- OS, architecture, and runtime versions;
+- configured connection mode;
+- redacted configuration presence/status;
+- error classifications and safe error codes;
+- response status;
+- request and response sizes;
+- durations, timeout categories, and retry counts;
+- synchronization stage;
+- database health indicators;
+- anonymized correlation identifiers;
+- stack traces after secret and data redaction;
+- relevant feature flags or capability statuses;
+- non-reversible fingerprints that cannot reconstruct source data.
+
+Diagnostics must exclude:
+
+- party or customer names;
+- ledger names;
+- GSTINs and tax identifiers;
+- voucher details;
+- amounts, prices, balances, or quantities;
+- addresses and phone numbers;
+- raw XML or imported file contents;
+- authentication secrets, tokens, licence secrets, or encryption keys;
+- identifiable company data;
+- unrestricted filesystem paths containing personal or company names.
+
+Requirements:
+
+- Implement diagnostics through an explicit allowlist.
+- Redact before persistence, export, or transmission.
+- Keep diagnostic generation bounded in size.
+- Make bundle creation intentional and visible to the user where applicable.
+- Add automated tests proving prohibited fields and representative financial values are absent.
+- Link diagnostic evidence, limitations, and unresolved observations to the relevant stage-update file.
+
+## 5. Windows and Electron production hardening
+
+Apply these controls in the appropriate packaging or production-readiness milestone:
+
+- strict Content Security Policy;
+- context isolation;
+- disabled Node integration in renderer processes unless explicitly justified;
+- narrow, typed, allowlisted IPC;
+- validation on both sides of IPC boundaries;
+- no unrestricted shell execution;
+- no arbitrary file access from renderer code;
+- safe handling of selected import folders and files;
+- secure storage for secrets and licence material;
+- authenticated and integrity-checked updates;
+- signed production installers when required by the release plan;
+- antivirus and Windows Defender compatibility testing;
+- least-privilege installation and runtime behavior;
+- secure logging and crash reporting;
+- dependency and supply-chain review.
+
+Code signing policy:
+
+- Do not let EV certificate procurement block MVP implementation or validation.
+- Treat signing level and certificate choice as a release decision.
+- Do not treat obfuscation or binary protection as a security boundary.
+
+## 6. Idempotency terminology
+
+Because the connector is read-only toward Tally, idempotency primarily protects against:
+
+- duplicate local imports;
+- duplicate synchronization records;
+- repeated processing;
+- duplicate events or upload jobs;
+- inconsistent checkpoint advancement;
+- replay after crash or restart.
+
+Do not describe this as preventing duplicate Tally ledger creation unless a future approved write capability exists.
+
+## 7. Required verification
+
+For every implementation under these rules:
+
+- Add or update unit tests.
+- Add integration tests where the boundary is testable.
+- Add failure-injection tests for recovery-sensitive behavior.
+- Run the repository’s existing lint, type-check, test, architecture, and build commands.
+- Do not weaken existing tests to obtain a pass.
+- Document commands executed and exact results.
+- Record remaining risks, limitations, defects, and unvalidated assumptions.
+
+## 8. Mandatory stage-update traceability
+
+Update the current milestone’s stage-update file with:
+
+- requirement addressed;
+- implementation status;
+- files changed;
+- tests added or changed;
+- test results and validation evidence;
+- known defects;
+- security observations;
+- risks and limitations;
+- unresolved questions;
+- production-readiness level;
+- deferred work and the milestone in which it belongs.
+
+The stage-update file is part of the deliverable. Code is not complete without traceability.
+
+## Cursor execution instruction
+
+When asked to implement any part of this file:
+
+1. First inspect the repository and report what already exists.
+2. Map the request to the current milestone and approved architecture.
+3. Identify the smallest compliant change.
+4. Implement only that change.
+5. Add tests and update the stage-update file.
+6. Run all relevant validation commands.
+7. Do not commit unless explicitly instructed.

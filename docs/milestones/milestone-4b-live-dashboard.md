@@ -13,8 +13,8 @@ Integrate the desktop shell with live connector REST APIs for company discovery,
 
 | Component | Version |
 |-----------|---------|
-| Connector | `@budcom/connector` **0.3.1** (latest source, rebuilt) |
-| Desktop | `@budcom/desktop` **0.4.1** |
+| Connector | `@venture/connector` **0.3.1** (latest source, rebuilt) |
+| Desktop | `@venture/desktop` **0.4.1** |
 | Live company | **ESTIMATION** (`estimation`) |
 | Additional companies | Learn (`learn`) |
 
@@ -80,12 +80,12 @@ Full evidence: `docs/diagnostics/m4b-live-validation-results.json`
 
 ## Validation tooling
 
-`apps/budcom_desktop/src/scripts/live-validation.ts` — exercises desktop application layer against live connector.
+`apps/venture_desktop/src/scripts/live-validation.ts` — exercises desktop application layer against live connector.
 
 ## Screenshots
 
-- `apps/budcom_desktop/screenshots/dashboard-live.png`
-- `apps/budcom_desktop/screenshots/settings.png`
+- `apps/venture_desktop/screenshots/dashboard-live.png`
+- `apps/venture_desktop/screenshots/settings.png`
 
 ## Known issues
 

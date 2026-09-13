@@ -4,11 +4,11 @@
 > We are building the smartest companion for businesses that use an ERP."
 
 **Status:** Authoritative product manifesto  
-**Working name:** BUDCO
+**Working name:** VENTURE
 
-BUDCO is **not** merely an ERP mobile client.
+VENTURE is **not** merely an ERP mobile client.
 
-It is an intelligent Android business companion that removes friction between people, phone capabilities, business workflows, the BudCom Connector, and the ERP system of record.
+It is an intelligent Android business companion that removes friction between people, phone capabilities, business workflows, the Venture Connector, and the ERP system of record.
 
 Engineering rules: [PROJECT_CONSTITUTION.md](PROJECT_CONSTITUTION.md)  
 Permanent principles: [NON_NEGOTIABLES.md](NON_NEGOTIABLES.md)  
@@ -18,13 +18,13 @@ Decisions: [DECISIONS.md](DECISIONS.md)
 
 ---
 
-## Why BUDCO exists
+## Why VENTURE exists
 
 Businesses already have ERP systems. What they often lack is a fast, intelligent, mobile-first experience.
 
 Users should not think about databases, ledgers, vouchers, or synchronization. They should get work done.
 
-BUDCO removes friction between people and business systems. Every feature must reduce effort. If it does not, question it before implementation.
+VENTURE removes friction between people and business systems. Every feature must reduce effort. If it does not, question it before implementation.
 
 ---
 
@@ -36,7 +36,7 @@ Build the most intelligent and reliable Android companion for ERP users — not 
 
 ## Who We Serve
 
-BUDCO is designed for **every business**, regardless of size.
+VENTURE is designed for **every business**, regardless of size.
 
 No organization is excluded because of how large or small it is, or which industry it belongs to. The same product soul must remain true for a single person running a home business and for a global enterprise.
 
@@ -76,7 +76,7 @@ These examples illustrate breadth. They are not a closed list, a target-market f
 
 ## Long-term vision
 
-BUDCO becomes the application business users open first. The ERP remains the system of record in the background. The ERP stores information; BUDCO helps people use it.
+VENTURE becomes the application business users open first. The ERP remains the system of record in the background. The ERP stores information; VENTURE helps people use it.
 
 The decade-scale picture — local empowerment, intelligent companionship, open platform, multi-device reach, and global scalability — lives in [VISION_2030.md](VISION_2030.md).
 
@@ -87,8 +87,8 @@ The decade-scale picture — local empowerment, intelligent companionship, open 
 - **Technology should scale down as well as scale up.** Enterprise power that only works for the largest teams has failed half of the mission.
 - **Small businesses deserve enterprise-grade capabilities.** Reliability, clarity, and intelligence are not luxuries reserved for corporations.
 - **Simplicity should never mean limited capability.** A calm surface can still rest on deep, trustworthy systems.
-- **The platform should grow with the business instead of forcing migration.** Today’s solo operator should not outgrow BUDCO and be forced to start over.
-- **We strengthen businesses rather than create dependency.** BUDCO should make the user’s own systems, relationships, and judgment stronger — not trap them inside a black box they cannot leave.
+- **The platform should grow with the business instead of forcing migration.** Today’s solo operator should not outgrow VENTURE and be forced to start over.
+- **We strengthen businesses rather than create dependency.** VENTURE should make the user’s own systems, relationships, and judgment stronger — not trap them inside a black box they cannot leave.
 - **We aim to reduce friction, not replace relationships.** Tools assist people. They do not replace trust, conversation, or accountability between humans.
 
 ---
@@ -159,7 +159,7 @@ A support engineer should understand app condition within one minute: Health, Re
 
 ---
 
-## What BUDCO is not
+## What VENTURE is not
 
 Not another ERP, not a Tally replacement, not reporting-only, not dashboard-only, not a CRUD application. It is an intelligent operational companion.
 
@@ -173,7 +173,7 @@ Before implementing any feature, answer:
 2. Can Android already provide relevant context?
 3. Can the Connector already provide the data?
 4. Can the workflow become smarter without becoming confusing?
-5. Does it move BUDCO toward being an intelligent business companion?
+5. Does it move VENTURE toward being an intelligent business companion?
 
 If the answer is no, reconsider.
 

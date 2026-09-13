@@ -6,7 +6,7 @@
 
 ## Context
 
-Live validation proved that certain Tally XML requests can **deadlock TallyPrime's HTTP handler** even when well-formed. Write-capable or executable requests (`IMPORT`, `EXECUTE`, `FUNCTION`, `ALTER`, etc.) pose unacceptable risk to customer data and Tally stability. Budcom's primary responsibility is to **protect Tally**, not to mutate ERP state through an unattended connector.
+Live validation proved that certain Tally XML requests can **deadlock TallyPrime's HTTP handler** even when well-formed. Write-capable or executable requests (`IMPORT`, `EXECUTE`, `FUNCTION`, `ALTER`, etc.) pose unacceptable risk to customer data and Tally stability. Venture's primary responsibility is to **protect Tally**, not to mutate ERP state through an unattended connector.
 
 ## Decision
 
@@ -39,7 +39,7 @@ Production communication with Tally (and any future ERP through this connector) 
 
 Writes to an ERP are **explicitly out of scope** for Milestone 3A and are not planned for the production read connector.
 
-If Budcom ever requires ERP writes, they must be:
+If Venture ever requires ERP writes, they must be:
 
 1. A **separate adapter module** with its own capability model, registry, and policy — never mixed into the read connector.
 2. Subject to **manual approval**, dual-control, or operator-initiated workflows — never unattended automatic writes.
@@ -50,8 +50,8 @@ Until those conditions are met, the connector remains read-only by design.
 
 ## Consequences
 
-- Budcom cannot push vouchers, masters, or imports to Tally through this connector.
-- Offline workflows (user exports XML from Tally, imports into Budcom locally) remain the supported path for bulk data without live write risk.
+- Venture cannot push vouchers, masters, or imports to Tally through this connector.
+- Offline workflows (user exports XML from Tally, imports into Venture locally) remain the supported path for bulk data without live write risk.
 
 ## References
 

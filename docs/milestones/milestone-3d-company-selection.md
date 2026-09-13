@@ -64,7 +64,7 @@ Session objects are replaced atomically on selection or successful validation �
 6. **Clear** — `DELETE /session/company` removes selection
 7. **Stop** — durable selection is preserved; only connection state becomes disconnected
 
-Session TTL defaults to 8 hours (`BUDCOM_SESSION_TTL_MS`). Expired sessions return
+Session TTL defaults to 8 hours (`VENTURE_SESSION_TTL_MS`). Expired sessions return
 `SESSION_EXPIRED`. Repeating `POST /session/company` for the already-selected, still-discoverable
 company is an authenticated idempotent renewal: it refreshes and persists `selectedAt`, returns
 HTTP 200 with `DUPLICATE_SELECTION`, and does not alter pairing, identity, or trust state.
@@ -153,7 +153,7 @@ Test helpers:
 
 | Setting | Env var | Default |
 |---------|---------|---------|
-| Session TTL | `BUDCOM_SESSION_TTL_MS` | 28800000 (8 hours) |
+| Session TTL | `VENTURE_SESSION_TTL_MS` | 28800000 (8 hours) |
 
 ## Remaining observations
 

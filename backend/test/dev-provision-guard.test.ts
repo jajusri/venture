@@ -19,7 +19,7 @@ describe('dev-provision production guard (positive allowlist, fail closed)', () 
     expect(isDevProvisionRuntimeAllowed(undefined, ' Production ')).toBe(false);
   });
 
-  it('refuses when BUDCOM_RUNTIME_ENV is looser than a production NODE_ENV -- neither signal can override the other into allowing', () => {
+  it('refuses when VENTURE_RUNTIME_ENV is looser than a production NODE_ENV -- neither signal can override the other into allowing', () => {
     expect(isDevProvisionRuntimeAllowed('production', 'development')).toBe(false);
     expect(isDevProvisionRuntimeAllowed('development', 'production')).toBe(false);
   });

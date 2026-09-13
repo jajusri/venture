@@ -1,13 +1,13 @@
 # ADR-005: Product Vision
 
-**Series:** Android companion (`apps/budcom_android`)  
+**Series:** Android companion (`apps/venture_android`)  
 **Status:** Accepted  
 **Date:** 2026-07-27  
 **Related:** [`PRODUCT_SOUL.md`](../../PRODUCT_SOUL.md)
 
 ## Context
 
-Architecture without product intent drifts into CRUD shells and dashboard-only tools. BUDCO’s purpose is broader: an intelligent operational companion for ERP users. This ADR records that product vision as an architectural constraint so technical work remains aligned.
+Architecture without product intent drifts into CRUD shells and dashboard-only tools. VENTURE’s purpose is broader: an intelligent operational companion for ERP users. This ADR records that product vision as an architectural constraint so technical work remains aligned.
 
 ## Decision
 
@@ -30,8 +30,8 @@ Every unnecessary tap, screen, or repeated entry is a defect. Features that do n
 ### Business companion philosophy
 
 - The ERP (via Connector) remains the system of record.
-- BUDCO helps people use that information.
-- BUDCO is not another ERP, not a Tally replacement, not reporting-only, not dashboard-only, not a CRUD application.
+- VENTURE helps people use that information.
+- VENTURE is not another ERP, not a Tally replacement, not reporting-only, not dashboard-only, not a CRUD application.
 
 ### Innovation pillars (strategic, not Version 1 commitments)
 

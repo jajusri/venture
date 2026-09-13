@@ -85,7 +85,7 @@ describe('relay end to end structured delivery', () => {
       protocolVersion: 1, envelopeId: 'env-e2e-1', idempotencyKey: 'intent-e2e-1', objectType: 'ORDER', objectId: 'order-e2e-1', objectVersion: 2,
       senderBusinessId: 'business-a', senderActorId: 'actor-a', senderDeviceId: 'device-a', recipientBusinessId: 'business-b', mailboxId: 'orders',
       authenticatedEnvelope: Buffer.from([7, 8]).toString('base64'), commercialContent: canonicalFixture,
-      commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3, submittedAt: new Date(10).toISOString(),
+      commercialContentType: 'application/vnd.venture.order-snapshot+json', commercialContentVersion: 3, submittedAt: new Date(10).toISOString(),
     };
     const accepted = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: submitBody });
     const acceptedRetry = await app.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: submitBody });
@@ -102,7 +102,7 @@ describe('relay end to end structured delivery', () => {
     expect(mailbox.json().items).toHaveLength(1);
     expect(mailbox.json().items[0]).toMatchObject({ envelopeId: 'env-e2e-1', objectId: 'order-e2e-1', status: 'relay_accepted' });
     expect(mailbox.json().items[0].commercialContent).toBe(canonicalFixture);
-    expect(mailbox.json().items[0].commercialContentType).toBe('application/vnd.budcom.order-snapshot+json');
+    expect(mailbox.json().items[0].commercialContentType).toBe('application/vnd.venture.order-snapshot+json');
     expect(mailbox.json().items[0].commercialContentVersion).toBe(3);
 
     const ack = await app.inject({

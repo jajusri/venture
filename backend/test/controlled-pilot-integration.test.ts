@@ -135,7 +135,7 @@ function buildSubmissionEnvelope(input: { credential: IssuedBusinessDeviceCreden
     envelopeId: input.envelopeId, objectType: 'ORDER', objectId: input.objectId, objectVersion: input.objectVersion,
     senderBusinessId: input.credential.claims.businessId, senderActorId: input.credential.claims.actorId, senderDeviceId: input.credential.claims.deviceId,
     recipientBusinessId: input.recipientBusinessId, recipientMailboxId: input.mailboxId,
-    commercialContent: input.commercialContent, commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
+    commercialContent: input.commercialContent, commercialContentType: 'application/vnd.venture.order-snapshot+json', commercialContentVersion: 3,
   };
   return buildPilotEnvelope({ claims: toWireClaims(input.credential.claims), credentialSignature: input.credential.signature.signature, bindingFields, devicePrivateKeyPem: input.devicePrivateKeyPem });
 }
@@ -159,7 +159,7 @@ function buildAuthenticatedAckRequest(input: { credential: IssuedBusinessDeviceC
 }
 
 describe('controlled-pilot real Trust + Relay backend integration', () => {
-  const workDir = mkdtempSync(join(tmpdir(), 'budcom-pilot-'));
+  const workDir = mkdtempSync(join(tmpdir(), 'venture-pilot-'));
   const issuerKeyPath = join(workDir, 'trust-issuer-key.pem');
   const now = new Date('2026-01-01T00:00:00.000Z');
   const store = new FileBackedAuthorityStore();
@@ -214,7 +214,7 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
       senderBusinessId: businessA.businessId, senderActorId: 'actor-a', senderDeviceId: 'device-a-1',
       recipientBusinessId: businessB.businessId, mailboxId: 'orders',
       authenticatedEnvelope: Buffer.from(envelope).toString('base64'),
-      commercialContent: canonicalOrderSnapshot, commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
+      commercialContent: canonicalOrderSnapshot, commercialContentType: 'application/vnd.venture.order-snapshot+json', commercialContentVersion: 3,
       submittedAt: now.toISOString(),
       ...overrides,
     };
@@ -286,7 +286,7 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
       const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: {
         protocolVersion: 1, envelopeId: 'env-adv-wrong-cap', idempotencyKey: 'intent-adv-wrong-cap', objectType: 'ORDER', objectId: 'order-adv-wrong-cap', objectVersion: 1,
         senderBusinessId: businessB.businessId, senderActorId: 'actor-b', senderDeviceId: 'device-b-1', recipientBusinessId: businessA.businessId, mailboxId: 'orders',
-        authenticatedEnvelope: Buffer.from(envelope).toString('base64'), commercialContent: canonicalOrderSnapshot, commercialContentType: 'application/vnd.budcom.order-snapshot+json',
+        authenticatedEnvelope: Buffer.from(envelope).toString('base64'), commercialContent: canonicalOrderSnapshot, commercialContentType: 'application/vnd.venture.order-snapshot+json',
         commercialContentVersion: 3, submittedAt: now.toISOString(),
       } });
       expect(response.statusCode, response.body).toBe(403);
@@ -508,7 +508,7 @@ describe('controlled-pilot real Trust + Relay backend integration', () => {
       const response = await relayApp.inject({ method: 'POST', url: '/v1/relay/envelopes', payload: {
         protocolVersion: 1, envelopeId: 'env-adv-revoked', idempotencyKey: 'intent-adv-revoked', objectType: 'ORDER', objectId: 'order-adv-revoked', objectVersion: 1,
         senderBusinessId: revocable.businessId, senderActorId: 'actor-c', senderDeviceId: 'device-c-1', recipientBusinessId: businessB.businessId, mailboxId: 'orders',
-        authenticatedEnvelope: Buffer.from(envelope).toString('base64'), commercialContent: canonicalOrderSnapshot, commercialContentType: 'application/vnd.budcom.order-snapshot+json',
+        authenticatedEnvelope: Buffer.from(envelope).toString('base64'), commercialContent: canonicalOrderSnapshot, commercialContentType: 'application/vnd.venture.order-snapshot+json',
         commercialContentVersion: 3, submittedAt: now.toISOString(),
       } });
       expect(response.statusCode, response.body).toBe(403);

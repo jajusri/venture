@@ -36,12 +36,12 @@ A **prior controlled live run today (port 8087, post-units fix) completed all 11
 When live validation resumes, use:
 
 ```powershell
-$env:BUDCOM_CONNECTOR_PORT="8087"
-$env:BUDCOM_TALLY_SAFE_MODE="true"
-$env:BUDCOM_TALLY_MIN_REQUEST_INTERVAL_MS="5000"
-$env:BUDCOM_TALLY_POOL_MAX="1"
-$env:BUDCOM_TALLY_RETRY_MAX="1"
-$env:BUDCOM_TALLY_CIRCUIT_BREAKER="true"
+$env:VENTURE_CONNECTOR_PORT="8087"
+$env:VENTURE_TALLY_SAFE_MODE="true"
+$env:VENTURE_TALLY_MIN_REQUEST_INTERVAL_MS="5000"
+$env:VENTURE_TALLY_POOL_MAX="1"
+$env:VENTURE_TALLY_RETRY_MAX="1"
+$env:VENTURE_TALLY_CIRCUIT_BREAKER="true"
 ```
 
 | Rule | Enforcement |
@@ -197,7 +197,7 @@ All templates validated via `scripts/validate-m3-xml.ts`:
 4. Run sequential validation (5s pause between entities); **never** call `List of Units` directly.
 5. Stop immediately on any timeout, circuit OPEN, or Tally unresponsive.
 
-Diagnostic artifacts: `docs/diagnostics/m3-live-validation-final.json`, `connector/budcom_connector/diagnostics/tally-request-audit.jsonl`
+Diagnostic artifacts: `docs/diagnostics/m3-live-validation-final.json`, `connector/venture_connector/diagnostics/tally-request-audit.jsonl`
 
 ---
 

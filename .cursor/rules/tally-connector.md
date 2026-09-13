@@ -1,4 +1,4 @@
-# Budcom Tally Connector – Permanent Engineering Rules
+# Venture Tally Connector – Permanent Engineering Rules
 
 Version: 1.0
 Status: PERMANENT
@@ -8,7 +8,7 @@ Priority: HIGHEST
 
 # Philosophy
 
-The Budcom Tally Connector is an enterprise-grade communication layer between Budcom and TallyPrime.
+The Venture Tally Connector is an enterprise-grade communication layer between Venture and TallyPrime.
 
 Its primary responsibility is:
 
@@ -262,7 +262,7 @@ Normalization
 
 ↓
 
-Local Budcom Database
+Local Venture Database
 
 ↓
 
@@ -492,6 +492,6 @@ The work is incomplete.
 
 The connector shall always be designed so that:
 
-"No future feature, developer, AI assistant, or accidental code change can make Budcom crash Tally or perform unintended writes."
+"No future feature, developer, AI assistant, or accidental code change can make Venture crash Tally or perform unintended writes."
 
 Safety is enforced by architecture—not by discipline.

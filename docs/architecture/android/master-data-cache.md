@@ -1,6 +1,6 @@
 # Android Master Data Cache
 
-**Scope:** `apps/budcom_android`  
+**Scope:** `apps/venture_android`  
 **Related:** `docs/DECISIONS.md` (2026-07-29), ADR-004 offline philosophy
 
 ## Roles
@@ -8,7 +8,7 @@
 | Layer | Role |
 | --- | --- |
 | Connector HTTP APIs | **Source of Truth** |
-| Room (`budcom.db`) | **Source of Availability** (companies metadata, ledgers, stock items) |
+| Room (`venture.db`) | **Source of Availability** (companies metadata, ledgers, stock items) |
 | DataStore selected company id | Selection cache only (session SoR remains Connector) |
 | UI / Search | Repository consumers — no online/offline branching |
 

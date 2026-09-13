@@ -1,6 +1,6 @@
-# BUDCO Android — Production Validation
+# VENTURE Android — Production Validation
 
-**Scope:** Production Validation milestone (`apps/budcom_android`)  
+**Scope:** Production Validation milestone (`apps/venture_android`)  
 **Status:** **Partial pass** — clean-install active-company hydration from Connector session **PASS** (2026-07-28); broader E2E checklist still incomplete
 
 ---
@@ -18,18 +18,18 @@
 | Host OS | Windows 10.0.26200 |
 | Device | Physical **CPH2707** (OPPO), serial `3C15CB00C6Z00000` |
 | Android version | **16** (API **36**) |
-| Application | `0.1.0` debug (`com.budcom.android.debug`) |
+| Application | `0.1.0` debug (`com.jajusri.venture.debug`) |
 | Install method | `adb uninstall` (confirmed package removed) → `:app:installDebug` |
 | Connector | Live on host `127.0.0.1:8080`, version **0.3.1** |
 | Reachability | `adb reverse tcp:8080 tcp:8080`; validation build used temporary `BuildConfig.CONNECTOR_BASE_URL=http://127.0.0.1:8080/` for physical+reverse only, then **reverted** to `http://10.0.2.2:8080/` |
-| Pre-existing Connector session | `selectedCompany`: **Budcom-Test-01** (`budcom-test-01`), `connectionStatus`: `connected` |
+| Pre-existing Connector session | `selectedCompany`: **Venture-Test-01** (`venture-test-01`), `connectionStatus`: `connected` |
 | Manual company selection | **None** |
 
 ### Procedure
 
-1. Uninstalled `com.budcom.android.debug` (clean app data).  
+1. Uninstalled `com.jajusri.venture.debug` (clean app data).  
 2. Built and installed latest debug APK from current source (including session-hydrate fix).  
-3. Confirmed Connector `GET /session` still had Budcom-Test-01.  
+3. Confirmed Connector `GET /session` still had Venture-Test-01.  
 4. Cold-started `MainActivity` with no UI interaction for company selection.  
 5. Dumped UI hierarchy after init (~10–12s).
 
@@ -40,7 +40,7 @@
 | Connector discovered / health | **PASS** — Connection: **Connected**; last health `2026-07-28 22:55:48` |
 | Configured URL | `http://127.0.0.1:8080/` |
 | Session restored | **PASS** — Session: **Valid** |
-| Active company auto-restored | **PASS** — Selected company: **Budcom-Test-01 (budcom-test-01)** |
+| Active company auto-restored | **PASS** — Selected company: **Venture-Test-01 (venture-test-01)** |
 | “No company selected” | **Not shown** |
 | “Setup Required” | **Not shown** |
 | Manual intervention for company | **Not required** |
@@ -49,14 +49,14 @@ Banner showed **Partial operational data available** because live Connector **0.
 
 ### Connector evidence (host)
 
-- `GET /health` → 200; service message includes `Selected company: Budcom-Test-01`; `connectorVersion`: `0.3.1`  
-- `GET /session` → 200; `session.selectedCompany.name` = `Budcom-Test-01`  
+- `GET /health` → 200; service message includes `Selected company: Venture-Test-01`; `connectorVersion`: `0.3.1`  
+- `GET /session` → 200; `session.selectedCompany.name` = `Venture-Test-01`  
 - `POST /session/validate` previously confirmed SUCCESS for same company  
 - `GET /ready` → 404 on this Connector build
 
 ### Artifacts
 
-Captured under host temp `budcom_validation_clean/` (UI dump `final.xml`, logcat, connector JSON snapshots).
+Captured under host temp `venture_validation_clean/` (UI dump `final.xml`, logcat, connector JSON snapshots).
 
 ### Confirmation
 

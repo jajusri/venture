@@ -21,7 +21,7 @@ class RecordingDatabase implements Database {
     return { envelope_id: 'env-1', idempotency_key: 'intent-1', protocol_version: 1, object_type: 'ORDER', object_id: 'order-1',
       object_version: '1', sender_business_id: 'sender', sender_actor_id: 'actor', sender_device_id: 'device',
       recipient_business_id: 'recipient', mailbox_id: 'orders', authenticated_envelope: Buffer.from([1]),
-      commercial_content: '{\n  "opaque" : true\n}', commercial_content_type: 'application/vnd.budcom.order-snapshot+json', commercial_content_version: 2,
+      commercial_content: '{\n  "opaque" : true\n}', commercial_content_type: 'application/vnd.venture.order-snapshot+json', commercial_content_version: 2,
       acceptance_id: 'accept-1', accepted_at: new Date(2), relay_id: 'relay-1', acceptance_evidence_profile: 'test-v1',
       acceptance_evidence: Buffer.from([9]), mailbox_sequence: '7', status: 'relay_accepted', created_at: new Date(2), acknowledged_at: null };
   }
@@ -37,7 +37,7 @@ class RecordingDatabase implements Database {
 }
 const submission: RelaySubmission = { envelopeId: relayIdentifier('env-1', 'RelayEnvelopeId'), protocolVersion: 1, objectType: 'ORDER', objectId: 'order-1', objectVersion: 1,
   senderBusinessId: 'sender', senderActorId: 'actor', senderDeviceId: 'device', recipient: { businessId: 'recipient', mailboxId: relayIdentifier('orders', 'MailboxId') },
-  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{\n  "opaque" : true\n}', commercialContentType: 'application/vnd.budcom.order-snapshot+json', commercialContentVersion: 3,
+  authenticatedEnvelope: new Uint8Array([1]), commercialContent: '{\n  "opaque" : true\n}', commercialContentType: 'application/vnd.venture.order-snapshot+json', commercialContentVersion: 3,
   idempotencyKey: 'intent-1', submittedAt: new Date(1) };
 const acceptance: RelayAcceptance = { acceptanceId: relayIdentifier('accept-1', 'RelayAcceptanceId'), envelopeId: submission.envelopeId,
   objectType: 'ORDER', objectId: 'order-1', objectVersion: 1, senderBusinessId: 'sender', recipientBusinessId: 'recipient',

@@ -10,7 +10,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
-const connectorRoot = path.join(repoRoot, 'connector/budcom_connector');
+const connectorRoot = path.join(repoRoot, 'connector/venture_connector');
 const outputRoot = path.join(connectorRoot, '.packaged');
 const outputModules = path.join(outputRoot, 'node_modules');
 
@@ -126,7 +126,7 @@ export function assertConnectorRuntimeVersionMatchesPackage() {
  */
 export function syncDesktopConnectorVersionLabel() {
   const packageJsonPath = path.join(connectorRoot, 'package.json');
-  const versionFilePath = path.join(repoRoot, 'apps/budcom_desktop/build/VERSION.txt');
+  const versionFilePath = path.join(repoRoot, 'apps/venture_desktop/build/VERSION.txt');
   const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
   const version = typeof pkg.version === 'string' ? pkg.version.trim() : '';
   if (!/^\d+\.\d+\.\d+/.test(version)) {
@@ -147,7 +147,7 @@ export function assertPackagedConnectorDistIncludesVouchers() {
   const mainEntry = path.join(connectorRoot, 'dist/main.js');
   if (!fs.existsSync(mainEntry)) {
     throw new Error(
-      'connector/budcom_connector/dist/main.js is missing. Run `npm run build` in the connector before packaging.',
+      'connector/venture_connector/dist/main.js is missing. Run `npm run build` in the connector before packaging.',
     );
   }
   if (!fs.existsSync(vouchersRoute)) {
@@ -171,7 +171,7 @@ export function assertPackagedConnectorDistIncludesVouchers() {
 
 export function prepareConnectorPackaging() {
   if (!fs.existsSync(path.join(connectorRoot, 'package-lock.json'))) {
-    throw new Error('connector/budcom_connector/package-lock.json is required for deterministic packaging');
+    throw new Error('connector/venture_connector/package-lock.json is required for deterministic packaging');
   }
   assertConnectorRuntimeVersionMatchesPackage();
   const versionLabel = syncDesktopConnectorVersionLabel();

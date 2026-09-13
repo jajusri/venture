@@ -20,10 +20,10 @@ A fail-fast fix was applied: Units extractor now uses a **30s entity-level timeo
 
 | Setting | Value |
 |---------|-------|
-| `BUDCOM_TALLY_SAFE_MODE` | `true` |
-| `BUDCOM_TALLY_MIN_REQUEST_INTERVAL_MS` | `5000` |
-| `BUDCOM_TALLY_POOL_MAX` | `1` |
-| `BUDCOM_TALLY_RETRY_MAX` | `1` |
+| `VENTURE_TALLY_SAFE_MODE` | `true` |
+| `VENTURE_TALLY_MIN_REQUEST_INTERVAL_MS` | `5000` |
+| `VENTURE_TALLY_POOL_MAX` | `1` |
+| `VENTURE_TALLY_RETRY_MAX` | `1` |
 | Connector port | `8085` |
 | Inter-entity wait | 5 seconds |
 
@@ -67,7 +67,7 @@ API pagination (`pageSize=5`) applied after full Tally export — Tally still re
 - XML payload: [`m3-units-failure-payload.xml`](m3-units-failure-payload.xml)
 - Live results JSON: [`m3-live-validation-results.json`](m3-live-validation-results.json)
 - Connector log: terminal session 708404
-- Audit trail: `connector/budcom_connector/diagnostics/tally-request-audit.jsonl`
+- Audit trail: `connector/venture_connector/diagnostics/tally-request-audit.jsonl`
 
 ### Evidence
 1. XML pre-validated: 367 bytes, valid ENVELOPE, standard Tally convention.
@@ -76,7 +76,7 @@ API pagination (`pageSize=5`) applied after full Tally export — Tally still re
 4. After timeout, `License Info` probe to Tally failed — HTTP server unresponsive.
 
 ### Likely Cause
-**TallyPrime internal hang** on `List of Units` export for the ESTIMATION company — not malformed Budcom XML. Prolonged 120s wait may worsen Tally instability.
+**TallyPrime internal hang** on `List of Units` export for the ESTIMATION company — not malformed Venture XML. Prolonged 120s wait may worsen Tally instability.
 
 ### Fix Applied (Units Only)
 - Added `requestTimeoutMs` to `EntityExtractorConfig`

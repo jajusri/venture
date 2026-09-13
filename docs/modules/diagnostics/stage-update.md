@@ -3,7 +3,7 @@
 **Module:** Desktop Diagnostics (+ connector diagnostic API sanitization)
 **Milestone:** 4D base · Reliability Step 3 hardening
 **Last updated:** 2026-07-24
-**Paths:** `apps/budcom_desktop/src/application/diagnostics-service.ts`, `diagnostic-allowlist.ts` · `connector/budcom_connector/src/diagnostics/diagnostic-allowlist.ts`
+**Paths:** `apps/venture_desktop/src/application/diagnostics-service.ts`, `diagnostic-allowlist.ts` · `connector/venture_connector/src/diagnostics/diagnostic-allowlist.ts`
 
 ---
 
@@ -87,12 +87,12 @@ On-disk desktop log files and normal dashboard/session UI may still contain comp
 
 | Suite | Result |
 |-------|--------|
-| `apps/budcom_desktop/test/unit/diagnostic-privacy.test.ts` | **21/21 PASS** — serialized absence, exact configuration key tests, positive operational field tests |
-| `apps/budcom_desktop/test/unit/milestone-4d.test.ts` | **17/17 PASS** — includes export bundle allowlist version |
-| `connector/budcom_connector/test/unit/diagnostics/diagnostic-allowlist.test.ts` | **8/8 PASS** |
-| `connector/budcom_connector` full suite (`npx vitest run`) | **390/390 PASS** (unchanged by configuration correction) |
-| `connector/budcom_connector/test/architecture/module-boundaries.test.ts` | **12/12 PASS** (unchanged) |
-| `apps/budcom_desktop` full suite (`npm test`) | **96/96 PASS** |
+| `apps/venture_desktop/test/unit/diagnostic-privacy.test.ts` | **21/21 PASS** — serialized absence, exact configuration key tests, positive operational field tests |
+| `apps/venture_desktop/test/unit/milestone-4d.test.ts` | **17/17 PASS** — includes export bundle allowlist version |
+| `connector/venture_connector/test/unit/diagnostics/diagnostic-allowlist.test.ts` | **8/8 PASS** |
+| `connector/venture_connector` full suite (`npx vitest run`) | **390/390 PASS** (unchanged by configuration correction) |
+| `connector/venture_connector/test/architecture/module-boundaries.test.ts` | **12/12 PASS** (unchanged) |
+| `apps/venture_desktop` full suite (`npm test`) | **96/96 PASS** |
 
 Live evidence (pre-Step-3): `docs/diagnostics/m4d-live-validation.json`
 
@@ -102,13 +102,13 @@ Live evidence (pre-Step-3): `docs/diagnostics/m4d-live-validation.json`
 
 ```text
 # Connector (unchanged by configuration correction)
-cd connector/budcom_connector
+cd connector/venture_connector
 npm run lint          # PASS (prior run)
 npm run build         # PASS (prior run)
 npx vitest run        # 390/390 PASS (prior run)
 
 # Desktop
-cd apps/budcom_desktop
+cd apps/venture_desktop
 npm run lint          # PASS
 npm run build         # PASS
 npx vitest run test/unit/diagnostic-privacy.test.ts  # 21/21 PASS
@@ -123,7 +123,7 @@ npm test              # 96/96 PASS
 - No unified connector diagnostic bundle exporter
 - Normal company-selection, dashboard, ledger, sync, and master-data APIs unchanged (not diagnostic export)
 - Committed operational-validation evidence not rewritten
-- Bundle `environment` section still exports prefix-filtered `BUDCOM_`/`NODE_ENV`/`ELECTRON_` variables via separate allowlist helper (not part of configuration DTO)
+- Bundle `environment` section still exports prefix-filtered `VENTURE_`/`NODE_ENV`/`ELECTRON_` variables via separate allowlist helper (not part of configuration DTO)
 
 ---
 

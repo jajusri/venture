@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Budcom controlled-pilot packaging boundary inspector.
+ * Venture controlled-pilot packaging boundary inspector.
  * Scans artifact directories and fails closed on forbidden content.
  */
 import fs from 'node:fs';

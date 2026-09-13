@@ -1,8 +1,8 @@
 # MVP-1 Execution Plan
 
-**Status:** Authoritative execution plan for the first signed BUDCO Android APK  
+**Status:** Authoritative execution plan for the first signed VENTURE Android APK  
 **Date:** 2026-07-28  
-**Scope:** Pilot-ready Android companion (`apps/budcom_android`) + supporting Connector/Desktop operations  
+**Scope:** Pilot-ready Android companion (`apps/venture_android`) + supporting Connector/Desktop operations  
 **Governing docs:** [NON_NEGOTIABLES.md](NON_NEGOTIABLES.md), [PRODUCT_SOUL.md](PRODUCT_SOUL.md), [PROJECT_CONSTITUTION.md](PROJECT_CONSTITUTION.md), [ROADMAP.md](ROADMAP.md), [PRODUCTION_VALIDATION.md](PRODUCTION_VALIDATION.md), [DECISIONS.md](DECISIONS.md)
 
 This document does **not** authorize Contact Intelligence, AI, OCR, PDF export, or Share Sheet as MVP-1 blockers unless Product explicitly expands scope. Those remain strategic backlog per ROADMAP / PRODUCT_SOUL until scheduled.

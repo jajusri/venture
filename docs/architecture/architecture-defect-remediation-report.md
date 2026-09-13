@@ -1,4 +1,4 @@
-# Architecture Defect Remediation Report — Budcom Tally Connector
+# Architecture Defect Remediation Report — Venture Tally Connector
 
 **Status:** Implementation complete; automated verification green. Awaiting human review.  
 **Date:** 2026-07-22  
@@ -71,7 +71,7 @@
 
 ## 3. Remaining intentional limitations
 
-1. **In-process guarantee only.** A sufficiently privileged local process can still open its own socket to Tally on port 9000. The connector guarantees that **Budcom's supported production code paths** cannot do so — not that the OS prevents all external access.
+1. **In-process guarantee only.** A sufficiently privileged local process can still open its own socket to Tally on port 9000. The connector guarantees that **Venture's supported production code paths** cannot do so — not that the OS prevents all external access.
 
 2. **`TallyConnectionManager.exchange(xml)` remains adapter-internal.** It is used by `TallyReadGateway` and `ping()` inside the adapter composition root. It is not registered in DI and is not reachable from business services.
 
@@ -149,7 +149,7 @@ Transport
 
 6. **Every request** reaching Tally still passes `TallyRequestGuard.prepare()` → ERP-neutral `decidePolicy()` → registry/forbidden lookup → audit intent.
 
-**Scope qualifier:** This YES applies to **Budcom connector application code registered through the composition root**. It does not claim OS-level isolation from other local processes, nor does it claim `TallyConnectionManager.exchange()` is physically impossible to call from test code inside the `tally/` adapter package (integration tests intentionally construct managers for guard verification).
+**Scope qualifier:** This YES applies to **Venture connector application code registered through the composition root**. It does not claim OS-level isolation from other local processes, nor does it claim `TallyConnectionManager.exchange()` is physically impossible to call from test code inside the `tally/` adapter package (integration tests intentionally construct managers for guard verification).
 
 ---
 

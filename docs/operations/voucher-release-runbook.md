@@ -7,7 +7,7 @@
 - A free loopback TCP port
 - Tally reachable only for an explicitly authorized synchronization
 
-From `connector/budcom_connector`:
+From `connector/venture_connector`:
 
 ```powershell
 npm ci
@@ -19,15 +19,15 @@ npm test
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BUDCOM_CONNECTOR_HOST` | `127.0.0.1` | API bind; keep loopback unless LAN exposure is explicitly accepted |
-| `BUDCOM_CONNECTOR_PORT` | `8080` | API port |
-| `BUDCOM_DATABASE_PATH` | `./data/budcom-connector.db` | Connector data directory |
-| `BUDCOM_TALLY_HOST` | `localhost` | Tally host |
-| `BUDCOM_TALLY_PORT` | `9000` | Tally port |
-| `BUDCOM_TALLY_TIMEOUT_MS` | `120000` | Tally request timeout |
-| `BUDCOM_TALLY_MAX_REQUEST_BYTES` | `65536` | Maximum request size |
-| `BUDCOM_TALLY_MAX_RESPONSE_BYTES` | `10485760` | Maximum response size |
-| `BUDCOM_SHUTDOWN_MS` | `10000` | Graceful shutdown deadline |
+| `VENTURE_CONNECTOR_HOST` | `127.0.0.1` | API bind; keep loopback unless LAN exposure is explicitly accepted |
+| `VENTURE_CONNECTOR_PORT` | `8080` | API port |
+| `VENTURE_DATABASE_PATH` | `./data/venture-connector.db` | Connector data directory |
+| `VENTURE_TALLY_HOST` | `localhost` | Tally host |
+| `VENTURE_TALLY_PORT` | `9000` | Tally port |
+| `VENTURE_TALLY_TIMEOUT_MS` | `120000` | Tally request timeout |
+| `VENTURE_TALLY_MAX_REQUEST_BYTES` | `65536` | Maximum request size |
+| `VENTURE_TALLY_MAX_RESPONSE_BYTES` | `10485760` | Maximum response size |
+| `VENTURE_SHUTDOWN_MS` | `10000` | Graceful shutdown deadline |
 
 ```powershell
 npm run build
@@ -45,7 +45,7 @@ There is deliberately no public synchronization endpoint. Before a controlled li
 
 - Confirm Tally is running and the target company is open.
 - Record the exact company name and bounded date range.
-- Confirm operation `budcom.voucher.export.v1` is export/collection and read-only.
+- Confirm operation `venture.voucher.export.v1` is export/collection and read-only.
 - Use an isolated database directory or take a verified backup.
 - Keep the API bound to `127.0.0.1`.
 - Obtain explicit authorization for this single run.
@@ -53,7 +53,7 @@ There is deliberately no public synchronization endpoint. Before a controlled li
 Run exactly:
 
 ```powershell
-npm run validate:voucher-live -- --company "EXACT COMPANY" --from YYYY-MM-DD --to YYYY-MM-DD --database-path "D:\BudcomValidation\vouchers" --authorize-read-only-tally
+npm run validate:voucher-live -- --company "EXACT COMPANY" --from YYYY-MM-DD --to YYYY-MM-DD --database-path "D:\VentureValidation\vouchers" --authorize-read-only-tally
 ```
 
 The command refuses to run without every parameter and the authorization flag. It prints progress
@@ -72,7 +72,7 @@ at API schema version `1.0.0`.
 
 ## Database, backup, and recovery
 
-SQLite uses `budcom-ledger.db` under `BUDCOM_DATABASE_PATH`. Before upgrade or rollback:
+SQLite uses `venture-ledger.db` under `VENTURE_DATABASE_PATH`. Before upgrade or rollback:
 
 1. Stop the connector.
 2. Copy the complete data directory to a protected backup location.

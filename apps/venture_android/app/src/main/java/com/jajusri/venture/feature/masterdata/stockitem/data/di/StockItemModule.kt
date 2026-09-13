@@ -1,0 +1,73 @@
+package com.jajusri.venture.feature.masterdata.stockitem.data.di
+
+import com.jajusri.venture.feature.masterdata.stockitem.data.local.RoomStockItemLocalDataSource
+import com.jajusri.venture.feature.masterdata.stockitem.data.local.StockItemLocalDataSource
+import com.jajusri.venture.feature.masterdata.stockitem.data.remote.AuthenticatedStockItemRemoteDataSource
+import com.jajusri.venture.feature.masterdata.stockitem.data.remote.DefaultAuthenticatedStockItemRemoteDataSource
+import com.jajusri.venture.feature.masterdata.stockitem.data.remote.DefaultStockItemRemoteDataSource
+import com.jajusri.venture.feature.masterdata.stockitem.data.remote.StockItemApi
+import com.jajusri.venture.feature.masterdata.stockitem.data.remote.StockItemRemoteDataSource
+import com.jajusri.venture.feature.masterdata.stockitem.data.repository.SearchStockItemsPortImpl
+import com.jajusri.venture.feature.masterdata.stockitem.data.repository.StockItemLookupPortImpl
+import com.jajusri.venture.feature.masterdata.stockitem.data.repository.StockItemRepositoryImpl
+import com.jajusri.venture.feature.masterdata.stockitem.domain.port.SearchStockItemsPort
+import com.jajusri.venture.feature.masterdata.stockitem.domain.port.StockItemLookupPort
+import com.jajusri.venture.feature.masterdata.stockitem.domain.repository.StockItemRepository
+import dagger.Binds
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import retrofit2.Retrofit
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class StockItemBindModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindStockItemRemoteDataSource(
+        impl: DefaultStockItemRemoteDataSource,
+    ): StockItemRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindAuthenticatedStockItemRemoteDataSource(
+        impl: DefaultAuthenticatedStockItemRemoteDataSource,
+    ): AuthenticatedStockItemRemoteDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindStockItemLocalDataSource(
+        impl: RoomStockItemLocalDataSource,
+    ): StockItemLocalDataSource
+
+    @Binds
+    @Singleton
+    abstract fun bindStockItemRepository(
+        impl: StockItemRepositoryImpl,
+    ): StockItemRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSearchStockItemsPort(
+        impl: SearchStockItemsPortImpl,
+    ): SearchStockItemsPort
+
+    @Binds
+    @Singleton
+    abstract fun bindStockItemLookupPort(
+        impl: StockItemLookupPortImpl,
+    ): StockItemLookupPort
+}
+
+@Module
+@InstallIn(SingletonComponent::class)
+object StockItemProvideModule {
+
+    @Provides
+    @Singleton
+    fun provideStockItemApi(retrofit: Retrofit): StockItemApi =
+        retrofit.create(StockItemApi::class.java)
+}

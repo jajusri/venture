@@ -1,6 +1,6 @@
 # ADR-003: Connector as Source of Truth
 
-**Series:** Android companion (`apps/budcom_android`)  
+**Series:** Android companion (`apps/venture_android`)  
 **Status:** Accepted  
 **Date:** 2026-07-27  
 **Related:** [`PROJECT_CONSTITUTION.md`](../../PROJECT_CONSTITUTION.md), [`DECISIONS.md`](../../DECISIONS.md), Connector ADRs under [`../adr/`](../adr/)
@@ -51,4 +51,4 @@ When OpenAPI is refreshed from the Connector:
 ## Consequences
 
 - Android may temporarily disagree with stale OpenAPI documents; that disagreement is expected and must be resolved by updating docs/contracts, not by inventing client fields.
-- Shared `budcom_contracts` packages should be treated as secondary until proven current for the routes in use.
+- Shared `venture_contracts` packages should be treated as secondary until proven current for the routes in use.

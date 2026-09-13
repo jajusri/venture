@@ -40,13 +40,13 @@
 
 ## 3. Files Added
 
-- `connector/budcom_connector/src/erp/ports/company-discovery.ts`
-- `connector/budcom_connector/src/tally/contracts/company-discovery-contract.ts`
-- `connector/budcom_connector/src/tally/discovery/company-discovery-parser.ts`
-- `connector/budcom_connector/test/helpers/company-discovery-fixtures.ts`
-- `connector/budcom_connector/test/unit/tally/company-discovery-parser.test.ts`
-- `connector/budcom_connector/test/unit/tally/company-discovery-adapter.test.ts`
-- `connector/budcom_connector/test/integration/company-discovery.test.ts`
+- `connector/venture_connector/src/erp/ports/company-discovery.ts`
+- `connector/venture_connector/src/tally/contracts/company-discovery-contract.ts`
+- `connector/venture_connector/src/tally/discovery/company-discovery-parser.ts`
+- `connector/venture_connector/test/helpers/company-discovery-fixtures.ts`
+- `connector/venture_connector/test/unit/tally/company-discovery-parser.test.ts`
+- `connector/venture_connector/test/unit/tally/company-discovery-adapter.test.ts`
+- `connector/venture_connector/test/integration/company-discovery.test.ts`
 - `docs/milestones/milestone-3b-company-discovery.md`
 - `docs/testing/milestone-3b-company-discovery-manual-validation.md`
 
@@ -54,13 +54,13 @@
 
 ## 4. Files Modified
 
-- `connector/budcom_connector/src/erp/ports/erp-read-port.ts`
-- `connector/budcom_connector/src/services/interfaces/company-discovery.ts`
-- `connector/budcom_connector/src/services/tally/company-discovery.service.ts`
-- `connector/budcom_connector/src/tally/adapter/tally-read-adapter.ts`
-- `connector/budcom_connector/src/tally/core/types.ts`
-- `connector/budcom_connector/test/integration/server.test.ts`
-- `connector/budcom_connector/test/unit/tally/response-parser.test.ts`
+- `connector/venture_connector/src/erp/ports/erp-read-port.ts`
+- `connector/venture_connector/src/services/interfaces/company-discovery.ts`
+- `connector/venture_connector/src/services/tally/company-discovery.service.ts`
+- `connector/venture_connector/src/tally/adapter/tally-read-adapter.ts`
+- `connector/venture_connector/src/tally/core/types.ts`
+- `connector/venture_connector/test/integration/server.test.ts`
+- `connector/venture_connector/test/unit/tally/response-parser.test.ts`
 - `CHANGELOG.md`
 
 ---

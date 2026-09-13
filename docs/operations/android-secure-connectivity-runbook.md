@@ -2,7 +2,7 @@
 
 ## Supported customer connection model
 
-Budcom Android customer builds connect through explicit secure pairing to the Desktop-managed
+Venture Android customer builds connect through explicit secure pairing to the Desktop-managed
 Connector. The phone and computer must be on the same trusted LAN. Customers do not enter a laptop
 IP address, and the app does not use the Android-emulator address `10.0.2.2` in release builds.
 
@@ -13,7 +13,7 @@ alone is never sufficient to replace trust.
 
 ## First pairing or deliberate replacement
 
-1. Start Budcom Desktop and confirm the Connector and Tally are healthy.
+1. Start Venture Desktop and confirm the Connector and Tally are healthy.
 2. Put the phone and computer on the same normal trusted Wi-Fi/LAN. Disable an active phone VPN if it
    prevents local-network access.
 3. In Desktop, enable secure mobile pairing and generate a fresh QR code.

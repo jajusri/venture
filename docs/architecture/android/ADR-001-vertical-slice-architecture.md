@@ -1,6 +1,6 @@
 # ADR-001: Vertical Slice Architecture
 
-**Series:** Android companion (`apps/budcom_android`)  
+**Series:** Android companion (`apps/venture_android`)  
 **Status:** Accepted  
 **Date:** 2026-07-27  
 **Related:** [`PROJECT_CONSTITUTION.md`](../../PROJECT_CONSTITUTION.md), [`DECISIONS.md`](../../DECISIONS.md)

@@ -16,13 +16,13 @@ Business services (`CompanyDiscoveryServiceImpl`, `MasterDataServiceImpl`) depen
 
 1. Calling the internal `TallyReadGateway.executeApprovedRead()` (typed operation IDs only).
 2. Parsing XML internally.
-3. Returning strongly typed Budcom domain models (`NormalizedLedger`, `ErpCompanySummary`, etc.).
+3. Returning strongly typed Venture domain models (`NormalizedLedger`, `ErpCompanySummary`, etc.).
 
 ## Why business depends on ErpReadPort
 
 - Business code must not know which ERP is connected (Tally, BUSY, SAP, etc.).
 - Business code must never receive raw XML, `ParsedXmlNode`, or transport DTOs.
-- The port defines **what** Budcom needs from an ERP, not **how** the ERP exposes it.
+- The port defines **what** Venture needs from an ERP, not **how** the ERP exposes it.
 
 ## Why adapters implement ports
 

@@ -1,7 +1,7 @@
 # Venture Execution Plan — 2026-09-13
 
 **Supersedes** `docs/MVP1_EXECUTION_PLAN.md` (2026-07-28) as the active plan — that document predates
-Catalogue, Transaction Mode, and Vartalap entirely. Built from `BUDCOM-GROUND-TRUTH-2026-09-13.md`.
+Catalogue, Transaction Mode, and Vartalap entirely. Built from `VENTURE-GROUND-TRUTH-2026-09-13.md`.
 
 **How this project runs from here** (replaces the ChatGPT-architect/Claude-builder split and its
 ceremony — see chat for the full reasoning): Claude does both architecture and implementation.
@@ -73,12 +73,12 @@ installs). Remaining work is about surviving scale in *aggregate*, not shared in
   screenshots it); at 1M installs you need push-based aggregate visibility without logging
   accounting payloads (the Non-Negotiable that must hold regardless).
 - Re-verify the performance budgets already written in
-  `docs/engineering/BUDCOM-NON-FUNCTIONAL-REQUIREMENTS-AND-BUDGETS.md` still hold under
+  `docs/engineering/VENTURE-NON-FUNCTIONAL-REQUIREMENTS-AND-BUDGETS.md` still hold under
   Catalogue/Transaction Mode's larger data volumes.
 
 ### Track B — Central backend (Trust/Relay)
 
-This is genuinely new work — the one part of BUDCOM that is shared infrastructure, so it's the one
+This is genuinely new work — the one part of VENTURE that is shared infrastructure, so it's the one
 outage or breach that would hit every business at once.
 
 - Containerize (Dockerfile/docker-compose) — none exists yet.
@@ -90,7 +90,7 @@ outage or breach that would hit every business at once.
 - Observability: structured logging is already there (pino); needs metrics + uptime alerting.
 - Secrets management: currently `.env`-based; needs a real secrets store before any real
   deployment (Postgres credentials, signing keys).
-- Backup/disaster-recovery plan for Postgres — this is now the one place BUDCOM has data that
+- Backup/disaster-recovery plan for Postgres — this is now the one place VENTURE has data that
   isn't locally recoverable per-business.
 - Revisit TD-009 policy decision (Phase 0.7) here too, since it's the same boundary from the
   other side.

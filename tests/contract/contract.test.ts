@@ -10,8 +10,8 @@ const specPath = join(root, 'docs/openapi/connector-v1.yaml');
 const spec = parse(readFileSync(specPath, 'utf8'));
 
 describe('OpenAPI connector contract', () => {
-  it('declares Budcom connector title and v1 scope', () => {
-    expect(spec.info.title).toBe('Budcom Connector API');
+  it('declares Venture connector title and v1 scope', () => {
+    expect(spec.info.title).toBe('Venture Connector API');
     expect(spec.info.version).toBe('1.0.0');
   });
 

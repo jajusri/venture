@@ -6,7 +6,7 @@ release candidate, or redistributed.
 
 ## Historical artifact identity
 
-- Installer: `artifacts/BudcomDesktop-0.4.3-x64-setup.exe`
+- Installer: `artifacts/VentureDesktop-0.4.3-x64-setup.exe`
 - Installer SHA-256:
   `7B84106F9A49BF8E3F8762BADA8BF23EEC4B6333F95E4BDC89A2DFC9E2116F42`
 - Desktop version: `0.4.3`

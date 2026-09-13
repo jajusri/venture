@@ -2,7 +2,7 @@
 
 **Milestone:** Stock Items Synchronization  
 **Last updated:** 2026-07-24  
-**Packages:** `@budcom/connector` v0.3.1 · `@budcom/desktop` v0.4.3  
+**Packages:** `@venture/connector` v0.3.1 · `@venture/desktop` v0.4.3  
 **Git commit (5B complete):** `f2a6b3a` on `main`  
 **Working tree:** Reliability Step 3 + ledger extraction contract / GUID-first identity remediation (uncommitted)
 
@@ -478,7 +478,7 @@ Complete for user-triggered diagnostic export surfaces on desktop and connector 
 
 ### Allowed fields (desktop bundle v1)
 
-`bundleVersion`, `generatedAt`, `correlationId`, `truncated`, `versions` (desktop/connector/electron/node), `runtime` (platform/osRelease/architecture/uptimeSeconds), `connector` (baseUrl, bindHost, networkExposure, processState, ownership, pid, health flags, tallyReachable), `session` (status, selectedCompanyPresent, displayLabel), redacted `configuration`, allowlisted `environment` (`BUDCOM_*`, `NODE_ENV`, `ELECTRON_*` only), sanitized `logs.recentLifecycleEvents` / `logs.recentErrors`, `logFile` ref, `privacyPolicy.allowlistVersion`.
+`bundleVersion`, `generatedAt`, `correlationId`, `truncated`, `versions` (desktop/connector/electron/node), `runtime` (platform/osRelease/architecture/uptimeSeconds), `connector` (baseUrl, bindHost, networkExposure, processState, ownership, pid, health flags, tallyReachable), `session` (status, selectedCompanyPresent, displayLabel), redacted `configuration`, allowlisted `environment` (`VENTURE_*`, `NODE_ENV`, `ELECTRON_*` only), sanitized `logs.recentLifecycleEvents` / `logs.recentErrors`, `logFile` ref, `privacyPolicy.allowlistVersion`.
 
 ### Prohibited-data handling
 
@@ -488,17 +488,17 @@ Pattern-based redaction for GSTIN, XML tags, Windows/Unix paths, phones, amounts
 
 | Path | Change |
 |------|--------|
-| `apps/budcom_desktop/src/application/diagnostic-allowlist.ts` | **Added** — allowlist DTO builder, sanitizers, limits, sentinel constants |
-| `apps/budcom_desktop/src/application/diagnostics-service.ts` | Route snapshot/export/summary through allowlist |
-| `apps/budcom_desktop/src/application/types.ts` | Replace `sessionSummary` / `logFilePath` with safe fields |
-| `apps/budcom_desktop/src/renderer/scripts/app.ts` | Render `sessionDisplayLabel` |
-| `apps/budcom_desktop/test/unit/diagnostic-privacy.test.ts` | **Added** — 10 serialized-output absence tests |
-| `apps/budcom_desktop/test/unit/milestone-4d.test.ts` | Expect `privacyPolicy.allowlistVersion` |
-| `apps/budcom_desktop/test/helpers/lifecycle-fixtures.ts` | Updated diagnostics fixture |
-| `connector/budcom_connector/src/diagnostics/diagnostic-allowlist.ts` | **Added** — connector sanitizers + safe DTOs |
-| `connector/budcom_connector/src/api/routes/diagnostics.ts` | Sanitize connection diagnostics |
-| `connector/budcom_connector/src/api/routes/master-data.ts` | Sanitize extraction diagnostics |
-| `connector/budcom_connector/test/unit/diagnostics/diagnostic-allowlist.test.ts` | **Added** — 4 absence tests |
+| `apps/venture_desktop/src/application/diagnostic-allowlist.ts` | **Added** — allowlist DTO builder, sanitizers, limits, sentinel constants |
+| `apps/venture_desktop/src/application/diagnostics-service.ts` | Route snapshot/export/summary through allowlist |
+| `apps/venture_desktop/src/application/types.ts` | Replace `sessionSummary` / `logFilePath` with safe fields |
+| `apps/venture_desktop/src/renderer/scripts/app.ts` | Render `sessionDisplayLabel` |
+| `apps/venture_desktop/test/unit/diagnostic-privacy.test.ts` | **Added** — 10 serialized-output absence tests |
+| `apps/venture_desktop/test/unit/milestone-4d.test.ts` | Expect `privacyPolicy.allowlistVersion` |
+| `apps/venture_desktop/test/helpers/lifecycle-fixtures.ts` | Updated diagnostics fixture |
+| `connector/venture_connector/src/diagnostics/diagnostic-allowlist.ts` | **Added** — connector sanitizers + safe DTOs |
+| `connector/venture_connector/src/api/routes/diagnostics.ts` | Sanitize connection diagnostics |
+| `connector/venture_connector/src/api/routes/master-data.ts` | Sanitize extraction diagnostics |
+| `connector/venture_connector/test/unit/diagnostics/diagnostic-allowlist.test.ts` | **Added** — 4 absence tests |
 
 ### Tests and sentinel evidence
 
@@ -559,7 +559,7 @@ Complete for user-triggered diagnostic export surfaces on desktop and connector 
 
 ### Allowed fields (desktop bundle v1)
 
-`bundleVersion`, `generatedAt`, `correlationId`, `truncated`, `versions` (desktop/connector/electron/node), `runtime` (platform/osRelease/architecture/uptimeSeconds), `connector` (baseUrl, bindHost, networkExposure, processState, ownership, pid, health flags, tallyReachable), `session` (status, selectedCompanyPresent, displayLabel), redacted `configuration`, allowlisted `environment` (`BUDCOM_*`, `NODE_ENV`, `ELECTRON_*` only), sanitized `logs.recentLifecycleEvents` / `logs.recentErrors`, `logFile` ref, `privacyPolicy.allowlistVersion`.
+`bundleVersion`, `generatedAt`, `correlationId`, `truncated`, `versions` (desktop/connector/electron/node), `runtime` (platform/osRelease/architecture/uptimeSeconds), `connector` (baseUrl, bindHost, networkExposure, processState, ownership, pid, health flags, tallyReachable), `session` (status, selectedCompanyPresent, displayLabel), redacted `configuration`, allowlisted `environment` (`VENTURE_*`, `NODE_ENV`, `ELECTRON_*` only), sanitized `logs.recentLifecycleEvents` / `logs.recentErrors`, `logFile` ref, `privacyPolicy.allowlistVersion`.
 
 ### Prohibited-data handling
 
@@ -569,17 +569,17 @@ Pattern-based redaction for GSTIN, XML tags, Windows/Unix paths, phones, amounts
 
 | Path | Change |
 |------|--------|
-| `apps/budcom_desktop/src/application/diagnostic-allowlist.ts` | **Added** — allowlist DTO builder, sanitizers, limits, sentinel constants |
-| `apps/budcom_desktop/src/application/diagnostics-service.ts` | Route snapshot/export/summary through allowlist |
-| `apps/budcom_desktop/src/application/types.ts` | Replace `sessionSummary` / `logFilePath` with safe fields |
-| `apps/budcom_desktop/src/renderer/scripts/app.ts` | Render `sessionDisplayLabel` |
-| `apps/budcom_desktop/test/unit/diagnostic-privacy.test.ts` | **Added** — 10 serialized-output absence tests |
-| `apps/budcom_desktop/test/unit/milestone-4d.test.ts` | Expect `privacyPolicy.allowlistVersion` |
-| `apps/budcom_desktop/test/helpers/lifecycle-fixtures.ts` | Updated diagnostics fixture |
-| `connector/budcom_connector/src/diagnostics/diagnostic-allowlist.ts` | **Added** — connector sanitizers + safe DTOs |
-| `connector/budcom_connector/src/api/routes/diagnostics.ts` | Sanitize connection diagnostics |
-| `connector/budcom_connector/src/api/routes/master-data.ts` | Sanitize extraction diagnostics |
-| `connector/budcom_connector/test/unit/diagnostics/diagnostic-allowlist.test.ts` | **Added** — 4 absence tests |
+| `apps/venture_desktop/src/application/diagnostic-allowlist.ts` | **Added** — allowlist DTO builder, sanitizers, limits, sentinel constants |
+| `apps/venture_desktop/src/application/diagnostics-service.ts` | Route snapshot/export/summary through allowlist |
+| `apps/venture_desktop/src/application/types.ts` | Replace `sessionSummary` / `logFilePath` with safe fields |
+| `apps/venture_desktop/src/renderer/scripts/app.ts` | Render `sessionDisplayLabel` |
+| `apps/venture_desktop/test/unit/diagnostic-privacy.test.ts` | **Added** — 10 serialized-output absence tests |
+| `apps/venture_desktop/test/unit/milestone-4d.test.ts` | Expect `privacyPolicy.allowlistVersion` |
+| `apps/venture_desktop/test/helpers/lifecycle-fixtures.ts` | Updated diagnostics fixture |
+| `connector/venture_connector/src/diagnostics/diagnostic-allowlist.ts` | **Added** — connector sanitizers + safe DTOs |
+| `connector/venture_connector/src/api/routes/diagnostics.ts` | Sanitize connection diagnostics |
+| `connector/venture_connector/src/api/routes/master-data.ts` | Sanitize extraction diagnostics |
+| `connector/venture_connector/test/unit/diagnostics/diagnostic-allowlist.test.ts` | **Added** — 4 absence tests |
 
 ### Tests and sentinel evidence
 
@@ -617,7 +617,7 @@ Desktop `diagnostic-privacy.test.ts` inspects **complete serialized** snapshot l
 
 ## 12. Accepted Reliability Controls Registration
 
-**Authority:** `.cursor/rules/budcom-tally-connector-reliability.mdc` · `docs/architecture/accepted-reliability-hardening.md`  
+**Authority:** `.cursor/rules/venture-tally-connector-reliability.mdc` · `docs/architecture/accepted-reliability-hardening.md`  
 **Registration date:** 2026-07-24  
 **Registration step:** Step 0 — documentation only (no application code changes)
 
@@ -1466,7 +1466,7 @@ Discovery for company selection performs one company-list request; sync reuses c
 | Connector `StructuredLogger` stdout | Arbitrary context serialized without sanitization |
 | HTTP 5xx error middleware | Logged raw `AppError.details` |
 | `sync_runs.failure_summary` | Stored raw `error.message` / Tally text |
-| Desktop `budcom-desktop.log` | Weaker message-level redaction than diagnostic export allowlist |
+| Desktop `venture-desktop.log` | Weaker message-level redaction than diagnostic export allowlist |
 
 **Unchanged (confirmed):** diagnostic export allowlist; domain SQLite operational data; no remote telemetry/crash upload.
 
@@ -1527,7 +1527,7 @@ Discovery for company selection performs one company-list request; sync reuses c
 | `test/integration/sync-failure-persistence.test.ts` | Group 4 integration |
 | `test/integration/sync-batch-atomicity.test.ts` | Normalized `lastError` expectation |
 | `test/unit/logger.test.ts` | Approved context key |
-| `apps/budcom_desktop/test/unit/file-log-sanitization.test.ts` | Group 5 |
+| `apps/venture_desktop/test/unit/file-log-sanitization.test.ts` | Group 5 |
 
 ### Validation evidence
 
@@ -1570,8 +1570,8 @@ The audit append-only file grew without maximum size or rotated-file count. No p
 
 | Field | Env | Default | Bounds |
 |-------|-----|---------|--------|
-| `tallyRequestAuditMaxBytes` | `BUDCOM_TALLY_REQUEST_AUDIT_MAX_BYTES` | **10 MiB** | 64 KiB – 100 MiB |
-| `tallyRequestAuditMaxFiles` | `BUDCOM_TALLY_REQUEST_AUDIT_MAX_FILES` | **5** rotated archives | 1 – 20 |
+| `tallyRequestAuditMaxBytes` | `VENTURE_TALLY_REQUEST_AUDIT_MAX_BYTES` | **10 MiB** | 64 KiB – 100 MiB |
+| `tallyRequestAuditMaxFiles` | `VENTURE_TALLY_REQUEST_AUDIT_MAX_FILES` | **5** rotated archives | 1 – 20 |
 
 Zero does not mean unlimited. Disabled audit creates no file or directory.
 
@@ -1650,7 +1650,7 @@ Reliability Control #4 Phase B2b — enforce existing `diagnosticsRetentionDays`
 
 ### Prior defect
 
-Diagnostic exports accumulated under `{userData}/diagnostics-exports/budcom-diagnostics-*` without lifecycle enforcement despite persisted `diagnosticsRetentionDays` (1–90 days; default 14 production / 7 development).
+Diagnostic exports accumulated under `{userData}/diagnostics-exports/venture-diagnostics-*` without lifecycle enforcement despite persisted `diagnosticsRetentionDays` (1–90 days; default 14 production / 7 development).
 
 ### Implementation status
 
@@ -1660,7 +1660,7 @@ Diagnostic exports accumulated under `{userData}/diagnostics-exports/budcom-diag
 
 Only directory names matching:
 
-`^budcom-diagnostics-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$`
+`^venture-diagnostics-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$`
 
 under `{userData}/diagnostics-exports/`. Each export directory contains `diagnostics-bundle.json`. Unrelated files, backup files, temp files, symbolic links, and non-owned directories are never deleted.
 
@@ -1736,8 +1736,8 @@ Reliability Control #4 Phase B2c — age- and count-bounded, TD-006-safe pruning
 
 | Setting | Default | Bounds | Env override |
 |---------|---------|--------|--------------|
-| `syncRunHistoryMaxCount` | **100** unprotected terminal rows per `(company_id, resource_kind)` | 20–500 | `BUDCOM_SYNC_RUN_HISTORY_MAX_COUNT` |
-| `syncRunHistoryMaxAgeDays` | **90** days | 7–365 | `BUDCOM_SYNC_RUN_HISTORY_MAX_AGE_DAYS` |
+| `syncRunHistoryMaxCount` | **100** unprotected terminal rows per `(company_id, resource_kind)` | 20–500 | `VENTURE_SYNC_RUN_HISTORY_MAX_COUNT` |
+| `syncRunHistoryMaxAgeDays` | **90** days | 7–365 | `VENTURE_SYNC_RUN_HISTORY_MAX_AGE_DAYS` |
 | Delete batch cap | **100** rows per invocation (internal constant) | — | — |
 
 Dual-trigger deletion (either trigger deletes an unprotected terminal row):
@@ -1888,7 +1888,7 @@ Safety: `lstat` (no symlink follow); never delete backup, corrupt archives, prim
 | `npm run build` (connector) | **PASS** (unchanged) |
 | Full connector vitest | **698/698 PASS** (unchanged) |
 | Architecture tests | **12/12 PASS** (unchanged) |
-| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — no modified generated artifacts** |
+| Tracked `apps/venture_desktop/dist/**` after build | **Restored — no modified generated artifacts** |
 
 **Unrestricted production remains unapproved.**
 
@@ -1937,9 +1937,9 @@ No contradictory next-gate label exists in repository docs after §28 local-life
 
 | File | Change |
 |------|--------|
-| `apps/budcom_desktop/src/application/ipc-allowlist.ts` | Payload/query/sync/export hardening |
-| `apps/budcom_desktop/src/main/main.ts` | Bounded IPC + export root wiring |
-| `apps/budcom_desktop/test/unit/ipc-allowlist-security.test.ts` | **New** |
+| `apps/venture_desktop/src/application/ipc-allowlist.ts` | Payload/query/sync/export hardening |
+| `apps/venture_desktop/src/main/main.ts` | Bounded IPC + export root wiring |
+| `apps/venture_desktop/test/unit/ipc-allowlist-security.test.ts` | **New** |
 | `connector/.../api/middleware/request-security.ts` | **New** |
 | `connector/.../api/server.ts` | Body limit + content-type middleware |
 | `connector/.../infrastructure/errors/error-handler.ts` | 413 handling |
@@ -1976,7 +1976,7 @@ No contradictory next-gate label exists in repository docs after §28 local-life
 | `npm run build` (desktop) | **PASS** |
 | Desktop vitest | **161/161 PASS** (148 prior + 13 new security tests) |
 | `npm run audit:prod` (desktop) | **0 vulnerabilities** |
-| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — no modified generated artifacts** |
+| Tracked `apps/venture_desktop/dist/**` after build | **Restored — no modified generated artifacts** |
 
 **Unrestricted production remains unapproved.**
 
@@ -2007,7 +2007,7 @@ Addressed provisional review findings without removing size protection or breaki
 | `npm run build` (desktop) | **PASS** |
 | Desktop vitest | **168/168 PASS** |
 | `npm run audit:prod` (desktop) | **0 vulnerabilities** |
-| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — clean** |
+| Tracked `apps/venture_desktop/dist/**` after build | **Restored — clean** |
 
 ---
 
@@ -2082,7 +2082,7 @@ Addressed provisional review findings without removing size protection or breaki
 | `npm run build` (desktop) | **PASS** |
 | Desktop vitest | **168/168 PASS** |
 | `npm run audit:prod` (desktop) | **0 vulnerabilities** |
-| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — clean** |
+| Tracked `apps/venture_desktop/dist/**` after build | **Restored — clean** |
 
 **Unrestricted production remains unapproved.**
 
@@ -2117,7 +2117,7 @@ Pre-commit gate run (2026-07-25, Windows):
 | Check | Result |
 |-------|--------|
 | Full controlled-pilot release pipeline | **PASS** (15/15 steps, one uninterrupted run) |
-| Real NSIS installer produced | `BudcomDesktop-0.4.3-x64-setup.exe` (81,969,281 bytes) |
+| Real NSIS installer produced | `VentureDesktop-0.4.3-x64-setup.exe` (81,969,281 bytes) |
 | SHA-256 | `66104969f6808128659f060f5897622597531d0731f7270a9f421330ac1c7b7a` |
 | Manifest + checksum verification | **PASS** |
 | Package boundary (`win-unpacked`) | **PASS** |
@@ -2127,7 +2127,7 @@ Pre-commit gate run (2026-07-25, Windows):
 | Contract tests | 5/5 PASS |
 | Connector `audit:prod` | 0 vulnerabilities |
 | Desktop `audit:prod` | 0 vulnerabilities |
-| Tracked `apps/budcom_desktop/dist/**` after cleanup | **Restored — clean** |
+| Tracked `apps/venture_desktop/dist/**` after cleanup | **Restored — clean** |
 
 ### Pre-commit gate artifact classification
 
@@ -2171,7 +2171,7 @@ No Tally write capability. No commit/push/publish. No unrestricted production ap
 | Config-level (`electron-builder.yml`, NSIS flags) | **Proven** (§31) |
 | Automated unit/integration tests | **Proven** — lifecycle-gate (25), upgrade-safety, release-engineering |
 | Real Windows install | **Proven** — exit 0, per-user scope, no UAC |
-| Real Windows uninstall retention | **Proven** — binaries removed; `%APPDATA%/@budcom/desktop/` and markers retained |
+| Real Windows uninstall retention | **Proven** — binaries removed; `%APPDATA%/@venture/desktop/` and markers retained |
 | Real Windows reinstall-after-uninstall | **Proven** — markers preserved; connector packaged path present |
 | SmartScreen unsigned behaviour | **Documented** — not disabled; silent install used for harness |
 | Second-instance focus | **Framework only** |
@@ -2181,7 +2181,7 @@ No Tally write capability. No commit/push/publish. No unrestricted production ap
 
 | Field | Value |
 |-------|-------|
-| Installer | `BudcomDesktop-0.4.3-x64-setup.exe` |
+| Installer | `VentureDesktop-0.4.3-x64-setup.exe` |
 | SHA-256 | `911422191ea977558f73fc756b6eb32dd701e01b16fb6626fc030da6e6480bdd` |
 | Git commit | `a9595af857546de3c65f1457775f3f65eb78ae77` |
 | `dirtyTree` | `false` |
@@ -2191,8 +2191,8 @@ No Tally write capability. No commit/push/publish. No unrestricted production ap
 
 | File | Change |
 |------|--------|
-| `apps/budcom_desktop/src/application/lifecycle/lifecycle-gate.ts` | **New** — fail-closed lifecycle validators |
-| `apps/budcom_desktop/test/unit/lifecycle-gate.test.ts` | **New** — 25 lifecycle gate tests |
+| `apps/venture_desktop/src/application/lifecycle/lifecycle-gate.ts` | **New** — fail-closed lifecycle validators |
+| `apps/venture_desktop/test/unit/lifecycle-gate.test.ts` | **New** — 25 lifecycle gate tests |
 | `scripts/lifecycle/candidate-integrity.mjs` | **New** — candidate SHA/manifest/commit preflight |
 | `scripts/lifecycle/create-schema-v7-fixture.mjs` | **New** — isolated schema v7 fixture |
 | `scripts/lifecycle/lifecycle-gate-runner.mjs` | **New** — Windows lifecycle harness |
@@ -2218,7 +2218,7 @@ No Tally write capability. No commit/push/publish. No unrestricted production ap
 | Contract tests | **5/5 PASS** |
 | Connector `audit:prod` | **0 vulnerabilities** |
 | Desktop `audit:prod` | **0 vulnerabilities** |
-| Tracked `apps/budcom_desktop/dist/**` after build | **Restored — clean** |
+| Tracked `apps/venture_desktop/dist/**` after build | **Restored — clean** |
 
 **Unrestricted production remains unapproved.**
 
@@ -2255,10 +2255,10 @@ Addresses adjudicated audit defects **F-02** (probe false positives), **F-03** (
 | Area | Files |
 |------|-------|
 | Probe ownership | `scripts/lifecycle/installed-first-launch-probe.mjs` |
-| Desktop lifecycle | `apps/budcom_desktop/src/application/connector-lifecycle-service.ts`, `connector-lifecycle-config.ts`, `connector-lifecycle-types.ts`, `desktop-config-resolver.ts`, `main/main.ts`, `types.ts`, `release/connector-packaged-paths.ts` |
+| Desktop lifecycle | `apps/venture_desktop/src/application/connector-lifecycle-service.ts`, `connector-lifecycle-config.ts`, `connector-lifecycle-types.ts`, `desktop-config-resolver.ts`, `main/main.ts`, `types.ts`, `release/connector-packaged-paths.ts` |
 | Connector correlation | `connector/.../config/defaults.ts`, `config/index.ts`, `core/types.ts`, `services/health/health-service.ts`, `api/routes/health.ts` |
 | Egress XML safety | `connector/.../tally/safety/prohibited-mutation-xml.ts`, `xml-request-validator.ts`, `ingestion/inbound-xml-prohibited-constructs.ts`, `tally/security/capabilities.ts` |
-| Renderer XSS | `apps/budcom_desktop/src/renderer/scripts/app.ts` |
+| Renderer XSS | `apps/venture_desktop/src/renderer/scripts/app.ts` |
 | Tests | `egress-prohibited-constructs.test.ts`, `health-service.test.ts`, `server.test.ts`, `connector-lifecycle-service.test.ts`, `xss-safe-render.test.ts` |
 
 ### Tests added or changed
@@ -2292,13 +2292,13 @@ Report: `release/controlled-pilot/0.4.3/reports/post-audit-remediation-report.js
 
 ## §35 — Final pre-commit hardening controls A/B/C (2026-07-25)
 
-Addresses commit-hold items **A** (packaged Node SHA-256 verification at spawn), **B** (probe-only `BUDCOM_USER_DATA_DIR`), and **C** (hard loopback confinement for packaged connector startup). No feature scope added. Tally remained closed. No commit/push/distribution.
+Addresses commit-hold items **A** (packaged Node SHA-256 verification at spawn), **B** (probe-only `VENTURE_USER_DATA_DIR`), and **C** (hard loopback confinement for packaged connector startup). No feature scope added. Tally remained closed. No commit/push/distribution.
 
 ### Requirement addressed
 
 1. **A** — Verify installed `node.exe` against `{resourcesPath}/node/node-runtime.manifest.json` before connector spawn; fail closed with privacy-safe `packaged_runtime_integrity_failure` diagnostic; process-level verification cache (no rehash on health poll).
-2. **B** — Honour `BUDCOM_USER_DATA_DIR` / `--user-data-dir` only when `BUDCOM_INSTALLED_PROBE_MODE=1`; restrict probe overrides to absolute paths under `os.tmpdir()` and reject install/resources/system paths.
-3. **C** — Force packaged desktop-managed connector bind host to `127.0.0.1` regardless of hostile `BUDCOM_CONNECTOR_URL` / `BUDCOM_CONNECTOR_HOST` env; propagate loopback host to child env.
+2. **B** — Honour `VENTURE_USER_DATA_DIR` / `--user-data-dir` only when `VENTURE_INSTALLED_PROBE_MODE=1`; restrict probe overrides to absolute paths under `os.tmpdir()` and reject install/resources/system paths.
+3. **C** — Force packaged desktop-managed connector bind host to `127.0.0.1` regardless of hostile `VENTURE_CONNECTOR_URL` / `VENTURE_CONNECTOR_HOST` env; propagate loopback host to child env.
 
 ### Implementation status
 
@@ -2308,9 +2308,9 @@ Addresses commit-hold items **A** (packaged Node SHA-256 verification at spawn),
 
 | Area | Files |
 |------|-------|
-| Runtime integrity | `apps/budcom_desktop/src/application/release/packaged-node-runtime.ts` |
-| Probe user-data gating | `apps/budcom_desktop/src/application/release/startup-environment.ts` |
-| Loopback confinement | `apps/budcom_desktop/src/application/release/packaged-connector-network.ts` |
+| Runtime integrity | `apps/venture_desktop/src/application/release/packaged-node-runtime.ts` |
+| Probe user-data gating | `apps/venture_desktop/src/application/release/startup-environment.ts` |
+| Loopback confinement | `apps/venture_desktop/src/application/release/packaged-connector-network.ts` |
 | Lifecycle integration | `connector-lifecycle-config.ts`, `connector-lifecycle-service.ts`, `connector-lifecycle-types.ts`, `release/startup-diagnostics.ts`, `main/main.ts` |
 | Build/probe scripts | `scripts/release/prepare-node-runtime.mjs`, `scripts/lifecycle/installed-first-launch-probe.mjs` |
 | Tests | `packaged-node-runtime.test.ts`, `startup-environment.test.ts`, `packaged-connector-network.test.ts`, `connector-lifecycle-config.test.ts`, `connector-lifecycle-service.test.ts` |
@@ -2375,7 +2375,7 @@ Report: `release/controlled-pilot/0.4.3/reports/precommit-hardening-installed-ev
 | Command | Result |
 |---------|--------|
 | `node scripts/lifecycle/precommit-hardening-packaged-verify.mjs …/win-unpacked` | PASS |
-| `node scripts/lifecycle/installed-first-launch-probe.mjs …/BudcomDesktop-0.4.3-x64-setup.exe` | **PASS** |
+| `node scripts/lifecycle/installed-first-launch-probe.mjs …/VentureDesktop-0.4.3-x64-setup.exe` | **PASS** |
 | `node scripts/lifecycle/candidate-integrity.mjs` | FAIL on evidence SHA (expected — official RC path not replaced) |
 
 ---
@@ -2384,14 +2384,14 @@ Report: `release/controlled-pilot/0.4.3/reports/precommit-hardening-installed-ev
 
 ### Requirement addressed
 
-Physical Android validation confirmed Android Voucher Browser requires Connector **0.4.x** with `/api/v1/vouchers`. The installed Budcom Desktop still shipped Connector **0.3.1**. Align Desktop packaging so the embedded Connector matches the development Connector (0.4.0).
+Physical Android validation confirmed Android Voucher Browser requires Connector **0.4.x** with `/api/v1/vouchers`. The installed Venture Desktop still shipped Connector **0.3.1**. Align Desktop packaging so the embedded Connector matches the development Connector (0.4.0).
 
 No Desktop UI redesign. No Android changes. No auto-commit.
 
 ### Root cause
 
-1. `apps/budcom_desktop/build/VERSION.txt` was hardcoded to `0.3.1` and copied into the installer as `connector/VERSION.txt`.
-2. `dist:win` did not rebuild the Connector before packaging (stale `connector/budcom_connector/dist` risk).
+1. `apps/venture_desktop/build/VERSION.txt` was hardcoded to `0.3.1` and copied into the installer as `connector/VERSION.txt`.
+2. `dist:win` did not rebuild the Connector before packaging (stale `connector/venture_connector/dist` risk).
 3. Controlled-pilot candidate / build-info schema pin lagged (storage schema 8 vs current 11).
 4. `readBundledConnectorVersion()` existed but was unused in lifecycle/diagnostics reporting.
 
@@ -2405,8 +2405,8 @@ Runtime `GET /health.connectorVersion` comes from Connector JS (`CONNECTOR_VERSI
 
 | Area | Change |
 |------|--------|
-| `apps/budcom_desktop/build/VERSION.txt` | Synced to `0.4.0` |
-| `apps/budcom_desktop/package.json` `dist:win` | Rebuild Connector before packaging |
+| `apps/venture_desktop/build/VERSION.txt` | Synced to `0.4.0` |
+| `apps/venture_desktop/package.json` `dist:win` | Rebuild Connector before packaging |
 | `scripts/release/prepare-connector-packaging.mjs` | Sync `VERSION.txt` from Connector `package.json`; assert voucher routes in dist |
 | `scripts/release/generate-build-info.mjs` | Read `STORAGE_SCHEMA_VERSION` from schema source (11) |
 | `lifecycle-gate.ts` | Candidate `connectorVersion: 0.4.0`, `storageSchemaVersion: 11` |
@@ -2417,8 +2417,8 @@ Runtime `GET /health.connectorVersion` comes from Connector JS (`CONNECTOR_VERSI
 
 | Surface | Value | Source |
 |---------|-------|--------|
-| Desktop | `0.4.3` | `apps/budcom_desktop/package.json` |
-| Connector | `0.4.0` | `connector/budcom_connector/package.json` + `CONNECTOR_VERSION` |
+| Desktop | `0.4.3` | `apps/venture_desktop/package.json` |
+| Connector | `0.4.0` | `connector/venture_connector/package.json` + `CONNECTOR_VERSION` |
 | API schema | `1.0.0` | `GET /health` `schemaVersion` |
 | Storage schema | `11` | `STORAGE_SCHEMA_VERSION` |
 | Bundled label | `VERSION.txt` | Synced at packaging time from Connector package version |
@@ -2446,12 +2446,12 @@ No separate `GET /version` added — `/health` already reports `connectorVersion
 | Installed LocalAppData Desktop (pre-reinstall) | Still `0.3.1` / no vouchers — confirms packaging was the blocker |
 | Android validation | **Not claimed** |
 
-Connector unit suite reported 3 environment-sensitive failures (`BUDCOM_CONNECTOR_HOST=192.168.29.160` on this machine); unrelated to packaging changes.
+Connector unit suite reported 3 environment-sensitive failures (`VENTURE_CONNECTOR_HOST=192.168.29.160` on this machine); unrelated to packaging changes.
 
 ### Known risks / deferred
 
 - `CONTROLLED_PILOT_CANDIDATE` sha256/sizeBytes/gitCommit still describe the previous installer; refresh after the next official controlled-pilot build.
-- Machine env `BUDCOM_CONNECTOR_HOST=192.168.29.160` / port `8081` can bind LAN and conflict with packaging smoke unless overridden.
+- Machine env `VENTURE_CONNECTOR_HOST=192.168.29.160` / port `8081` can bind LAN and conflict with packaging smoke unless overridden.
 - Existing installed Desktop must be reinstalled/upgraded to pick up packaged 0.4.0.
 - Full NSIS installer + candidate integrity refresh not executed in this gate (`--dir` unpack used).
 
@@ -2469,25 +2469,25 @@ Final installer verification after Desktop packaging alignment to Connector 0.4.
 
 ### Implementation status
 
-**UNVERIFIED — installer identity not corroborated.** The SHA-256 recorded below for `BudcomDesktop-0.4.3-x64-setup.exe` is identical to the artifact quarantined in `release/controlled-pilot/0.4.3/STALE-DO-NOT-DISTRIBUTE.md` (built from commit `10a3e280439d27632d529eea6f3f0d8cf0d1ba60`, embedding Connector 0.3.1, confirmed missing the multi-phase voucher-extraction modules). No retained installer, checksum file, or manifest remains in this repository to confirm the checks below instead describe a genuine Connector 0.4.0 build. The session log is preserved as an unverified record. Final installer verification is pending a fresh clean-source rebuild, metadata inspection, and checksum/release-manifest update before an installer from this alignment work can be promoted or used for device re-validation.
+**UNVERIFIED — installer identity not corroborated.** The SHA-256 recorded below for `VentureDesktop-0.4.3-x64-setup.exe` is identical to the artifact quarantined in `release/controlled-pilot/0.4.3/STALE-DO-NOT-DISTRIBUTE.md` (built from commit `10a3e280439d27632d529eea6f3f0d8cf0d1ba60`, embedding Connector 0.3.1, confirmed missing the multi-phase voucher-extraction modules). No retained installer, checksum file, or manifest remains in this repository to confirm the checks below instead describe a genuine Connector 0.4.0 build. The session log is preserved as an unverified record. Final installer verification is pending a fresh clean-source rebuild, metadata inspection, and checksum/release-manifest update before an installer from this alignment work can be promoted or used for device re-validation.
 
 ### Installer artifact (as recorded during this session — identity unverified, see above)
 
 | Field | Value |
 |-------|-------|
-| Path | `release/controlled-pilot/0.4.3/artifacts/BudcomDesktop-0.4.3-x64-setup.exe` |
+| Path | `release/controlled-pilot/0.4.3/artifacts/VentureDesktop-0.4.3-x64-setup.exe` |
 | Size | 104,773,185 bytes |
 | SHA-256 | `7B84106F9A49BF8E3F8762BADA8BF23EEC4B6333F95E4BDC89A2DFC9E2116F42` |
 | Signed | No (expected for controlled pilot) |
 
 ### Clean-install simulation (session log — installer identity unverified)
 
-Quiet uninstall of prior LocalAppData install → silent `/S` install of new NSIS → inspect `%LOCALAPPDATA%\Programs\Budcom Desktop`.
+Quiet uninstall of prior LocalAppData install → silent `/S` install of new NSIS → inspect `%LOCALAPPDATA%\Programs\Venture Desktop`.
 
 | Check | Result |
 |-------|--------|
 | Installer exit | 0 |
-| Install path | `%LOCALAPPDATA%\Programs\Budcom Desktop` |
+| Install path | `%LOCALAPPDATA%\Programs\Venture Desktop` |
 | `connector/VERSION.txt` | `0.4.0` |
 | `connector/package.json` | `0.4.0` |
 | `CONNECTOR_VERSION` in defaults.js | `0.4.0` |
@@ -2498,7 +2498,7 @@ Quiet uninstall of prior LocalAppData install → silent `/S` install of new NSI
 
 ### Runtime (installed exe — session log, installer identity unverified)
 
-Isolated user-data + loopback port `18090` (machine has `BUDCOM_CONNECTOR_HOST=192.168.29.160`).
+Isolated user-data + loopback port `18090` (machine has `VENTURE_CONNECTOR_HOST=192.168.29.160`).
 
 | Check | Result |
 |-------|--------|
@@ -2519,7 +2519,7 @@ No retained evidence-report files exist for this session; the two report filenam
 
 - Unsigned installer; default Electron icon
 - `CONTROLLED_PILOT_CANDIDATE` SHA/size still pin the historical `a9595af` installer (Connector 0.3.1, schema 8) until a verified new candidate build is produced and approved
-- Machine LAN `BUDCOM_CONNECTOR_*` env can override loopback if not cleared
+- Machine LAN `VENTURE_CONNECTOR_*` env can override loopback if not cleared
 - This session's installer SHA-256 collides with the quarantined `10a3e280` build; the collision must be resolved (re-verify against a fresh build, or confirm as a recording error) before this artifact path is reused
 
 ---
@@ -2528,7 +2528,7 @@ No retained evidence-report files exist for this session; the two report filenam
 
 ### Outcome
 
-**Partial validation** — Android Voucher Browser empty/session/invalid-date paths exercised on physical device. Content-dependent list/detail/paging stopped: live Tally voucher export for `Budcom-Test-01` (2026-07-27) returns **malformed XML** after size-cap fix (~1.06 MiB payload).
+**Partial validation** — Android Voucher Browser empty/session/invalid-date paths exercised on physical device. Content-dependent list/detail/paging stopped: live Tally voucher export for `Venture-Test-01` (2026-07-27) returns **malformed XML** after size-cap fix (~1.06 MiB payload).
 
 ### Product fixes applied (Connector)
 

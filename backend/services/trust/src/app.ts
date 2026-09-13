@@ -22,7 +22,7 @@ export function buildTrustService(options: {
   logger?: FastifyServerOptions['logger'];
 } = {}): FastifyInstance {
   const app = Fastify({ logger: options.logger ?? true });
-  app.get('/health', () => ({ status: 'ok', service: 'budcom-trust' }));
+  app.get('/health', () => ({ status: 'ok', service: 'venture-trust' }));
   if (options.verificationKeys) app.get<{ Params: { issuerId: string } }>('/v1/trust/issuers/:issuerId/verification-keys', async (request, reply) => {
     const keys = await options.verificationKeys!.list(request.params.issuerId, options.now?.() ?? new Date());
     void reply.header('cache-control', 'public, max-age=300, stale-if-error=3600');

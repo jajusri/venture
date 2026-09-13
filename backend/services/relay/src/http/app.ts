@@ -28,7 +28,7 @@ export function buildRelayService(options: {
   const accept = new AcceptRelaySubmission(options.repository, options.verifier, options.issuer, options.ingressLimiter, options.now);
   const fetchMailbox = new FetchRecipientMailbox(options.repository, options.mailboxVerifier);
   const recordAck = new RecordRelayAcknowledgement(options.repository, options.acknowledgementVerifier, options.now);
-  app.get('/health', () => ({ status: 'ok', service: 'budcom-relay' }));
+  app.get('/health', () => ({ status: 'ok', service: 'venture-relay' }));
   app.post<{ Body: RelaySubmissionBody }>('/v1/relay/envelopes', async (request) => {
     const stored = await accept.execute(mapRelaySubmissionBody(request.body ?? {}, options.now?.() ?? new Date()));
     const acceptance = stored.acceptance;

@@ -1,7 +1,7 @@
 ﻿# Android Companion Roadmap
 
-**Working name:** BUDCO  
-**Scope:** `apps/budcom_android`
+**Working name:** VENTURE  
+**Scope:** `apps/venture_android`
 
 Ordered implementation milestones are separate from long-term product innovation ([PRODUCT_SOUL.md](PRODUCT_SOUL.md)).
 

@@ -4,8 +4,8 @@ node_modules/
 .pub-cache/
 .pub/
 build/
-!apps/budcom_desktop/build/
-!apps/budcom_desktop/build/VERSION.txt
+!apps/venture_desktop/build/
+!apps/venture_desktop/build/VERSION.txt
 .dart_tool/
 
 # Flutter
@@ -53,22 +53,22 @@ coverage/
 /release/
 
 # Desktop build output
-apps/budcom_desktop/dist/
+apps/venture_desktop/dist/
 
 # Connector runtime
-connector/budcom_connector/dist/
+connector/venture_connector/dist/
 backend/dist/
-connector/budcom_connector/data/
-connector/budcom_connector/test-data/
-connector/budcom_connector/.packaged/
-apps/budcom_desktop/.packaged-node/
-/connector/budcom_connector/diagnostics/
-/connector/budcom_connector/test-output.txt
+connector/venture_connector/data/
+connector/venture_connector/test-data/
+connector/venture_connector/.packaged/
+apps/venture_desktop/.packaged-node/
+/connector/venture_connector/diagnostics/
+/connector/venture_connector/test-output.txt
 
 # Local Tally validation artifacts
-/budcom-ledgers-*.xml
+/venture-ledgers-*.xml
 /Tally-Test-Backups/
-connector/budcom_connector/live-validation-output.json
+connector/venture_connector/live-validation-output.json
 
 # Local Voucher discovery approvals and evidence (sensitive, never commit)
 /docs/testing/voucher-discovery-manifest.local.json
@@ -76,8 +76,8 @@ connector/budcom_connector/live-validation-output.json
 /evidence/physical-buying-cycle-*/
 
 # TypeScript emit artifacts (tests run via vitest on .ts source)
-connector/budcom_connector/test/**/*.js
-connector/budcom_connector/test/**/*.js.map
+connector/venture_connector/test/**/*.js
+connector/venture_connector/test/**/*.js.map
 
 # Claude local and runtime state
 /.claude/settings.json

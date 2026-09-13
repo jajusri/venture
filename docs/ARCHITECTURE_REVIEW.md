@@ -1,7 +1,7 @@
 ﻿# Android Architecture Review
 
 **Date:** 2026-07-27  
-**Scope:** Read-only review of `apps/budcom_android`  
+**Scope:** Read-only review of `apps/venture_android`  
 **Code changes:** None (documentation only)
 
 This review supports long-term governance. Findings are classified by severity. Cosmetic style issues are omitted.
@@ -45,7 +45,7 @@ ui/{components,theme}
 
 | Finding | Severity | Notes |
 | --- | --- | --- |
-| User-facing **BudCom** vs types **Budcom*** vs package `com.budcom` vs product docs **BUDCO** | Medium | Documented dual usage; UI spelling not locked |
+| User-facing **Venture** vs types **Venture*** vs package `com.venture` vs product docs **VENTURE** | Medium | Documented dual usage; UI spelling not locked |
 | No `Tradon` leftovers observed in Android sources reviewed | — | Good |
 
 ---
@@ -58,7 +58,7 @@ ui/{components,theme}
 | Compose without business logic | Mostly yes |
 | company ↔ serverconfig isolation | Yes (no mutual imports) |
 | dashboard → company.domain + serverconfig.domain | Yes (expected aggregator pressure) |
-| `BudcomApplication` → `serverconfig.data.local` | High smell |
+| `VentureApplication` → `serverconfig.data.local` | High smell |
 | Top-level data/domain imports | None observed |
 
 ---

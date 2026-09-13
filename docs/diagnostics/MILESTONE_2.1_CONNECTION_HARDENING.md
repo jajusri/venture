@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Milestone 2.1 adds production-grade safety controls to the Budcom-to-Tally connection path. These changes address the TallyPrime crash (`c0000005`) root cause identified in the crash investigation: **concurrent heavy exports, retry/reconnect storms, and unbounded connection concurrency**.
+Milestone 2.1 adds production-grade safety controls to the Venture-to-Tally connection path. These changes address the TallyPrime crash (`c0000005`) root cause identified in the crash investigation: **concurrent heavy exports, retry/reconnect storms, and unbounded connection concurrency**.
 
 All safety components are implemented, wired into `TallyConnectionManager`, covered by unit and integration tests, and verified with `npm run lint`, `npm run test`, and `npm run build`.
 
@@ -214,20 +214,20 @@ After threshold: **retry suppression** — connection manager breaks retry loop 
 
 | Variable | Maps to |
 |----------|---------|
-| `BUDCOM_TALLY_SAFE_MODE` | `tallySafeMode` |
-| `BUDCOM_TALLY_POOL_MAX` | `tallyPoolMaxConnections` |
-| `BUDCOM_TALLY_RETRY_MAX` | `tallyRetryMaxAttempts` |
-| `BUDCOM_TALLY_TIMEOUT_MS` | `tallyTimeoutMs` |
-| `BUDCOM_TALLY_MIN_REQUEST_INTERVAL_MS` | `tallyMinRequestIntervalMs` |
-| `BUDCOM_TALLY_MAX_REQUEST_BYTES` | `tallyMaxRequestBytes` |
-| `BUDCOM_TALLY_MAX_RESPONSE_BYTES` | `tallyMaxResponseBytes` |
-| `BUDCOM_TALLY_CIRCUIT_BREAKER` | `tallyCircuitBreakerEnabled` |
-| `BUDCOM_TALLY_CIRCUIT_BREAKER_THRESHOLD` | `tallyCircuitBreakerFailureThreshold` |
-| `BUDCOM_TALLY_CIRCUIT_BREAKER_COOLDOWN_MS` | `tallyCircuitBreakerCooldownMs` |
-| `BUDCOM_TALLY_REQUEST_AUDIT` | `tallyRequestAuditEnabled` |
-| `BUDCOM_TALLY_REQUEST_AUDIT_PATH` | `tallyRequestAuditPath` |
-| `BUDCOM_TALLY_AUTO_RECONNECT` | `tallyAutoReconnect` |
-| `BUDCOM_TALLY_RECONNECT_MS` | `tallyReconnectDelayMs` |
+| `VENTURE_TALLY_SAFE_MODE` | `tallySafeMode` |
+| `VENTURE_TALLY_POOL_MAX` | `tallyPoolMaxConnections` |
+| `VENTURE_TALLY_RETRY_MAX` | `tallyRetryMaxAttempts` |
+| `VENTURE_TALLY_TIMEOUT_MS` | `tallyTimeoutMs` |
+| `VENTURE_TALLY_MIN_REQUEST_INTERVAL_MS` | `tallyMinRequestIntervalMs` |
+| `VENTURE_TALLY_MAX_REQUEST_BYTES` | `tallyMaxRequestBytes` |
+| `VENTURE_TALLY_MAX_RESPONSE_BYTES` | `tallyMaxResponseBytes` |
+| `VENTURE_TALLY_CIRCUIT_BREAKER` | `tallyCircuitBreakerEnabled` |
+| `VENTURE_TALLY_CIRCUIT_BREAKER_THRESHOLD` | `tallyCircuitBreakerFailureThreshold` |
+| `VENTURE_TALLY_CIRCUIT_BREAKER_COOLDOWN_MS` | `tallyCircuitBreakerCooldownMs` |
+| `VENTURE_TALLY_REQUEST_AUDIT` | `tallyRequestAuditEnabled` |
+| `VENTURE_TALLY_REQUEST_AUDIT_PATH` | `tallyRequestAuditPath` |
+| `VENTURE_TALLY_AUTO_RECONNECT` | `tallyAutoReconnect` |
+| `VENTURE_TALLY_RECONNECT_MS` | `tallyReconnectDelayMs` |
 
 ---
 

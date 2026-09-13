@@ -3,7 +3,7 @@
 **Status:** Implemented and live-validated behind the controlled Voucher rollout
 **Evidence date:** 2026-07-29
 **Documentation updated:** 2026-07-30
-**Validated scope:** `Budcom-Test-01`, 24-Jul-2026, 14 vouchers, 28 ledger entries, and 100 inventory entries
+**Validated scope:** `Venture-Test-01`, 24-Jul-2026, 14 vouchers, 28 ledger entries, and 100 inventory entries
 **Connector boundary:** Read-only Tally XML/TDL
 
 ## Decision
@@ -58,7 +58,7 @@ Every request includes an explicit company and bounded date range:
 ```xml
 <STATICVARIABLES>
   <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
-  <SVCURRENTCOMPANY>Budcom-Test-01</SVCURRENTCOMPANY>
+  <SVCURRENTCOMPANY>Venture-Test-01</SVCURRENTCOMPANY>
   <SVFROMDATE>20260724</SVFROMDATE>
   <SVTODATE>20260724</SVTODATE>
 </STATICVARIABLES>
@@ -67,12 +67,12 @@ Every request includes an explicit company and bounded date range:
 The collection contains only required Voucher metadata:
 
 ```xml
-<COLLECTION NAME="Budcom Voucher Discovery"
+<COLLECTION NAME="Venture Voucher Discovery"
             ISMODIFY="No"
             ISFIXED="No"
             ISINITIALIZE="Yes">
   <TYPE>Voucher</TYPE>
-  <FILTERS>BudcomVoucherDateRange</FILTERS>
+  <FILTERS>VentureVoucherDateRange</FILTERS>
   <NATIVEMETHOD>Date</NATIVEMETHOD>
   <NATIVEMETHOD>VoucherTypeName</NATIVEMETHOD>
   <NATIVEMETHOD>VoucherNumber</NATIVEMETHOD>
@@ -85,7 +85,7 @@ The collection contains only required Voucher metadata:
   <NATIVEMETHOD>IsCancelled</NATIVEMETHOD>
 </COLLECTION>
 
-<SYSTEM TYPE="Formulae" NAME="BudcomVoucherDateRange">
+<SYSTEM TYPE="Formulae" NAME="VentureVoucherDateRange">
   $Date &gt;= $$Date:"24-Jul-2026"
   AND $Date &lt;= $$Date:"24-Jul-2026"
 </SYSTEM>
@@ -101,20 +101,20 @@ collection walks the source vouchers instead of fetching a compound collection t
 Voucher:
 
 ```xml
-<COLLECTION NAME="Budcom Voucher Ledger Source"
+<COLLECTION NAME="Venture Voucher Ledger Source"
             ISMODIFY="No"
             ISFIXED="No"
             ISINITIALIZE="Yes">
   <TYPE>Voucher</TYPE>
-  <FILTERS>BudcomVoucherDateRange</FILTERS>
+  <FILTERS>VentureVoucherDateRange</FILTERS>
   <NATIVEMETHOD>GUID</NATIVEMETHOD>
 </COLLECTION>
 
-<COLLECTION NAME="Budcom Voucher Ledger Entries"
+<COLLECTION NAME="Venture Voucher Ledger Entries"
             ISMODIFY="No"
             ISFIXED="No"
             ISINITIALIZE="Yes">
-  <SOURCECOLLECTION>Budcom Voucher Ledger Source</SOURCECOLLECTION>
+  <SOURCECOLLECTION>Venture Voucher Ledger Source</SOURCECOLLECTION>
   <WALK>AllLedgerEntries</WALK>
   <NATIVEMETHOD>LedgerName</NATIVEMETHOD>
   <NATIVEMETHOD>IsDeemedPositive</NATIVEMETHOD>
@@ -132,20 +132,20 @@ The inventory source collection uses the same company and date boundary. Invento
 dedicated response and is never fetched through a compound Voucher `NATIVEMETHOD`:
 
 ```xml
-<COLLECTION NAME="Budcom Voucher Inventory Source"
+<COLLECTION NAME="Venture Voucher Inventory Source"
             ISMODIFY="No"
             ISFIXED="No"
             ISINITIALIZE="Yes">
   <TYPE>Voucher</TYPE>
-  <FILTERS>BudcomVoucherDateRange</FILTERS>
+  <FILTERS>VentureVoucherDateRange</FILTERS>
   <NATIVEMETHOD>GUID</NATIVEMETHOD>
 </COLLECTION>
 
-<COLLECTION NAME="Budcom Voucher Inventory Entries"
+<COLLECTION NAME="Venture Voucher Inventory Entries"
             ISMODIFY="No"
             ISFIXED="No"
             ISINITIALIZE="Yes">
-  <SOURCECOLLECTION>Budcom Voucher Inventory Source</SOURCECOLLECTION>
+  <SOURCECOLLECTION>Venture Voucher Inventory Source</SOURCECOLLECTION>
   <WALK>AllInventoryEntries</WALK>
   <NATIVEMETHOD>StockItemName</NATIVEMETHOD>
   <NATIVEMETHOD>ActualQty</NATIVEMETHOD>
@@ -248,8 +248,8 @@ The production implementation was then exercised through an authorized read-only
 
 | Measure | Result |
 |---|---:|
-| Requested company/date | `budcom-test-01`, 24-Jul-2026 |
-| Resolved Tally company | `Budcom-Test-01` |
+| Requested company/date | `venture-test-01`, 24-Jul-2026 |
+| Resolved Tally company | `Venture-Test-01` |
 | Tally operations | Company discovery, Voucher discovery, Voucher ledger entries, Voucher inventory entries |
 | Candidate / accepted / persisted | 14 / 14 / 14 |
 | Rejected / incomplete | 0 / 0 |
@@ -329,7 +329,7 @@ The implemented design passed:
 - the focused safe-request, parser, GUID-join, persistence, and API mapping tests;
 - the full Voucher and Connector suites;
 - build, lint, and typecheck; and
-- the authorized `Budcom-Test-01` live extraction described above.
+- the authorized `Venture-Test-01` live extraction described above.
 
 The executable design contract is
 `test/unit/voucher/two-phase-voucher-extraction-design.test.ts` and

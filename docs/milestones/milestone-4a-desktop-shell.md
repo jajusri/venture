@@ -17,7 +17,7 @@ Electron Main (window + IPC wiring)
   ↓
 Application Layer (DashboardService, ConnectorHttpClient, mappers)
   ↓ HTTP
-Connector Service (@budcom/connector on :8080)
+Connector Service (@venture/connector on :8080)
   ↓
 ERP Adapter / Tally
 ```
@@ -41,7 +41,7 @@ ERP Adapter / Tally
 
 ## Package location
 
-`apps/budcom_desktop` (`@budcom/desktop` v0.4.0)
+`apps/venture_desktop` (`@venture/desktop` v0.4.0)
 
 ## UI surfaces
 
@@ -99,7 +99,7 @@ In-application log buffer populated from connector poll results (information / w
 
 | Env var | Default |
 |---------|---------|
-| `BUDCOM_CONNECTOR_URL` | `http://localhost:8080` |
+| `VENTURE_CONNECTOR_URL` | `http://localhost:8080` |
 
 Status polling interval: 5 seconds (main process → renderer IPC event).
 
@@ -119,7 +119,7 @@ Status polling interval: 5 seconds (main process → renderer IPC event).
 
 Generated via `npm run screenshot`:
 
-- `apps/budcom_desktop/screenshots/dashboard.png`
+- `apps/venture_desktop/screenshots/dashboard.png`
 
 ## Limitations
 

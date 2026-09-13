@@ -92,7 +92,7 @@ function issueOnce(signer: TrustCredentialSigner, nowEpochMillis: number, intent
 
 describe('PostgresBackedTrustCredentialSigner + startup decision -- round 7 adversarial proof', () => {
   let workDir: string;
-  beforeEach(() => { workDir = mkdtempSync(join(tmpdir(), 'budcom-signer-adversarial-')); });
+  beforeEach(() => { workDir = mkdtempSync(join(tmpdir(), 'venture-signer-adversarial-')); });
   afterEach(() => { rmSync(workDir, { recursive: true, force: true }); });
 
   it('SEPARATE INSTANCE ROTATION: an independent operator registry rotates A to B; the server signer, never recreated, uses B on its very next issuance and A can never issue again', async () => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env -S node --experimental-strip-types
 /**
  * Runs Trust's real Postgres migrations (`packages/persistence/src/migrations.ts`) against
- * `BUDCOM_TRUST_DATABASE_URL` without booting the full Trust HTTP server. `main.ts` already does
+ * `VENTURE_TRUST_DATABASE_URL` without booting the full Trust HTTP server. `main.ts` already does
  * this on every boot (idempotent), so this script exists purely for orchestration tooling that needs
  * the schema present before creating rows (e.g. `pilot-provision.ts`, which does not migrate itself)
  * without starting a listening service. Never touches anything the real migrations don't already

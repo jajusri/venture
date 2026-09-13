@@ -1,8 +1,8 @@
 # Confirmed Connector Contracts — Sync Foundation (Android)
 
 **Date:** 2026-07-27  
-**Source of truth:** `connector/budcom_connector` implementation  
-**Purpose:** Contract discovery for BUDCO Android Sync Foundation
+**Source of truth:** `connector/venture_connector` implementation  
+**Purpose:** Contract discovery for VENTURE Android Sync Foundation
 
 ---
 

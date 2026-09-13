@@ -8,7 +8,7 @@ class MemoryBootstrapStore implements BusinessBootstrapStore {
   createAtomically(intentId: string, result: CreatedBusinessAuthority): Promise<CreatedBusinessAuthority> { this.values.set(`${result.membership.actorId}:${intentId}`, result); return Promise.resolve(result); }
 }
 describe('CreateBusiness', () => {
-  it('creates initial BUDCOM account owner authority for a verified principal', async () => {
+  it('creates initial VENTURE account owner authority for a verified principal', async () => {
     const service = new CreateBusiness(new MemoryBootstrapStore(), () => new Date(10), (() => { let id = 0; return () => `id-${++id}`; })());
     const result = await service.execute({ principal: { actorId: identifier('actor-1', 'ActorId'), verificationId: 'verified-email-1', verifiedAt: new Date(1) }, intentId: 'intent-1', authorityDisplayName: 'Acme account' });
     expect(result.authorityEpoch).toBe(1);

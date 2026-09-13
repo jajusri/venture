@@ -24,6 +24,6 @@ Machine-readable results: `docs/diagnostics/m5ap-ledger-sync-benchmark.json`
 Run locally:
 
 ```bash
-cd connector/budcom_connector
+cd connector/venture_connector
 npx tsx scripts/ledger-sync-benchmark.ts
 ```

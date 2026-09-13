@@ -9,7 +9,7 @@ Use before distributing a controlled-pilot build.
 - [ ] After commit and push, rerun release pipeline from clean tree before handoff
 - [ ] Correct git commit recorded in build metadata matches the release commit
 - [ ] Desktop and connector package versions match build metadata
-- [ ] `BUDCOM_RELEASE_MODE=controlled_pilot`
+- [ ] `VENTURE_RELEASE_MODE=controlled_pilot`
 - [ ] Storage schema version recorded
 
 ## Packaging boundary
@@ -27,7 +27,7 @@ Use before distributing a controlled-pilot build.
 - [ ] Auto-update disabled
 - [ ] Child process environment minimized
 - [ ] Firewall rules target the exact bundled Node: TCP 8080/8443 and UDP 5353, Private/Public profiles, `LocalSubnet` only
-- [ ] Upgrade replaces stale Budcom firewall rules and uninstall removes them
+- [ ] Upgrade replaces stale Venture firewall rules and uninstall removes them
 
 ## Integrity
 
@@ -39,12 +39,12 @@ Use before distributing a controlled-pilot build.
 ## Behaviour
 
 - [ ] Upgrade path tested on representative machine
-- [ ] Uninstall retains `%APPDATA%/@budcom/desktop/` data by default
+- [ ] Uninstall retains `%APPDATA%/@venture/desktop/` data by default
 - [ ] Migration failure blocks normal startup
 - [ ] Future schema version fails closed
 - [ ] Single desktop instance enforced
 - [ ] Connector ownership verified
-- [ ] Every mutable Connector path is under Budcom AppData and outside install/resources
+- [ ] Every mutable Connector path is under Venture AppData and outside install/resources
 - [ ] Transport fingerprint is identical across same-version reinstall and supported upgrade
 - [ ] Installer-level legacy identity migration completes before electron-builder invokes the old uninstaller
 - [ ] Pre-launch over-install gate proves certificate/key byte hashes and SPKI fingerprint are unchanged
@@ -60,7 +60,7 @@ Use before distributing a controlled-pilot build.
 - [ ] Real Windows lifecycle harness executed (`node scripts/lifecycle/lifecycle-gate-runner.mjs --execute-windows`)
 - [ ] Uninstall-retention proven on real Windows (binaries removed; AppData retained)
 - [ ] Reinstall-after-uninstall reconnects to retained data
-- [ ] Lifecycle unit tests pass (`apps/budcom_desktop/test/unit/lifecycle-gate.test.ts`)
+- [ ] Lifecycle unit tests pass (`apps/venture_desktop/test/unit/lifecycle-gate.test.ts`)
 - [ ] Lifecycle report archived under `release/controlled-pilot/<version>/reports/lifecycle-gate-report.json`
 
 ## Validation

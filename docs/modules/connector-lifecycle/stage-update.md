@@ -3,7 +3,7 @@
 **Module:** Connector Lifecycle Supervisor  
 **Milestone:** 4C (base), 4D (integration)  
 **Last updated:** 2026-08-02  
-**Path:** `apps/budcom_desktop/src/application/connector-lifecycle-*.ts`
+**Path:** `apps/venture_desktop/src/application/connector-lifecycle-*.ts`
 
 ---
 

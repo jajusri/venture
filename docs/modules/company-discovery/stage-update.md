@@ -51,7 +51,7 @@ See `docs/stage-updates/milestone-3b-stage-update.md` §4.
 
 Also consumed by:
 
-- `connector/budcom_connector/src/services/extraction/company-resolver.ts` (3D — discovery snapshot cache)
+- `connector/venture_connector/src/services/extraction/company-resolver.ts` (3D — discovery snapshot cache)
 
 ---
 

@@ -5,7 +5,7 @@
 
 ## Scope
 
-This document defines the RC#4 controlled-pilot release engineering boundary for the Budcom Windows desktop shell and bundled connector.
+This document defines the RC#4 controlled-pilot release engineering boundary for the Venture Windows desktop shell and bundled connector.
 
 ## Release modes
 
@@ -16,11 +16,11 @@ This document defines the RC#4 controlled-pilot release engineering boundary for
 | `controlled_pilot` | Manual distribution with checksum verification; unsigned builds permitted with explicit limitation |
 | `production` | Unrestricted production — **blocked** until signing and authenticated update trust exist |
 
-Authoritative resolver: `apps/budcom_desktop/src/application/release/release-mode.ts`
+Authoritative resolver: `apps/venture_desktop/src/application/release/release-mode.ts`
 
 Precedence:
 
-1. `BUDCOM_RELEASE_MODE`
+1. `VENTURE_RELEASE_MODE`
 2. `build-info.json` when packaged
 3. `development` when unpackaged
 
@@ -40,14 +40,14 @@ Includes desktop version, connector version, storage schema version, git commit,
 
 ## Application data layout
 
-Immutable install binaries are separate from mutable data under Electron `userData` (`%APPDATA%/@budcom/desktop/` for package `@budcom/desktop`):
+Immutable install binaries are separate from mutable data under Electron `userData` (`%APPDATA%/@venture/desktop/` for package `@venture/desktop`):
 
 | Category | Location |
 |----------|----------|
 | Config | `{userData}/desktop-config.json` |
 | Logs | `{userData}/logs/` |
 | Diagnostics exports | `{userData}/diagnostics-exports/` |
-| Connector SQLite | `{userData}/connector-data/budcom-ledger.db` |
+| Connector SQLite | `{userData}/connector-data/venture-ledger.db` |
 | Import staging | `{userData}/imports/staging/` |
 | Temp | `{userData}/temp/` |
 
@@ -76,7 +76,7 @@ Checksum verification proves integrity only — not publisher authenticity.
 |-------|---------|
 | `sourceTreeCleanAtStart` | Repository working tree was fully clean before any build step |
 | `dirtyTree` | Inverse of `sourceTreeCleanAtStart` for build metadata compatibility |
-| `generatedChangesAfterBuild` | Allowlisted paths that changed during the pipeline (for example `apps/budcom_desktop/dist/**`) |
+| `generatedChangesAfterBuild` | Allowlisted paths that changed during the pipeline (for example `apps/venture_desktop/dist/**`) |
 | `allowlistedGeneratedPaths` | Explicit generated-output prefixes permitted after build |
 
 Controlled-pilot release **fails closed** when the repository is dirty at start, HEAD changes during the run, or any non-allowlisted tracked/untracked file appears. A clean start followed only by allowlisted desktop `dist/` regeneration yields `dirtyTree=false`.
@@ -92,7 +92,7 @@ A successful controlled-pilot release run is not automatically distributable. Bu
 | Purpose | Proves pipeline, boundary, and NSIS creation | Intended for controlled pilot handoff |
 | SHA-256 / manifest | Valid for that build only | Must be regenerated after clean-tree rerun |
 
-When `dirtyTree=true`, treat the output as **pre-commit gate evidence** only. After commit and push, rerun `npm run release:controlled-pilot` with `BUDCOM_RELEASE_MODE=controlled_pilot` from a clean working tree and archive the new checksum and manifest.
+When `dirtyTree=true`, treat the output as **pre-commit gate evidence** only. After commit and push, rerun `npm run release:controlled-pilot` with `VENTURE_RELEASE_MODE=controlled_pilot` from a clean working tree and archive the new checksum and manifest.
 
 Generated release output under `/release/` is gitignored and must never be committed.
 

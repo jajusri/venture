@@ -1,6 +1,6 @@
-# BUDCOM central backend
+# VENTURE central backend
 
-This directory contains the separately deployable BUDCOM central services. It is not part of the LAN/Tally Connector.
+This directory contains the separately deployable VENTURE central services. It is not part of the LAN/Tally Connector.
 
 Only the Trust Service is currently implemented. No relay or public deployment is included.
 

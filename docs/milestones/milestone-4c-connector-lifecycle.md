@@ -13,8 +13,8 @@ Transform the desktop application into a production-ready launcher and superviso
 
 | Component | Version |
 |-----------|---------|
-| Connector | `@budcom/connector` **0.3.1** |
-| Desktop | `@budcom/desktop` **0.4.2** |
+| Connector | `@venture/connector` **0.3.1** |
+| Desktop | `@venture/desktop` **0.4.2** |
 | Validation port | **18080** (isolated from default 8080 to avoid conflicts) |
 
 ## Architecture
@@ -59,15 +59,15 @@ Connector REST API (:8080 default, configurable)
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `BUDCOM_CONNECTOR_URL` | `http://localhost:8080` | Health/API base URL |
-| `BUDCOM_CONNECTOR_EXECUTABLE` | `process.execPath` | Node or packaged binary |
-| `BUDCOM_CONNECTOR_ARGS` | path to `connector/.../dist/main.js` | Connector entry script |
-| `BUDCOM_CONNECTOR_CWD` | connector dist directory | Working directory |
-| `BUDCOM_CONNECTOR_AUTO_START` | `true` | Auto-start on app ready |
+| `VENTURE_CONNECTOR_URL` | `http://localhost:8080` | Health/API base URL |
+| `VENTURE_CONNECTOR_EXECUTABLE` | `process.execPath` | Node or packaged binary |
+| `VENTURE_CONNECTOR_ARGS` | path to `connector/.../dist/main.js` | Connector entry script |
+| `VENTURE_CONNECTOR_CWD` | connector dist directory | Working directory |
+| `VENTURE_CONNECTOR_AUTO_START` | `true` | Auto-start on app ready |
 
 ## Live validation — scenario results
 
-Validation script: `apps/budcom_desktop/src/scripts/live-lifecycle-validation.ts`  
+Validation script: `apps/venture_desktop/src/scripts/live-lifecycle-validation.ts`  
 Run: `node dist/scripts/live-lifecycle-validation.js` (after `npm run build`)
 
 | # | Scenario | Result | Evidence |
@@ -170,9 +170,9 @@ All lifecycle events are written to `LogService` with `[lifecycle:<event>]` pref
 
 ## Validation steps (operator)
 
-1. Build connector: `cd connector/budcom_connector && npm run build`
-2. Build desktop: `cd apps/budcom_desktop && npm run build`
-3. Ensure port 8080 free (or set `BUDCOM_CONNECTOR_URL`)
+1. Build connector: `cd connector/venture_connector && npm run build`
+2. Build desktop: `cd apps/venture_desktop && npm run build`
+3. Ensure port 8080 free (or set `VENTURE_CONNECTOR_URL`)
 4. Launch desktop — connector should auto-start; lifecycle panel shows **Connected**
 5. Stop connector via UI — state **Disconnected**; `/health` unreachable
 6. Start connector via UI — managed restart; **Connected**

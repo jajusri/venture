@@ -1,7 +1,7 @@
 ﻿# Decisions
 
-**Status:** Frozen decisions for BUDCO Android companion  
-**Scope:** `apps/budcom_android`
+**Status:** Frozen decisions for VENTURE Android companion  
+**Scope:** `apps/venture_android`
 
 ---
 
@@ -9,7 +9,7 @@
 
 | Decision | Choice |
 | --- | --- |
-| Working name | BUDCO |
+| Working name | VENTURE |
 | Platform | Android native |
 | Language | Kotlin |
 | UI | Jetpack Compose |
@@ -229,7 +229,7 @@ These still **read the local cache stream** first. They are safe **after** dashb
 ### 2026-07-27 — Production Validation requires live Connector and device
 
 **Status:** Accepted  
-**Decision:** Production Validation is complete only after automated gates **and** end-to-end verification against a reachable BudCom Connector on a usable Android device/emulator. Automated assemble/unit/androidTest-compile alone does not unlock Contact Intelligence.  
+**Decision:** Production Validation is complete only after automated gates **and** end-to-end verification against a reachable Venture Connector on a usable Android device/emulator. Automated assemble/unit/androidTest-compile alone does not unlock Contact Intelligence.  
 **Context:** 2026-07-27 run at tip `be0b960` passed automated gates; Connector probes on `:8080` failed; emulator AVD launched but remained `adb offline`.  
 **Consequences:** Roadmap stays on Production Validation; Contact Intelligence remains blocked; evidence lives in `docs/PRODUCTION_VALIDATION.md`.
 

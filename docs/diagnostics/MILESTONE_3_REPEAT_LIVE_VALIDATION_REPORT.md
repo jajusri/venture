@@ -34,12 +34,12 @@ All controls were configured for the planned run (same as prior successful run):
 | Control | Setting |
 |---------|---------|
 | Read-only requests | ✅ |
-| Safe Mode | ✅ (`BUDCOM_TALLY_SAFE_MODE=true`) |
+| Safe Mode | ✅ (`VENTURE_TALLY_SAFE_MODE=true`) |
 | Circuit Breaker | ✅ |
-| Max concurrency | 1 (`BUDCOM_TALLY_POOL_MAX=1`) |
+| Max concurrency | 1 (`VENTURE_TALLY_POOL_MAX=1`) |
 | Inter-request delay | 5 s |
 | Parallel calls | None |
-| Auto-retry on failure | Disabled (`BUDCOM_TALLY_RETRY_MAX=1`) |
+| Auto-retry on failure | Disabled (`VENTURE_TALLY_RETRY_MAX=1`) |
 | `List of Units` | **Never called** |
 
 ---

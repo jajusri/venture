@@ -27,8 +27,8 @@ describe('relay SCALE-1M structural review', () => {
   });
 
   it('avoids a single global retry worker in Android sender policy', () => {
-    const policy = readFileSync(join(root, '../apps/budcom_android/app/src/main/java/com/budcom/android/feature/transaction/domain/model/RelayOutboxRetryPolicy.kt'), 'utf8');
-    const dispatcher = readFileSync(join(root, '../apps/budcom_android/app/src/main/java/com/budcom/android/feature/transaction/data/relay/RelayOutboxDispatcher.kt'), 'utf8');
+    const policy = readFileSync(join(root, '../apps/venture_android/app/src/main/java/com/jajusri/venture/feature/transaction/domain/model/RelayOutboxRetryPolicy.kt'), 'utf8');
+    const dispatcher = readFileSync(join(root, '../apps/venture_android/app/src/main/java/com/jajusri/venture/feature/transaction/data/relay/RelayOutboxDispatcher.kt'), 'utf8');
     expect(policy).toContain('MAX_DISPATCH_BATCH');
     expect(policy).toContain('MAX_ATTEMPTS');
     // Bounded-contract check, not a fragile exact DAO-method-name match: dispatch reads a

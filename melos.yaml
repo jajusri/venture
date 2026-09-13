@@ -1,10 +1,10 @@
-name: budcom
-repository: https://github.com/budcom/budcom
+name: venture
+repository: https://github.com/jajusri/venture
 
 packages:
-  - apps/budcom_mobile
-  - shared/packages/budcom_core
-  - shared/packages/budcom_contracts
+  - apps/venture_mobile
+  - shared/packages/venture_core
+  - shared/packages/venture_contracts
 
 command:
   bootstrap:

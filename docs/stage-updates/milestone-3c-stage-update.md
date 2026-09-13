@@ -40,15 +40,15 @@
 
 ## 3. Files Added
 
-- `connector/budcom_connector/src/erp/ports/groups.ts`
-- `connector/budcom_connector/src/tally/contracts/groups-contract.ts`
-- `connector/budcom_connector/src/tally/groups/groups-parser.ts`
-- `connector/budcom_connector/src/tally/groups/hierarchy-validator.ts`
-- `connector/budcom_connector/test/helpers/groups-fixtures.ts`
-- `connector/budcom_connector/test/unit/tally/groups-parser.test.ts`
-- `connector/budcom_connector/test/unit/tally/groups-hierarchy.test.ts`
-- `connector/budcom_connector/test/unit/tally/groups-adapter.test.ts`
-- `connector/budcom_connector/test/integration/groups.test.ts`
+- `connector/venture_connector/src/erp/ports/groups.ts`
+- `connector/venture_connector/src/tally/contracts/groups-contract.ts`
+- `connector/venture_connector/src/tally/groups/groups-parser.ts`
+- `connector/venture_connector/src/tally/groups/hierarchy-validator.ts`
+- `connector/venture_connector/test/helpers/groups-fixtures.ts`
+- `connector/venture_connector/test/unit/tally/groups-parser.test.ts`
+- `connector/venture_connector/test/unit/tally/groups-hierarchy.test.ts`
+- `connector/venture_connector/test/unit/tally/groups-adapter.test.ts`
+- `connector/venture_connector/test/integration/groups.test.ts`
 - `docs/milestones/milestone-3c-groups.md`
 - `docs/testing/milestone-3c-groups-manual-validation.md`
 
@@ -56,11 +56,11 @@
 
 ## 4. Files Modified
 
-- `connector/budcom_connector/src/erp/ports/erp-read-port.ts`
-- `connector/budcom_connector/src/services/extraction/master-data.service.ts`
-- `connector/budcom_connector/src/tally/adapter/tally-read-adapter.ts`
-- `connector/budcom_connector/src/tally/tally-module.ts`
-- `connector/budcom_connector/test/unit/tally/company-discovery-adapter.test.ts`
+- `connector/venture_connector/src/erp/ports/erp-read-port.ts`
+- `connector/venture_connector/src/services/extraction/master-data.service.ts`
+- `connector/venture_connector/src/tally/adapter/tally-read-adapter.ts`
+- `connector/venture_connector/src/tally/tally-module.ts`
+- `connector/venture_connector/test/unit/tally/company-discovery-adapter.test.ts`
 - `CHANGELOG.md`
 
 ---

@@ -13,8 +13,8 @@ Milestone 0 requires an architecture foundation for an Android-first, read-only 
 |-------|--------|-----------|
 | Mobile app | Flutter (Dart) | Locked in product spec; Android-first |
 | Monorepo tool | Melos | Standard for multi-package Flutter workspaces |
-| Shared domain | `budcom_core` Dart package | Testable without Flutter widgets |
-| API contract | OpenAPI 3.1 + `budcom_contracts` | Stable boundary between app and connector |
+| Shared domain | `venture_core` Dart package | Testable without Flutter widgets |
+| API contract | OpenAPI 3.1 + `venture_contracts` | Stable boundary between app and connector |
 | Connector (M0) | Node.js 20 + TypeScript + Express | Fast skeleton; Windows-deployable; tests run without Flutter SDK |
 | CI | GitHub Actions | Spec workflow requirement |
 | Backend cloud | Reserved, not implemented | Optional per spec; not needed for MVP 1 |

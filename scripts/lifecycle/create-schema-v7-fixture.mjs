@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { SqliteDatabase } from '../../connector/budcom_connector/dist/storage/sqlite/sqlite-database.js';
+import { SqliteDatabase } from '../../connector/venture_connector/dist/storage/sqlite/sqlite-database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -41,7 +41,7 @@ const invokedDirectly = process.argv[1]
   && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (invokedDirectly) {
-  const out = process.argv[2] ?? path.join(os.tmpdir(), 'budcom-lifecycle-schema-v7.db');
+  const out = process.argv[2] ?? path.join(os.tmpdir(), 'venture-lifecycle-schema-v7.db');
   createSchemaV7Fixture(out);
   console.log(out);
 }

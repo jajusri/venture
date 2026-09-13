@@ -77,7 +77,7 @@ This allows future ERP adapters to reuse the same policy engine with their own r
 
 - Build fails on boundary violations — violations are visible immediately, not in production.
 - Tests require maintenance when intentionally adding new boundaries.
-- In-process guarantee only: external processes can still open sockets to Tally; Budcom's supported code paths cannot.
+- In-process guarantee only: external processes can still open sockets to Tally; Venture's supported code paths cannot.
 
 ## References
 

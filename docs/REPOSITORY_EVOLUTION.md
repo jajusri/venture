@@ -1,6 +1,6 @@
 # Repository Evolution
 
-**Scope:** Native Android companion package layout in `apps/budcom_android`  
+**Scope:** Native Android companion package layout in `apps/venture_android`  
 **Status:** Guidance — do not execute mass moves without an explicit refactor milestone  
 **Related:** [Android ADR-001](./architecture/android/ADR-001-vertical-slice-architecture.md), [`PROJECT_CONSTITUTION.md`](./PROJECT_CONSTITUTION.md)
 
@@ -9,7 +9,7 @@
 ## Current structure
 
 ```text
-com.budcom.android
+com.jajusri.venture
 ├── app/
 ├── core/                 # shared primitives (network, common, database install, di, util)
 ├── feature/              # vertical slices (serverconfig, company, dashboard, …)
@@ -28,7 +28,7 @@ Top-level `data/` and `domain/` contain placeholder `*Package.kt` files from the
 ## Future structure
 
 ```text
-com.budcom.android
+com.jajusri.venture
 ├── app/
 ├── core/                 # transport, results, DI, database, utilities
 ├── feature/              # vertical slices
@@ -69,7 +69,7 @@ Notes:
 | Step | Action | Trigger |
 | --- | --- | --- |
 | 1 | Delete unused `*Package.kt` markers under top-level `data/` / `domain/` / empty `settings` if still unused | Cleanup milestone or first PR that touches those paths |
-| 2 | Refresh `apps/budcom_android/README.md` package map to match reality | Same cleanup |
+| 2 | Refresh `apps/venture_android/README.md` package map to match reality | Same cleanup |
 | 3 | Introduce `common/` only for a concrete shared type | Second feature needs the same domain model |
 | 4 | Optional Gradle module split (`:core`, `:feature:*`) | Build times / boundary enforcement require it |
 

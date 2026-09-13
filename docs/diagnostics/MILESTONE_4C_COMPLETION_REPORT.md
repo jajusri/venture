@@ -2,15 +2,15 @@
 
 **Milestone:** Production Connector Lifecycle Manager  
 **Date:** 2026-07-23T00:50:00+05:30  
-**Desktop:** `@budcom/desktop` v0.4.2  
-**Connector:** `@budcom/connector` v0.3.1  
+**Desktop:** `@venture/desktop` v0.4.2  
+**Connector:** `@venture/connector` v0.3.1  
 **Git:** Not committed (per instruction)
 
 ---
 
 ## Executive summary
 
-Milestone 4C delivers a production-oriented connector lifecycle manager in the Budcom desktop app. The desktop now auto-starts, monitors, gracefully stops, and automatically restarts the connector process with structured logging and operator-facing UI controls. All automated tests pass; live lifecycle validation achieved **7/7 PASS** on an isolated validation port.
+Milestone 4C delivers a production-oriented connector lifecycle manager in the Venture desktop app. The desktop now auto-starts, monitors, gracefully stops, and automatically restarts the connector process with structured logging and operator-facing UI controls. All automated tests pass; live lifecycle validation achieved **7/7 PASS** on an isolated validation port.
 
 ---
 
@@ -18,16 +18,16 @@ Milestone 4C delivers a production-oriented connector lifecycle manager in the B
 
 | File | Purpose |
 |------|---------|
-| `apps/budcom_desktop/src/application/connector-lifecycle-types.ts` | Lifecycle types and port interfaces |
-| `apps/budcom_desktop/src/application/connector-lifecycle-config.ts` | Env-based configuration |
-| `apps/budcom_desktop/src/application/connector-lifecycle-service.ts` | Core orchestrator |
-| `apps/budcom_desktop/src/application/node-process-spawner.ts` | Process spawn adapter |
-| `apps/budcom_desktop/src/application/lifecycle-error-mapper.ts` | User-friendly error mapping |
-| `apps/budcom_desktop/src/scripts/live-lifecycle-validation.ts` | Automated live validation |
-| `apps/budcom_desktop/test/unit/connector-lifecycle-service.test.ts` | Lifecycle unit tests (10) |
-| `apps/budcom_desktop/test/unit/lifecycle-error-mapper.test.ts` | Error mapper tests (3) |
-| `apps/budcom_desktop/test/unit/connector-lifecycle-config.test.ts` | Config tests (2) |
-| `apps/budcom_desktop/test/helpers/lifecycle-fixtures.ts` | Renderer test helpers |
+| `apps/venture_desktop/src/application/connector-lifecycle-types.ts` | Lifecycle types and port interfaces |
+| `apps/venture_desktop/src/application/connector-lifecycle-config.ts` | Env-based configuration |
+| `apps/venture_desktop/src/application/connector-lifecycle-service.ts` | Core orchestrator |
+| `apps/venture_desktop/src/application/node-process-spawner.ts` | Process spawn adapter |
+| `apps/venture_desktop/src/application/lifecycle-error-mapper.ts` | User-friendly error mapping |
+| `apps/venture_desktop/src/scripts/live-lifecycle-validation.ts` | Automated live validation |
+| `apps/venture_desktop/test/unit/connector-lifecycle-service.test.ts` | Lifecycle unit tests (10) |
+| `apps/venture_desktop/test/unit/lifecycle-error-mapper.test.ts` | Error mapper tests (3) |
+| `apps/venture_desktop/test/unit/connector-lifecycle-config.test.ts` | Config tests (2) |
+| `apps/venture_desktop/test/helpers/lifecycle-fixtures.ts` | Renderer test helpers |
 | `docs/milestones/milestone-4c-connector-lifecycle.md` | Milestone documentation |
 | `docs/stage-updates/milestone-4c-stage-update.md` | Stage update |
 | `docs/diagnostics/m4c-live-lifecycle-validation.json` | Live validation evidence |
@@ -39,17 +39,17 @@ Milestone 4C delivers a production-oriented connector lifecycle manager in the B
 
 | File | Change summary |
 |------|----------------|
-| `apps/budcom_desktop/src/main/main.ts` | Lifecycle service, IPC, auto-init, shutdown |
-| `apps/budcom_desktop/src/preload/preload.ts` | Lifecycle bridge API |
-| `apps/budcom_desktop/src/application/types.ts` | Settings: executable, port, autoStart |
-| `apps/budcom_desktop/src/application/dashboard-service.ts` | v0.4.2; settings defaults |
-| `apps/budcom_desktop/src/renderer/index.html` | Lifecycle panel + settings |
-| `apps/budcom_desktop/src/renderer/scripts/app.ts` | Lifecycle UI |
-| `apps/budcom_desktop/package.json` | Version 0.4.2 |
-| `apps/budcom_desktop/test/unit/main-window.test.ts` | Lifecycle IPC coverage |
-| `apps/budcom_desktop/test/unit/dashboard-service.test.ts` | Version assertion |
-| `apps/budcom_desktop/test/renderer/dashboard-render.test.ts` | Lifecycle mock |
-| `apps/budcom_desktop/test/renderer/company-selection.test.ts` | Lifecycle mock |
+| `apps/venture_desktop/src/main/main.ts` | Lifecycle service, IPC, auto-init, shutdown |
+| `apps/venture_desktop/src/preload/preload.ts` | Lifecycle bridge API |
+| `apps/venture_desktop/src/application/types.ts` | Settings: executable, port, autoStart |
+| `apps/venture_desktop/src/application/dashboard-service.ts` | v0.4.2; settings defaults |
+| `apps/venture_desktop/src/renderer/index.html` | Lifecycle panel + settings |
+| `apps/venture_desktop/src/renderer/scripts/app.ts` | Lifecycle UI |
+| `apps/venture_desktop/package.json` | Version 0.4.2 |
+| `apps/venture_desktop/test/unit/main-window.test.ts` | Lifecycle IPC coverage |
+| `apps/venture_desktop/test/unit/dashboard-service.test.ts` | Version assertion |
+| `apps/venture_desktop/test/renderer/dashboard-render.test.ts` | Lifecycle mock |
+| `apps/venture_desktop/test/renderer/company-selection.test.ts` | Lifecycle mock |
 | `docs/modules/desktop-shell/stage-update.md` | 4C update |
 | `docs/modules/connector-session/stage-update.md` | Lifecycle consumer note |
 | `docs/technical-debt/registry.md` | TD-003 resolved |
@@ -75,7 +75,7 @@ Renderer → IPC → Main → ConnectorLifecycleService
 
 **Key behaviours:**
 
-- **Auto-start** on `app.whenReady()` when `BUDCOM_CONNECTOR_AUTO_START !== 'false'`
+- **Auto-start** on `app.whenReady()` when `VENTURE_CONNECTOR_AUTO_START !== 'false'`
 - **Duplicate prevention** — health check before spawn; external connector detected without second process
 - **Graceful stop** — SIGTERM + bounded health-down wait
 - **Crash recovery** — exit handler + exponential backoff (base 1s × attempt, max 5)
@@ -112,9 +112,9 @@ Renderer → IPC → Main → ConnectorLifecycleService
 
 | Command | Result |
 |---------|--------|
-| `apps/budcom_desktop` `npm run build` | **PASS** |
-| `apps/budcom_desktop` `npm test` | **PASS** (48/48) |
-| `connector/budcom_connector` `npm run build` | Pre-built dist present |
+| `apps/venture_desktop` `npm run build` | **PASS** |
+| `apps/venture_desktop` `npm test` | **PASS** (48/48) |
+| `connector/venture_connector` `npm run build` | Pre-built dist present |
 | Live validation script | **PASS** (7/7) |
 
 ---

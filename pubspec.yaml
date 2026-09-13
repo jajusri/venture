@@ -1,13 +1,13 @@
-name: budcom_workspace
+name: venture_workspace
 publish_to: none
 
 environment:
   sdk: ^3.5.0
 
 workspace:
-  - apps/budcom_mobile
-  - shared/packages/budcom_core
-  - shared/packages/budcom_contracts
+  - apps/venture_mobile
+  - shared/packages/venture_core
+  - shared/packages/venture_contracts
 
 dev_dependencies:
   melos: ^8.2.2

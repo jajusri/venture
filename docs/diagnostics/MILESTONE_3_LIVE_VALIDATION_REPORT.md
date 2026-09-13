@@ -155,7 +155,7 @@ Isolated post-validation probe of `List of Units` (15s) **reconfirmed hang** and
 |----------|------|
 | Final results JSON | `docs/diagnostics/m3-live-validation-final.json` |
 | Units failure XML (pre-fix) | `docs/diagnostics/m3-units-failure-payload.xml` |
-| Request audit | `connector/budcom_connector/diagnostics/tally-request-audit.jsonl` |
+| Request audit | `connector/venture_connector/diagnostics/tally-request-audit.jsonl` |
 | Connector log | Terminal session 708408 |
 
 ---

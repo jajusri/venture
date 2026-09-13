@@ -1,8 +1,8 @@
 # Confirmed Connector Contracts — Diagnostics Foundation (Android)
 
 **Date:** 2026-07-27  
-**Source of truth:** `connector/budcom_connector` implementation  
-**Purpose:** Contract notes for BUDCO Android Diagnostics Foundation
+**Source of truth:** `connector/venture_connector` implementation  
+**Purpose:** Contract notes for VENTURE Android Diagnostics Foundation
 
 ---
 

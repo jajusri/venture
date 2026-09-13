@@ -1,0 +1,946 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --accent: #2563eb;
+  --accent-contrast: #ffffff;
+  --green: #16a34a;
+  --yellow: #b45309;
+  --red: #dc2626;
+  --grey: #64748b;
+  --border: #e2e8f0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+/* !important is deliberate: .hidden is a utility meant to unconditionally hide an
+   element regardless of any other same-specificity display-setting rule that
+   happens to be declared later in this file (see the .storage-gate-overlay.hidden
+   compound-selector workaround below, which this makes unnecessary for new code —
+   left in place as a harmless no-op rather than churning an unrelated component). */
+.hidden { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app-shell {
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) 40px;
+}
+
+.app-header, .top-nav, .app-footer {
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.subtitle, .card-meta, .header-meta {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.indicator {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  border: 2px solid transparent;
+}
+
+.indicator-connected { background: var(--green); }
+.indicator-connecting,
+.indicator-waiting { background: var(--yellow); }
+.indicator-starting { background: var(--yellow); }
+.indicator-disconnected { background: var(--red); }
+.indicator-error { background: var(--red); }
+.indicator-unknown { background: var(--grey); }
+
+.app-notification {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 0.5rem;
+  border-left: 4px solid var(--grey);
+  background: var(--card);
+  font-size: 0.9rem;
+}
+
+.app-notification-error { border-left-color: var(--red); color: #7f1d1d; }
+.app-notification-warning { border-left-color: var(--yellow); color: #78350f; }
+.app-notification-information { border-left-color: var(--green); color: #14532d; }
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.panel-header h2 { margin: 0; }
+
+.panel-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.action-btn {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.action-btn.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Button with an inline loading spinner */
+.action-btn.busy {
+  cursor: wait;
+  opacity: 0.75;
+  position: relative;
+  padding-left: 2rem;
+}
+
+.action-btn.busy::before {
+  content: '';
+  position: absolute;
+  left: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.65s linear infinite;
+}
+
+@keyframes btn-spin {
+  to { transform: translateY(-50%) rotate(360deg); }
+}
+
+.company-panel { margin-top: 1rem; }
+.panel-meta { color: var(--muted); margin: 0 0 0.75rem; }
+
+.company-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.company-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+}
+
+.company-item:hover,
+.company-item.selected {
+  border-color: var(--accent);
+}
+
+.company-item:hover {
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.company-item.selected {
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.company-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.company-item:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.company-radio {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--muted);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 3px var(--bg);
+}
+
+.company-item.selected .company-radio {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.company-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.company-id {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.empty-state {
+  color: var(--muted);
+  margin: 0;
+}
+
+.log-time { color: var(--muted); }
+.log-level { font-weight: 600; margin-right: 0.35rem; }
+
+.top-nav {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--surface);
+}
+
+.nav-btn {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  cursor: pointer;
+}
+
+.nav-btn.active, .nav-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.app-main {
+  padding: 1.25rem;
+}
+
+.view { display: none; }
+.view.active { display: block; }
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.card, .panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.card h2, .panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.card-value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.detail-list {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 0.5rem 1rem;
+}
+
+.detail-list dt { color: var(--muted); }
+.detail-list dd { margin: 0; }
+
+.log-panel { min-height: 420px; }
+.log-list {
+  max-height: 420px;
+  overflow-y: auto;
+  font-family: Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+.log-entry {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.log-information { color: var(--text); }
+.log-warning { color: var(--yellow); }
+.log-error { color: var(--red); }
+
+.settings-form {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 36rem;
+}
+
+.settings-form label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.settings-form input,
+.settings-form select {
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+}
+
+.checkbox-row {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.form-note,
+.form-error {
+  font-size: 0.875rem;
+}
+
+.form-note { color: var(--yellow); }
+.form-error { color: var(--red); }
+
+.compact-settings-meta {
+  margin-top: 1rem;
+}
+
+.compact-log-list {
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.ledger-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.ledger-stats-grid div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+}
+
+.ledger-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1rem;
+}
+
+.ledger-toolbar label {
+  display: grid;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.ledger-toolbar input {
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text);
+}
+
+.ledger-list {
+  display: grid;
+  gap: 0.35rem;
+  min-height: 240px;
+}
+
+.ledger-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 0.75fr;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--card);
+}
+
+.ledger-name { font-weight: 600; }
+.ledger-meta { color: var(--muted); font-size: 0.9rem; }
+
+.ledger-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.sync-progress-panel {
+  display: grid;
+  gap: 0.65rem;
+  min-height: 112px;
+  margin-bottom: 0.9rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+}
+
+.advanced-section {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card-quiet);
+}
+
+.advanced-section summary {
+  padding: 0.75rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.advanced-section-content {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0 0.75rem 0.75rem;
+}
+
+.advanced-section .form-note {
+  margin: 0;
+  padding: 0 0.75rem 0.75rem;
+  color: var(--yellow);
+}
+
+.advanced-section h3 {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.sync-progress-heading,
+.sync-progress-details {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.sync-progress-track {
+  height: 0.6rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.sync-progress-bar {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.sync-progress-details {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.sync-progress-panel .form-error {
+  margin: 0;
+}
+
+.app-main {
+  min-height: 0;
+  overflow: auto;
+}
+
+.app-footer {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 1.25rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.footer-connection {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.footer-company {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  flex: 0 0 0.625rem;
+  border-radius: 999px;
+  background: var(--grey);
+}
+
+.status-connected { background: var(--green); }
+.status-connecting,
+.status-refreshing,
+.status-selecting { background: var(--yellow); }
+.status-disconnected,
+.status-error { background: var(--red); }
+
+.pairing-state { display: grid; gap: 0.75rem; margin-top: 0.5rem; }
+
+.pairing-session {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--card);
+  justify-items: start;
+}
+
+/* Keep the QR fully visible without scrolling at normal window sizes by
+   placing it beside its short-code/expiry/cancel controls instead of
+   stacking everything vertically below it. Scoped to the active-session
+   layout only so the (simpler) redeemed/ended states are unaffected. */
+.pairing-session-active-layout {
+  display: grid;
+  grid-template-columns: auto minmax(200px, 320px);
+  align-items: start;
+  gap: 0 1.25rem;
+}
+
+.pairing-session-info {
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+}
+
+.pairing-session-info .panel-meta { margin: 0; }
+
+.pairing-scan-instruction {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pairing-hint {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 0.1rem;
+}
+
+.pairing-panel-header {
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+.pairing-panel-subtitle {
+  margin: 0;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+#pairing-qr-image {
+  border-radius: 0.4rem;
+  background: #fff;
+  padding: 0.4rem;
+}
+
+.pairing-device-list {
+  display: grid;
+  gap: 0.35rem;
+  min-height: 80px;
+}
+
+.pairing-device-row {
+  display: grid;
+  grid-template-columns: 1.5fr 2fr 0.75fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--card);
+}
+
+.pairing-device-label { font-weight: 600; }
+.pairing-device-meta { color: var(--muted); font-size: 0.85rem; }
+.pairing-device-status { font-size: 0.85rem; font-weight: 600; }
+.pairing-device-status-active { color: var(--green); }
+.pairing-device-status-revoked { color: var(--muted); }
+.status-unknown { background: var(--grey); }
+
+/* ---- Private Removable Storage gate (first-run / storage-unavailable overlay) ---- */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.storage-gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.85);
+}
+
+/* .storage-gate-overlay's own display:flex is declared above .hidden's display:none in source
+   order; at equal specificity the later rule wins the cascade, so .hidden alone can never hide
+   this element. This override, matched on both classes together, restores precedence to .hidden
+   regardless of rule order elsewhere in the file. */
+.storage-gate-overlay.hidden {
+  display: none;
+}
+
+.storage-gate-panel {
+  width: min(560px, 90vw);
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  padding: 1.5rem;
+}
+
+.storage-gate-panel h2 {
+  margin-top: 0;
+  font-size: 1.15rem;
+}
+
+.storage-gate-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.storage-gate-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+  cursor: pointer;
+}
+
+.storage-gate-option input { grid-row: 1 / span 2; margin-top: 0.2rem; }
+.storage-gate-option-title { font-weight: 600; }
+.storage-gate-option-detail { grid-column: 2; color: var(--muted); font-size: 0.85rem; }
+
+.storage-gate-drive-picker {
+  margin: 0.5rem 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--card);
+}
+
+.storage-gate-label { margin: 0 0 0.5rem; font-weight: 600; }
+
+.storage-gate-drive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.storage-gate-drive-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+
+.storage-gate-drive-row .drive-letter { font-weight: 600; }
+.storage-gate-drive-row .drive-detail { color: var(--muted); font-size: 0.85rem; }
+
+.storage-gate-hint { color: var(--muted); font-size: 0.85rem; }
+.storage-gate-error { color: var(--red); font-size: 0.85rem; }
+.storage-gate-unavailable-message { font-weight: 600; font-size: 1.05rem; }
+
+.storage-gate-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+/* ---- VENTURE visual language: white/blue minimalist refresh, supersedes continuity.17's dark
+   navy palette per explicit direction. Layout/spacing rules below are unchanged; only the
+   palette moved from dark-navy-and-sky-blue to white-surface-and-confident-blue. ---- */
+:root {
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --card: #ffffff;
+  --card-quiet: #f8fafc;
+  --text: #0f172a;
+  --muted: #64748b;
+  --accent: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.08);
+  --border: #e2e8f0;
+}
+
+body { min-width: 800px; }
+
+.app-shell {
+  grid-template-columns: 184px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) 36px;
+}
+
+.app-header {
+  grid-column: 1 / -1;
+  min-height: 82px;
+  padding: 0.9rem 1.5rem;
+  align-items: center;
+  background: var(--surface);
+}
+
+.brand h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.subtitle { margin: 0.3rem 0 0; }
+
+.header-status { gap: 0.8rem; }
+.header-meta {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 0.25rem 1.25rem;
+  align-items: center;
+}
+.header-meta div { display: grid; gap: 0.1rem; }
+.header-meta div::first-line { color: var(--muted); }
+.header-meta strong { color: var(--text); }
+
+.top-nav {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1rem 0.75rem;
+  border-right: 1px solid var(--border);
+  border-bottom: 0;
+  background: var(--surface);
+}
+
+.nav-btn {
+  width: 100%;
+  padding: 0.62rem 0.75rem;
+  border: 0;
+  border-radius: 0.45rem;
+  color: var(--muted);
+  text-align: left;
+  font-weight: 600;
+}
+.nav-btn.active,
+.nav-btn:hover {
+  color: var(--text);
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.nav-btn:nth-of-type(5),
+.nav-btn:nth-of-type(6) { margin-top: 0.65rem; }
+
+.app-main {
+  grid-column: 2;
+  grid-row: 2;
+  padding: 1.25rem 1.5rem 1.75rem;
+}
+
+.app-footer {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  height: 36px;
+  padding: 0 1.25rem;
+}
+
+.card-grid {
+  grid-template-columns: 1.35fr 1.35fr 1fr 0.8fr;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.card {
+  min-width: 0;
+  min-height: 126px;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--card);
+}
+.card:last-child { border-right: 0; }
+.card h2, .panel h2 {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+.card-value {
+  font-size: 1.55rem;
+  letter-spacing: -0.02em;
+}
+.card-meta { margin: 0.45rem 0 0; }
+
+.panel {
+  border-radius: 0.8rem;
+  background: var(--card-quiet);
+}
+.company-panel { margin-top: 0.9rem; }
+
+.dashboard-shortcut-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  margin-top: 1rem;
+  padding: 0.9rem 1.1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  /* Overrides .nav-btn's sidebar-flat defaults (color:muted, no border/background) --
+     this reuses .nav-btn purely for its existing data-view click delegation
+     (bindNavigation()), not its sidebar visual treatment. */
+}
+.dashboard-shortcut-card:hover,
+.dashboard-shortcut-card.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.dashboard-shortcut-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.dashboard-shortcut-text {
+  display: grid;
+  gap: 0.15rem;
+  flex: 1;
+}
+.dashboard-shortcut-text strong { color: var(--text); font-size: 0.95rem; }
+.dashboard-shortcut-meta { color: var(--muted); font-size: 0.82rem; }
+.dashboard-shortcut-arrow {
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.action-btn {
+  min-height: 34px;
+  border-radius: 0.45rem;
+  padding: 0.42rem 0.8rem;
+}
+.action-btn:hover:not(:disabled) { filter: brightness(1.08); }
+.action-btn:focus-visible,
+.nav-btn:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.company-item,
+.ledger-row,
+.ledger-stats-grid div,
+.sync-progress-panel,
+.pairing-device-row,
+.pairing-session {
+  background: var(--surface);
+}
+.company-radio { box-shadow: inset 0 0 0 3px var(--surface); }
+
+.storage-gate-overlay { background: rgba(5, 11, 24, 0.9); }
+.storage-gate-panel {
+  border-radius: 0.8rem;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+}
+.storage-gate-option,
+.storage-gate-drive-picker { background: var(--card); }
+
+@media (max-width: 1050px) {
+  .app-shell { grid-template-columns: 156px minmax(0, 1fr); }
+  .header-meta { grid-template-columns: repeat(2, auto); }
+  .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card:nth-child(2) { border-right: 0; }
+  .card:nth-child(-n + 2) { border-bottom: 1px solid var(--border); }
+}

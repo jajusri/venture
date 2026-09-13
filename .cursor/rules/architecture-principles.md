@@ -1,4 +1,4 @@
-# Budcom Architecture Principles
+# Venture Architecture Principles
 
 Version: 1.0
 Status: PERMANENT
@@ -8,7 +8,7 @@ Priority: HIGHEST
 
 # Purpose
 
-This document defines the permanent architectural principles of Budcom.
+This document defines the permanent architectural principles of Venture.
 
 Every architecture decision, refactor, module, service, adapter, connector, API, database, and application must follow these principles.
 
@@ -18,9 +18,9 @@ These principles have higher priority than convenience, implementation speed, or
 
 # The Goal
 
-Budcom is not built to support today's technology.
+Venture is not built to support today's technology.
 
-Budcom is built to outlive today's technology.
+Venture is built to outlive today's technology.
 
 Programming languages may change.
 
@@ -34,7 +34,7 @@ ERP systems may change.
 
 Cloud providers may change.
 
-Budcom's architecture must remain stable.
+Venture's architecture must remain stable.
 
 ---
 
@@ -256,7 +256,7 @@ External formats are converted into domain models before leaving the adapter.
 
 # Domain Models
 
-Budcom owns its domain.
+Venture owns its domain.
 
 External systems own their formats.
 
@@ -600,7 +600,7 @@ No implementation detail leaks into business logic.
 
 # Golden Rule
 
-Budcom architecture must always optimize for:
+Venture architecture must always optimize for:
 
 Clarity over cleverness.
 

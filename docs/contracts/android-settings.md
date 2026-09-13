@@ -1,7 +1,7 @@
 # Android Settings Foundation
 
 **Date:** 2026-07-27  
-**Scope:** `apps/budcom_android` Settings Foundation  
+**Scope:** `apps/venture_android` Settings Foundation  
 **Purpose:** Document settings architecture, DataStore usage, available preferences, navigation, and persistence.
 
 ---
@@ -63,7 +63,7 @@ Compose never accesses DataStore directly.
 - Key: `theme_preference`
 - Values: `system` (default), `light`, `dark`
 - Unrecognized stored values surface as a configuration error (not silently ignored)
-- `MainActivity` observes `ThemePreferencesRepository` and passes `darkTheme` into `BudcomTheme`
+- `MainActivity` observes `ThemePreferencesRepository` and passes `darkTheme` into `VentureTheme`
 
 ---
 

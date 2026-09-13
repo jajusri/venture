@@ -1,4 +1,4 @@
-# ADR-001: Clean Architecture for the Budcom Connector
+# ADR-001: Clean Architecture for the Venture Connector
 
 **Status:** Accepted  
 **Date:** 2026-07-22  
@@ -6,7 +6,7 @@
 
 ## Context
 
-The Budcom Tally Connector must communicate safely with a fragile external ERP (TallyPrime) while remaining maintainable for years, supporting multiple future ERP adapters, and preventing accidental data corruption or Tally crashes. Ad-hoc layering and direct coupling to Tally-specific types had produced bypass paths, raw XML leakage into business code, and architecture that could not honestly claim a single communication gateway.
+The Venture Tally Connector must communicate safely with a fragile external ERP (TallyPrime) while remaining maintainable for years, supporting multiple future ERP adapters, and preventing accidental data corruption or Tally crashes. Ad-hoc layering and direct coupling to Tally-specific types had produced bypass paths, raw XML leakage into business code, and architecture that could not honestly claim a single communication gateway.
 
 ## Decision
 
@@ -27,7 +27,7 @@ Infrastructure (HTTP transport, XML builder, connection manager)
 Dependencies always point **inward**:
 
 - Business services depend on **interfaces** (ports), never on concrete ERP implementations.
-- Adapters implement ports and translate external formats into Budcom domain models.
+- Adapters implement ports and translate external formats into Venture domain models.
 - Infrastructure (transport, sockets, XML parsing) never defines business rules.
 - The **composition root** (`bootstrap/register-services.ts`) is the only place that wires concrete implementations.
 

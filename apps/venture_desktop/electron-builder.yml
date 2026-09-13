@@ -1,0 +1,51 @@
+appId: com.venture.desktop
+productName: Venture Desktop
+copyright: Copyright © Venture
+directories:
+  output: ../../release/controlled-pilot/${version}/artifacts
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.test.*"
+  - "!**/test/**"
+  - "!**/.env*"
+extraResources:
+  - from: ../../connector/venture_connector/dist
+    to: connector/dist
+    filter:
+      - "**/*"
+      - "!**/*.map"
+      - "!**/test/**"
+      - "!data/**"
+  - from: ../../connector/venture_connector/.packaged/node_modules
+    to: connector/node_modules
+    filter:
+      - "**/*"
+      - "!**/*.map"
+  - from: ../../connector/venture_connector/package.json
+    to: connector/package.json
+  - from: build/VERSION.txt
+    to: connector/VERSION.txt
+  - from: .packaged-node
+    to: node
+    filter:
+      - "**/*"
+asar: true
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: VentureDesktop-${version}-x64-setup.${ext}
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: true
+  include: build/installer.nsh
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  runAfterFinish: false
+  warningsAsErrors: false
+publish: null

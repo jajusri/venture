@@ -9,8 +9,8 @@ Milestones derived from the MVP 1 specification delivery plan (Section 21) and a
 | Deliverable | Status |
 |-------------|--------|
 | Monorepo layout with Melos | Done |
-| `budcom_core` domain package | Done |
-| `budcom_contracts` DTO package | Done |
+| `venture_core` domain package | Done |
+| `venture_contracts` DTO package | Done |
 | OpenAPI connector contract v1 | Done |
 | Connector service skeleton + read-only middleware | Done |
 | Flutter app layered structure + home shell | Done |
@@ -29,7 +29,7 @@ Milestones derived from the MVP 1 specification delivery plan (Section 21) and a
 **Goal:** Prove read-only Tally connectivity on a test company.
 
 - Tally adapter (XML/HTTP export)
-- Normalization to Budcom entities
+- Normalization to Venture entities
 - `GET /health` reports real Tally reachability
 - `GET /companies` returns test company
 - Device pairing flow (minimal approval)

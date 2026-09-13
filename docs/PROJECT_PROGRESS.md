@@ -1,4 +1,4 @@
-# Budcom — Project Progress Tracker
+# Venture — Project Progress Tracker
 
 > **Maintenance rule:** Update this file immediately after every completed milestone.
 > Do not mark a milestone complete until verification (tests, build, read-only checks) has passed.
@@ -7,7 +7,7 @@
 
 ## Project name
 
-**Budcom** — Android-first, read-only Tally companion (Business OS MVP 1)
+**Venture** — Android-first, read-only Tally companion (Business OS MVP 1)
 
 ---
 
@@ -17,10 +17,10 @@
 
 | Component | Version |
 |-----------|---------|
-| `budcom_core` | 0.1.0 |
-| `budcom_contracts` | 0.1.0 |
-| `budcom_mobile` | 0.1.0+1 |
-| `@budcom/connector` | 0.2.0 |
+| `venture_core` | 0.1.0 |
+| `venture_contracts` | 0.1.0 |
+| `venture_mobile` | 0.1.0+1 |
+| `@venture/connector` | 0.2.0 |
 | Connector API (`openapi`) | 1.0.0 |
 
 ---
@@ -42,8 +42,8 @@
 | Deliverable | Status |
 |-------------|--------|
 | Monorepo layout with Melos | ✅ |
-| `budcom_core` domain package | ✅ |
-| `budcom_contracts` DTO package | ✅ |
+| `venture_core` domain package | ✅ |
+| `venture_contracts` DTO package | ✅ |
 | OpenAPI connector contract v1 | ✅ |
 | Connector service skeleton + read-only middleware | ✅ |
 | Flutter app layered structure + home shell | ✅ |
@@ -144,7 +144,7 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 | Connector `npm run lint` | ✅ Pass |
 | Connector `npm run build` | ✅ Pass |
 | Connector `npm test` | ✅ 45/45 |
-| `@budcom/contract-tests` | ✅ 5/5 (unchanged) |
+| `@venture/contract-tests` | ✅ 5/5 (unchanged) |
 
 ---
 
@@ -184,11 +184,11 @@ See [architecture/milestones.md](./architecture/milestones.md) for full acceptan
 
 | Suite | Tests | Status |
 |-------|-------|--------|
-| `budcom_core` | 9 | ✅ Pass |
-| `budcom_contracts` | 2 | ✅ Pass |
-| `budcom_mobile` | 1 | ✅ Pass |
-| `@budcom/connector` | 45 | ✅ Pass |
-| `@budcom/contract-tests` | 5 | ✅ Pass |
+| `venture_core` | 9 | ✅ Pass |
+| `venture_contracts` | 2 | ✅ Pass |
+| `venture_mobile` | 1 | ✅ Pass |
+| `@venture/connector` | 45 | ✅ Pass |
+| `@venture/contract-tests` | 5 | ✅ Pass |
 | **Total** | **68** | **✅ All passing (connector verified)** |
 
 **Not yet covered:** Live Tally integration tests, migration tests, golden/UI tests, security tests (Milestone 3+).
