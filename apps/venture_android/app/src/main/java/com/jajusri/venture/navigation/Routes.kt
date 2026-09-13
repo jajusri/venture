@@ -79,5 +79,5 @@ object Routes {
         "catalogue/${Uri.encode(productId)}"
 
     private fun encodeRouteSegment(value: String): String =
-        URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
+        URLEncoder.encode(value, StandardCharsets.UTF_8.name()).replace("+", "%20")
 }
